@@ -15,6 +15,9 @@ class ReviewInputSelectionError(ValueError):
 
 def resolve_review_input_selection(services, request, project_id: str, node_id: int,
                                    body: dict[str, Any]) -> tuple[list[str], dict[str, Any]] | None:
+    if "inputDocumentPageRanges" in body:
+        # Never accept a range while downstream readers could still consume the whole file.
+        raise ReviewInputSelectionError("页码范围尚未完成全链路验收，暂不能按指定页码发起审查。")
     if "inputDocumentVersionIds" not in body:
         return None
     if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() not in {"1", "true", "yes"}:

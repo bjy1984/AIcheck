@@ -5,6 +5,11 @@ from copy import deepcopy
 from typing import Any
 
 from libs.review_document_scope import validate_document_sources
+from libs.review_page_scope import (
+    normalize_page_ranges,
+    page_record_in_range,
+    restrict_parse_result,
+)
 
 
 def selected_parse_results(
@@ -30,7 +35,13 @@ def selected_parse_results(
     results = [item for item in state.get("ocr_parse_results", []) if isinstance(item, dict)]
     if requested or review_run is not None:
         results = [item for item in results if str(item.get("documentVersionId") or "") in requested]
-    return apply_field_corrections_to_parse_results(state, results, context=context)
+    results = apply_field_corrections_to_parse_results(state, results, context=context)
+    if review_run is not None:
+        ranges = normalize_page_ranges(review_run.get("inputDocumentPageRanges", {}),
+                                       review_run.get("inputDocumentVersionIds") or [])
+        results = [restrict_parse_result(row, ranges[row["documentVersionId"]])
+                   if row.get("documentVersionId") in ranges else row for row in results]
+    return results
 
 
 def apply_field_corrections_to_parse_results(
@@ -62,7 +73,12 @@ def apply_field_corrections_to_parse_results(
         return results
 
     by_version: dict[str, dict[str, Any]] = {}
+    page_ranges = normalize_page_ranges(review_run.get("inputDocumentPageRanges", {}),
+                                       review_run.get("inputDocumentVersionIds") or [])
     for item in corrections:
+        bounds = page_ranges.get(str(item.get("documentVersionId") or ""))
+        if bounds is not None and not page_record_in_range(item, bounds):
+            continue
         by_version.setdefault(str(item.get("documentVersionId") or ""), {})[
             str(item.get("fieldName") or "")
         ] = item
@@ -80,6 +96,8 @@ def apply_field_corrections_to_parse_results(
             correction = overrides.get(str(field.get("fieldName") or field.get("name") or ""))
             if not correction:
                 continue
+            if str(result.get("documentVersionId") or "") in page_ranges and field.get("pageNo") != correction.get("pageNo"):
+                continue
             field["originalValue"] = field.get("value") if "value" in field else field.get("fieldValue")
             for key in ("value", "fieldValue", "text"):
                 if key in field:
@@ -91,5 +109,4 @@ def apply_field_corrections_to_parse_results(
         )
         patched.append(clone)
     return patched
-
 

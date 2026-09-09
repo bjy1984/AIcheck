@@ -4,6 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.review_page_scope import normalize_page_ranges
 from libs.review_rule_snapshot import _hash
 
 
@@ -17,6 +18,8 @@ def freeze_document_scope(run: dict[str, Any], state: dict[str, Any] | None = No
         "businessPackId": run.get("businessPackId"),
         "documentVersionIds": deepcopy(versions),
     }
+    if "inputDocumentPageRanges" in run:
+        snapshot["documentPageRanges"] = normalize_page_ranges(run["inputDocumentPageRanges"], versions)
     if state is not None:
         snapshot["sourceFingerprint"] = document_source_fingerprint(run, state)
     snapshot["snapshotHash"] = _hash(snapshot)
@@ -26,6 +29,8 @@ def freeze_document_scope(run: dict[str, Any], state: dict[str, Any] | None = No
 def validate_document_scope(run: dict[str, Any]) -> None:
     snapshot = run.get("documentScopeSnapshot")
     if snapshot is None:
+        if run.get("inputDocumentPageRanges"):
+            raise ValueError("document_page_scope_snapshot_required")
         return  # Historical runs retain their original contract.
     if not isinstance(snapshot, dict) or snapshot.get("schemaVersion") != "review-document-scope-v1":
         raise ValueError("invalid_document_scope_snapshot")
@@ -35,6 +40,9 @@ def validate_document_scope(run: dict[str, Any]) -> None:
         raise ValueError("document_scope_identity_mismatch")
     if snapshot.get("documentVersionIds") != (run.get("inputDocumentVersionIds") or []):
         raise ValueError("document_scope_versions_mismatch")
+    ranges = normalize_page_ranges(run.get("inputDocumentPageRanges", {}), run.get("inputDocumentVersionIds") or [])
+    if snapshot.get("documentPageRanges", {}) != ranges:
+        raise ValueError("document_scope_pages_mismatch")
 
 
 def document_source_fingerprint(run: dict[str, Any], state: dict[str, Any]) -> str:
