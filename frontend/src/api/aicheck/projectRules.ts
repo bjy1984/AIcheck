@@ -49,7 +49,27 @@ export const forkProjectRule = (projectId: string, rule: ProjectRule) =>
     headers: headers()
   })
 
+export interface RuleFactCandidate {
+  candidateId: string
+  value: unknown
+  unit?: string
+  objectType?: string
+  objectId?: string
+  evidenceRefs: Array<{
+    documentVersionId: string
+    fieldId?: string
+    pageNo?: number
+    bbox?: number[]
+  }>
+}
+export interface RuleObjectMapping {
+  subject: { objectType: string; objectId: string }
+  fields: Record<string, string>
+  confirmedSameObject: boolean
+}
 export interface RuleTrialResult {
+  factCandidates?: Record<string, RuleFactCandidate[]>
+  objectMappingSnapshot?: { snapshotHash: string; selection: RuleObjectMapping }
   result: string
   ruleRevision: number
   sourceMode?: string
@@ -64,7 +84,7 @@ export const trialProjectRule = (
   rule: ProjectRule,
   source:
     | { facts: Record<string, unknown>; reviewRunId?: never }
-    | { reviewRunId: string; facts?: never }
+    | { reviewRunId: string; facts?: never; objectMapping?: RuleObjectMapping }
 ) =>
   request.post<RuleTrialResult>({
     url: `${base(projectId)}/${encodeURIComponent(rule.id)}/trial`,

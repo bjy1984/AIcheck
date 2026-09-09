@@ -13482,9 +13482,12 @@ def test_project_rule_trial_can_use_scoped_run_ocr_without_client_values(monkeyp
         {"id": "thickness", "field": "thickness", "operator": "gte", "expected": 10, "unit": "mm"}]}
     rule = assert_ok(client.post(path, headers=headers, json={"inspectionItem": "厚度核对", "standardText": "试跑条件",
                     "nodeIds": [24], "executionConditions": conditions}))["rule"]
-    run = {"reviewRunId": "RR-TRIAL-OCR", "projectId": "P-2026-HDCP-001", "nodeId": 24,
+    run = {"reviewRunId": "RR-TRIAL-OCR", "tenantId": "TENANT-DEFAULT", "projectId": "P-2026-HDCP-001", "nodeId": 24,
            "businessPackId": rule["businessPackId"], "inputDocumentVersionIds": ["D-TRIAL"]}
-    repo.state["ocr_parse_results"].append({"documentVersionId": "D-TRIAL", "fields": [
+    original_version = next(row for row in repo.state["versions"]
+                            if repo.find_one("documents", row["documentId"])["projectId"] == run["projectId"])
+    repo.state["versions"].append({**original_version, "id": "D-TRIAL"})
+    repo.state["ocr_parse_results"].append({"id": "PARSE-TRIAL", "tenantId": "TENANT-DEFAULT", "documentVersionId": "D-TRIAL", "fields": [
         {"id": "F-TRIAL", "fieldName": "thickness", "value": 11, "unit": "mm", "pageNo": 1, "bbox": [0, 0, 10, 10]}]})
     run["documentScopeSnapshot"] = freeze_document_scope(run, repo.state)
     repo.state["review_runs"].append(run)
@@ -13496,6 +13499,19 @@ def test_project_rule_trial_can_use_scoped_run_ocr_without_client_values(monkeyp
     assert output["advisoryOnly"] is True and output["evidenceVerified"] is False
     assert output["checks"][0]["evidenceRefs"][0]["documentVersionId"] == "D-TRIAL"
     assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"], "facts": {}}), "VALIDATION_ERROR")
+    mapping = {"subject": {"objectType": "weld", "objectId": "W-TRIAL"}, "confirmedSameObject": True,
+               "fields": {"thickness": output["factCandidates"]["thickness"][0]["candidateId"]}}
+    mapped_response = client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"], "objectMapping": mapping})
+    assert mapped_response.json()["code"] == 0, mapped_response.json()
+    mapped = assert_ok(mapped_response)
+    assert mapped["result"] == "pass"
+    assert mapped["objectMappingSnapshot"]["selection"] == mapping
+    assert mapped["objectMappingSnapshot"]["sourceSnapshotHash"] == output["sourceSnapshotHash"]
+    assert mapped["objectMappingSnapshot"]["selectedByUserId"] == "USER-INSPECTION-001"
+    assert mapped["objectMappingSnapshot"]["evidenceVerified"] is False
+    assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"], "objectMapping": {**mapping, "confirmedSameObject": False}}), "VALIDATION_ERROR")
+    repo.state["versions"] = [row for row in repo.state["versions"] if row["id"] != "D-TRIAL"]
+    assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"]}), "FORBIDDEN")
     run["projectId"] = "OTHER"
     assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"]}), "NOT_FOUND")
 

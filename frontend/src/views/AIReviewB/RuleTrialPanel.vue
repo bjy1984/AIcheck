@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import RuleObjectMappingEditor from './RuleObjectMapping.vue'
 import {
   ElAlert,
   ElButton,
@@ -13,6 +14,8 @@ import {
 import {
   trialProjectRule,
   type ProjectRule,
+  type RuleObjectMapping,
+  type RuleFactCandidate,
   type RuleTrialResult
 } from '@/api/aicheck/projectRules'
 import type { ConditionNode } from './ruleConditionModel'
@@ -32,6 +35,29 @@ interface InputFact {
 const sourceMode = ref<'manual' | 'run'>('manual')
 const inputs = ref<InputFact[]>([])
 const result = ref<RuleTrialResult>()
+const candidates = ref<Record<string, RuleFactCandidate[]>>({})
+const mappingEnabled = ref(false)
+const objectMapping = ref<RuleObjectMapping>({
+  subject: { objectType: 'weld', objectId: '' },
+  fields: {},
+  confirmedSameObject: false
+})
+const clearMapping = () => {
+  candidates.value = {}
+  mappingEnabled.value = false
+  objectMapping.value = {
+    subject: { objectType: 'weld', objectId: '' },
+    fields: {},
+    confirmedSameObject: false
+  }
+}
+watch(
+  [objectMapping, mappingEnabled],
+  () => {
+    result.value = undefined
+  },
+  { deep: true }
+)
 const error = ref('')
 const busy = ref(false)
 let generation = 0
@@ -45,6 +71,7 @@ watch(
   () => [props.projectId, props.rule.id, props.rule.etag],
   () => {
     generation += 1
+    clearMapping()
     result.value = undefined
     busy.value = false
     error.value = ''
@@ -93,6 +120,7 @@ watch(
   () => [sourceMode.value, props.reviewRunId],
   () => {
     generation += 1
+    clearMapping()
     result.value = undefined
     error.value = ''
     busy.value = false
@@ -101,6 +129,7 @@ watch(
 )
 const diagnostics: Record<string, string> = {
   field_missing: '任务资料没有匹配字段',
+  field_object_mapping_required: '尚未为当前对象选择原文记录',
   field_ambiguous_requires_object_mapping: '存在多个同名字段，需先明确焊口或材料批次',
   field_locator_missing_or_invalid: '字段缺少有效页码或位置'
 }
@@ -123,6 +152,14 @@ const run = async () => {
   if (props.disabled || busy.value) return
   if (sourceMode.value === 'run' && !props.reviewRunId) {
     error.value = '请先选择当前节点的审查任务。'
+    return
+  }
+  if (
+    sourceMode.value === 'run' &&
+    mappingEnabled.value &&
+    (!objectMapping.value.confirmedSameObject || !objectMapping.value.subject.objectId.trim())
+  ) {
+    error.value = '请填写对象编号，并确认所选原文属于同一对象。'
     return
   }
   busy.value = true
@@ -149,9 +186,19 @@ const run = async () => {
     const response = await trialProjectRule(
       props.projectId,
       props.rule,
-      sourceMode.value === 'run' ? { reviewRunId: props.reviewRunId! } : { facts }
+      sourceMode.value === 'run'
+        ? {
+            reviewRunId: props.reviewRunId!,
+            ...(mappingEnabled.value
+              ? { objectMapping: JSON.parse(JSON.stringify(objectMapping.value)) }
+              : {})
+          }
+        : { facts }
     )
-    if (current === generation) result.value = response.data
+    if (current === generation) {
+      result.value = response.data
+      candidates.value = response.data.factCandidates || {}
+    }
   } catch (cause) {
     if (current === generation) {
       const message = cause instanceof Error ? cause.message : ''
@@ -207,6 +254,15 @@ const run = async () => {
           /></ElFormItem>
         </div>
       </template>
+      <template v-if="sourceMode === 'run' && Object.keys(candidates).length">
+        <ElButton v-if="!mappingEnabled" @click="mappingEnabled = true"
+          >按焊口或批次选择原文</ElButton
+        >
+        <template v-else>
+          <RuleObjectMappingEditor v-model="objectMapping" :candidates="candidates" />
+          <ElButton @click="mappingEnabled = false">取消对象选择，恢复自动匹配</ElButton>
+        </template>
+      </template>
       <ElButton :loading="busy" :disabled="disabled" @click="run">运行草稿试跑</ElButton>
     </ElForm>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
@@ -218,6 +274,11 @@ const run = async () => {
       <p v-if="result.bindingPlan"
         >此规则计划取代 {{ result.bindingPlan.replacements.length }} 项，保留
         {{ result.bindingPlan.retainedAtomicCheckIds.length }} 项原有审查；试跑结果不代表已发布。</p
+      >
+      <p v-if="result.objectMappingSnapshot"
+        >本次仅试跑对象：{{
+          result.objectMappingSnapshot.selection.subject.objectId
+        }}。本次结果附有原文选择快照。</p
       >
       <p v-if="result.sourceReviewRunId">本次来源任务：{{ result.sourceReviewRunId }}</p>
       <ul v-if="Object.keys(result.factDiagnostics || {}).length">

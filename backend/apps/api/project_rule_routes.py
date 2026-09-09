@@ -6,11 +6,13 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
 
+from apps.api import document_access_policy
 from apps.api import routes as api
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
-from libs.review_condition_facts import condition_facts_from_run
+from libs.review_condition_facts import condition_candidates_from_run, resolve_condition_candidates
+from libs.review_workstations import digest
 from libs.rule_condition_bindings import compile_condition_bindings
 from libs.rule_conditions import evaluate_conditions, validate_conditions
 
@@ -139,20 +141,28 @@ def trial_project_rule(request: Request, project_id: str, version_id: str,
         return fail(errors.VALIDATION_ERROR, request, message="试跑需要 If-Match 版本标记。")
     if not api.record_if_match_valid("rule-version", rule, if_match):
         return fail(errors.ETAG_CONFLICT, request)
-    facts, diagnostics, run = body.get("facts"), {}, {}
+    if set(body) - {"facts", "reviewRunId", "objectMapping"} or ("objectMapping" in body and "reviewRunId" not in body):
+        return fail(errors.VALIDATION_ERROR, request, message="对象映射仅能使用任务原文资料。")
+    facts, diagnostics, run, candidates = body.get("facts"), {}, {}, {}
     run_id = body.get("reviewRunId")
     if run_id is not None:
         if not isinstance(run_id, str) or not run_id or "facts" in body:
             return fail(errors.VALIDATION_ERROR, request, message="请选择任务资料或手填示例，不能混用。")
         run = repo.find_one("review_runs", run_id, id_field="reviewRunId")
-        if not run or run.get("projectId") != project_id:
+        if not run or run.get("projectId") != project_id or api.tenant_id_for_record(run) != api.request_tenant_id(request):
             return fail(errors.NOT_FOUND, request)
+        visible = document_access_policy.actor_visible_evidence_repository(api._DOCUMENT_ACCESS_SERVICES, request, project_id)
+        visible_versions = {row["id"] for row in visible.state.get("versions", [])
+                            if api.tenant_id_for_record(row) == api.request_tenant_id(request)}
+        if set(run.get("inputDocumentVersionIds") or []) - visible_versions:
+            return fail(errors.FORBIDDEN, request)
         if str(run.get("nodeId")) not in {str(node) for node in api.parse_rule_node_ids(rule.get("nodeIds"))}:
             return fail(errors.VALIDATION_ERROR, request, message="任务节点不属于规则适用范围。")
         if str(run.get("businessPackId")) != str(rule.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID):
             return fail(errors.VALIDATION_ERROR, request, message="任务与规则业务包不一致。")
         try:
-            facts, diagnostics = condition_facts_from_run(repo.state, run, rule.get("executionConditions"))
+            candidates = condition_candidates_from_run(repo.state, run, rule.get("executionConditions"))
+            facts, diagnostics = resolve_condition_candidates(candidates, object_mapping=body.get("objectMapping"))
         except (TypeError, ValueError) as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
     try:
@@ -163,7 +173,15 @@ def trial_project_rule(request: Request, project_id: str, version_id: str,
             result["bindingPlan"] = compile_condition_bindings(rule, pack)
     except (TypeError, ValueError) as exc:
         return fail(errors.VALIDATION_ERROR, request, message=str(exc))
-    return ok({"mode": "draft_trial", "advisoryOnly": True, "ruleVersionId": version_id,
+    mapping_snapshot = None
+    if body.get("objectMapping") is not None:
+        mapping_snapshot = {"schemaVersion": "condition-trial-object-mapping-v1",
+                            "selection": repo.clone(body["objectMapping"]), "ruleVersionId": version_id,
+                            "ruleRevision": rule.get("revision"), "reviewRunId": run_id,
+                            "sourceSnapshotHash": run["documentScopeSnapshot"]["snapshotHash"],
+                            "selectedByUserId": api.request_user_id(request), "evidenceVerified": False}
+        mapping_snapshot["snapshotHash"] = digest(mapping_snapshot)
+    return ok({"factCandidates": candidates, "objectMappingSnapshot": mapping_snapshot, "mode": "draft_trial", "advisoryOnly": True, "ruleVersionId": version_id,
                "ruleRevision": rule.get("revision"), "sourceMode": "run_ocr" if run_id else "manual_examples",
                "sourceReviewRunId": run_id, "sourceSnapshotHash": (run.get("documentScopeSnapshot") or {}).get("snapshotHash"),
                "factDiagnostics": diagnostics, "evidenceVerified": False, **result}, request)
