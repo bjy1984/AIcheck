@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ConditionExpressionEditor from './ConditionExpressionEditor.vue'
+import { newCondition } from './ruleConditionModel'
 import { computed, ref, watch } from 'vue'
 import {
   ElAlert,
@@ -44,7 +46,10 @@ const setForm = (rule?: ProjectRule) => {
   form.value = {
     inspectionItem: rule?.inspectionItem || '',
     standardText: rule?.standardText || '',
-    witnessText: rule?.witnessText || ''
+    witnessText: rule?.witnessText || '',
+    executionConditions: rule?.executionConditions
+      ? JSON.parse(JSON.stringify(rule.executionConditions))
+      : undefined
   }
   baseline.value = JSON.stringify(form.value)
 }
@@ -189,6 +194,44 @@ watch(
             maxlength="3000"
             show-word-limit
         /></ElFormItem>
+        <ElFormItem label="可执行判定条件">
+          <ElButton
+            v-if="!form.executionConditions"
+            @click="
+              form.executionConditions = {
+                schemaVersion: 'rule-conditions-v1',
+                checks: [newCondition()]
+              }
+            "
+            >添加判定条件</ElButton
+          >
+        </ElFormItem>
+        <template v-if="form.executionConditions">
+          <div v-for="(check, index) in form.executionConditions.checks" :key="check.id">
+            <h3>检查项 {{ index + 1 }}</h3>
+            <ConditionExpressionEditor
+              :model-value="check"
+              :grouped="false"
+              @update:model-value="form.executionConditions!.checks[index] = $event"
+            />
+            <ElButton
+              v-if="form.executionConditions.checks.length > 1"
+              @click="form.executionConditions.checks.splice(index, 1)"
+              >移除此检查项</ElButton
+            >
+          </div>
+          <ElButton @click="form.executionConditions.checks.push(newCondition())"
+            >添加检查项</ElButton
+          >
+          <h3>适用条件</h3>
+          <template v-if="form.executionConditions.applicability">
+            <ConditionExpressionEditor v-model="form.executionConditions.applicability" />
+            <ElButton @click="delete form.executionConditions.applicability">移除适用限制</ElButton>
+          </template>
+          <ElButton v-else @click="form.executionConditions.applicability = newCondition()"
+            >设置适用条件</ElButton
+          >
+        </template>
       </ElForm>
       <p
         >适用范围：当前工程、节点

@@ -1,4 +1,5 @@
 import request from '@/axios'
+import type { RuleConditions } from '@/views/AIReviewB/ruleConditionModel'
 
 export interface ProjectRule {
   id: string
@@ -10,8 +11,12 @@ export interface ProjectRule {
   inspectionItem: string
   standardText: string
   witnessText: string
+  executionConditions?: RuleConditions
 }
-export type RuleDraftInput = Pick<ProjectRule, 'inspectionItem' | 'standardText' | 'witnessText'>
+export type RuleDraftInput = Pick<
+  ProjectRule,
+  'inspectionItem' | 'standardText' | 'witnessText' | 'executionConditions'
+>
 const base = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/rules/versions`
 const headers = (etag?: string) => ({
   'Idempotency-Key': crypto.randomUUID(),
