@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import ReviewDocumentVersions from './ReviewDocumentVersions.vue'
+import type { DocumentVersion } from '@/types/aicheck'
 import {
   ElAlert,
   ElButton,
@@ -43,6 +45,21 @@ const documents = ref<ReviewDocument[]>([])
 const chosen = ref<ReviewDocumentSelection['versions']>([])
 const mode = ref<ReviewDocumentSelection['reviewMode']>('gap_precheck')
 const preview = ref<{ url: string; title: string; type: string } | null>(null)
+const versionDocument = ref<{ id: string; fileName: string } | null>(null)
+const toggleVersion = (version: DocumentVersion, checked: boolean) => {
+  if (!versionDocument.value || saving.value) return
+  toggle(
+    {
+      id: version.documentId,
+      currentVersionId: version.id,
+      fileName: version.fileName || versionDocument.value.fileName,
+      bodyUploaded: Boolean(version.hash)
+    } as ReviewDocument,
+    checked
+  )
+  const selected = chosen.value.find((row) => row.versionId === version.id)
+  if (selected) selected.versionNo = version.versionNo || version.id
+}
 let generation = 0
 let searchGeneration = 0
 let previewGeneration = 0
@@ -171,6 +188,7 @@ watch(
     searchGeneration++
     previewGeneration++
     visible.value = false
+    versionDocument.value = null
     preview.value = null
     documents.value = []
     chosen.value = []
@@ -179,6 +197,7 @@ watch(
 )
 watch(visible, (value) => {
   if (!value) {
+    versionDocument.value = null
     searchGeneration++
     previewGeneration++
     loading.value = false
@@ -231,6 +250,12 @@ watch(visible, (value) => {
           >{{ item.currentOcrStatus || '待识别'
           }}{{ item.bodyUploaded === false ? ' · 文件未上传完整' : '' }}</span
         >
+        <ElButton
+          link
+          :disabled="saving"
+          @click="versionDocument = { id: item.id, fileName: item.fileName }"
+          >版本</ElButton
+        >
         <ElButton link :disabled="saving || !selectable(item)" @click="showPreview(item)"
           >预览</ElButton
         >
@@ -250,7 +275,7 @@ watch(visible, (value) => {
         :key="item.versionId"
         :closable="!saving"
         @close="chosen = chosen.filter((row) => row.versionId !== item.versionId)"
-        >{{ item.fileName }}</ElTag
+        >{{ item.fileName }} · {{ item.versionNo || item.versionId }}</ElTag
       >
     </div>
     <ElForm label-position="top">
@@ -278,6 +303,15 @@ watch(visible, (value) => {
       >
     </template>
   </ElDialog>
+  <ReviewDocumentVersions
+    v-if="versionDocument"
+    :project-id="projectId"
+    :document-id="versionDocument.id"
+    :file-name="versionDocument.fileName"
+    :selected-ids="[...chosenIds]"
+    @toggle="toggleVersion"
+    @close="versionDocument = null"
+  />
   <ElDialog
     :model-value="Boolean(preview)"
     :title="preview?.title"

@@ -40,3 +40,5 @@ CSS regression probe, not a logged-in workbench acceptance test.
 保存掛載驗收：同一組本地服務執行 `node e2e/lab-rules/check-document-bindings.mjs`。檢查固定版本、補充掛載、保存後遺失回應的冪等重試，以及寫入回應途中切換節點。測試橋接關閉嚴格 If-Match，不能取代生產並行編輯驗收。
 
 掛載腳本亦驗證整頁重新載入後重新選取相同版本，使用新操作編號仍沿用原掛載 ID；不代表多服務程序並行寫入驗收。
+
+歷史版本驗收：`node e2e/lab-rules/check-document-versions.mjs`。使用真實版本列表／original API 與臨時 PNG 夾具，驗證固定舊版、圖片解碼、空本體停用、原文缺失提示及保存保留。橋接按真實 Content-Type 傳回 Blob；不代表 PDF、完整登入或大型檔案驗收。

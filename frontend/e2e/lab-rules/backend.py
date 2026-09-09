@@ -33,6 +33,20 @@ for index in range(1, 24):
         "uploaderName": "测试", "poolSubmissionStatus": "已提交"})
     repo.state["versions"].append({"id": version_id, "documentId": document_id, "tenantId": "TENANT-DEFAULT",
         "hash": f"fixture-{index}" if index != 23 else None, "versionNo": 1, "isCurrent": True, "ocrStatus": "待识别"})
+import base64
+import tempfile
+from pathlib import Path
+from apps.api import routes
+originals = tempfile.TemporaryDirectory(prefix="aicheck-version-browser-")
+routes.WORKSPACE_ROOT = Path(originals.name)
+(Path(originals.name) / "historical.png").write_bytes(base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1ioAAAAASUVORK5CYII="))
+repo.state["versions"].extend([
+    {"id": "VER-PICK-1-OLD", "documentId": "DOC-PICK-1", "tenantId": "TENANT-DEFAULT", "versionNo": "V0",
+     "fileName": "historical.png", "fileType": "image/png", "hash": "historical-fixture", "isCurrent": False,
+     "storageKey": "local://historical.png"},
+    {"id": "VER-PICK-1-EMPTY", "documentId": "DOC-PICK-1", "tenantId": "TENANT-DEFAULT", "versionNo": "EMPTY",
+     "hash": None, "isCurrent": False}])
 client = TestClient(app)
 
 
@@ -43,7 +57,7 @@ class Handler(BaseHTTPRequestHandler):
             headers={"Content-Type": "application/json", "X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001",
                      **{key: value for key, value in self.headers.items() if key.lower() in {"if-match", "idempotency-key"}}})
         self.send_response(response.status_code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", response.headers.get("content-type", "application/json"))
         self.end_headers()
         self.wfile.write(response.content)
 
