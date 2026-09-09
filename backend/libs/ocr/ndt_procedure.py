@@ -16,6 +16,8 @@ LABELS = {
     "acceptance_level": ["验收级别"], "removal_method": ["渗透剂去除方法"],
     "emulsifier_application": ["乳化剂施加方法"],
     "application_status": ["应用状态"],
+    "detection_ratio_requirement": ["检测比例要求"],
+    "technical_grade_requirement": ["技术等级要求"],
 }
 
 
