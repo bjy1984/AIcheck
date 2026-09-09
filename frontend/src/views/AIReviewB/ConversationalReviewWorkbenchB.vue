@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { workstationNavigation, filterWorkstationNodes } from './workstationNavigation'
 import ReviewNodeOverview from './components/ReviewNodeOverview.vue'
+import ReviewDecisionSummary from './components/ReviewDecisionSummary.vue'
+import { needsAttention, overviewResult } from './workstationOverview'
 import ReviewWorkstationTools from './ReviewWorkstationTools.vue'
 import PipelineConflictDetails from './PipelineConflictDetails.vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
@@ -10,7 +12,7 @@ import {
   hasPipelineConflict,
   needsFreshReview
 } from './inputRecovery'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { blockingReasonsAsItems, buildSuggestedQuestions } from './suggestedQuestions'
@@ -108,6 +110,7 @@ import {
 } from '@/views/AIReviewB/embeddedReviewWorkbench'
 import {
   buildFinalConclusionPayload,
+  isConclusionConfirmationCurrent,
   canSubmitFinalConclusion
 } from '@/views/AIReviewB/finalConclusion'
 import type { ReturnCorrectionRequest } from '@/views/AIReviewB/returnCorrection'
@@ -598,8 +601,10 @@ const canRenderActiveTask = computed(() =>
 )
 const selectedEvidenceSummary = computed(() =>
   selectedEvidence.value.length
-    ? `已选择 ${selectedEvidence.value.length} 份文件资料`
-    : '尚未选择文件资料'
+    ? `已选择 ${selectedEvidence.value.length} ${workstationMode ? '条引用证据' : '份文件资料'}`
+    : workstationMode
+      ? '尚未选择引用证据'
+      : '尚未选择文件资料'
 )
 
 const humanizeStandardCode = (basis: ReviewBBasisItem) => {
@@ -1651,33 +1656,89 @@ const locateR19Evidence = (candidate: R19EvidenceCandidate) => {
   )
 }
 
+const reviewConfirmationOpen = ref(false)
 const handleSaveReviewOpinion = async () => {
-  if (!canSubmitReviewOpinion.value) return
+  if (!canSubmitReviewOpinion.value || actionLoading.value || reviewConfirmationOpen.value) return
   if (!reviewOpinion.value.trim()) {
     ElMessage.warning('请填写人工复核意见')
     return
   }
-  await ElMessageBox.confirm('是否保存当前节点的人工复核结论？', '保存人工复核结论', {
-    type: 'warning',
-    confirmButtonText: '确认保存',
-    cancelButtonText: '取消'
-  })
-  actionLoading.value = true
+  const projectId = activeProjectId.value
+  const nodeId = activeNodeId.value
+  const context = reviewContextGeneration.value
+  const etag = workspace.value?.project.etag
+  const isCurrent = () =>
+    context === reviewContextGeneration.value &&
+    projectId === activeProjectId.value &&
+    nodeId === activeNodeId.value
+  const payload = buildFinalConclusionPayload(
+    reviewResult.value,
+    reviewOpinion.value,
+    selectedEvidence.value
+  )
+  const included = new Set(payload.evidenceLinkIds)
+  const result = workspace.value ? overviewResult(workspace.value) : undefined
+  const issues = (result?.findingDrafts || [])
+    .filter(needsAttention)
+    .map((item, index) => String(item.title || item.summary || `待核对事项 ${index + 1}`))
+  reviewConfirmationOpen.value = true
   try {
-    await saveReviewOpinionApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      buildFinalConclusionPayload(reviewResult.value, reviewOpinion.value, selectedEvidence.value),
+    await ElMessageBox.confirm(
+      workstationMode
+        ? h(ReviewDecisionSummary, {
+            nodeLabel: `${nodeId}. ${currentNode.value?.name || ''}`,
+            result: payload.result,
+            opinion: payload.opinion,
+            evidence: selectedEvidence.value
+              .filter((item) => included.has(item.id))
+              .map((item) => ({
+                id: item.id,
+                fileName: item.fileName || '未命名证据',
+                versionId: item.documentVersionId,
+                pageNo: item.pageNo
+              })),
+            excludedCount: selectedEvidence.value.length - payload.evidenceLinkIds.length,
+            issues,
+            noResult: !result,
+            stale: inputChanged.value,
+            hasTask: Boolean(activeTask.value)
+          })
+        : '是否保存当前节点的人工复核结论？',
+      '保存前，再核对一下',
       {
-        etag: workspace.value?.project.etag
+        confirmButtonText: '确认保存',
+        cancelButtonText: '返回修改',
+        customStyle: workstationMode ? { width: '680px', maxWidth: '94vw' } : undefined
       }
     )
+  } catch {
+    return
+  } finally {
+    reviewConfirmationOpen.value = false
+  }
+  if (
+    !isConclusionConfirmationCurrent(
+      { projectId, nodeId, generation: context, etag },
+      {
+        projectId: activeProjectId.value,
+        nodeId: activeNodeId.value,
+        generation: reviewContextGeneration.value,
+        etag: workspace.value?.project.etag
+      }
+    ) ||
+    !canSubmitReviewOpinion.value
+  ) {
+    ElMessage.warning('节点或工程资料已变化，请重新核对后保存。')
+    return
+  }
+  actionLoading.value = true
+  try {
+    await saveReviewOpinionApi(projectId, nodeId, payload, { etag })
     ElMessage.success('人工复核结论已保存')
-    // 清空输入框：内容已经保存，上方的「已保存」区块会把它显示出来。
-    // 不清空的话，页面看起来和保存前一模一样——监检据此认为没存成功，
-    // 于是再点一次。同一节点因此攒下过 3 条重复的「证据不足」。
-    reviewOpinion.value = ''
-    await refreshLiveState()
+    if (isCurrent()) {
+      reviewOpinion.value = ''
+      await refreshLiveState()
+    }
   } catch (error) {
     ElMessage.error(getAicheckErrorMessage(error, '人工复核结论保存失败。'))
   } finally {
@@ -2536,7 +2597,8 @@ onBeforeUnmount(() => {
 
           <section class="side-card evidence-workset">
             <div class="side-card-title">
-              <h2>文件资料</h2><small>{{ selectedEvidenceSummary }}</small>
+              <h2>{{ workstationMode ? '已选引用证据' : '文件资料' }}</h2
+              ><small>{{ selectedEvidenceSummary }}</small>
             </div>
             <div v-for="evidence in selectedEvidence" :key="evidence.id" class="selected-evidence">
               <div>
@@ -2561,7 +2623,13 @@ onBeforeUnmount(() => {
                 <ElButton text @click="toggleEvidenceSelection(evidence)">移除</ElButton>
               </div>
             </div>
-            <ElEmpty v-if="!selectedEvidence.length" description="暂无文件资料" :image-size="52" />
+            <ElEmpty
+              v-if="!selectedEvidence.length"
+              :description="
+                workstationMode ? '尚未选择引用证据，审查文件请在本次资料中查看。' : '暂无文件资料'
+              "
+              :image-size="52"
+            />
           </section>
 
           <section class="side-card quick-actions">
