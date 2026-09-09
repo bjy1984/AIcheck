@@ -32,6 +32,7 @@ from typing import Any
 
 from libs.contracts.responses import business_today
 from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
+from libs.review_input_data import selected_parse_results
 
 from .deterministic_tools import parse_date as _iso_parse_date
 
@@ -193,20 +194,26 @@ def build_certificate_facts(
     project_id: str,
     node_id: int,
     document_version_ids: list[str] | set[str] | tuple[str, ...],
+    *,
+    review_run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """返回 {"certificateFacts": {...}, "<legacyNamespace>": {...}, "project": {...}}。"""
     profile = certificate_profile_for_node(node_id)
     if not profile:
         return {}
     requested = {str(item) for item in document_version_ids or [] if item}
+    if review_run is not None and (str(review_run.get("projectId")) != project_id
+            or int(review_run.get("nodeId") or 0) != node_id
+            or requested != set(review_run.get("inputDocumentVersionIds") or [])):
+        raise ValueError("certificate_review_scope_mismatch")
+    source_run = review_run if review_run is not None else {
+        "projectId": project_id, "nodeId": node_id, "inputDocumentVersionIds": sorted(requested)}
     documents = _documents_by_version(state, project_id)
     items: list[dict[str, Any]] = []
     considered: list[dict[str, Any]] = []
-    for parse_result in state.get("ocr_parse_results") or []:
-        if not isinstance(parse_result, dict):
-            continue
+    for parse_result in selected_parse_results(state, {}, context={"reviewRun": source_run}):
         version_id = str(parse_result.get("documentVersionId") or "")
-        if not version_id or (requested and version_id not in requested):
+        if not version_id or version_id not in documents:
             continue
         if str(parse_result.get("status") or "success") not in {"success", "succeeded", "已识别", "人工修正", ""}:
             continue
@@ -685,7 +692,9 @@ def merge_certificate_facts(
     节点 24 已有焊工证 builder，这里只补 certificateFacts 与 project 期间；其余节点
     此前根本没有 fact builder，绑定的 check_date_covers 等工具拿到空事实恒为证据不足。
     """
-    merged = business_facts if isinstance(business_facts, dict) else {}
+    scoped = "documentScopeSnapshot" in review_run
+    merged = deepcopy(business_facts) if scoped and isinstance(business_facts, dict) else business_facts
+    merged = merged if isinstance(merged, dict) else {}
     node_id = int(review_run.get("nodeId") or 0)
     if not certificate_profile_for_node(node_id):
         return merged
@@ -694,9 +703,12 @@ def merge_certificate_facts(
         str(review_run.get("projectId") or ""),
         node_id,
         list(review_run.get("inputDocumentVersionIds") or []),
+        review_run=review_run,
     )
     for key, value in certificate_facts.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+        if scoped:
+            merged[key] = {**merged[key], **value} if isinstance(value, dict) and isinstance(merged.get(key), dict) else value
+        elif isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = {**value, **{k: v for k, v in merged[key].items() if v not in (None, [], {})}}
         else:
             merged.setdefault(key, value)

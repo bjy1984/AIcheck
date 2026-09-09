@@ -62,3 +62,23 @@ def test_merge_fills_project_pipelines_and_grades_but_never_overrides_upstream()
     upstream = {"project": {"pipelines": [{"pipelineId": "X"}], "pipelineGrade": "GC1"}}
     assert merge_project_pipelines(state, run, upstream)["project"]["pipelines"] == [{"pipelineId": "X"}]
     assert merge_project_pipelines({"documents": [], "ocr_parse_results": []}, run, None) == {}
+
+
+def test_frozen_run_pipeline_merge_cannot_reuse_unselected_upstream_facts():
+    import pytest
+
+    from libs.review_document_scope import freeze_document_scope
+
+    state = _state()
+    run = {"projectId": "P-1", "nodeId": 4, "inputDocumentVersionIds": []}
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    upstream = {"project": {"pipelines": [{"pipelineId": "UNSELECTED"}], "pipelineGrades": ["GC1"]}}
+    assert merge_project_pipelines(state, run, upstream)["project"] == {
+        "pipelines": [], "pipelineGrades": [], "pipelineCount": 0}
+    assert upstream["project"]["pipelines"][0]["pipelineId"] == "UNSELECTED"
+    run["inputDocumentVersionIds"] = ["V-DESIGN"]
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    assert merge_project_pipelines(state, run, upstream)["project"]["pipelineCount"] == 2
+    state["ocr_parse_results"][0]["tables"][0]["normalizedRows"][0]["设计压力"] = "99"
+    with pytest.raises(ValueError, match="sources_changed"):
+        merge_project_pipelines(state, run, upstream)

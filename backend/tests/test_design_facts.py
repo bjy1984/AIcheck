@@ -217,3 +217,23 @@ def test_design_standard_references_feed_r08_version_check() -> None:
     assert outcome["result"] == "failed", "引用了已废止的 TSG D0001-2009"
     failed = [item for item in outcome["checks"] if not item["passed"]]
     assert [item["code"] for item in failed] == ["TSG D0001-2009"]
+
+
+def test_design_run_uses_only_selected_documents_and_pipeline_sources():
+    import pytest
+
+    from libs.review_document_scope import freeze_document_scope
+
+    state = _state()
+    run = {"projectId": "P-1", "nodeId": 6, "inputDocumentVersionIds": []}
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    assert build_design_business_facts(state, run)["designDocuments"]["documents"] == []
+    run["inputDocumentVersionIds"] = ["V-CALC"]
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    result = build_design_business_facts(state, run)
+    assert [row["documentVersionId"] for row in result["designDocuments"]["documents"]] == ["V-CALC"]
+    state["ocr_parse_results"][1]["tables"][0]["normalizedRows"][0]["设计压力"] = "99"
+    assert build_design_business_facts(state, run) == result
+    state["ocr_parse_results"][2]["fragments"][0]["text"] = "CHANGED"
+    with pytest.raises(ValueError, match="sources_changed"):
+        build_design_business_facts(state, run)

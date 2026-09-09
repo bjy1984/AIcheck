@@ -6,7 +6,8 @@ executor.project_pipeline_facts），"逐管线判"实际是"整个工程一刀�
 
 这里把 R14 的抽取提升为工程级：扫描本工程全部已解析资料（管道特性表通常挂在设计节点，
 不在当前节点的输入里），按管线号去重，输出 pipelineId / 级别 / P / T / 材质 / 规格 / 介质
-与证据位置，并合并进 businessFacts.project：
+与证据位置，并合并进 businessFacts.project。带 documentScopeSnapshot 的新任务仅扫描固定输入，
+并重建管线及级别列表；以下兼容行为只适用于无快照历史任务：
 - 已有非空 project.pipelines（例如上游工具已给）不覆盖；
 - 同时补 project.pipelineGrades（R01/R02 的 requiredPipelineGrades 用它）。
 """
@@ -16,6 +17,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.certificate_facts import _documents_by_version
 from libs.review_orchestrator.r14_facts import _extract_pipeline_characteristics, _value
 
@@ -74,11 +76,15 @@ def _completeness(pipeline: dict[str, Any]) -> int:
     return sum(1 for key in ("pipelineGrade", "designPressureMPa", "designTemperatureC", "material", "specification") if pipeline.get(key) not in (None, ""))
 
 
-def build_project_pipelines(state: dict[str, Any], project_id: str) -> list[dict[str, Any]]:
+def build_project_pipelines(state: dict[str, Any], project_id: str, *, review_run: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """本工程全部已解析资料里的管道特性表 → 按管线号去重的逐管线事实（信息更全的一行优先）。"""
+    if review_run is not None and str(review_run.get("projectId") or "") != project_id:
+        raise ValueError("pipeline_review_scope_mismatch")
     versions = _documents_by_version(state, project_id)
     by_line: dict[str, dict[str, Any]] = {}
-    for parse_result in state.get("ocr_parse_results") or []:
+    parses = (selected_parse_results(state, {}, context={"reviewRun": review_run})
+              if review_run is not None else state.get("ocr_parse_results") or [])
+    for parse_result in parses:
         if not isinstance(parse_result, dict):
             continue
         version_id = str(parse_result.get("documentVersionId") or "")
@@ -102,16 +108,18 @@ def merge_project_pipelines(
 ) -> dict[str, Any]:
     merged = deepcopy(facts) if isinstance(facts, dict) else {}
     project = merged.get("project") if isinstance(merged.get("project"), dict) else {}
-    if isinstance(project.get("pipelines"), list) and project["pipelines"]:
+    scoped = "documentScopeSnapshot" in review_run
+    if not scoped and isinstance(project.get("pipelines"), list) and project["pipelines"]:
         return merged
-    pipelines = build_project_pipelines(state, str(review_run.get("projectId") or ""))
-    if not pipelines:
+    pipelines = build_project_pipelines(state, str(review_run.get("projectId") or ""),
+                                       review_run=review_run if scoped else None)
+    if not pipelines and not scoped:
         return merged
     project = dict(project)
     project["pipelines"] = pipelines
     project["pipelineCount"] = len(pipelines)
     grades = list(dict.fromkeys(item["pipelineGrade"] for item in pipelines if item.get("pipelineGrade")))
-    if grades and not project.get("pipelineGrades"):
+    if scoped or (grades and not project.get("pipelineGrades")):
         project["pipelineGrades"] = grades
     merged["project"] = project
     return merged

@@ -223,3 +223,53 @@ def test_被分类成制造许可证的安装许可证按正文归入安装单�
     assert certs[0]["validUntil"] == "2026-12-25" and certs[0]["holder"] == "江苏三江机电工程有限公司"
     # 设计单位节点不会误收：正文没有「设计」类标记
     assert build_certificate_facts(state, "P-1", 1, ["DV-INS"])["certificateFacts"]["certificates"] == []
+
+
+def test_certificate_scope_rejects_foreign_documents_and_empty_inputs():
+    from copy import deepcopy
+
+    state = _state_with_design_license()
+    foreign = deepcopy(state["ocr_parse_results"][0])
+    foreign["documentVersionId"] = "FOREIGN"
+    state["ocr_parse_results"].append(foreign)
+    state["documents"].append({"id": "OTHER", "projectId": "OTHER", "currentVersionId": "FOREIGN"})
+    assert build_certificate_facts(state, "P-1", 1, [])["certificateFacts"]["certificates"] == []
+    assert build_certificate_facts(state, "P-1", 1, ["FOREIGN"])["certificateFacts"]["certificates"] == []
+
+
+def test_certificate_merge_honors_frozen_sources_and_human_corrections():
+    import pytest
+
+    from libs.review_document_scope import freeze_document_scope
+    from libs.review_orchestrator.certificate_facts import merge_certificate_facts
+
+    state = _state_with_design_license()
+    run = {"projectId": "P-1", "nodeId": 1, "inputDocumentVersionIds": ["DV-1"]}
+    state["fact_corrections"] = [{"id": "C", "projectId": "P-1", "nodeId": 1, "documentVersionId": "DV-1",
+        "fieldId": "F", "fieldName": "许可证编号", "correctedValue": "CORRECTED", "status": "active"}]
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    result = merge_certificate_facts(state, run, {})
+    assert result["certificateFacts"]["certificates"][0]["certificateNo"] == "CORRECTED"
+    state["fact_corrections"][0]["correctedValue"] = "CHANGED"
+    with pytest.raises(ValueError, match="sources_changed"):
+        merge_certificate_facts(state, run, {})
+
+
+
+def test_frozen_empty_certificate_merge_clears_previous_certificates_without_mutating_input():
+    from copy import deepcopy
+
+    from libs.review_document_scope import freeze_document_scope
+    from libs.review_orchestrator.certificate_facts import merge_certificate_facts
+
+    state = _state_with_design_license()
+    old = build_certificate_facts(state, "P-1", 1, ["DV-1"])
+    original = deepcopy(old)
+    run = {"projectId": "P-1", "nodeId": 1, "inputDocumentVersionIds": []}
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    result = merge_certificate_facts(state, run, old)
+    assert result["certificateFacts"]["certificates"] == []
+    namespace = certificate_profile_for_node(1)["legacyNamespace"]
+    assert result[namespace]["certificateNo"] is None
+    assert result[namespace]["certificates"] == []
+    assert old == original

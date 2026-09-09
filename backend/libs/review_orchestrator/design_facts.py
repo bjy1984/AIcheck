@@ -29,6 +29,7 @@ from libs.regulatory_tables import (
     volumetric_ndt_ratio,
 )
 from libs.review_grounding import REGULATION_CODE_RE
+from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
 from libs.standard_timeline import standard_reference_fact
@@ -150,9 +151,9 @@ def build_design_business_facts(
     known_pipeline_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     project_id = str(review_run.get("projectId") or "")
-    requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
     versions = _documents_by_version(state, project_id)
-    pipelines = build_project_pipelines(state, project_id)
+    pipelines = build_project_pipelines(state, project_id,
+                                       review_run=review_run if "documentScopeSnapshot" in review_run else None)
     if known_pipeline_ids is None:
         known_pipeline_ids = {str(item.get("pipelineId")) for item in pipelines if item.get("pipelineId")}
     texts: dict[str, str] = {}
@@ -162,11 +163,9 @@ def build_design_business_facts(
     parseable: list[str] = []
     catalog: list[str] = []
     unclassified: list[dict[str, Any]] = []
-    for parse_result in state.get("ocr_parse_results") or []:
-        if not isinstance(parse_result, dict):
-            continue
+    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
         version_id = str(parse_result.get("documentVersionId") or "")
-        if not version_id or version_id not in versions or (requested and version_id not in requested):
+        if not version_id or version_id not in versions:
             continue
         document = versions.get(version_id) or {}
         file_name = str(document.get("fileName") or parse_result.get("fileName") or "")
