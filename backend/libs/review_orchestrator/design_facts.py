@@ -21,16 +21,18 @@ from typing import Any
 
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
 from libs.regulatory_tables import (
-    acceptance_level_meets,
     inspection_level_for_grade,
     medium_hazard_flags,
-    ndt_acceptance_level,
     pressure_test_ratios,
     volumetric_ndt_ratio,
 )
 from libs.review_grounding import REGULATION_CODE_RE
 from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
+from libs.review_orchestrator.design_ndt_requirements import (
+    design_ndt_requirements,
+    method_value_summary,
+)
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
 from libs.standard_timeline import standard_reference_fact
 
@@ -310,9 +312,6 @@ def design_changes(documents: list[dict[str, Any]], parse_results: dict[str, dic
 
 
 # ── N-16/N-17：设计文件上注明的无损检测 / 防腐 / 耐压试验 / 泄漏试验要求 ──────────────
-_NDT_METHOD_RE = re.compile(r"(射线|超声|渗透|磁粉|RT|UT|PT|MT|TOFD)", re.IGNORECASE)
-_NDT_COVERAGE_RE = re.compile(r"(?:检测比例|抽检比例|检测率|比例)\s*[:：]?\s*(?:不低于|不少于|≥|>=)?\s*(\d{1,3})\s*%")
-_NDT_LEVEL_RE = re.compile(r"([ⅠⅡⅢⅣIVX]{1,3}|[1-4])\s*级\s*(?:合格|为合格)?")
 _CORROSION_RE = re.compile(r"(防腐|涂层|涂料|油漆|环氧|喷砂|除锈|镀锌|保温)")
 _COATING_CRITERIA_RE = re.compile(r"(涂层厚度\s*[:：]?\s*(?:不小于|≥|>=)?\s*\d+\s*(?:μm|um|微米)|附着力[^\n。；;]{0,20}|除锈等级\s*[:：]?\s*Sa\s*\d(?:\.\d)?)")
 _PRESSURE_METHOD_RE = re.compile(r"(液压试验|水压试验|气压试验|气液组合|耐压试验|压力试验)")
@@ -347,9 +346,9 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     source = source or {}
     max_design_pressure = max((float(item["designPressureMPa"]) for item in pipelines if isinstance(item.get("designPressureMPa"), int | float)), default=None)
 
-    ndt_methods = list(dict.fromkeys(match.group(1).upper() for match in _NDT_METHOD_RE.finditer(text)))
-    coverage = _NDT_COVERAGE_RE.search(text)
-    level = _NDT_LEVEL_RE.search(text)
+    ndt_details = design_ndt_requirements(text)
+    ndt_methods = ndt_details["methods"]
+    coverage_pct = ndt_details["coveragePercent"]
     # 按管线级别推缺省检查等级与体积检测比例（GB/T 20801.1-2025 8.3.1 / 表 42）：取本工程最严的一条
     # GC2 的等级看介质：有毒 → Ⅲ、泄漏危害性 → Ⅱ，都比缺省的 Ⅳ 严。
     # 资料没写毒性/泄漏危害性时不按 Ⅳ 一口咬定——那会把比例要求降下来，
@@ -370,35 +369,28 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     level_rank = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
     strictest = min((lvl for lvl in grade_levels if lvl), key=lambda lvl: level_rank.get(lvl, 9), default=None)
     required_ratio_pct = volumetric_ndt_ratio(strictest) if not undetermined else None
-    coverage_pct = int(coverage.group(1)) if coverage else None
-    # 合格级别按检查比例定（8.3.2.2/8.3.2.3）：射线 100% 要 Ⅱ 级、局部 Ⅲ 级；
-    # 超声 100% 要 Ⅰ 级、局部 Ⅱ 级。设计写"验收等级 Ⅲ级"配 100% 射线是不合格的，
-    # 此前只把这个字段抄出来，没有任何地方拿它跟标准比。
-    required_acceptance = next(
-        (found for method in ndt_methods if (found := ndt_acceptance_level(method, coverage_percent=coverage_pct))),
-        None,
-    )
-    acceptance_ok = (
-        acceptance_level_meets(level.group(1), required_acceptance["level"])
-        if level and required_acceptance
-        else None
-    )
+    required_acceptance = ndt_details["requiredAcceptance"]
+    acceptance_ok = ndt_details["acceptanceLevelMeetsRequirement"]
+    method_rows = ndt_details["methodRequirements"]
+    known_ratios = [row["coveragePercent"] for row in method_rows]
+    coverage_ok = all(ratio >= required_ratio_pct for ratio in known_ratios) if required_ratio_pct is not None and known_ratios and all(ratio is not None for ratio in known_ratios) else None
     ndt = _domain(
-        bool(ndt_methods and (coverage or level)) or bool(re.search(r"无损检测", text) and ndt_methods),
+        bool(ndt_methods and any(row["coveragePercent"] is not None or row["acceptanceLevel"] for row in method_rows)) or bool(re.search(r"无损检测", text) and ndt_methods),
         {
             "method": "、".join(ndt_methods) or None,
-            "coverage": f"{coverage.group(1)}%" if coverage else None,
+            "coverage": method_value_summary(method_rows, "coveragePercent", "%"),
             "coveragePercent": coverage_pct,
-            "acceptanceCriteria": f"{level.group(1)}级" if level else None,
+            "acceptanceCriteria": method_value_summary(method_rows, "acceptanceLevel", "级"),
             "requiredAcceptanceLevel": required_acceptance.get("level") if required_acceptance else None,
             "requiredAcceptanceTechnique": required_acceptance.get("technique") if required_acceptance else None,
             "acceptanceLevelMeetsRequirement": acceptance_ok,
+            "methodRequirements": ndt_details["methodRequirements"],
             "requiredInspectionLevel": strictest,
             "requiredCoveragePercent": required_ratio_pct,
             # 这些 GC2 管线的检查等级取决于介质毒性/泄漏危害性，资料里没写，按缺省 Ⅳ 级算出来的
             # 比例可能偏低——把管线号列出来让人去补，而不是让它悄悄过去
             "inspectionLevelUndeterminedPipelines": undetermined or None,
-            "coverageMeetsRequirement": (coverage_pct >= required_ratio_pct) if coverage_pct is not None and required_ratio_pct is not None else None,
+            "coverageMeetsRequirement": coverage_ok,
         },
         standard_refs,
         source,
