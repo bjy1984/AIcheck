@@ -14,7 +14,7 @@ import {
   ElRadioGroup,
   ElTag
 } from 'element-plus'
-import { getDocumentDetailApi } from '@/api/aicheck'
+import { bindInspectionDocumentsApi, getDocumentDetailApi } from '@/api/aicheck'
 import {
   listReviewDocuments,
   type ReviewDocument,
@@ -24,13 +24,17 @@ import {
 const props = defineProps<{
   projectId: string
   nodeId: number
+  projectEtag?: string
   disabled?: boolean
   selection: ReviewDocumentSelection | null
 }>()
-const emit = defineEmits<{ change: [selection: ReviewDocumentSelection | null] }>()
+const emit = defineEmits<{ change: [selection: ReviewDocumentSelection | null]; bound: [] }>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
 const loading = ref(false)
+const saving = ref(false)
+const persistBindings = ref(false)
+const bindingAttempts = new Map<string, string>()
 const error = ref('')
 const keyword = ref('')
 const page = ref(1)
@@ -67,6 +71,8 @@ const load = async () => {
   }
 }
 const open = () => {
+  if (saving.value) return
+  persistBindings.value = false
   chosen.value = props.selection?.versions.map((item) => ({ ...item })) || []
   mode.value = props.selection?.reviewMode || 'gap_precheck'
   keyword.value = ''
@@ -75,6 +81,7 @@ const open = () => {
   void load()
 }
 const toggle = (item: ReviewDocument, checked: boolean) => {
+  if (saving.value) return
   if (checked && selectable(item) && !chosenIds.value.has(item.currentVersionId)) {
     if (chosen.value.length >= 500) {
       error.value = '本次最多选择 500 份文件。'
@@ -92,12 +99,47 @@ const search = () => {
   page.value = 1
   void load()
 }
-const save = () => {
-  if (!chosen.value.length || props.disabled) return
-  emit('change', { versions: chosen.value.map((item) => ({ ...item })), reviewMode: mode.value })
+const save = async () => {
+  if (!chosen.value.length || props.disabled || saving.value) return
+  const context = generation
+  const projectId = props.projectId
+  const nodeId = props.nodeId
+  const selection = { versions: chosen.value.map((item) => ({ ...item })), reviewMode: mode.value }
+  if (persistBindings.value) {
+    const bindings = selection.versions
+      .map((item) => ({
+        documentId: item.documentId,
+        documentVersionId: item.versionId,
+        usage: '监检资料' as const
+      }))
+      .sort((a, b) => a.documentVersionId.localeCompare(b.documentVersionId))
+    const fingerprint = JSON.stringify({ projectId, nodeId, bindings })
+    const idempotencyKey = bindingAttempts.get(fingerprint) || `review-files-${crypto.randomUUID()}`
+    bindingAttempts.set(fingerprint, idempotencyKey)
+    saving.value = true
+    error.value = ''
+    try {
+      await bindInspectionDocumentsApi(projectId, nodeId, bindings, {
+        etag: props.projectEtag,
+        idempotencyKey
+      })
+      if (context !== generation) return
+      emit('bound')
+    } catch {
+      if (context === generation)
+        error.value =
+          '节点挂载未确认成功，已选文件仍保留。可重试；若工程已更新，请刷新工作台后再保存。'
+      return
+    } finally {
+      saving.value = false
+    }
+  }
+  if (context !== generation) return
+  emit('change', selection)
   visible.value = false
 }
 const useNodeDocuments = () => {
+  if (saving.value || props.disabled) return
   emit('change', null)
   visible.value = false
 }
@@ -145,7 +187,7 @@ watch(visible, (value) => {
 </script>
 
 <template>
-  <ElButton v-if="enabled" :disabled="disabled || !projectId || !nodeId" @click="open">
+  <ElButton v-if="enabled" :disabled="saving || disabled || !projectId || !nodeId" @click="open">
     {{ selection ? `本次文件 ${selection.versions.length} 份` : '选择本次文件' }}
   </ElButton>
   <ElDialog
@@ -153,11 +195,13 @@ watch(visible, (value) => {
     title="选择本次审查文件"
     width="min(900px, 94vw)"
     :close-on-click-modal="false"
+    :close-on-press-escape="!saving"
+    :show-close="!saving"
   >
     <ElAlert
       type="info"
       :closable="false"
-      title="保存后，本次审查仅使用所选文件版本；不会修改节点挂载。取消则保留原选择。"
+      title="本次审查仅使用所选文件版本。默认仅本次使用；勾选下方选项可同时保存为节点补充资料。"
     />
     <ElAlert v-if="error" type="error" :closable="false" :title="error" />
     <ElForm label-position="top" class="document-picker-search" @submit.prevent="search">
@@ -178,7 +222,7 @@ watch(visible, (value) => {
       >
         <ElCheckbox
           :model-value="chosenIds.has(item.currentVersionId)"
-          :disabled="!selectable(item)"
+          :disabled="saving || !selectable(item)"
           @change="(value) => toggle(item, Boolean(value))"
         >
           {{ item.fileName }}
@@ -187,7 +231,9 @@ watch(visible, (value) => {
           >{{ item.currentOcrStatus || '待识别'
           }}{{ item.bodyUploaded === false ? ' · 文件未上传完整' : '' }}</span
         >
-        <ElButton link :disabled="!selectable(item)" @click="showPreview(item)">预览</ElButton>
+        <ElButton link :disabled="saving || !selectable(item)" @click="showPreview(item)"
+          >预览</ElButton
+        >
       </div>
     </div>
     <ElPagination
@@ -202,25 +248,33 @@ watch(visible, (value) => {
       <ElTag
         v-for="item in chosen"
         :key="item.versionId"
-        closable
+        :closable="!saving"
         @close="chosen = chosen.filter((row) => row.versionId !== item.versionId)"
         >{{ item.fileName }}</ElTag
       >
     </div>
     <ElForm label-position="top">
       <ElFormItem label="本次审查方式">
-        <ElRadioGroup v-model="mode">
+        <ElRadioGroup v-model="mode" :disabled="saving">
           <ElRadioButton value="gap_precheck">缺项预审</ElRadioButton>
           <ElRadioButton value="formal">正式复核</ElRadioButton>
         </ElRadioGroup>
       </ElFormItem>
     </ElForm>
+    <ElCheckbox v-model="persistBindings" :disabled="saving"> 同时保存为本节点补充资料 </ElCheckbox>
+    <p v-if="persistBindings"
+      >按所选版本新增挂载，不替换原挂载或自动匹配必传要求；未提交的版本仍需提交。旧版本不会自动成为正式审查证据。</p
+    >
     <p>正式复核会重新检查所选文件是否满足要求；仅选择文件不会自动确认其证据。</p>
     <template #footer>
-      <ElButton :disabled="disabled" @click="useNodeDocuments">恢复使用节点资料</ElButton>
-      <ElButton @click="visible = false">取消</ElButton>
-      <ElButton type="primary" :disabled="!chosen.length || disabled" @click="save"
-        >保存本次选择</ElButton
+      <ElButton :disabled="disabled || saving" @click="useNodeDocuments">恢复使用节点资料</ElButton>
+      <ElButton :disabled="saving" @click="visible = false">取消</ElButton>
+      <ElButton
+        type="primary"
+        :loading="saving"
+        :disabled="!chosen.length || disabled || saving"
+        @click="save"
+        >{{ persistBindings ? '保存选择并挂载' : '保存本次选择' }}</ElButton
       >
     </template>
   </ElDialog>

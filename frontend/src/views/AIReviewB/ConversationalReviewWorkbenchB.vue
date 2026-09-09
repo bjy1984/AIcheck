@@ -1789,8 +1789,10 @@ onBeforeUnmount(() => {
             :project-id="activeProjectId"
             :node-id="activeNodeId"
             :selection="reviewDocumentSelection"
+            :project-etag="workspace?.project.etag"
             :disabled="actionLoading || workspace?.permissions.canManageEvidence !== true"
             @change="reviewDocumentSelection = $event"
+            @bound="refreshLiveState"
           />
           <div v-if="!props.embedded" class="run-meta">
             <ProjectRuleEditor
