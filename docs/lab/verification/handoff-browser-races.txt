@@ -1,0 +1,1 @@
+PASS: original workstation component; late project response, 503 without false zero, recovery, wrong-project rejection, unmount/remount; no page errors

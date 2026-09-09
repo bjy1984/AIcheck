@@ -86,3 +86,8 @@ workstation-tools.html掛載真實共用工具區及三個子元件，API由測�
 
 
 結果優先工作台原型：同一 Vite 配置以4394啟動後開啟 `/e2e/lab-rules/workstation-overview.html`；`node e2e/lab-rules/check-workstation-overview.mjs` 驗證六態、待核對／全部、原有工具入口、inline與彈窗、指定版本請求及版本切換、原文不可用、鍵盤和390／900／1440深淺色。原型入口攔截列表為合成資料並拒絕寫入；原文GET由測試攔截。這不是完整登入工作台或服務實機驗收。
+
+
+### 工位切换竞态
+
+`node e2e/lab-rules/check-handoff-races.mjs` 在已有 4394 隔离 Vite 服务运行时执行；入口 handoff-races.html 直接挂载现有 WorkstationProjectTree，合成两个工程，由 Playwright 控制交接 GET 回应。不会执行模型或保存业务数据。覆盖跨工程迟到响应、503 不显示零待办、恢复、回传工程错误、卸载后响应与重新挂载。测试等待请求完成和浏览器渲染后才断言迟到响应无影响；不替代真实登录工程验收。
