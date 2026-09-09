@@ -197,6 +197,9 @@ def build_tool_arguments(
     evidence_refs: list[dict[str, Any]],
 ) -> dict[str, Any]:
     arguments = {**dict(binding.get("parameters") or {}), **explicit}
+    if tool_name == "evaluate_r37_progressive_inspection" and "event" not in arguments:
+        for key in ("projectId", "organizationId", "progressiveInventory", "progressiveEvents", "inspectionBatches", "inspectionBatchMembers", "progressiveReports"):
+            arguments.setdefault(key, deepcopy(nested_dict(facts, "r37").get(key)))
     if tool_name == "evaluate_r37_reinspection" and "case" not in arguments:
         for key in ("projectId", "organizationId", "applicability", "caseInventory", "originalInspections", "dispositions", "reinspections"):
             arguments.setdefault(key, deepcopy(nested_dict(facts, "r37").get(key)))

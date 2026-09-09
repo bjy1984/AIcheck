@@ -413,7 +413,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_ndt_nonconformance"
             else {"projectId": "string", "organizationId": "string", "case": "object?", "originalInspection": "object?", "disposition": "object?", "caseInventory": "object?", "originalInspections": ["object?"], "dispositions": ["object?"], "reinspections": ["object"]}
             if name == "evaluate_r37_reinspection"
-            else {"projectId": "string", "organizationId": "string", "event": "object", "batch": "object", "firstReports": ["object"], "secondReports": ["object"], "fullReports": ["object"]}
+            else {"projectId": "string", "organizationId": "string", "event": "object?", "batch": "object?", "firstReports": ["object?"], "secondReports": ["object?"], "fullReports": ["object?"], "progressiveInventory": "object?", "progressiveEvents": ["object?"], "inspectionBatches": ["object?"], "inspectionBatchMembers": ["object?"], "progressiveReports": ["object?"]}
             if name == "evaluate_r37_progressive_inspection"
             else {
                 "designItems": ["object"],

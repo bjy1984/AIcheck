@@ -9,9 +9,12 @@ from datetime import datetime
 from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import result
+from libs.review_tools.r37_progressive_set import evaluate_progressive_set
 
 
 def evaluate_r37_progressive_inspection(arguments: dict[str, Any]) -> dict[str, Any]:
+    if "progressiveInventory" in arguments:
+        return evaluate_progressive_set(arguments, evaluate_r37_progressive_inspection)
     project, organization = arguments.get("projectId"), arguments.get("organizationId")
     event, batch = arguments.get("event"), arguments.get("batch")
     evidence, repair = [], set()
