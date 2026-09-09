@@ -6,6 +6,7 @@ from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_tools.r39_reference import SCOPE_FIELDS
 
 SOURCE_GROUPS = {
+    "ptEmulsifierApplication": ("ptContexts", "ptBases", "ptProcesses"),
     "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
     "firstUseValidation": ("applications", "bases", "validations"),
     "approvalChain": ("approvalContexts", "requirements", "steps", "signatureInventories", "signatures"),

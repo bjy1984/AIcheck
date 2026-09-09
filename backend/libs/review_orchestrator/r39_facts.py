@@ -6,6 +6,7 @@ from typing import Any
 
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.r39_pt_facts import pt_application_input
 from libs.review_orchestrator.r39_reference_facts import reference_input
 from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
 from libs.review_tools.r39_approval import SCOPE_FIELDS
@@ -13,6 +14,7 @@ from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_tools import IDENTITY_FIELDS
 
 R39_TABLES = {
+    "ndt_pt_context": "ptContexts", "ndt_pt_basis": "ptBases", "ndt_pt_process": "ptProcesses",
     "ndt_reference_inventory": "referenceInventories", "ndt_reference_members": "referenceMembers",
     "ndt_reference_context": "referenceContexts", "ndt_reference_basis": "referenceBases",
     "ndt_instruction_reference": "instructionReferences", "ndt_procedure_identity": "procedureIdentities",
@@ -78,6 +80,11 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
         return {"r39": facts, **judgment}
 
     issues = facts["sourceIssues"]
+    pt_input = pt_application_input(state, run, groups, _approval_record, _reviewed_document_valid)
+    if pt_input is not None:
+        facts["ptEmulsifierApplication"] = pt_input
+    else:
+        issues.append("r39_pt_application_missing_or_ambiguous")
     reference = reference_input(state, run, groups, _clean)
     if reference is not None:
         facts["procedureReference"] = reference

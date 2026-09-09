@@ -2381,6 +2381,7 @@ atomicCheckToolBindings:
   - r39.documentContent
   - r39.approvalChain
   - r39.firstUseValidation
+  - r39.ptEmulsifierApplication
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2389,6 +2390,7 @@ atomicCheckToolBindings:
   - evaluate_r39_document_content
   - evaluate_r39_approval_chain
   - evaluate_r39_first_use_validation
+  - evaluate_r39_pt_emulsifier_application
   - validate_evidence_grounding
   parameters:
     profile: ndt_procedure_partial_review

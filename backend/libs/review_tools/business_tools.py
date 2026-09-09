@@ -103,6 +103,7 @@ from libs.review_tools.r37_reinspection import evaluate_r37_reinspection
 from libs.review_tools.r37_tools import evaluate_ndt_nonconformance
 from libs.review_tools.r39_approval import evaluate_r39_approval_chain
 from libs.review_tools.r39_content import evaluate_r39_document_content
+from libs.review_tools.r39_pt import evaluate_r39_pt_emulsifier_application
 from libs.review_tools.r39_reference import evaluate_r39_procedure_reference
 from libs.review_tools.r39_tools import evaluate_r39_first_use_validation
 
@@ -157,6 +158,7 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_r39_approval_chain",
     "evaluate_r39_procedure_reference",
     "evaluate_r39_document_content",
+    "evaluate_r39_pt_emulsifier_application",
     "evaluate_r37_reinspection",
     "evaluate_r37_progressive_inspection",
     "evaluate_r37_defect_closure",
@@ -212,6 +214,7 @@ DOMAIN_TOOL_NAMES = (
 
 
 BUSINESS_TOOL_CAPABILITIES = {
+    "evaluate_r39_pt_emulsifier_application": "按NB/T47013.5-2015第6.3.2核对指定文件、对象及事件的乳化剂施加方法，禁止刷涂、喷洒仅适用亲水型；不代替全部PT技术要求或整条R39验收。",
     "evaluate_r37_defect_closure": "重新计算完整累进与重检清单，按事件、对象及最新返修轮次核对每个缺陷的结案证据；不接受调用方预先声明通过。",
     "evaluate_r37_progressive_inspection": "R37按明确批次、相同件与焊工及缺陷记录核对累进检查覆盖和升级阶段；覆盖完成不代表缺陷修复或整批验收通过。",
     "evaluate_r37_reinspection": "按明确缺陷与返修轮次核对原检测方法、范围、验收准则及修复后重检结果；独立对象核对不代表批次累进检查完成。",
@@ -437,6 +440,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r39_procedure_reference"
             else {"projectId": "string", "scope": "object", "basis": "object", "contentInventory": "object"}
             if name == "evaluate_r39_document_content"
+            else {"projectId": "string", "scope": "object", "basis": "object", "process": "object"}
+            if name == "evaluate_r39_pt_emulsifier_application"
             else {"projectId": "string", "organizationId": "string", "applicability": "object", "procedure": "object", "caseInventory": "object", "commissions": ["object"], "notices": ["object"], "feedback": ["object"]}
             if name == "evaluate_ndt_nonconformance"
             else {"projectId": "string", "organizationId": "string", "case": "object?", "originalInspection": "object?", "disposition": "object?", "caseInventory": "object?", "originalInspections": ["object?"], "dispositions": ["object?"], "reinspections": ["object"]}
@@ -724,6 +729,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_r39_approval_chain": evaluate_r39_approval_chain,
         "evaluate_r39_procedure_reference": evaluate_r39_procedure_reference,
         "evaluate_r39_document_content": evaluate_r39_document_content,
+        "evaluate_r39_pt_emulsifier_application": evaluate_r39_pt_emulsifier_application,
         "evaluate_ndt_nonconformance": evaluate_ndt_nonconformance,
         "evaluate_r37_reinspection": evaluate_r37_reinspection,
         "evaluate_r37_progressive_inspection": evaluate_r37_progressive_inspection,

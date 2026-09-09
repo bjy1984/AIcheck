@@ -213,6 +213,7 @@ def build_tool_arguments(
         for key, value in nested_dict(nested_dict(facts, "r11"), "projectParameters").items():
             arguments.setdefault(key, deepcopy(value))
     r39_inputs = {"evaluate_r39_procedure_reference": "procedureReference", "evaluate_r39_first_use_validation": "firstUseValidation", "evaluate_r39_approval_chain": "approvalChain", "evaluate_r39_document_content": "documentContent"}
+    r39_inputs["evaluate_r39_pt_emulsifier_application"] = "ptEmulsifierApplication"
     if tool_name in r39_inputs:
         for key, value in nested_dict(nested_dict(facts, "r39"), r39_inputs[tool_name]).items():
             arguments.setdefault(key, deepcopy(value))
