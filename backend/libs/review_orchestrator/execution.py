@@ -3580,7 +3580,7 @@ def review_run_looks_abandoned(review_run: dict[str, Any]) -> bool:
 
 
 def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = False) -> dict[str, Any]:
-    view = repo.clone(review_run)
+    view = output_contract.review_view_with_limitations(review_run, repo.state)
     if review_run_looks_abandoned(view):
         # 只改展示，不改库：库里那份是执行留痕。界面据此显示「未能执行」
         # 并允许重新发起，而不是让人对着「执行中」等下去。

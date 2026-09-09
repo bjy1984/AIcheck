@@ -26,6 +26,11 @@ export type ReviewBSession = {
 }
 
 export type ReviewBRun = {
+  automationLimitations?: Array<{
+    atomicCheckId: string
+    code: string
+    requiresHumanReview: boolean
+  }>
   errorCode?: string | null
   errorMessage?: string | null
   id?: string

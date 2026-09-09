@@ -7,6 +7,7 @@ import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import { overviewProgress, overviewResult } from '../workstationOverview'
 import { documentPageLabel } from '../documentPageSelection'
 import ReviewResultCard from './ReviewResultCard.vue'
+import ReviewAutomationLimitations from './ReviewAutomationLimitations.vue'
 const props = defineProps<{
   workspace: ReviewBWorkspace | null
   selection: ReviewDocumentSelection | null
@@ -71,6 +72,9 @@ const missing = computed(() => props.workspace?.evidenceReadiness.missingRequire
         <p v-if="workspace.activeReviewRun" class="result-notice" role="status">
           {{ overviewProgress(workspace.activeReviewRun.status) }}
         </p>
+        <ReviewAutomationLimitations
+          :items="workspace.activeReviewRun?.automationLimitations || []"
+        />
         <ReviewResultCard
           v-if="result"
           :key="result.reviewRunId"

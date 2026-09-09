@@ -138,3 +138,31 @@ def store_generated_findings(review_run, drafts, *, complete, hash_payload):
         review_run["findingSummaryDrafts"] = cap_findings(review_run["findingDrafts"])
     review_run["outputHash"] = hash_payload(review_run["findingDrafts"])
     return {"findingDrafts": len(review_run["findingDrafts"]), "outputHash": review_run["outputHash"]}
+
+
+def review_view_with_limitations(run: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    """Project recorded capability warnings without interpreting them as missing files."""
+    view = deepcopy(run)
+    run_id = run.get("reviewRunId") or run.get("id")
+    limitations = set()
+    for record in state.get("rule_check_results", []):
+        if not run_id or record.get("reviewRunId") != run_id:
+            continue
+        if any(record.get(key) not in (None, run.get(key)) for key in ("tenantId", "projectId", "nodeId")):
+            continue
+        for atomic in record.get("atomicCheckResults") or []:
+            if not isinstance(atomic, dict):
+                continue
+            for warning in atomic.get("warnings") or []:
+                if warning == "invalid_pending_capabilities":
+                    limitations.add((str(atomic.get("atomicCheckId") or ""), warning))
+                elif isinstance(warning, str) and warning.startswith("pending_capability:"):
+                    code = warning.removeprefix("pending_capability:")
+                    if code:
+                        limitations.add((str(atomic.get("atomicCheckId") or ""), code))
+    # Derive solely from this run's recorded execution, never the current mutable pack.
+    view["automationLimitations"] = [
+        {"atomicCheckId": atomic_id, "code": code, "requiresHumanReview": True}
+        for atomic_id, code in sorted(limitations)
+    ]
+    return view
