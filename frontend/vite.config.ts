@@ -1,3 +1,4 @@
+import { pdfAssets } from './build/pdfAssets'
 import { resolve } from 'path'
 import { loadEnv } from 'vite'
 import type { UserConfig, ConfigEnv } from 'vite'
@@ -33,6 +34,7 @@ export default ({ command, mode }: ConfigEnv): UserConfig => {
   return {
     base: env.VITE_BASE_PATH,
     plugins: [
+      pdfAssets(),
       Vue({
         script: {
           // 开启defineModel

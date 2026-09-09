@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { ElAlert, ElButton, ElCheckbox, ElDialog, ElEmpty } from 'element-plus'
 import { getDocumentDetailApi } from '@/api/aicheck'
 import { getReviewVersionOriginal } from '@/api/aicheck/reviewDocuments'
 import type { DocumentVersion } from '@/types/aicheck'
+const PdfEvidencePage = defineAsyncComponent(
+  () => import('@/views/AICheck/components/PdfEvidencePage.vue')
+)
 const props = defineProps<{
   projectId: string
   documentId: string
@@ -120,16 +123,16 @@ onBeforeUnmount(() => {
   </ElDialog>
   <ElDialog
     :model-value="Boolean(preview)"
+    append-to-body
     :title="preview?.label"
     width="min(1000px, 96vw)"
     @close="clearPreview"
   >
-    <iframe
+    <PdfEvidencePage
       v-if="preview?.type === 'application/pdf'"
       :src="preview.url"
-      :title="preview.label"
-      class="version-preview"
-    ></iframe>
+      :file-name="preview.label"
+    />
     <img v-else-if="preview" :src="preview.url" :alt="preview.label" class="version-image" />
   </ElDialog>
 </template>

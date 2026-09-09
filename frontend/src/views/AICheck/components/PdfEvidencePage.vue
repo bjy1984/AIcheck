@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { ElAlert, ElButton } from 'element-plus'
 import {
+  version,
   getDocument,
   GlobalWorkerOptions,
   type PDFDocumentProxy,
@@ -36,7 +37,12 @@ const renderPage = async (pageNo: number) => {
     await nextTick()
     const target = canvas.value
     if (!target) return
-    const viewport = page.getViewport({ scale: 1.5 })
+    const size = page.getViewport({ scale: 1 })
+    if (![size.width, size.height].every((value) => Number.isFinite(value) && value > 0))
+      throw new Error('文件页面尺寸无效，请核对原文件。')
+    const viewport = page.getViewport({
+      scale: Math.min(1.5, 4096 / Math.max(size.width, size.height))
+    })
     target.width = viewport.width
     target.height = viewport.height
     const context = target.getContext('2d')
@@ -68,7 +74,15 @@ const load = async () => {
   if (!props.src) return
   loading.value = true
   try {
-    loadingTask = getDocument({ url: props.src.split('#')[0] })
+    const assets = `${import.meta.env.BASE_URL}pdf-assets/${version}/`
+    loadingTask = getDocument({
+      url: props.src.split('#')[0],
+      cMapUrl: `${assets}cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `${assets}standard_fonts/`,
+      wasmUrl: `${assets}wasm/`,
+      iccUrl: `${assets}iccs/`
+    })
     const document = await loadingTask.promise
     if (attempt !== generation) return
     pdf.value = document

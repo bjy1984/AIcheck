@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, computed, ref, watch } from 'vue'
 import ReviewDocumentVersions from './ReviewDocumentVersions.vue'
 import { cloneDocumentSelectionVersions, validDocumentPageRange } from './documentPageSelection'
 import type { DocumentVersion } from '@/types/aicheck'
@@ -20,11 +20,15 @@ import {
 } from 'element-plus'
 import { bindInspectionDocumentsApi, getDocumentDetailApi } from '@/api/aicheck'
 import {
+  getReviewVersionOriginal,
   listReviewDocuments,
   type ReviewDocument,
   type ReviewDocumentSelection
 } from '@/api/aicheck/reviewDocuments'
 
+const PdfEvidencePage = defineAsyncComponent(
+  () => import('@/views/AICheck/components/PdfEvidencePage.vue')
+)
 const props = defineProps<{
   projectId: string
   nodeId: number
@@ -170,9 +174,16 @@ const useNodeDocuments = () => {
   emit('change', null)
   visible.value = false
 }
+const clearPreview = () => {
+  previewGeneration++
+  if (preview.value) URL.revokeObjectURL(preview.value.url)
+  preview.value = null
+}
+onBeforeUnmount(clearPreview)
 const showPreview = async (item: ReviewDocument) => {
+  clearPreview()
   const context = generation
-  const attempt = ++previewGeneration
+  const attempt = previewGeneration
   error.value = ''
   try {
     const response = await getDocumentDetailApi(props.projectId, item.id)
@@ -181,9 +192,16 @@ const showPreview = async (item: ReviewDocument) => {
       error.value = '该文件已有新版本，请刷新列表后重新选择。'
       return
     }
+    const blob = await getReviewVersionOriginal(props.projectId, item.id, item.currentVersionId)
+    if (context !== generation || attempt !== previewGeneration) return
     preview.value = {
-      url: response.data.preview.url,
-      type: response.data.preview.previewType,
+      url: URL.createObjectURL(blob),
+      type:
+        blob.type === 'application/pdf'
+          ? 'pdf'
+          : blob.type.startsWith('image/')
+            ? 'image'
+            : 'unsupported',
       title: item.fileName
     }
   } catch {
@@ -199,7 +217,7 @@ watch(
     previewGeneration++
     visible.value = false
     versionDocument.value = null
-    preview.value = null
+    clearPreview()
     documents.value = []
     chosen.value = []
     loading.value = false
@@ -207,6 +225,7 @@ watch(
 )
 watch(visible, (value) => {
   if (!value) {
+    clearPreview()
     versionDocument.value = null
     searchGeneration++
     previewGeneration++
@@ -362,16 +381,12 @@ watch(visible, (value) => {
   />
   <ElDialog
     :model-value="Boolean(preview)"
+    append-to-body
     :title="preview?.title"
     width="min(1000px, 96vw)"
-    @close="preview = null"
+    @close="clearPreview"
   >
-    <iframe
-      v-if="preview?.type === 'pdf'"
-      :src="preview.url"
-      :title="preview.title"
-      class="document-picker-preview"
-    ></iframe>
+    <PdfEvidencePage v-if="preview?.type === 'pdf'" :src="preview.url" :file-name="preview.title" />
     <img
       v-else-if="preview?.type === 'image'"
       :src="preview.url"

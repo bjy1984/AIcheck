@@ -1110,3 +1110,11 @@ cd backend
 - 證據：docs/lab/verification/2026-09-09-pdf-rendering.md。整體目標保持進行中，未宣稱達90%。
 
 - 收尾：前端95個測試檔通過、vue-tsc通過；修改元件ESLint／Stylelint及diff檢查通過；vite build --mode base正式打包成功。worker隨應用打包。
+
+
+## 2026-09-09：文件選取與中文PDF渲染統一
+
+- 本次文件／歷史版本接入同一PDF渲染器；修正本次文件直接使用目前版預覽URL，改為帶登入讀取清單確切版本的Blob，關閉／換工程釋放資源。
+- 中文映射、字體、WASM及ICC共200項資源隨應用提供，開發和構建內容一致。單頁畫布邊長上限4096，避免超大尺寸無限制配置。
+- 登入驗收目前版3頁／歷史版120頁，中文、掃描圖片及超大頁（前3頁）顯示、回引用頁和返回版本清單通過。資料為6MB合成文件，未發起審查或更改選取。
+- 前端96測試檔、vue-tsc、元件ESLint／Stylelint與最終Vite構建通過。證據：docs/lab/verification/2026-09-09-pdf-picker-chinese.md。更大文件、頁碼跳轉／縮放／無障礙及真實工程仍待驗收，整體目標保持進行中。
