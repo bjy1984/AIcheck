@@ -157,3 +157,10 @@ cd backend
 - 通過唯讀平台規則、新建／保存數值條件、不符合／符合／缺引用試跑、清除過期結果、未保存停用試跑、取消關閉保留輸入，以及無瀏覽器 runtime error 檢查。
 - 試跑畫面：[截圖](verification/browser/rule-trial-pass.png)。重跑方式：frontend/e2e/lab-rules/README.md。
 - 這是元件與真實 API 的聯合測試；完整工作台的正式登入帳號、行動版、複合條件互動及外部服務實機驗收仍未完成。
+
+### 工具資料範圍
+
+- 修正 OCR 解析選取在任務文件清單為空時可能回退全庫的行為。帶 reviewRun 的讀取僅限任務 inputDocumentVersionIds，即使 context 指定更大範圍也不擴張。
+- 工位 runtime dispatcher 在讀取或業務工具执行前，拒絕頂層工程／節點與任務不符、任意層級文件版本不屬任務輸入，以及文件版本清單型別錯誤。拒絕結果不帶出範圍外文件資料。
+- 工位／runtime 測試 36 passed，工具執行／原始工具留痕回歸 25 passed，Ruff 無新增告警。
+- 這是既有 runtime 工具鏈的資料邊界；專用 planner 的本地工具、正式標準資料來源、文件選取完整快照與工位交接仍需逐路驗收。

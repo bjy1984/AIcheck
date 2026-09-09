@@ -151,3 +151,28 @@ def initialize_run_workstation(record, project, published_rule, catalog, hash_pa
     record["workstationSnapshot"] = freeze_station(record["nodeId"], station_pack, catalog)
     record["allowedTools"] = record["workstationSnapshot"]["allowedTools"]
     record["inputHash"] = hash_payload({"legacyInputHash": record["inputHash"], "workstation": record["workstationSnapshot"]["snapshotHash"], "effectiveRule": record["effectiveRuleSnapshot"]["snapshotHash"]})
+
+
+def workstation_argument_scope_error(review_run: dict[str, Any], arguments: dict[str, Any]) -> str | None:
+    if station_snapshot(review_run) is None:
+        return None
+    for key in ("projectId", "nodeId"):
+        if key in arguments and str(arguments[key]) != str(review_run.get(key)):
+            return "WORKSTATION_ARGUMENT_SCOPE_MISMATCH"
+    allowed = {str(value) for value in review_run.get("inputDocumentVersionIds") or []}
+    pending = [arguments]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, list):
+            pending.extend(value)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if key == "documentVersionIds":
+                    if not isinstance(item, list) or any(not isinstance(ref, str) or ref not in allowed for ref in item):
+                        return "WORKSTATION_DOCUMENT_SCOPE_MISMATCH"
+                elif key == "documentVersionId":
+                    if not isinstance(item, str) or item not in allowed:
+                        return "WORKSTATION_DOCUMENT_SCOPE_MISMATCH"
+                elif isinstance(item, (list, dict)):
+                    pending.append(item)
+    return None

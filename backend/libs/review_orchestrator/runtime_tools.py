@@ -39,6 +39,7 @@ from libs.review_orchestrator.deterministic_tools import (
     parse_date,
 )
 from libs.review_tools import BUSINESS_TOOL_DESCRIPTORS, BUSINESS_TOOL_NAMES, dispatch_business_tool
+from libs.review_workstations import workstation_argument_scope_error
 
 RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
     {
@@ -175,6 +176,9 @@ def dispatch_runtime_tool(
 ) -> dict[str, Any]:
     args = arguments or {}
     context = context or {}
+    if scope_error := workstation_argument_scope_error(context.get("reviewRun") or {}, args):
+        return {"toolCallId": runtime_tool_call_id(), "toolName": tool_name,
+                "status": "rejected", "errorCode": scope_error}
     if tool_name in DETERMINISTIC_TOOL_NAMES:
         result = dispatch_deterministic_tool(tool_name, args)
         result["toolCallId"] = runtime_tool_call_id()
@@ -553,19 +557,13 @@ def selected_parse_results(
         or []
         if item
     }
-    if not requested and context.get("reviewRun"):
-        requested = {
-            str(item)
-            for item in context["reviewRun"].get("inputDocumentVersionIds") or []
-            if item
-        }
+    review_run = context.get("reviewRun")
+    if review_run is not None:
+        allowed = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
+        requested = requested & allowed if requested else allowed
     results = [item for item in state.get("ocr_parse_results", []) if isinstance(item, dict)]
-    if requested:
-        results = [
-            item
-            for item in results
-            if str(item.get("documentVersionId") or "") in requested
-        ]
+    if requested or review_run is not None:
+        results = [item for item in results if str(item.get("documentVersionId") or "") in requested]
     return apply_field_corrections_to_parse_results(state, results, context=context)
 
 

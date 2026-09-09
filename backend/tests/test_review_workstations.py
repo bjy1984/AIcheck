@@ -125,3 +125,38 @@ def test_tool_boundary_rejects_before_dispatch(monkeypatch):
     monkeypatch.setattr(ex, 'dispatch_runtime_tool', lambda *args, **kwargs: pytest.fail('must not dispatch'))
     result = ex.execute_agent_tool(run_for(), 'lab', 'evaluate_r23_valve_test_records', {}, {})
     assert result['errorCode'] == 'WORKSTATION_TOOL_NOT_ALLOWED'
+
+
+def test_empty_review_document_scope_never_reads_all_ocr():
+    from libs.review_orchestrator.runtime_tools import selected_parse_results
+
+    state = {'ocr_parse_results': [{'documentVersionId': 'FOREIGN', 'fragments': [{'text': 'must not leak'}]}]}
+    assert selected_parse_results(state, {}, context={'reviewRun': {'inputDocumentVersionIds': []}}) == []
+    assert selected_parse_results(state, {'documentVersionIds': ['FOREIGN']}, context={'reviewRun': {'inputDocumentVersionIds': []}}) == []
+
+
+@pytest.mark.parametrize('arguments', [
+    {'projectId': 'OTHER'}, {'nodeId': 25}, {'documentVersionIds': ['FOREIGN']},
+    {'documents': [{'documentVersionId': 'FOREIGN'}]}, {'documentVersionIds': 'LOCAL'},
+])
+def test_runtime_dispatch_rejects_out_of_scope_arguments_before_reading(arguments):
+    from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool
+
+    run = run_for()
+    run['inputDocumentVersionIds'] = ['LOCAL']
+    output = dispatch_runtime_tool({'ocr_parse_results': [{'documentVersionId': 'FOREIGN'}]},
+                                   'get_document_ocr_result', arguments, context={'reviewRun': run})
+    assert output['status'] == 'rejected'
+    assert output['errorCode'].startswith('WORKSTATION_')
+    assert 'documentVersionIds' not in output
+
+
+def test_runtime_uses_only_run_inputs_even_if_context_is_broader():
+    from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool
+
+    run = run_for()
+    run['inputDocumentVersionIds'] = ['LOCAL']
+    state = {'ocr_parse_results': [{'documentVersionId': 'LOCAL'}, {'documentVersionId': 'FOREIGN'}]}
+    result = dispatch_runtime_tool(state, 'get_document_ocr_result', {},
+                                  context={'reviewRun': run, 'documentVersionIds': ['LOCAL', 'FOREIGN']})
+    assert result['documentVersionIds'] == ['LOCAL']
