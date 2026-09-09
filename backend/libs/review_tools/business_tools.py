@@ -94,6 +94,7 @@ from libs.review_tools.r24_r34_tools import (
 from libs.review_tools.r24_r34_tools import (
     resolve_pwht_applicability,
 )
+from libs.review_tools.r35_tools import evaluate_ndt_quality_system
 
 COMMON_TOOL_NAMES = (
     "check_required",
@@ -192,6 +193,7 @@ DOMAIN_TOOL_NAMES = (
 
 
 BUSINESS_TOOL_CAPABILITIES = {
+    "evaluate_ndt_quality_system": "核对R35结构化现场体系实施记录、项目和机构匹配及实际设备检定日期覆盖；仅有文件或通用规则参数不能判定符合。证据原文支持性另由证据门禁核验。",
     "check_license_registry_match": (
         "核对制造许可证 OCR 候选与人工官网核验记录；官网未查到、信息不一致或证照非有效状态时判定不符合，未完成核验时返回证据不足。"
     ),
@@ -389,6 +391,11 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
                 "ruleVersion": "string?",
             }
             if name == "check_license_registry_match"
+            else {"projectId": "string", "organizationId": "string", "activityDate": "string",
+                  "applicability": "object", "manual": ["object"], "controlledForms": ["object"],
+                  "appointments": ["object"], "implementationRecords": ["object"],
+                  "equipmentIds": ["string"], "equipmentEvidenceRefs": ["object"], "calibrationReports": ["object"]}
+            if name == "evaluate_ndt_quality_system"
             else {
                 "designItems": ["object"],
                 "ruleVersion": "string?",
@@ -661,6 +668,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
     if tool_name == "check_wps_pqr_coverage" and arguments.get("qualifiedRanges") and not arguments.get("wpsItems"):
         return check_wps_pqr_coverage(arguments)
     handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+        "evaluate_ndt_quality_system": evaluate_ndt_quality_system,
         "check_license_registry_match": check_license_registry_match,
         "classify_r13_component_requirements": classify_r13_component_requirements,
         "classify_r14_component_applicability": classify_r14_component_applicability,
