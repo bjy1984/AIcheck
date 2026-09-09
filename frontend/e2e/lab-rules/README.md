@@ -44,3 +44,10 @@ CSS regression probe, not a logged-in workbench acceptance test.
 歷史版本驗收：`node e2e/lab-rules/check-document-versions.mjs`。使用真實版本列表／original API 與臨時 PNG 夾具，驗證固定舊版、圖片解碼、空本體停用、原文缺失提示及保存保留。橋接按真實 Content-Type 傳回 Blob；不代表 PDF、完整登入或大型檔案驗收。
 
 PDF／窄螢幕：`node e2e/lab-rules/check-version-pdf-mobile.mjs`。以 1280px／390px Chrome 視窗驗證真實兩頁 PDF 的 Blob、內建閱讀器頁數及選取保存。依賴測試環境 PyMuPDF 產生臨時 PDF；Chrome 內建閱讀器 DOM 改版可能需調整檢查。此為視窗模擬，不是實體手機 Safari 驗收。
+
+交接核驗元件：使用同一個 Vite 設定、指定獨立測試埠：
+```sh
+./node_modules/.bin/vite --config e2e/lab-rules/vite.config.ts --port 4394
+node e2e/lab-rules/check-handoffs.mjs
+```
+此腳本以 Playwright 模擬交接 API 回應，不需啟動後端橋接。驗證確認必填、追加退回的前版ID、核驗人欄位不由客戶端傳入、歷史內容、過期停用、提交錯誤保留意見及停用再次提交、切換任務後忽略延遲回應、390px／1280px無水平溢出與瀏覽器無runtime error。畫面保存於 docs/lab/verification/browser/handoff-review-*.png。這是隔離元件驗收；真實登入工作台、兩端權限、PDF原文預覽與完整API聯合驗收仍需另跑。

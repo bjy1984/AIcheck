@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
+import ReviewHandoffPanel from './ReviewHandoffPanel.vue'
 import PipelineConflictDetails from './PipelineConflictDetails.vue'
 import ReviewDocumentPicker from './ReviewDocumentPicker.vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
@@ -1945,6 +1946,11 @@ onBeforeUnmount(() => {
             @bound="refreshLiveState"
           />
           <div v-if="!props.embedded" class="run-meta">
+            <ReviewHandoffPanel
+              :project-id="activeProjectId"
+              :run-id="activeRunId"
+              @evidence="openEvidence"
+            />
             <ProjectRuleEditor
               :project-id="activeProjectId"
               :node-id="activeNodeId"
