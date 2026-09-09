@@ -136,6 +136,11 @@ from libs.review_orchestrator.task_queues import review_task_queues
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.review_tools.condition_execution import (
+    condition_source_rule_id,
+    execute_with_condition_replacements,
+    prepare_condition_results,
+)
 from libs.review_workstations import (
     apply_station_messages,
     initialize_run_workstation,
@@ -1648,9 +1653,11 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 query_type="rule_basis_search",
             )
             linked_clause_ids = [item.get("clauseId") for item in rule_basis.get("clauses") or [] if item.get("clauseId")]
-        source_rule_id = str(rule.get("sourceRuleId") or rule.get("id") or rule.get("ruleKey") or "")
+        source_rule_id = condition_source_rule_id(rule, pack) if rule.get("executionConditions") is not None else str(rule.get("sourceRuleId") or rule.get("id") or rule.get("ruleKey") or "")
         semantic_review = review_run.get("r19SemanticReview") if int(review_run.get("nodeId") or 0) == 19 else None
         if isinstance(semantic_review, dict) and semantic_review.get("atomicJudgments"):
+            if rule.get("executionConditions") is not None:
+                raise ValueError("condition_replacement_semantic_adapter_pending")
             atomic_results = []
             for judgment in semantic_review.get("atomicJudgments") or []:
                 if not isinstance(judgment, dict):
@@ -1696,8 +1703,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 ),
             )
             fact_snapshot = context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else {}
-            tool_execution = execute_node_tool_plan(
-                tool_plan,
+            tool_execution = execute_with_condition_replacements(
+                tool_plan, condition_results=prepare_condition_results(repo.state, review_run, pack), base_executor=execute_node_tool_plan,
                 tool_runner=lambda name, arguments: execute_agent_tool(
                     review_run,
                     node_key,
