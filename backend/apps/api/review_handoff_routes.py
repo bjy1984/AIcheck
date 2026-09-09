@@ -340,24 +340,58 @@ def handoff_replay_error(request: Request, cached: dict[str, Any]):
     return None
 
 
-@router.get("/projects/{project_id}/review-runs/{run_id}/handoff-dependencies")
-def get_handoff_dependencies(request: Request, project_id: str, run_id: str):
+def _dependency_status(request, project_id, run_id, visible):
     from libs.review_handoff_inputs import handoff_dependency_status
 
-    if error := _guard(request, project_id):
-        return error
-    visible = _visible_versions(request, project_id)
     runs, error = _runs(request, project_id, run_id, run_id, visible)
     if error:
-        return error
+        return None, error
     run = runs[0]
     snapshot = run.get("handoffInputsSnapshot") or {}
     for item in snapshot.get("items", []):
         draft = item.get("draft") or {}
         for side in ("source", "target"):
             if set((draft.get(side) or {}).get("documentVersionIds") or []) - visible:
-                return fail(errors.FORBIDDEN, request)
+                return None, fail(errors.FORBIDDEN, request)
         if error := _guard(request, project_id, [draft["source"]["nodeId"], draft["target"]["nodeId"]]):
-            return error
+            return None, error
+    repo.ensure_deferred_loaded("ocr_parse_results", "fact_corrections")
     status = handoff_dependency_status(run, repo.state)
-    return ok({"reviewRunId": run_id, **status, "historicalResultsPreserved": True}, request)
+    return {"reviewRunId": run_id, **status, "historicalResultsPreserved": True}, None
+
+
+@router.get("/projects/{project_id}/review-runs/{run_id}/handoff-dependencies")
+def get_handoff_dependencies(request: Request, project_id: str, run_id: str):
+    if error := _guard(request, project_id):
+        return error
+    status, error = _dependency_status(request, project_id, run_id, _visible_versions(request, project_id))
+    return error if error is not None else ok(status, request)
+
+
+@router.get("/projects/{project_id}/review-handoff-node-statuses")
+def get_handoff_node_statuses(request: Request, project_id: str):
+    if error := _guard(request, project_id):
+        return error
+    repo.ensure_deferred_loaded("review_runs", "review_handoffs", "review_sessions")
+    visible = _visible_versions(request, project_id)
+    groups = api.filter_node_groups_for_scope(repo.node_groups(project_id), api.authorized_node_scope(request, project_id))
+    items = []
+    for node_id in sorted({node["nodeId"] for group in groups for node in group["nodes"]}):
+        session = api.active_review_session(request, project_id, node_id)
+        run = api.latest_review_run_for_node(project_id, node_id, review_run_id=(session or {}).get("activeReviewRunId"))
+        if run is None:
+            items.append({"nodeId": node_id, "status": "not_used", "requiresRevalidation": False})
+            continue
+        run_id = run.get("reviewRunId") or run.get("id")
+        try:
+            status, error = _dependency_status(request, project_id, run_id, visible)
+        except (TypeError, ValueError, KeyError):
+            status, error = None, True
+        if error is not None:
+            items.append({"nodeId": node_id, "status": "unavailable", "requiresRevalidation": None})
+        else:
+            items.append({"nodeId": node_id, "reviewRunId": run_id, "status": status["status"],
+                          "requiresRevalidation": status["requiresRevalidation"]})
+    return ok({"items": items, "requiresRevalidationCount": sum(row["requiresRevalidation"] is True for row in items),
+               "unavailableCount": sum(row["status"] == "unavailable" for row in items),
+               "automaticRerun": False, "historicalResultsPreserved": True}, request)

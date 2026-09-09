@@ -1282,3 +1282,12 @@ cd backend
 - 狀態選項數量依當前工位計算；切工位後若舊篩選無資料仍保留0件選項，不自動改變使用者篩選。工程總覽保留全量計數，目前節點不因篩選而切換。
 - 已登入原4395工作台種子工程實測：全量69節點，2待審查／1待確認；A工位11節點／1待確認；再篩待確認只留1節點，總覽仍69、主頁仍R16。截圖已在本次對話核對，測試後恢復全量篩選。未發起付費任務或改寫結論。
 - 前端97個測試檔及vue-tsc通過，diff通過。本批不是跨節點交接失效統計；具來源的需重驗計數、真實業務資料與69條驗收仍待補，整體未達90%。詳見docs/lab/verification/2026-09-09-station-counts.md。
+
+
+## 2026-09-09：跨節點交接需重驗查詢
+
+- 新增只讀GET /projects/{project_id}/review-handoff-node-statuses；沿用工作台active session／latest run選取方式，每個授權節點僅核對目前任務，不累計全部歷史任務。
+- 復用單任務依賴檢查的租戶／工程／節點／文件來源權限；不可核對的來源返回unavailable及null而非false，不輸出該任務ID或文件細節。接口分列requiresRevalidationCount與unavailableCount，不自動重跑／修改歷史結論。
+- 單任務與批次共用檢查補載ocr_parse_results及fact_corrections，避免只載交接／任務而漏掉來源校驗需要的集合。
+- 新增7項API驗證：無交接、失效快照去重、目前會話任務、無權來源、節點范围、角色與開關；63項交接API／執行整合回歸通過，Ruff289/289、monolith與diff通過。尚待原工位UI接線及多程序PostgreSQL實測，不能把接口完成說成整個統計入口已完成。
+- 真實業務資料與69條驗收仍待補，整體未達90%。詳見docs/lab/verification/2026-09-09-handoff-node-status.md。
