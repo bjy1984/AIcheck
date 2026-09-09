@@ -55,7 +55,7 @@ def _append_verification(
     if set(body) != fields:
         raise ValueError("handoff_verification_fields_invalid")
     draft = record["draft"]
-    if draft["schemaVersion"] != "review-handoff-draft-v2":
+    if draft["schemaVersion"] not in {"review-handoff-draft-v2", "review-handoff-draft-v3"}:
         raise ValueError("handoff_event_scoped_draft_required")
     history = verification_history(record)
     previous = history[-1]["id"] if history else None

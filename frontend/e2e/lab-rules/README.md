@@ -66,3 +66,5 @@ node e2e/lab-rules/check-handoffs-live.mjs
 此腳本不攔截或偽造API回應，透過loopback橋接呼叫實際FastAPI／權限／快照／核驗路由；只有認證傳輸替換為記憶體seed監檢身份。使用臨時合成PDF和OCR，建立帶事件的facts交接，驗證固定版本原文API的PDF內容、既有證據對話框Blob／頁碼、人工確認與追加退回、歷史保留、OCR來源變更後失效及移除來源節點權限後列表／詳情拒絕。來源變更後原文仍可按權限查看，核驗操作停用。
 
 handoff_seed.py與 /__lab/handoff/* 控制路徑僅存在於此測試橋接，不註冊於正式應用路由；Vite測試設定代理到loopback4174。不得部署或對外暴露測試橋接。腳本會修改此合成案例的OCR及seed成員節點權限，因此再次執行前必須重啟橋接。截圖：docs/lab/verification/browser/handoff-live-stale.png。這不是生產登入、真實監檢資料、資料庫跨程序或完整工作台驗收。
+
+交接真實API腳本亦驗證v3：人工確認後更新接收任務status／outputHash／findingDrafts不使交接失效；來源變動仍失效。此控制僅修改測試橋接的合成任務，未實際排程AI執行。

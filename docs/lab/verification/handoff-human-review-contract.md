@@ -7,7 +7,7 @@
 必須且只能提供：
 - snapshotHash：正在核驗的交接草稿雜湊。
 - expectedPreviousId：首次為null，其後為上次核驗ID，防止覆蓋其他核驗人的較新決定。
-- subject：與v2草稿完全相同的objectType／objectId／repairRound／eventId。
+- subject：與v2／v3草稿完全相同的objectType／objectId／repairRound／eventId。
 - outcome：verified或rejected。
 - objectMatchConfirmed、evidenceSupportConfirmed：嚴格布林值。verified時均須true。
 - note：非空核驗說明。
@@ -45,3 +45,12 @@ authoritative保持false；此批尚未把核驗後交接供下游判定使用�
 ## 集中式契約補齊
 
 完整後端回歸發現核驗路由尚缺集中式動作映射與端點冪等包裝，並且生成OpenAPI落後於新增路由。已把verifications POST接入libs/security/actions.py的review:save及既有api.idempotent，保留來源／修訂／權限重送檢查，沒有增加豁免。依FastAPI重新匯出openapi/generated/openapi.json，包含eventId查詢參數、核驗路由與Idempotency-Key。
+
+
+## v3接收任務進度相容（2026-09-09）
+
+新建交接使用review-handoff-draft-v3。來源身份仍包含狀態、outputHash與findingDrafts；接收身份保留runId、工程／租戶／業務包／節點、inputHash、工位快照、文件版本／来源快照及有效規則，排除接收任務自己的status／outputHash／findingDrafts。因此接收任務正常執行及產生自身結果不會令交接自動失效，輸入／規則／文件／身份變動仍會。
+
+既有v1／v2保持原本雙方完整身份校驗，不重算原ID或升級歷史記錄；v2／v3均可在來源有效時人工核驗，v1仍需重新建立有事件的新交接。本批不改inputHash本身，也不代表已建立依賴圖或完成交接輸入併入執行快照。
+
+90項相關後端測試、87個前端測試檔案及真實API瀏覽器流程通過；瀏覽器在核驗後更新接收任務自己的進度／結果，確認交接仍有效，再驗證原有退回、來源變動及權限撤回行為。本批未重跑完整後端。

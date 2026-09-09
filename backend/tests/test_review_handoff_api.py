@@ -386,7 +386,7 @@ def test_event_bound_handoffs_deduplicate_only_within_same_event():
     url = f"/api/projects/{PROJECT}/review-handoffs"
     first_body = payload()
     first = client.post(url, headers=HEADERS, json=first_body).json()["data"]
-    assert first["draft"]["schemaVersion"] == "review-handoff-draft-v2"
+    assert first["draft"]["schemaVersion"] == "review-handoff-draft-v3"
     second_body = deepcopy(first_body)
     second_body["subject"]["eventId"] = "EVENT-2"
     second = client.post(url, headers=HEADERS, json=second_body).json()["data"]
@@ -524,3 +524,18 @@ def test_concurrent_same_revision_cannot_append_two_decisions():
         outcomes = list(pool.map(append, ("synthetic-a", "synthetic-b")))
     assert sorted(outcomes) == ["conflict", "saved"]
     assert len(record["verifications"]) == 1
+
+
+def test_verified_v3_survives_receiver_progress_without_rewriting_history():
+    url, record, body = verification_fixture()
+    saved = client.post(f"{url}/{record['id']}/verifications", headers=HEADERS, json=body).json()["data"]
+    target = repo.find_one("review_runs", "TARGET")
+    target.update(status="running", outputHash="OWN-RESULT", findingDrafts=[{"id": "OWN-FINDING"}])
+    view = client.get(f"{url}/{record['id']}", headers=HEADERS).json()["data"]
+    assert view["validation"]["status"] == "current_draft"
+    assert view["verification"]["status"] == "verified"
+    assert view["draft"] == record["draft"] and view["verifications"] == saved["verifications"]
+    target["inputHash"] = "NEW-INPUT"
+    invalid = client.get(f"{url}/{record['id']}", headers=HEADERS).json()["data"]
+    assert invalid["verification"]["status"] == "stale"
+    assert invalid["verifications"] == saved["verifications"]

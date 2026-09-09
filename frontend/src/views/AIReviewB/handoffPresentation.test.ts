@@ -63,3 +63,11 @@ assert.equal(
   ),
   null
 )
+
+assert.equal(
+  handoffCanConfirm({
+    ...record,
+    draft: { ...record.draft, schemaVersion: 'review-handoff-draft-v3' }
+  }),
+  true
+)

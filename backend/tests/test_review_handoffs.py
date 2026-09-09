@@ -96,7 +96,7 @@ def test_same_object_round_different_events_are_distinct_and_cannot_be_substitut
     other_subject = {**SUBJECT, "eventId": "EVENT-2"}
     second = create_handoff_draft(source, target, kind="facts", subject=other_subject,
                                   payload={"value": 1}, evidence_refs=EVIDENCE)
-    assert first["schemaVersion"] == "review-handoff-draft-v2"
+    assert first["schemaVersion"] == "review-handoff-draft-v3"
     assert first["id"] != second["id"]
     with pytest.raises(ReviewHandoffError, match="subject_changed"):
         validate_handoff_draft(first, source, target, subject=other_subject)
@@ -109,6 +109,9 @@ def test_historical_v1_validates_without_inventing_event_or_rewriting_id():
     source, target = runs()
     historical = create_handoff_draft(source, target, kind="facts", subject=SUBJECT,
                                       payload={"value": 1}, evidence_refs=EVIDENCE)
+    from libs.review_handoffs import _identity
+
+    historical["target"] = _identity(target)
     historical["schemaVersion"] = "review-handoff-draft-v1"
     historical["subject"].pop("eventId")
     content = {key: value for key, value in historical.items() if key not in {"id", "snapshotHash"}}
@@ -122,3 +125,52 @@ def test_historical_v1_validates_without_inventing_event_or_rewriting_id():
     with pytest.raises(ReviewHandoffError, match="subject_invalid"):
         create_handoff_draft(source, target, kind="facts", subject=historical["subject"],
                              payload={"value": 1}, evidence_refs=EVIDENCE)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("status", "running"), ("status", "completed"),
+    ("outputHash", "NEW-OUTPUT"), ("findingDrafts", [{"id": "OWN-FINDING"}]),
+])
+def test_receiver_progress_does_not_expire_v3_but_source_progress_does(field, value):
+    source, target = runs()
+    record = create_handoff_draft(source, target, kind="facts", subject=SUBJECT,
+                                  payload={"value": 1}, evidence_refs=EVIDENCE)
+    before = deepcopy(record)
+    target[field] = value
+    validate_handoff_draft(record, source, target, subject=SUBJECT)
+    source[field] = value
+    with pytest.raises(ReviewHandoffError, match="run_version_changed"):
+        validate_handoff_draft(record, source, target, subject=SUBJECT)
+    assert record == before
+
+
+@pytest.mark.parametrize("field,value", [
+    ("inputHash", "OTHER"), ("documentScopeSnapshot", {"changed": True}),
+    ("effectiveRuleSnapshot", {"changed": True}), ("inputDocumentVersionIds", ["OTHER"]),
+    ("id", "OTHER"), ("tenantId", "OTHER"),
+])
+def test_receiver_input_and_scope_changes_still_expire_v3(field, value):
+    source, target = runs()
+    record = create_handoff_draft(source, target, kind="facts", subject=SUBJECT,
+                                  payload={"value": 1}, evidence_refs=EVIDENCE)
+    if field == "documentScopeSnapshot":
+        from libs.review_document_scope import freeze_document_scope
+        value = freeze_document_scope(target, {})
+    target[field] = value
+    with pytest.raises(ReviewHandoffError, match="run_version_changed"):
+        validate_handoff_draft(record, source, target, subject=SUBJECT)
+
+
+def test_v2_historical_receiver_identity_retains_original_output_binding():
+    from libs.review_handoffs import _build_handoff_draft
+
+    source, target = runs()
+    old = _build_handoff_draft(source, target, kind="facts", subject=SUBJECT,
+                              payload={"value": 1}, evidence_refs=EVIDENCE,
+                              schema="review-handoff-draft-v2")
+    before = deepcopy(old)
+    validate_handoff_draft(old, source, target, subject=SUBJECT)
+    target["status"] = "running"
+    with pytest.raises(ReviewHandoffError, match="run_version_changed"):
+        validate_handoff_draft(old, source, target, subject=SUBJECT)
+    assert old == before

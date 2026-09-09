@@ -4,7 +4,7 @@ export function handoffBelongsTo(record: Handoff, projectId: string, runId: stri
   return record.projectId === projectId && record.draft.target.runId === runId
 }
 export function handoffReviewBlock(record: Handoff): string {
-  if (record.draft.schemaVersion !== 'review-handoff-draft-v2')
+  if (!['review-handoff-draft-v2', 'review-handoff-draft-v3'].includes(record.draft.schemaVersion))
     return '历史交接未指定事件，请重新建立交接。'
   if (record.validation.status !== 'current_draft')
     return '交接内容或来源已变更，请重新建立交接后核验。'

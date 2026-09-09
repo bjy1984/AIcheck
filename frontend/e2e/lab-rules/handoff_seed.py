@@ -53,6 +53,10 @@ def control(repo, action):
     if action == "change-source":
         parse = next(row for row in repo.state["ocr_parse_results"] if row.get("id") == "OCR-LAB-HANDOFF")
         parse["pages"][0]["text"] += " MODIFIED"
+    elif action == "progress-target":
+        target = repo.find_one("review_runs", TARGET)
+        target.update(status="running", outputHash="SYNTHETIC-TARGET-OUTPUT",
+                      findingDrafts=[{"id": "SYNTHETIC-TARGET-FINDING"}])
     elif action == "restrict-source":
         member = next(row for row in repo.state["project_members"] if row.get("projectId") == PROJECT
                       and row.get("userId") == "USER-INSPECTION-001")
