@@ -42,7 +42,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 100
+    assert len(BUSINESS_TOOL_NAMES) == 102
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -1392,6 +1392,8 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "evaluate_r39_pt_emulsifier_application",  # Dedicated scoped PT method checks in test_r39_pt.py.
     "evaluate_r39_approval_chain",  # Dedicated sourced QMS comparison.
     "evaluate_r39_first_use_validation",  # Dedicated scoped first-use checks.
+    "evaluate_r40_parameters",  # Dedicated event/parameter/source checks in test_r40_parameters.py.
+    "evaluate_r40_conclusions",  # Dedicated grounded conclusion pairs in test_r40_conclusions.py.
     "evaluate_r36_ndt_plan",  # Dedicated R36 cases live in test_r36_tools.py.
     "evaluate_ndt_quality_system",  # Dedicated R35 cases live in test_r35_tools.py; generic profiles cannot pass.
 } | R16_R18_TOOL_NAMES)))
@@ -1408,3 +1410,18 @@ def test_remaining_domain_tools_execute_versioned_rules(name: str) -> None:
 
     assert output["result"] == "passed"
     assert output["ruleVersion"] == "test-profile-v1"
+
+
+@pytest.mark.parametrize("name", ["evaluate_r40_parameters", "evaluate_r40_conclusions"])
+def test_r40_dedicated_tools_cannot_pass_using_generic_rule_checks(name: str) -> None:
+    output = call(name, {
+        "profile": "test-profile-v1",
+        "facts": {"document": {"id": "D-1"}},
+        "requiredFields": ["document.id"],
+        "ruleChecks": [{"code": "document_present", "operator": "present", "actual": "D-1"}],
+    })
+
+    assert output["status"] == "succeeded"
+    assert output["result"] == "evidence_insufficient"
+    assert output["ruleVersion"] != "test-profile-v1"
+    assert output["facts"]["wholeRuleAcceptance"] == "not_evaluated"

@@ -1,0 +1,3970 @@
+[
+  {
+    "file": "test2/9.1金辉焊接工艺评定20.pdf",
+    "page": 9,
+    "ocrError": null,
+    "profileId": "ndt_rt_report_v1",
+    "note": "offline postprocessing probe; profile explicitly selected for diagnosis, not automatic classification",
+    "fields": [],
+    "diagnostics": [
+      {
+        "code": "SEAL_NOT_FOUND",
+        "level": "warning",
+        "message": "当前 Profile 要求印章，但未检测到印章候选。"
+      },
+      {
+        "code": "REQUIRED_FIELD_MISSING",
+        "level": "warning",
+        "message": "Profile 必抽字段仍有缺失。",
+        "missingFields": [
+          "report_no",
+          "project_name",
+          "detection_method",
+          "weld_no",
+          "detection_date",
+          "evaluation_level",
+          "conclusion",
+          "inspection_unit"
+        ]
+      },
+      {
+        "code": "REQUIRED_TABLE_MISSING",
+        "level": "warning",
+        "message": "Profile 必需表格仍有缺失。",
+        "missingTables": [
+          "weld_detection_result_table"
+        ]
+      }
+    ],
+    "fragments": [
+      {
+        "text": "焊接工艺评定焊接及检验记录",
+        "pageNo": 9,
+        "bbox": [
+          0.3244353195835656,
+          0.05365622004167725,
+          0.6755646747901511,
+          0.07558139454107304
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "编号：HP/P-2023-01",
+        "pageNo": 9,
+        "bbox": [
+          0.0780287492109643,
+          0.08720930280688188,
+          0.2320328500361269,
+          0.10029069762916465
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "表格编号：JH/QR53",
+        "pageNo": 9,
+        "bbox": [
+          0.7741273117537432,
+          0.08720930264047089,
+          0.9281314125789056,
+          0.10174418587697098
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接工艺评定方案编号",
+        "pageNo": 9,
+        "bbox": [
+          0.08624230293532778,
+          0.1090116276026184,
+          0.28747433238294734,
+          0.12500000015900947
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "HP/P-2023-01",
+        "pageNo": 9,
+        "bbox": [
+          0.31416837988346275,
+          0.11046511660434133,
+          0.4496919877903419,
+          0.12499999984084142
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接日期",
+        "pageNo": 9,
+        "bbox": [
+          0.6323915398779012,
+          0.10887362029883918,
+          0.7166844342797076,
+          0.12513800775743034
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2023.10.22",
+        "pageNo": 9,
+        "bbox": [
+          0.798767965674796,
+          0.11191860457936254,
+          0.9014373730521031,
+          0.12790697713575372
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊",
+        "pageNo": 9,
+        "bbox": [
+          0.08624229993271343,
+          0.1395348833750436,
+          0.10677618038409503,
+          0.1555232559314348
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "姓名",
+        "pageNo": 9,
+        "bbox": [
+          0.13347022591412147,
+          0.13662790730616847,
+          0.1745379868168847,
+          0.15116279054266868
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "李帅朋",
+        "pageNo": 9,
+        "bbox": [
+          0.21560574972480503,
+          0.13662790681773462,
+          0.2772073910789498,
+          0.1526162793741258
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "工",
+        "pageNo": 9,
+        "bbox": [
+          0.08829568798644354,
+          0.1613372095050407,
+          0.10677618090472689,
+          0.1744186043273236
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "母",
+        "pageNo": 9,
+        "bbox": [
+          0.3203285427018053,
+          0.14098837202122305,
+          0.3429158106862851,
+          0.15697674457761424
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "牌号",
+        "pageNo": 9,
+        "bbox": [
+          0.36344969303052926,
+          0.13662790667238578,
+          0.4065708414663907,
+          0.15261627922877696
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "20#",
+        "pageNo": 9,
+        "bbox": [
+          0.4804928130072567,
+          0.1395348839429773,
+          0.5154004113107251,
+          0.15116279035104263
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "预热温度",
+        "pageNo": 9,
+        "bbox": [
+          0.6344563613205113,
+          0.13652308324997875,
+          0.7166730004872216,
+          0.15272110294607577
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 9,
+        "bbox": [
+          0.8418891174546442,
+          0.13662790784769496,
+          0.8583162215597295,
+          0.15406976700695618
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "代号",
+        "pageNo": 9,
+        "bbox": [
+          0.13347022591412147,
+          0.16569767471895924,
+          0.1745379868168847,
+          0.18043684713006003
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "4036",
+        "pageNo": 9,
+        "bbox": [
+          0.22367882663094546,
+          0.16688543759899488,
+          0.2670809262403204,
+          0.17904479509558424
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "材",
+        "pageNo": 9,
+        "bbox": [
+          0.3203285424793548,
+          0.1584302321600446,
+          0.34291581046383474,
+          0.1758720931306531
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "规格",
+        "pageNo": 9,
+        "bbox": [
+          0.36550308076239885,
+          0.16424418574215327,
+          0.4065708416651621,
+          0.18043684747314503
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "①219*7",
+        "pageNo": 9,
+        "bbox": [
+          0.4639948125843645,
+          0.1669593328358162,
+          0.5339517981604053,
+          0.18042438820913576
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "层间温度",
+        "pageNo": 9,
+        "bbox": [
+          0.6344414881226814,
+          0.16411274374274853,
+          0.7166878768076648,
+          0.18181748915948948
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "类型",
+        "pageNo": 9,
+        "bbox": [
+          0.1355236141413631,
+          0.20037986717499323,
+          0.1765913750441263,
+          0.21802325592135086
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "管对接",
+        "pageNo": 9,
+        "bbox": [
+          0.2156057508981209,
+          0.20180436865110685,
+          0.279260779785364,
+          0.21802325597296301
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "接头",
+        "pageNo": 9,
+        "bbox": [
+          0.3634496934528918,
+          0.19183285806226646,
+          0.4086242294218515,
+          0.20940170896445065
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "位",
+        "pageNo": 9,
+        "bbox": [
+          0.3203285424793548,
+          0.21656976704376552,
+          0.34291581046383474,
+          0.23401162801437403
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "位置",
+        "pageNo": 9,
+        "bbox": [
+          0.36550308076239885,
+          0.2107558136361427,
+          0.4065708416651621,
+          0.22839506164273338
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "5G",
+        "pageNo": 9,
+        "bbox": [
+          0.4845995891774995,
+          0.2018043685638975,
+          0.5133470223214737,
+          0.21802325588575366
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "气",
+        "pageNo": 9,
+        "bbox": [
+          0.5913757706449949,
+          0.19767441849725387,
+          0.6139630386294748,
+          0.21511627946786238
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接",
+        "pageNo": 9,
+        "bbox": [
+          0.7864476395739926,
+          0.2018043686219697,
+          0.829568788009854,
+          0.21947674435804332
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "8-9",
+        "pageNo": 9,
+        "bbox": [
+          0.8706365512556756,
+          0.20180436855737027,
+          0.9055441469989445,
+          0.21947674429344377
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "坡口",
+        "pageNo": 9,
+        "bbox": [
+          0.13552361403385338,
+          0.2514534883002928,
+          0.17453798740351834,
+          0.267441860856684
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "V",
+        "pageNo": 9,
+        "bbox": [
+          0.2422997948768876,
+          0.2529069772223239,
+          0.25256673510257843,
+          0.26453488363038935
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "置",
+        "pageNo": 9,
+        "bbox": [
+          0.3203285424793548,
+          0.23546511591414943,
+          0.34291581046383474,
+          0.2514534884705406
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接",
+        "pageNo": 9,
+        "bbox": [
+          0.3634496922913095,
+          0.24121557464264443,
+          0.406570840727171,
+          0.25735992412032727
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "氩气",
+        "pageNo": 9,
+        "bbox": [
+          0.6427104732495573,
+          0.22674418571301613,
+          0.6858316216854188,
+          0.24418604668362465
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "气体",
+        "pageNo": 9,
+        "bbox": [
+          0.7145790559155396,
+          0.21652421618930817,
+          0.7577002043514011,
+          0.23409306709149236
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "流量",
+        "pageNo": 9,
+        "bbox": [
+          0.7145790568272928,
+          0.23546511595364916,
+          0.7597535927962527,
+          0.25308641984890934
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "方向",
+        "pageNo": 9,
+        "bbox": [
+          0.36550308079091814,
+          0.26017441829120846,
+          0.40657084169368135,
+          0.2763532766506369
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "向上",
+        "pageNo": 9,
+        "bbox": [
+          0.4784394260515764,
+          0.2514534880586504,
+          0.5215605744874379,
+          0.2674418606150415
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "背面",
+        "pageNo": 9,
+        "bbox": [
+          0.7864476390649234,
+          0.25145348820399915,
+          0.8295687875007849,
+          0.26744186076039034
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 9,
+        "bbox": [
+          0.8767967155383655,
+          0.2470930237099921,
+          0.9014373710559436,
+          0.2718023249403403
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "电特性",
+        "pageNo": 9,
+        "bbox": [
+          0.47022587417718614,
+          0.28774928819738066,
+          0.5338809030644293,
+          0.3038936376750634
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "试件",
+        "pageNo": 9,
+        "bbox": [
+          0.08008213504886244,
+          0.3209876544041932,
+          0.11704312088542913,
+          0.3343023253907925
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "编号",
+        "pageNo": 9,
+        "bbox": [
+          0.08008213588048461,
+          0.33570750232255686,
+          0.11704312171705131,
+          0.35042735037573824
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊道/",
+        "pageNo": 9,
+        "bbox": [
+          0.1396303891735184,
+          0.3209876544041932,
+          0.19301848039527017,
+          0.3343023253907925
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊层",
+        "pageNo": 9,
+        "bbox": [
+          0.14989733102563982,
+          0.33428300111607856,
+          0.18891170439530475,
+          0.35185185201826275
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接",
+        "pageNo": 9,
+        "bbox": [
+          0.22997946590243654,
+          0.3209876544041932,
+          0.26899383927210146,
+          0.3343023253907925
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "填充材料",
+        "pageNo": 9,
+        "bbox": [
+          0.3593040901170392,
+          0.31531316453540614,
+          0.4291969375750273,
+          0.3300356720991575
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接电流",
+        "pageNo": 9,
+        "bbox": [
+          0.5563111819428542,
+          0.3148904119893101,
+          0.6490276294018256,
+          0.3304584251941185
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "电弧",
+        "pageNo": 9,
+        "bbox": [
+          0.7002053386746079,
+          0.3138651473469589,
+          0.7351129369780762,
+          0.32716049397563896
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "电压",
+        "pageNo": 9,
+        "bbox": [
+          0.7002053392611927,
+          0.32703488341657194,
+          0.7392197126308576,
+          0.3430232559729631
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接",
+        "pageNo": 9,
+        "bbox": [
+          0.7782340864011652,
+          0.3138651473469589,
+          0.8151950722377319,
+          0.32716049397563896
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "（v）",
+        "pageNo": 9,
+        "bbox": [
+          0.7022587277908764,
+          0.3428300092012675,
+          0.735112936001047,
+          0.3590116280538739
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "（cm/min）",
+        "pageNo": 9,
+        "bbox": [
+          0.7575050551512492,
+          0.34394879869003714,
+          0.8338707167723429,
+          0.35953957237845957
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "速度",
+        "pageNo": 9,
+        "bbox": [
+          0.7761806978377548,
+          0.3284883724079126,
+          0.8151950712074197,
+          0.34302325564441283
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "厚度",
+        "pageNo": 9,
+        "bbox": [
+          0.868583162066023,
+          0.3270348835740331,
+          0.907597535435688,
+          0.3430232561304243
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊层",
+        "pageNo": 9,
+        "bbox": [
+          0.8685831626349828,
+          0.31244064594351983,
+          0.9075975360046478,
+          0.3271604939967012
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "方法",
+        "pageNo": 9,
+        "bbox": [
+          0.23203285395029982,
+          0.3357075025740237,
+          0.26899383978686653,
+          0.35185185205170644
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "牌号",
+        "pageNo": 9,
+        "bbox": [
+          0.3429158109538685,
+          0.3428300097083412,
+          0.377823409257337,
+          0.356125356337021
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "直径",
+        "pageNo": 9,
+        "bbox": [
+          0.44558521547132246,
+          0.3428300097083412,
+          0.4804928137747909,
+          0.356125356337021
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "极性",
+        "pageNo": 9,
+        "bbox": [
+          0.521560575320057,
+          0.34283000938874075,
+          0.5646817237559184,
+          0.3561253560174207
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "电流（A）",
+        "pageNo": 9,
+        "bbox": [
+          0.6078028754311708,
+          0.341405507973189,
+          0.6735112918515123,
+          0.3561253560263704
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "（mm）",
+        "pageNo": 9,
+        "bbox": [
+          0.8706365501424135,
+          0.34425451109980254,
+          0.9055441484458819,
+          0.3575581392080164
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "HP-1",
+        "pageNo": 9,
+        "bbox": [
+          0.08008213608724145,
+          0.37063953510992076,
+          0.1190965094569064,
+          0.3822674415179862
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "GTAW",
+        "pageNo": 9,
+        "bbox": [
+          0.2299033599318854,
+          0.370503783694518,
+          0.2711233349361456,
+          0.3824031924859975
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "CHG-56R",
+        "pageNo": 9,
+        "bbox": [
+          0.32845461377900254,
+          0.3703871862785386,
+          0.3943379942336612,
+          0.38251978972370937
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "①2.5",
+        "pageNo": 9,
+        "bbox": [
+          0.4414784406397501,
+          0.3706395348119207,
+          0.4866529766087098,
+          0.3866279073683119
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "直流正接",
+        "pageNo": 9,
+        "bbox": [
+          0.5111098407385999,
+          0.3673349489771005,
+          0.585399400736568,
+          0.3855720276084662
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "110-120",
+        "pageNo": 9,
+        "bbox": [
+          0.6077059196557987,
+          0.3689496486569459,
+          0.6777150257734056,
+          0.3839573279359798
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "10-15",
+        "pageNo": 9,
+        "bbox": [
+          0.6940451742727654,
+          0.3660968659183427,
+          0.7474332654945172,
+          0.3851744187209982
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "5-6",
+        "pageNo": 9,
+        "bbox": [
+          0.7782340865184528,
+          0.3675213673404216,
+          0.8172484598881178,
+          0.3837209303043583
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "3",
+        "pageNo": 9,
+        "bbox": [
+          0.8788501025141643,
+          0.36918604612006023,
+          0.8973305954324475,
+          0.3851744186764514
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "HP-1",
+        "pageNo": 9,
+        "bbox": [
+          0.08008213648907013,
+          0.39825581416225986,
+          0.12114989739183335,
+          0.4113372089845426
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2",
+        "pageNo": 9,
+        "bbox": [
+          0.13963039033376648,
+          0.3997093027581631,
+          0.1498973305594573,
+          0.4098837207520112
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "SMAW",
+        "pageNo": 9,
+        "bbox": [
+          0.22997946590243654,
+          0.39970930266806026,
+          0.26899383927210146,
+          0.4113372090761258
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "CHE427R",
+        "pageNo": 9,
+        "bbox": [
+          0.32854209623883684,
+          0.39970930253724624,
+          0.3942505126591782,
+          0.4113372089453118
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "中3.2",
+        "pageNo": 9,
+        "bbox": [
+          0.441478441185316,
+          0.39825581413756383,
+          0.488706364687374,
+          0.41279069737406404
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "直流反接",
+        "pageNo": 9,
+        "bbox": [
+          0.5111583564316018,
+          0.39648379261676214,
+          0.5853508848682497,
+          0.413109230484596
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "120-130",
+        "pageNo": 9,
+        "bbox": [
+          0.607676380076175,
+          0.39652169143383675,
+          0.6777445653576085,
+          0.4130713307598255
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "25-30",
+        "pageNo": 9,
+        "bbox": [
+          0.6915745525852676,
+          0.3946637347884969,
+          0.7478504976470728,
+          0.41347580023905117
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "6-7",
+        "pageNo": 9,
+        "bbox": [
+          0.7802874752803163,
+          0.39534883684438205,
+          0.8151950710235852,
+          0.4113372094007731
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2",
+        "pageNo": 9,
+        "bbox": [
+          0.8809034906873126,
+          0.3982558140859517,
+          0.8952772072592996,
+          0.41133720890823444
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "HP-1",
+        "pageNo": 9,
+        "bbox": [
+          0.08008213566771491,
+          0.42587209312301555,
+          0.12114989657047812,
+          0.4389534879452983
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "3",
+        "pageNo": 9,
+        "bbox": [
+          0.13963039018342915,
+          0.4258720933698876,
+          0.14989733040911996,
+          0.43749999977795295
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "SMAW",
+        "pageNo": 9,
+        "bbox": [
+          0.22997946616052806,
+          0.42732558173782775,
+          0.27104722706329126,
+          0.4389534881458932
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "CHE427R",
+        "pageNo": 9,
+        "bbox": [
+          0.3285040665903363,
+          0.4272171689438071,
+          0.3942885414176355,
+          0.43906190086064956
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "¢3.2",
+        "pageNo": 9,
+        "bbox": [
+          0.4414784411970009,
+          0.4244186045728353,
+          0.4907597522321572,
+          0.4420702757044004
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "直流反接",
+        "pageNo": 9,
+        "bbox": [
+          0.5111836792510901,
+          0.4227292404069458,
+          0.585325561821088,
+          0.4406428522727366
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "120-130",
+        "pageNo": 9,
+        "bbox": [
+          0.6056391126852047,
+          0.4227350070653846,
+          0.6777284423471436,
+          0.44063708608336416
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "25-30",
+        "pageNo": 9,
+        "bbox": [
+          0.6919548070255346,
+          0.42290617583794676,
+          0.7474702448237466,
+          0.44046591747491304
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "6-7",
+        "pageNo": 9,
+        "bbox": [
+          0.7782340864109433,
+          0.42296511617167254,
+          0.8151950722475099,
+          0.44040697714228105
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2",
+        "pageNo": 9,
+        "bbox": [
+          0.8809034907044239,
+          0.4258720931775214,
+          0.8952772072764109,
+          0.43895348799980416
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "钨极类型及直径_铈钨极 D2.4",
+        "pageNo": 9,
+        "bbox": [
+          0.07802874796066146,
+          0.45489078801898386,
+          0.34702258136172065,
+          0.46961063607216524
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "_喷咀直径（mm）",
+        "pageNo": 9,
+        "bbox": [
+          0.45563783559737403,
+          0.4526550453818674,
+          0.5854299248676393,
+          0.4717635595427192
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "$6-13",
+        "pageNo": 9,
+        "bbox": [
+          0.6201232027586848,
+          0.45489078829255714,
+          0.6714579064473384,
+          0.4696106363457385
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "熔滴过波形式",
+        "pageNo": 9,
+        "bbox": [
+          0.07802874740270874,
+          0.48100664791657266,
+          0.20328542276449565,
+          0.4971509973942554
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊丝送丝速度（cm/min）_6-8",
+        "pageNo": 9,
+        "bbox": [
+          0.45585216394470357,
+          0.48243114866580505,
+          0.7043121117739821,
+          0.498575498143488
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "技术措施：",
+        "pageNo": 9,
+        "bbox": [
+          0.07796200387124158,
+          0.5172266429560478,
+          0.17049795726496011,
+          0.5321919620687694
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "摆动焊或不摆动焊_摆动焊",
+        "pageNo": 9,
+        "bbox": [
+          0.07802874974658634,
+          0.5436046510037812,
+          0.3408624154279517,
+          0.5598290602176669
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "摆动参数",
+        "pageNo": 9,
+        "bbox": [
+          0.4309684478526476,
+          0.5415605219907508,
+          0.513590074738593,
+          0.5601836630195798
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊工自己掌握",
+        "pageNo": 9,
+        "bbox": [
+          0.5912350123767206,
+          0.5416395374714573,
+          0.7147198146228144,
+          0.5601046484169099
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊前清理和间清理L焊前须将坡口两侧 20mm 范围内的油污、铁锈及其它杂质清除干净，直至露出金属光",
+        "pageNo": 9,
+        "bbox": [
+          0.07802875948480249,
+          0.5712209309218228,
+          0.9240246074556498,
+          0.588793922563774
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "泽。2．每焊完一道缝后，须彻底清除熔渣。",
+        "pageNo": 9,
+        "bbox": [
+          0.07802875782687323,
+          0.6001899339713597,
+          0.4168377775940712,
+          0.6163342834490425
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "背面清根方法：_",
+        "pageNo": 9,
+        "bbox": [
+          0.45585215686896097,
+          0.5973409302677575,
+          0.6036961002152278,
+          0.6149097811699417
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "导电咀至工件距离（mm）",
+        "pageNo": 9,
+        "bbox": [
+          0.08008213974230925,
+          0.6277302944822529,
+          0.2813141691899288,
+          0.6424501425354343
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "7-9",
+        "pageNo": 9,
+        "bbox": [
+          0.29979466120301385,
+          0.6291547960278785,
+          0.34291580963887536,
+          0.6410256412320571
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "锤击.",
+        "pageNo": 9,
+        "bbox": [
+          0.47022587398677274,
+          0.6263057928520077,
+          0.5154004099557324,
+          0.643895349264374
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.6119096518833348,
+          0.6264534880362904,
+          0.6365503074009129,
+          0.6438953490068989
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "其它",
+        "pageNo": 9,
+        "bbox": [
+          0.098562628759482,
+          0.6671415009055652,
+          0.14168377719534347,
+          0.6832858503832481
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "外观检验",
+        "pageNo": 9,
+        "bbox": [
+          0.4558257867456217,
+          0.6946887961969754,
+          0.5421208237271915,
+          0.7093809713928559
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "试件",
+        "pageNo": 9,
+        "bbox": [
+          0.08418891289154144,
+          0.7207977209372495,
+          0.11909650863481036,
+          0.7340930675659294
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊缝尺寸",
+        "pageNo": 9,
+        "bbox": [
+          0.21765913631078793,
+          0.720797720617649,
+          0.2874743329177248,
+          0.7340930672463291
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "未",
+        "pageNo": 9,
+        "bbox": [
+          0.4435318277215847,
+          0.7223837211418975,
+          0.45995893182667,
+          0.734011627549963
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "差",
+        "pageNo": 9,
+        "bbox": [
+          0.21971252542997535,
+          0.7587209305685098,
+          0.2381930183482587,
+          0.7718023253907925
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "度",
+        "pageNo": 9,
+        "bbox": [
+          0.27515400431296044,
+          0.7587209303868238,
+          0.29158110841804574,
+          0.7718023252091065
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "宽",
+        "pageNo": 9,
+        "bbox": [
+          0.2751540045182992,
+          0.742732558563436,
+          0.29158110862338454,
+          0.7572674417999361
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "宽窄",
+        "pageNo": 9,
+        "bbox": [
+          0.3264887075527324,
+          0.7426400759339095,
+          0.36139630329600136,
+          0.7559354225625894
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊",
+        "pageNo": 9,
+        "bbox": [
+          0.4414784391876756,
+          0.7369186049871144,
+          0.4599589321059589,
+          0.7499999998093971
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "凹",
+        "pageNo": 9,
+        "bbox": [
+          0.4948665295932197,
+          0.7296511628904575,
+          0.5133470225115031,
+          0.7427325577127403
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "差",
+        "pageNo": 9,
+        "bbox": [
+          0.33470225857165914,
+          0.7587209304023969,
+          0.3531827514899425,
+          0.7718023252246796
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "陷",
+        "pageNo": 9,
+        "bbox": [
+          0.49486652953675153,
+          0.7456395352196726,
+          0.5133470224550349,
+          0.7587209300419554
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊",
+        "pageNo": 9,
+        "bbox": [
+          0.5482546202554374,
+          0.7296511629813005,
+          0.5667351131737207,
+          0.7427325578035833
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "表面缺陷",
+        "pageNo": 9,
+        "bbox": [
+          0.6550308005525011,
+          0.7207977209251369,
+          0.7248459971594379,
+          0.734093067553817
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "角",
+        "pageNo": 9,
+        "bbox": [
+          0.8172484601651163,
+          0.7209302327124051,
+          0.8336755642702016,
+          0.7340116275346878
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "瘤",
+        "pageNo": 9,
+        "bbox": [
+          0.5482546202554374,
+          0.7456395350743238,
+          0.5667351131737207,
+          0.7587209298966067
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "气孔",
+        "pageNo": 9,
+        "bbox": [
+          0.5934291592895565,
+          0.750000000423901,
+          0.6283367550328254,
+          0.7645348836604011
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "夹渣",
+        "pageNo": 9,
+        "bbox": [
+          0.6468172493734032,
+          0.750000000121091,
+          0.6817248451166721,
+          0.7645348833575912
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "裂纹",
+        "pageNo": 9,
+        "bbox": [
+          0.6981519506956797,
+          0.7500000000968662,
+          0.7351129365322464,
+          0.7645348833333663
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "未熔",
+        "pageNo": 9,
+        "bbox": [
+          0.7535934290236839,
+          0.7426400759217971,
+          0.7885010273271523,
+          0.7559354225504771
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "变",
+        "pageNo": 9,
+        "bbox": [
+          0.8213552363943905,
+          0.7296511631529276,
+          0.8336755641531796,
+          0.7470930223121889
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "结",
+        "pageNo": 9,
+        "bbox": [
+          0.885010267041885,
+          0.7209302327366299,
+          0.9034907599601684,
+          0.7340116275589127
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "编号",
+        "pageNo": 9,
+        "bbox": [
+          0.08213552320081317,
+          0.75290697709225,
+          0.11909650903737987,
+          0.7659883719145327
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "高度",
+        "pageNo": 9,
+        "bbox": [
+          0.14989733018233267,
+          0.750000000060529,
+          0.18685831601889938,
+          0.7645348832970291
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "高度",
+        "pageNo": 9,
+        "bbox": [
+          0.21149897453596306,
+          0.7426400761550953,
+          0.246406570279232,
+          0.7573599242082767
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "合",
+        "pageNo": 9,
+        "bbox": [
+          0.7618069813642668,
+          0.7587209304023969,
+          0.7802874742825502,
+          0.7718023252246796
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "形",
+        "pageNo": 9,
+        "bbox": [
+          0.8172484598293592,
+          0.7470930236514874,
+          0.8357289527476426,
+          0.7659883712249662
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "论",
+        "pageNo": 9,
+        "bbox": [
+          0.8850102667338767,
+          0.7529069770680252,
+          0.9034907596521601,
+          0.7659883718903081
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "HP-1",
+        "pageNo": 9,
+        "bbox": [
+          0.08213552411256655,
+          0.7819767443977115,
+          0.12114989748223151,
+          0.7936046508057769
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "1.1-1.9",
+        "pageNo": 9,
+        "bbox": [
+          0.14152772154757812,
+          0.7829869003291912,
+          0.19728131422434247,
+          0.794047983660032
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "0.8",
+        "pageNo": 9,
+        "bbox": [
+          0.21765913769250864,
+          0.7834302328119287,
+          0.24435318330338454,
+          0.7921511623915594
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "9-11",
+        "pageNo": 9,
+        "bbox": [
+          0.2669404530780575,
+          0.7834302328119287,
+          0.30184804882132643,
+          0.7921511623915594
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2.0",
+        "pageNo": 9,
+        "bbox": [
+          0.33264887003708654,
+          0.7834302323954292,
+          0.35728952811486414,
+          0.7921511628807335
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.3901437375854466,
+          0.7790697670769401,
+          0.4127310055699265,
+          0.7950581396333313
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.4414784398270619,
+          0.7805232554223858,
+          0.4640657078115418,
+          0.796511627978777
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.49486652989751245,
+          0.7805232558744825,
+          0.5154004103488941,
+          0.7950581391109827
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.5482546208161105,
+          0.7805232559834941,
+          0.5708418888005905,
+          0.7950581392199944
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.5995893228010523,
+          0.7790697670769401,
+          0.6221765907855321,
+          0.7950581396333313
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.6529774130743485,
+          0.7790697672828509,
+          0.6755646810588284,
+          0.7950581398392421
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.7063655034949265,
+          0.7790697671102491,
+          0.7289527714794064,
+          0.7950581396666403
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.7597535937725005,
+          0.7790697672828509,
+          0.7823408617569805,
+          0.7950581398392421
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "无",
+        "pageNo": 9,
+        "bbox": [
+          0.8151950724465498,
+          0.7790697672949634,
+          0.8398357279641279,
+          0.7950581398513545
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "合格",
+        "pageNo": 9,
+        "bbox": [
+          0.8747433271689697,
+          0.7790697671375021,
+          0.915811088071733,
+          0.7950581396938932
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "配水人丁文斌",
+        "pageNo": 9,
+        "bbox": [
+          0.12525667702724216,
+          0.8502906968245301,
+          0.3347022566072547,
+          0.8941120606449529
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检验：奕文丽",
+        "pageNo": 9,
+        "bbox": [
+          0.6979823536827983,
+          0.8542410471288406,
+          0.8441121000878685,
+          0.8855845343820569
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      }
+    ]
+  },
+  {
+    "file": "test2/9.1金辉焊接工艺评定20.pdf",
+    "page": 10,
+    "ocrError": null,
+    "profileId": "ndt_rt_report_v1",
+    "note": "offline postprocessing probe; profile explicitly selected for diagnosis, not automatic classification",
+    "fields": [],
+    "diagnostics": [
+      {
+        "code": "SEAL_NOT_FOUND",
+        "level": "warning",
+        "message": "当前 Profile 要求印章，但未检测到印章候选。"
+      },
+      {
+        "code": "REQUIRED_FIELD_MISSING",
+        "level": "warning",
+        "message": "Profile 必抽字段仍有缺失。",
+        "missingFields": [
+          "report_no",
+          "project_name",
+          "detection_method",
+          "weld_no",
+          "detection_date",
+          "evaluation_level",
+          "conclusion",
+          "inspection_unit"
+        ]
+      },
+      {
+        "code": "REQUIRED_TABLE_MISSING",
+        "level": "warning",
+        "message": "Profile 必需表格仍有缺失。",
+        "missingTables": [
+          "weld_detection_result_table"
+        ]
+      }
+    ],
+    "fragments": [
+      {
+        "text": "MA",
+        "pageNo": 10,
+        "bbox": [
+          0.6468172484167827,
+          0.12773029394960833,
+          0.7248459951561127,
+          0.1571699900559711
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "201819133578",
+        "pageNo": 10,
+        "bbox": [
+          0.6026606347383994,
+          0.16301180221382672,
+          0.7607839429585651,
+          0.18444441253269794
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "有效期至2027年09月06日",
+        "pageNo": 10,
+        "bbox": [
+          0.6195098206373943,
+          0.1792448299306436,
+          0.7440306332160437,
+          0.19453456223786758
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "射线检测报告书",
+        "pageNo": 10,
+        "bbox": [
+          0.25197809585985403,
+          0.21331390866336652,
+          0.7460292572482768,
+          0.26840938021124594
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "工程名称：广东省金辉工业设备安装有限公司焊接工",
+        "pageNo": 10,
+        "bbox": [
+          0.14989733633735475,
+          0.36039886051217884,
+          0.7659137396380049,
+          0.38372092969294913
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "艺评定试件",
+        "pageNo": 10,
+        "bbox": [
+          0.30390143722927077,
+          0.39825581361608997,
+          0.4291581125910577,
+          0.417378917273203
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "李俊",
+        "pageNo": 10,
+        "bbox": [
+          0.8521560572683352,
+          0.3808139531247292,
+          0.9240246414083704,
+          0.42165242112028145
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检件名称：试件",
+        "pageNo": 10,
+        "bbox": [
+          0.14784394791587108,
+          0.4883720938310201,
+          0.3655030776282767,
+          0.5101744182329335
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "委托单位：广东省金辉工业设备安装有限公司",
+        "pageNo": 10,
+        "bbox": [
+          0.14752972682015922,
+          0.5808763621586532,
+          0.6922535857494797,
+          0.6066231623268274
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "报告编号：2023SHZH-022RTBG-01",
+        "pageNo": 10,
+        "bbox": [
+          0.14579056059494672,
+          0.6918328581405739,
+          0.5523613843155843,
+          0.712250711891761
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "广州声华科技有限公司",
+        "pageNo": 10,
+        "bbox": [
+          0.2891828501072479,
+          0.7861368942419681,
+          0.6964279279700835,
+          0.8254362170241603
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "0 3352",
+        "pageNo": 10,
+        "bbox": [
+          0.5112521478745636,
+          0.8324221247923556,
+          0.5695646855607004,
+          0.8539044167430414
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "二零二三年十月",
+        "pageNo": 10,
+        "bbox": [
+          0.3531827513133402,
+          0.8575498577067806,
+          0.6283367524340931,
+          0.8866279065649885
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      }
+    ]
+  },
+  {
+    "file": "test2/9.1金辉焊接工艺评定20.pdf",
+    "page": 11,
+    "ocrError": null,
+    "profileId": "ndt_rt_report_v1",
+    "note": "offline postprocessing probe; profile explicitly selected for diagnosis, not automatic classification",
+    "fields": [],
+    "diagnostics": [
+      {
+        "code": "SEAL_NOT_FOUND",
+        "level": "warning",
+        "message": "当前 Profile 要求印章，但未检测到印章候选。"
+      },
+      {
+        "code": "REQUIRED_FIELD_MISSING",
+        "level": "warning",
+        "message": "Profile 必抽字段仍有缺失。",
+        "missingFields": [
+          "report_no",
+          "project_name",
+          "detection_method",
+          "weld_no",
+          "detection_date",
+          "evaluation_level",
+          "conclusion",
+          "inspection_unit"
+        ]
+      },
+      {
+        "code": "REQUIRED_TABLE_MISSING",
+        "level": "warning",
+        "message": "Profile 必需表格仍有缺失。",
+        "missingTables": [
+          "weld_detection_result_table"
+        ]
+      }
+    ],
+    "fragments": [
+      {
+        "text": "HS/T 3503-J127-1",
+        "pageNo": 11,
+        "bbox": [
+          0.15195071908893357,
+          0.12203228860165205,
+          0.29774126978170307,
+          0.13675213665483343
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "射线检测报告（主页）",
+        "pageNo": 11,
+        "bbox": [
+          0.3608997503787036,
+          0.10873592848445035,
+          0.6206238591834959,
+          0.1338444162286142
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "有限公司焊接工艺评定试件",
+        "pageNo": 11,
+        "bbox": [
+          0.6509240208419175,
+          0.11337209345816002,
+          0.8644763857289246,
+          0.13081395261742135
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "工程名称：：广东省金辉工业设备安装",
+        "pageNo": 11,
+        "bbox": [
+          0.6525888652379588,
+          0.09548607707222911,
+          0.9428167270904126,
+          0.11503131972957803
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "委托单位",
+        "pageNo": 11,
+        "bbox": [
+          0.12112076493068975,
+          0.1801601940827846,
+          0.19304761409110816,
+          0.19483980577428028
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "广东省金辉工业设备安装",
+        "pageNo": 11,
+        "bbox": [
+          0.22381929918958984,
+          0.16999050339805932,
+          0.4229979462245102,
+          0.18898385572474496
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "有限公司",
+        "pageNo": 11,
+        "bbox": [
+          0.28740181010777727,
+          0.19167906204879692,
+          0.35941543979068935,
+          0.20657675179567891
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "报告编号",
+        "pageNo": 11,
+        "bbox": [
+          0.4496919920162247,
+          0.18459302343988948,
+          0.5215605761562598,
+          0.19912790667638958
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2023SHZH-0",
+        "pageNo": 11,
+        "bbox": [
+          0.5418432060916439,
+          0.17364049939649473,
+          0.6368015588142216,
+          0.19118508186849625
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "单元名称：/",
+        "pageNo": 11,
+        "bbox": [
+          0.6507993668905473,
+          0.15519111608051206,
+          0.7578248615620553,
+          0.17620423287177622
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "承包单位",
+        "pageNo": 11,
+        "bbox": [
+          0.12109748628209896,
+          0.21352149235375684,
+          0.19101750257725678,
+          0.2268854845140722
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "广州声华",
+        "pageNo": 11,
+        "bbox": [
+          0.24226167227052792,
+          0.2135679600001431,
+          0.3142064991518854,
+          0.22829250487669095
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "22RTBG-01",
+        "pageNo": 11,
+        "bbox": [
+          0.5461449758845319,
+          0.19604196502133509,
+          0.6283930133379977,
+          0.20948129111293123
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "设备位号",
+        "pageNo": 11,
+        "bbox": [
+          0.6673511283440824,
+          0.19183285888073076,
+          0.7392197124841176,
+          0.20940170978291506
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "管线号",
+        "pageNo": 11,
+        "bbox": [
+          0.6755646812206242,
+          0.17877906959934808,
+          0.7310061599754742,
+          0.19476744215573916
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "SJ",
+        "pageNo": 11,
+        "bbox": [
+          0.852156058124168,
+          0.18895348868698247,
+          0.876796713641746,
+          0.20370370352363198
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检件名称",
+        "pageNo": 11,
+        "bbox": [
+          0.35507720781665825,
+          0.21616648545137274,
+          0.4272636560867007,
+          0.23150793353335009
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "试件",
+        "pageNo": 11,
+        "bbox": [
+          0.4702258725555113,
+          0.21652421631448893,
+          0.5051334708589797,
+          0.2312440643676703
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检件规格",
+        "pageNo": 11,
+        "bbox": [
+          0.5503080086603532,
+          0.2165242165090755,
+          0.6242299803334866,
+          0.2340930674112598
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检测标准",
+        "pageNo": 11,
+        "bbox": [
+          0.1211498969994063,
+          0.2397910731359807,
+          0.19096509360634317,
+          0.2545109211891621
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "中219×7",
+        "pageNo": 11,
+        "bbox": [
+          0.6672638636131273,
+          0.22069334262314622,
+          0.7372535890204653,
+          0.2342485179551821
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检件材质",
+        "pageNo": 11,
+        "bbox": [
+          0.7720739223085393,
+          0.21937321924475994,
+          0.8459958939816727,
+          0.23694207014694413
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "NB/T47013.2-2015",
+        "pageNo": 11,
+        "bbox": [
+          0.21765914267794262,
+          0.242640076157989,
+          0.338809032732735,
+          0.2559354227866689
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "20#",
+        "pageNo": 11,
+        "bbox": [
+          0.8809034920410966,
+          0.2222222220879756,
+          0.9158110877843655,
+          0.23694207014115698
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "技术等级",
+        "pageNo": 11,
+        "bbox": [
+          0.3531447286295189,
+          0.24263797306958368,
+          0.4250893558153148,
+          0.2573620270710324
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "AB级",
+        "pageNo": 11,
+        "bbox": [
+          0.4681724851214718,
+          0.24548907874152814,
+          0.5010266933316425,
+          0.2573599239457067
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检测比例",
+        "pageNo": 11,
+        "bbox": [
+          0.5502635828745978,
+          0.24263795107423425,
+          0.6242744037114266,
+          0.26026902537645125
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "100%",
+        "pageNo": 11,
+        "bbox": [
+          0.6817248457330319,
+          0.2469135803916913,
+          0.7207392191026969,
+          0.2616334284448727
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "合格级别",
+        "pageNo": 11,
+        "bbox": [
+          0.7697661685225857,
+          0.24506865316717208,
+          0.8462502598524803,
+          0.26365227603349206
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检测时机",
+        "pageNo": 11,
+        "bbox": [
+          0.11909651205589032,
+          0.2673314339165095,
+          0.19096509107552645,
+          0.28205128196969087
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "煌后24小时",
+        "pageNo": 11,
+        "bbox": [
+          0.23200377527434393,
+          0.2687964689424698,
+          0.3203576222915681,
+          0.282075623938264
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "II",
+        "pageNo": 11,
+        "bbox": [
+          0.8911704312615976,
+          0.2483380816417392,
+          0.9096509241798809,
+          0.2645348841124979
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊接方法",
+        "pageNo": 11,
+        "bbox": [
+          0.3531066420751774,
+          0.2701583536085501,
+          0.4251274454371085,
+          0.28507420482843004
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "氩电联焊",
+        "pageNo": 11,
+        "bbox": [
+          0.4475757906372066,
+          0.2702065011499083,
+          0.5195699986466576,
+          0.28647954503691
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "热处理状态",
+        "pageNo": 11,
+        "bbox": [
+          0.5420944583728153,
+          0.27018043687482773,
+          0.6324435303107349,
+          0.286337209477485
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.6960985629173202,
+          0.27325581405324817,
+          0.7084188906761092,
+          0.28633720887553094
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "设备型号",
+        "pageNo": 11,
+        "bbox": [
+          0.12112214841838972,
+          0.29353969747088626,
+          0.1889394523767449,
+          0.30820448871934913
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "透照方式",
+        "pageNo": 11,
+        "bbox": [
+          0.7699363233236175,
+          0.2730533622287452,
+          0.8460801026942262,
+          0.2894466379108087
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "XXG-2505",
+        "pageNo": 11,
+        "bbox": [
+          0.24024640688857263,
+          0.2962962960760376,
+          0.31416837856170604,
+          0.30816714128021616
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "双壁单影",
+        "pageNo": 11,
+        "bbox": [
+          0.8623567457153873,
+          0.2745504296636576,
+          0.93846461060731,
+          0.2908565469397253
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焦点定量",
+        "pageNo": 11,
+        "bbox": [
+          0.3531588740996729,
+          0.29645235984191576,
+          0.42507521108091506,
+          0.311105779452471
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2*2mm",
+        "pageNo": 11,
+        "bbox": [
+          0.45585215577032073,
+          0.29941860488705263,
+          0.5071868594589742,
+          0.31104651129511796
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "胶片型号",
+        "pageNo": 11,
+        "bbox": [
+          0.5482546194317918,
+          0.29796511612006027,
+          0.6242299786380234,
+          0.31395348867645145
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "爱克发/C7",
+        "pageNo": 11,
+        "bbox": [
+          0.6589860546369348,
+          0.2990099056830673,
+          0.7434780096708196,
+          0.3158156758470426
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "管电压",
+        "pageNo": 11,
+        "bbox": [
+          0.127310061998345,
+          0.32098765425884435,
+          0.18275154075319502,
+          0.3343023252454438
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "增感屏",
+        "pageNo": 11,
+        "bbox": [
+          0.7782340867738902,
+          0.3008720929248083,
+          0.8357289530618385,
+          0.3168604654811995
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "170KV",
+        "pageNo": 11,
+        "bbox": [
+          0.2505133482261397,
+          0.32412790726108354,
+          0.3018480467943942,
+          0.335755813669149
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "管电流",
+        "pageNo": 11,
+        "bbox": [
+          0.3613963037029344,
+          0.32267441842949185,
+          0.41889116999088266,
+          0.3386627909858829
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "0.03mm",
+        "pageNo": 11,
+        "bbox": [
+          0.8706365501209128,
+          0.303779070191343,
+          0.9281314164088611,
+          0.3183139534278432
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "5 mA",
+        "pageNo": 11,
+        "bbox": [
+          0.45585215675513113,
+          0.32703488404160685,
+          0.5030800802571891,
+          0.3386627904496722
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "Y源种类",
+        "pageNo": 11,
+        "bbox": [
+          0.5502627993869386,
+          0.3254791869337965,
+          0.6222217995327676,
+          0.34167197545909445
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "X射线",
+        "pageNo": 11,
+        "bbox": [
+          0.6735112925528571,
+          0.32703488402543757,
+          0.7248459962415107,
+          0.3415697672619378
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "像质计型号",
+        "pageNo": 11,
+        "bbox": [
+          0.10879443602752498,
+          0.3472762503746074,
+          0.1971603876680189,
+          0.36202607486592897
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "Y 源活度",
+        "pageNo": 11,
+        "bbox": [
+          0.7720739216400634,
+          0.3284883722625639,
+          0.8418891182470002,
+          0.343023255499064
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/ ci",
+        "pageNo": 11,
+        "bbox": [
+          0.8767967150188933,
+          0.32703488332283537,
+          0.9199178634547548,
+          0.3444767442934439
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "Fe（10/16）",
+        "pageNo": 11,
+        "bbox": [
+          0.2338457696029067,
+          0.3494887668825335,
+          0.3164622402470447,
+          0.3641740236376704
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "线径编号",
+        "pageNo": 11,
+        "bbox": [
+          0.3508898249732726,
+          0.3496742788560947,
+          0.42323748388588006,
+          0.36544200033835983
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "13",
+        "pageNo": 11,
+        "bbox": [
+          0.4702258732268372,
+          0.3531976747901533,
+          0.49486652874441533,
+          0.3648255811982186
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焦距",
+        "pageNo": 11,
+        "bbox": [
+          0.5646817246293359,
+          0.3517441858875021,
+          0.6036960979990008,
+          0.3677325584438933
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "底片黑度",
+        "pageNo": 11,
+        "bbox": [
+          0.11694651861969114,
+          0.37475741677362806,
+          0.1890083056553324,
+          0.38977746664856694
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "370mm.",
+        "pageNo": 11,
+        "bbox": [
+          0.6735112957657894,
+          0.3561046515895854,
+          0.7255033511594948,
+          0.36942070282277384
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "曝光时间",
+        "pageNo": 11,
+        "bbox": [
+          0.7699073043442216,
+          0.3543853554237809,
+          0.8440557359045587,
+          0.3709053411842732
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2min",
+        "pageNo": 11,
+        "bbox": [
+          0.8765183042499015,
+          0.35572245681852344,
+          0.9201962755969679,
+          0.3724752179058233
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2.0-4.5",
+        "pageNo": 11,
+        "bbox": [
+          0.24227330854214385,
+          0.3778401332417658,
+          0.3080347006106867,
+          0.39105521545200594
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "有效片长",
+        "pageNo": 11,
+        "bbox": [
+          0.3510686037922169,
+          0.37775528396143,
+          0.4230587052416585,
+          0.3925935533681172
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "85.96mm",
+        "pageNo": 11,
+        "bbox": [
+          0.44757738297811345,
+          0.3806699305234189,
+          0.5154616310331811,
+          0.395492860536092
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "显影温度",
+        "pageNo": 11,
+        "bbox": [
+          0.5481347568138538,
+          0.3805117969447074,
+          0.6202430677949387,
+          0.3956509936177175
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检测部位编号",
+        "pageNo": 11,
+        "bbox": [
+          0.16620621108532294,
+          0.40072409945184584,
+          0.2711654506610098,
+          0.4161363657764605
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "25°C",
+        "pageNo": 11,
+        "bbox": [
+          0.6796714580644095,
+          0.38224121555452983,
+          0.7166324439009762,
+          0.39553656218320987
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "显影时间",
+        "pageNo": 11,
+        "bbox": [
+          0.7699707085726468,
+          0.383586671249583,
+          0.8398855532648002,
+          0.396936584713556
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "片位号",
+        "pageNo": 11,
+        "bbox": [
+          0.3593429162077905,
+          0.40406976762593594,
+          0.4147843949626406,
+          0.418803418597844
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "5min",
+        "pageNo": 11,
+        "bbox": [
+          0.8767045051959934,
+          0.385028353714276,
+          0.9179566849498537,
+          0.39840187899506085
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "焊工号",
+        "pageNo": 11,
+        "bbox": [
+          0.4537987680954896,
+          0.40550807216686535,
+          0.5071868593172414,
+          0.42022792022004674
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "缺陷性质",
+        "pageNo": 11,
+        "bbox": [
+          0.548228557023141,
+          0.40546040314978316,
+          0.6180958792920431,
+          0.4201209916198364
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "1#",
+        "pageNo": 11,
+        "bbox": [
+          0.20944558561277601,
+          0.42732558160701384,
+          0.22997946606415762,
+          0.43895348801507916
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "缺陷定量",
+        "pageNo": 11,
+        "bbox": [
+          0.661113705387696,
+          0.4053376985187006,
+          0.737243582874981,
+          0.42169718532954237
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "1-2",
+        "pageNo": 11,
+        "bbox": [
+          0.37371663286333123,
+          0.4301994302110045,
+          0.4024640660073054,
+          0.43895348797295486
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "评定级别",
+        "pageNo": 11,
+        "bbox": [
+          0.7679671445829599,
+          0.40835707480807293,
+          0.8398357287229951,
+          0.4230769228612543
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.47227926100700557,
+          0.428779069864308,
+          0.4887063651120909,
+          0.4433139531008081
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5749486654012561,
+          0.4287790700823313,
+          0.5913757695063414,
+          0.4433139533188315
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "备注",
+        "pageNo": 11,
+        "bbox": [
+          0.8788501025349774,
+          0.4097815765335351,
+          0.9137577008384459,
+          0.4230769231622149
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.6899383985840076,
+          0.43023255823640105,
+          0.706365502689093,
+          0.44476744147290126
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.8008213554261691,
+          0.4316860469384225,
+          0.8110882956518598,
+          0.4447674417607054
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "2-3",
+        "pageNo": 11,
+        "bbox": [
+          0.37371663232803226,
+          0.45346628668078615,
+          0.40041067793890817,
+          0.4636627908842421
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.4763860369713435,
+          0.4520348837208972,
+          0.4866529771970343,
+          0.4665697669573974
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5749486655552603,
+          0.4520348832893917,
+          0.5913757696603456,
+          0.46802325584578286
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.7987679671818156,
+          0.4563953489761998,
+          0.8090349074075065,
+          0.46802325538426537
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "3-4",
+        "pageNo": 11,
+        "bbox": [
+          0.37371663326590066,
+          0.4781576450254783,
+          0.40041067631657706,
+          0.48860398880515543
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.4743326490254861,
+          0.4767441861070406,
+          0.49075975313057146,
+          0.4912790693435408
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5749486657092644,
+          0.47819767484250564,
+          0.5913757698143497,
+          0.49273255807900584
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.7987679671561484,
+          0.4811046512533317,
+          0.8090349073818391,
+          0.492732557661397
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "秀",
+        "pageNo": 11,
+        "bbox": [
+          0.8809034909833323,
+          0.4636627900344519,
+          0.9117043116604047,
+          0.49563953514723424
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "4-5",
+        "pageNo": 11,
+        "bbox": [
+          0.36960985693559106,
+          0.5014245013563349,
+          0.40041067761266347,
+          0.5147198479850148
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.47433264945327525,
+          0.5014534885142462,
+          0.4907597535583606,
+          0.5145348833365291
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5770020537112968,
+          0.502906976834727,
+          0.5893223814700858,
+          0.5145348832427924
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.7987679671818156,
+          0.5058139536273627,
+          0.8090349074075065,
+          0.517441860035428
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "5-6",
+        "pageNo": 11,
+        "bbox": [
+          0.3696098562939073,
+          0.5261158594797429,
+          0.4004106769709797,
+          0.5394112061084229
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.4743326490863332,
+          0.5276162795479052,
+          0.484599589312024,
+          0.5392441859559707
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5770020538481894,
+          0.5276162795510679,
+          0.5893223816069784,
+          0.5406976743733507
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "6-7",
+        "pageNo": 11,
+        "bbox": [
+          0.37166324391256345,
+          0.550807217271169,
+          0.39835728952343935,
+          0.5612535610508461
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.79876796733582,
+          0.5305232562436416,
+          0.8090349075615108,
+          0.542151162651707
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.4743326488809944,
+          0.5508720931137967,
+          0.4845995891066852,
+          0.5624999995218621
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5749486651996327,
+          0.5508720930837848,
+          0.5893223817716199,
+          0.5654069763202849
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "7-8",
+        "pageNo": 11,
+        "bbox": [
+          0.37166324391256345,
+          0.5740740741030428,
+          0.39835728952343935,
+          0.5845204178827199
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.7967145793444249,
+          0.5537790699064324,
+          0.809034907103214,
+          0.5654069763144978
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.4743326488809944,
+          0.5741279070672852,
+          0.4845995891066852,
+          0.5857558134753506
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5728952770579491,
+          0.5741279072916337,
+          0.5872689936299361,
+          0.5886627905281339
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.6878850104731247,
+          0.5755813954699283,
+          0.70431211457821,
+          0.5901162787064285
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.7967145793102016,
+          0.5755813953940911,
+          0.8090349070689907,
+          0.588662790216374
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "8-1",
+        "pageNo": 11,
+        "bbox": [
+          0.36960985680241404,
+          0.5987654322293443,
+          0.3983572899463882,
+          0.60778727458452
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.47227926110349394,
+          0.5973837209301994,
+          0.484599588862283,
+          0.6119186041666996
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.5728952773402898,
+          0.5988372096898894,
+          0.5872689939122769,
+          0.6133720929263896
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "以下空白",
+        "pageNo": 11,
+        "bbox": [
+          0.18058502586523872,
+          0.618917810374335,
+          0.2485730848899215,
+          0.6339891666595534
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "/",
+        "pageNo": 11,
+        "bbox": [
+          0.687885010399838,
+          0.6002906980619824,
+          0.7022587269718251,
+          0.6148255812984826
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "I",
+        "pageNo": 11,
+        "bbox": [
+          0.7967145790914667,
+          0.6017441861855022,
+          0.8069815193171574,
+          0.6133720925935675
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "评片人：",
+        "pageNo": 11,
+        "bbox": [
+          0.09856262963093577,
+          0.8357075024017585,
+          0.1601642709850806,
+          0.8490028490304385
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "审核人：",
+        "pageNo": 11,
+        "bbox": [
+          0.34291581248514524,
+          0.8371320039564009,
+          0.40451745383929005,
+          0.8532763534340837
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "检测单位：",
+        "pageNo": 11,
+        "bbox": [
+          0.6385709636225353,
+          0.8400208792010317,
+          0.7228253423829564,
+          0.8547465620564767
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "在始",
+        "pageNo": 11,
+        "bbox": [
+          0.7084188922605087,
+          0.8181386519232402,
+          0.7515400406963701,
+          0.8372093025872772
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "龙袤检測熬》",
+        "pageNo": 11,
+        "bbox": [
+          0.7428353602974583,
+          0.82884344069632,
+          0.8629141243232553,
+          0.8586565587135039
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "资格：",
+        "pageNo": 11,
+        "bbox": [
+          0.0985626285357955,
+          0.8720930233769051,
+          0.16016426988994031,
+          0.8866279066134052
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "RT",
+        "pageNo": 11,
+        "bbox": [
+          0.17453798795847877,
+          0.875000000378076,
+          0.19712525594295863,
+          0.885174418371924
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "II",
+        "pageNo": 11,
+        "bbox": [
+          0.2689938403623608,
+          0.8750000001782214,
+          0.29363449587993895,
+          0.8851744181720694
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "级",
+        "pageNo": 11,
+        "bbox": [
+          0.2915811083444594,
+          0.8750000003359516,
+          0.31827515395533523,
+          0.8880813951582344
+        ],
+        "confidence": 1,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "资格：",
+        "pageNo": 11,
+        "bbox": [
+          0.3427840952387168,
+          0.8747158899530362,
+          0.40464917088134733,
+          0.8898189937211486
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "RT",
+        "pageNo": 11,
+        "bbox": [
+          0.429158111006342,
+          0.8779069765458786,
+          0.4496919914577236,
+          0.8880813954454002
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "III级",
+        "pageNo": 11,
+        "bbox": [
+          0.5523613962782411,
+          0.8779069771164749,
+          0.6057494874999929,
+          0.8909883719387577
+        ],
+        "confidence": 0.3,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      },
+      {
+        "text": "报告日期：2023年10月 23日",
+        "pageNo": 11,
+        "bbox": [
+          0.6365503126643469,
+          0.8779069768410521,
+          0.8562628247894518,
+          0.8924418600775523
+        ],
+        "confidence": 0.5,
+        "sourceEngine": "apple_vision_local",
+        "coordinateSystem": "normalized"
+      }
+    ]
+  }
+]
