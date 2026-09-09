@@ -171,7 +171,6 @@ import type { ProjectAnalysisBannerState } from './projectAnalysisPresentation'
 
 type InspectionNodeSortKey = 'review' | 'nodeId' | 'material'
 type SortDirection = 'asc' | 'desc'
-type InspectionReviewProgressLabel = '未提交' | '待审查' | '未补正' | '已通过'
 type NodeRequirementDisplayRow = {
   id: string
   rowNo: number
@@ -223,9 +222,8 @@ import NdtDetailDrawer from './components/NdtDetailDrawer.vue'
 import NdtReportUploadDrawer from './components/NdtReportUploadDrawer.vue'
 import NdtWorkflowPanel from './components/NdtWorkflowPanel.vue'
 import NodePackagePanel from './components/NodePackagePanel.vue'
-import ProjectNodeTree from './components/ProjectNodeTree.vue'
-import WorkstationNodeFilter from '@/views/AIReviewB/components/WorkstationNodeFilter.vue'
-import { filterWorkstationNodes } from '@/views/AIReviewB/workstationNavigation'
+import WorkstationProjectTree from '@/views/AIReviewB/components/WorkstationProjectTree.vue'
+import { useWorkstationFilter } from '@/views/AIReviewB/useWorkstationFilter'
 import ProjectRegistrationPanel from './components/ProjectRegistrationPanel.vue'
 import RectificationDetailDialog from './components/RectificationDetailDialog.vue'
 import R12RegistryVerificationDialog from './components/R12RegistryVerificationDialog.vue'
@@ -258,7 +256,11 @@ import { canLoadProjectNode, resolveLoadableProjectNodeId } from './projectNodeS
 import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
 import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
-import { submittedFileCountLabel, workbenchRolePresentation } from './workbenchRolePresentation'
+import {
+  getInspectionReviewProgress,
+  submittedFileCountLabel,
+  workbenchRolePresentation
+} from './workbenchRolePresentation'
 import { buildCorrectionUploadBindingPayload } from './contractorCorrectionUpload'
 import {
   nodeRunFindingViews,
@@ -972,31 +974,10 @@ const visibleTreeGroups = computed<ProjectTreePayload['groups']>(() =>
     ? contractorFeedbackTreeGroups.value
     : treeGroups.value
 )
-const labNavigationEnabled = computed(
-  () => import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true' && role.value === 'inspection'
+const { labNavigationEnabled, labStation, labNodeStatus } = useWorkstationFilter(
+  role,
+  activeProjectId
 )
-const labStation = ref('')
-const labNodeStatus = ref('')
-const navigationTreeGroups = computed(() =>
-  labNavigationEnabled.value
-    ? filterWorkstationNodes(visibleTreeGroups.value, labStation.value, labNodeStatus.value)
-    : visibleTreeGroups.value
-)
-watch(activeProjectId, () => {
-  labStation.value = ''
-  labNodeStatus.value = ''
-})
-const getInspectionReviewProgress = (
-  status?: string
-): { label: InspectionReviewProgressLabel; rank: number } => {
-  if (!status) return { label: '未提交', rank: 3 }
-  if (status.includes('通过')) return { label: '已通过', rank: 4 }
-  if (status.includes('补正')) return { label: '未补正', rank: 2 }
-  if (['待审查', 'AI 预审中', '待人工确认', '复审中', '已提交'].includes(status)) {
-    return { label: '待审查', rank: 1 }
-  }
-  return { label: '未提交', rank: 3 }
-}
 const handleInspectionNodeTableSort = ({
   prop,
   order
@@ -5353,19 +5334,13 @@ onBeforeUnmount(() => {
               <span>项目审核节点</span>
               <span v-if="role === 'owner'" class="section-tools">只读</span>
             </div>
-            <WorkstationNodeFilter
-              v-if="labNavigationEnabled"
+            <WorkstationProjectTree
               v-model="labStation"
               v-model:status="labNodeStatus"
+              :enabled="labNavigationEnabled"
               :groups="visibleTreeGroups"
               id-prefix="desktop-workstation"
-            />
-            <ProjectNodeTree
-              :groups="navigationTreeGroups"
-              :overview-groups="visibleTreeGroups"
               :active-node-id="activeWorkbenchSection === 'overview' ? 0 : activeNodeId"
-              :show-overview="true"
-              empty-description="暂无项目审核节点"
               @select="handleNodeSelect"
               @select-overview="handleProjectOverviewSelect"
             />
@@ -6831,19 +6806,13 @@ onBeforeUnmount(() => {
         destroy-on-close
       >
         <div id="audit-node-navigation" class="mobile-tree-navigation">
-          <WorkstationNodeFilter
-            v-if="labNavigationEnabled"
+          <WorkstationProjectTree
             v-model="labStation"
             v-model:status="labNodeStatus"
+            :enabled="labNavigationEnabled"
             :groups="visibleTreeGroups"
             id-prefix="mobile-workstation"
-          />
-          <ProjectNodeTree
-            :groups="navigationTreeGroups"
-            :overview-groups="visibleTreeGroups"
             :active-node-id="activeWorkbenchSection === 'overview' ? 0 : activeNodeId"
-            :show-overview="true"
-            empty-description="暂无项目审核节点"
             @select="handleNodeSelect"
             @select-overview="handleProjectOverviewSelect"
           />

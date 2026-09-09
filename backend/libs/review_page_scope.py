@@ -1,6 +1,7 @@
 """Page-scope contract foundations. Public execution remains gated until all readers comply."""
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -55,3 +56,39 @@ def _nested_locations_in_range(value: Any, bounds: dict[str, int]) -> bool:
     if "pageNo" in value and not page_record_in_range(value, bounds):
         return False
     return all(_nested_locations_in_range(item, bounds) for item in value.values())
+
+
+def task_page_ranges(ai_run: dict[str, Any]) -> dict[str, dict[str, int]] | None:
+    if "inputDocumentPageRanges" not in ai_run:
+        return None
+    ranges = normalize_page_ranges(ai_run["inputDocumentPageRanges"], ai_run.get("inputDocumentVersionIds") or [])
+    if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() not in {"1", "true", "yes"}:
+        raise ValueError("review_page_scope_requires_workstation")
+    return ranges
+
+
+def prompt_grounding(state, run, context, grounder):
+    """A scoped prompt must rebuild evidence rather than reuse unbounded context."""
+    scoped = bool(run.get("inputDocumentPageRanges"))
+    grounding = (None if scoped else context.get("groundingInput")) or grounder(
+        state, set(run.get("inputDocumentVersionIds") or []),
+        **({"review_run": run} if scoped else {}),
+    )
+    fields = context.get("fields") or []
+    if scoped:
+        fields = grounding.get("fields") or []
+        context["fields"] = fields
+        context["evidenceLinks"] = grounding.get("evidenceLinks") or []
+    context["groundingInput"] = grounding
+    return grounding, fields
+
+
+def existing_scoped_run(ai_run, ranges, repository, ensure_sources):
+    existing_id = ai_run.get("reviewRunId")
+    existing = repository.find_one("review_runs", str(existing_id), id_field="reviewRunId") if existing_id else None
+    if existing:
+        if (ranges or {}) != (existing.get("inputDocumentPageRanges") or {}):
+            raise ValueError("review_page_scope_existing_run_mismatch")
+        if ranges:
+            ensure_sources(existing, repository.state)
+    return existing

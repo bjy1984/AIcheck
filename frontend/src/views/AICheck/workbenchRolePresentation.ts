@@ -27,3 +27,16 @@ export const workbenchRolePresentation = (role: RoleCode): WorkbenchRolePresenta
         showBreadcrumb: true,
         intro: ''
       }
+
+type InspectionReviewProgressLabel = '未提交' | '待审查' | '未补正' | '已通过'
+export const getInspectionReviewProgress = (
+  status?: string
+): { label: InspectionReviewProgressLabel; rank: number } => {
+  if (!status) return { label: '未提交', rank: 3 }
+  if (status.includes('通过')) return { label: '已通过', rank: 4 }
+  if (status.includes('补正')) return { label: '未补正', rank: 2 }
+  if (['待审查', 'AI 预审中', '待人工确认', '复审中', '已提交'].includes(status)) {
+    return { label: '待审查', rank: 1 }
+  }
+  return { label: '未提交', rank: 3 }
+}

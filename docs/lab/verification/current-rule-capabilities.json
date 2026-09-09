@@ -1,0 +1,2479 @@
+{
+  "schemaVersion": "lab-capability-inventory-v1",
+  "sourceSha256": "ec9629cdaab95a28f930c1253945770ba735299e5b85f26985356bbc4e6c3d62",
+  "scope": "Static capability inventory; compilation is not business acceptance. Existing tests are not counted as source-bound four-state acceptance.",
+  "summary": {
+    "rules": 69,
+    "compilable": 69,
+    "pilotEnabled": 36,
+    "rulesWithDeclaredPendingCapabilities": 1
+  },
+  "rules": [
+    {
+      "ruleId": "R01",
+      "atomicCount": 5,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_all_equal",
+        "check_certificate_validity",
+        "check_date_covers",
+        "check_design_license_scope",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "certificateFacts.certificates",
+        "designDocument.designSealOrganization",
+        "designDocument.pipelineGrades",
+        "designDocument.titleBlockOrganization",
+        "designLicense.holderName",
+        "designLicense.scopeCodes",
+        "designLicense.validFrom",
+        "designLicense.validUntil",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "project.actualConstructionEnd",
+        "project.changeClarificationEnd",
+        "project.constructionStart",
+        "project.pipelineGrades",
+        "project.plannedConstructionEnd"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R02",
+      "atomicCount": 4,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_certificate_validity",
+        "check_date_covers",
+        "check_installation_license_scope",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "certificateFacts.certificates",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "installationLicense.scopeCodes",
+        "installationLicense.validFrom",
+        "installationLicense.validUntil",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "project.constructionStart",
+        "project.pipelineGrades",
+        "project.plannedConstructionEnd"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R03",
+      "atomicCount": 4,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_certificate_validity",
+        "decode_ndt_approval_item_codes",
+        "evaluate_ndt_agencies",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "certificateFacts.certificates",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "ndtAgencies.agencies[].agencyId",
+        "ndtAgencies.agencies[].approvalItemCodes",
+        "ndtAgencies.agencies[].licenseOrganizationName",
+        "ndtAgencies.agencies[].periodStart",
+        "ndtAgencies.agencies[].planOrganizationName",
+        "ndtAgencies.agencies[].plannedPeriodEnd",
+        "ndtAgencies.agencies[].requiredMethods",
+        "ndtAgencies.agencies[].validFrom",
+        "ndtAgencies.agencies[].validUntil"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R04",
+      "atomicCount": 4,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_document_set_completeness",
+        "evaluate_design_document_approval",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "designDocumentSet.catalogListedDocumentTypes",
+        "designDocumentSet.parseableDocumentTypes",
+        "designDocumentSet.uploadedDocumentTypes",
+        "designDocuments.documents",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "project.pipelines"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R05",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_drawing_review_witness",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "drawingReviewWitness.document",
+        "drawingReviewWitness.issuer",
+        "drawingReviewWitness.signatures",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R06",
+      "atomicCount": 4,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_calculation_document_consistency",
+        "evaluate_design_document_approval",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "calculationDocuments.documents",
+        "calculationDocuments.documents[].bodyUploaded",
+        "calculationDocuments.documents[].coveredPipelineIds",
+        "calculationDocuments.documents[].documentId",
+        "calculationDocuments.documents[].documentType",
+        "calculationDocuments.documents[].parameterComparisons",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "project.pipelines"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R07",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_design_change_approval",
+        "extract_document_fields",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding",
+        "verify_design_license_seals"
+      ],
+      "requiredFacts": [
+        "designChanges.documents[].approvingOrganizationName",
+        "designChanges.documents[].changedDocumentType",
+        "designChanges.documents[].coveredPipelineIds",
+        "designChanges.documents[].designLicenseSeal",
+        "designChanges.documents[].documentId",
+        "designChanges.documents[].documentType",
+        "designChanges.documents[].originalDesignOrganizationName",
+        "designChanges.documents[].signatureRoles",
+        "designChanges.documents[].writtenApproval",
+        "designChanges.hasDesignChanges",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "project.pipelines"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R08",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_date_covers",
+        "check_standard_version_active",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "lookup_standard_status",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.standardReferences",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "officialStandardStatus",
+        "reviewDate",
+        "standardCatalog.versionStatus"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R09",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_design_special_requirements",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "designSpecialRequirements.domains.corrosion",
+        "designSpecialRequirements.domains.leakTest",
+        "designSpecialRequirements.domains.ndt",
+        "designSpecialRequirements.domains.pressureTest",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "fixedClauses.designSpecialRequirementRules",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R10",
+      "atomicCount": 4,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_conditional_requirement",
+        "check_required",
+        "check_scope_coverage",
+        "check_signature_completeness",
+        "evaluate_alternative_standard",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "comparisonDeclaration.document",
+        "comparisonTable.coveredSafetyTopics",
+        "design.adoptedStandardType",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R11",
+      "atomicCount": 4,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_cross_document_match",
+        "check_required",
+        "check_signature_completeness",
+        "evaluate_construction_plan",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "constructionPlan.ownerApproval",
+        "constructionPlan.processRequirements",
+        "constructionPlan.projectParameters",
+        "constructionPlan.signatureRoles",
+        "design.projectParameters",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R12",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_cross_document_match",
+        "check_scope_coverage",
+        "check_signature_completeness",
+        "evaluate_component_manufacturer_scope",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding",
+        "verify_org_license"
+      ],
+      "requiredFacts": [
+        "component.materialTableItems",
+        "component.pipelineScheduleItems",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "manufacturerLicense.number",
+        "manufacturerLicense.scope"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R13",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "classify_r13_component_requirements",
+        "evaluate_r13_supervision_certificate_completeness",
+        "evaluate_r13_type_test_coverage",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r13.designItems",
+        "r13.supervisionCertificates",
+        "r13.typeTestReports"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R14",
+      "atomicCount": 4,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "classify_r14_component_applicability",
+        "evaluate_r14_component_design_match",
+        "evaluate_r14_pressure_compatibility",
+        "evaluate_r14_special_report_coverage",
+        "locate_evidence_fragment",
+        "resolve_r14_required_inspection_items",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r14.designItems",
+        "r14.factoryInspectionReports",
+        "r14.pipelineCharacteristics",
+        "r14.specialInspectionReports"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R15",
+      "atomicCount": 6,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "classify_r15_foreign_manufacturing_applicability",
+        "classify_r15_regulatory_requirements",
+        "evaluate_r15_manufacturing_inspection_route",
+        "evaluate_r15_manufacturing_license_coverage",
+        "evaluate_r15_type_test_coverage",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r15.arrivalInspectionRecords",
+        "r15.completeMachineInspectionRecords",
+        "r15.designItems",
+        "r15.manualRegistryVerifications",
+        "r15.manufacturingLicenseCandidates",
+        "r15.supervisionCertificates",
+        "r15.typeTestReports"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R16",
+      "atomicCount": 7,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_r16_batch_traceability",
+        "evaluate_r16_quality_certificate_batch_coverage",
+        "evaluate_r16_quality_certificate_content",
+        "evaluate_r16_quality_certificate_design_match",
+        "evaluate_r16_quality_certificate_form_and_seals",
+        "evaluate_r16_quality_certificate_results",
+        "locate_evidence_fragment",
+        "resolve_r16_product_standard_profile",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r16.designItems",
+        "r16.designItems[].acceptanceLimits",
+        "r16.designItems[].physicalMark",
+        "r16.designItems[].requiredInspectionItems",
+        "r16.designItems[].standardRef",
+        "r16.qualityCertificates",
+        "r16.qualityCertificates[].conclusion",
+        "r16.qualityCertificates[].dealerOfficialSealPresent",
+        "r16.qualityCertificates[].documentForm",
+        "r16.qualityCertificates[].handlerResponsibleSealPresent",
+        "r16.qualityCertificates[].inspectionItems",
+        "r16.qualityCertificates[].manufacturerQualitySealPresent",
+        "r16.qualityCertificates[].testResults"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R17",
+      "atomicCount": 6,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_r17_acceptance_procedure",
+        "evaluate_r17_arrival_acceptance_batch_coverage",
+        "evaluate_r17_nonconformance_control",
+        "evaluate_r17_sampling_witness_chain",
+        "locate_evidence_fragment",
+        "resolve_r17_sampling_retest_requirement",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r17.acceptanceRecords",
+        "r17.acceptanceRecords[].completedSteps",
+        "r17.acceptanceRecords[].conclusion",
+        "r17.acceptanceRecords[].disposition",
+        "r17.acceptanceRecords[].signatureRoles",
+        "r17.designItems",
+        "r17.designItems[].requiresSamplingRetest",
+        "r17.samplingRetestReports",
+        "r17.samplingRules",
+        "r17.witnessRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R18",
+      "atomicCount": 7,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "classify_r18_material_test_applicability",
+        "evaluate_r18_material_ndt_report_completeness",
+        "evaluate_r18_material_report_approval_procedure",
+        "evaluate_r18_material_retest_report_completeness",
+        "evaluate_r18_material_test_results_and_traceability",
+        "locate_evidence_fragment",
+        "resolve_r18_material_test_requirement_profile",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r18.designItems[].acceptanceLimits",
+        "r18.designItems[].requiredMaterialNdtMethods",
+        "r18.designItems[].requiredRetestItems",
+        "r18.designItems[].requiresMaterialNdt",
+        "r18.designItems[].requiresMaterialRetest",
+        "r18.designItems[].standardRef",
+        "r18.materialNdtReports",
+        "r18.materialNdtReports[].signatureRoles",
+        "r18.materialNdtReports[].testResults",
+        "r18.retestReports",
+        "r18.retestReports[].signatureRoles",
+        "r18.retestReports[].testResults"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R19",
+      "atomicCount": 8,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding",
+        "validate_r19_semantic_judgment"
+      ],
+      "requiredFacts": [
+        "r19.archiveLinks",
+        "r19.atomicJudgments[].evidenceRefIds",
+        "r19.batchTraceability",
+        "r19.designMaterialItems",
+        "r19.documents",
+        "r19.domesticComparableStandard",
+        "r19.enterpriseStandard",
+        "r19.evidenceIndex",
+        "r19.firstUseStatus",
+        "r19.foreignMaterialStandard",
+        "r19.foreignMaterialStandards",
+        "r19.manufacturerLocation",
+        "r19.materialGrades",
+        "r19.materialRetestReports",
+        "r19.qualityCertificates",
+        "r19.retestRequirements",
+        "r19.similarServiceEvidence",
+        "r19.wpsPqr",
+        "r19.wpsPqrRequirements"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R20",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "classify_r20_new_material_applicability",
+        "evaluate_r20_new_material_procedure",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "r20.designItems",
+        "r20.materialDataDocuments",
+        "r20.technicalReviewApprovals",
+        "r20.typeTestReports"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R21",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_r21_mark_transfer",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "r21.markTransferOccurred",
+        "r21.materialInventory",
+        "r21.transferRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R22",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_r22_material_substitution",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "r22.actualMaterialUsage",
+        "r22.materialSubstitutionOccurred",
+        "r22.substitutionRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R23",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_r23_valve_sampling",
+        "evaluate_r23_valve_test_records",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "resolve_r23_valve_test_basis",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "r23.constructionRecords",
+        "r23.contractStandardRefs",
+        "r23.designAndContractBasisChecked",
+        "r23.designStandardRefs",
+        "r23.standardRequirementProfiles",
+        "r23.testLots",
+        "r23.testRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R24",
+      "atomicCount": 5,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_certificate_validity",
+        "check_welder_work_coverage",
+        "decode_welder_qualification",
+        "extract_welder_certificate",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding",
+        "verify_welder_on_platform"
+      ],
+      "requiredFacts": [
+        "certificateFacts.certificates",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r24.certificates",
+        "r24.qualificationCodes",
+        "r24.workDate",
+        "r24.workItems"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R25",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_wps_pqr_coverage",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r25.pqrItems",
+        "r25.workItems",
+        "r25.wpsItems"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R26",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_welding_consumable",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r26.designRequirements",
+        "r26.physicalItems",
+        "r26.productStandardProfiles",
+        "r26.qualityCertificates"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R27",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_welding_consumable_control",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r27.controlRequirements",
+        "r27.managementRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R28",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_pipe_fit_up",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r28.fitUpRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R29",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_welding_process",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r29.certificates",
+        "r29.pqrItems",
+        "r29.weldingRecords",
+        "r29.workItems",
+        "r29.wpsItems"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R30",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_weld_appearance",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r30.appearanceRecords",
+        "r30.photoRequired"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R31",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_weld_repair",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r31.repairOccurred",
+        "r31.repairRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R32",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_heat_treatment",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "resolve_pwht_applicability",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r32.procedureCards",
+        "r32.qualificationReports",
+        "r32.weldItems"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R33",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_heat_treatment_instruments",
+        "extract_document_fields",
+        "locate_evidence_fragment",
+        "resolve_pwht_applicability",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r33.instrumentRecords",
+        "r33.reviewDate",
+        "r33.temperaturePointLayouts",
+        "r33.weldItems"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R34",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_heat_treatment",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "resolve_pwht_applicability",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r34.hardnessReports",
+        "r34.heatTreatmentReports",
+        "r34.weldItems"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R35",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_ndt_quality_system",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r35.activityDate",
+        "r35.applicability",
+        "r35.appointments",
+        "r35.calibrationReports",
+        "r35.controlledForms",
+        "r35.equipmentIds",
+        "r35.implementationRecords",
+        "r35.manual",
+        "r35.organizationId",
+        "r35.projectId"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R36",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_r36_ndt_plan",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r36.applicability",
+        "r36.plan",
+        "r36.projectId",
+        "r36.requirements"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R37",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "evaluate_ndt_nonconformance",
+        "evaluate_r37_defect_closure",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r37.applicability",
+        "r37.caseInventory",
+        "r37.closureLinks",
+        "r37.commissions",
+        "r37.organizationId",
+        "r37.procedure",
+        "r37.progressiveInventory",
+        "r37.projectId"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R38",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_certificate_validity",
+        "check_conditional_requirement",
+        "check_ndt_personnel_coverage",
+        "check_required",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "actualNdt.workItems",
+        "certificateFacts.certificates",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "ndtPersonnel.qualificationCodes",
+        "ndtPersonnel.registration",
+        "ndtPersonnel.roster"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R39",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [
+        "complete_document_and_application_inventory",
+        "method_specific_technical_requirements",
+        "procedure_reference_consistency"
+      ],
+      "tools": [
+        "evaluate_r39_approval_chain",
+        "evaluate_r39_document_content",
+        "evaluate_r39_first_use_validation",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "r39.approvalChain",
+        "r39.documentContent",
+        "r39.firstUseValidation"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R40",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_ndt_process",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.ndtRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "ndtRecord.parameters",
+        "ndtRecord.weldIds",
+        "ndtReport.results"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R41",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_rt_film",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "ndtReport.weldIds",
+        "radiographicFilm.imageQuality",
+        "radiographicFilm.weldId",
+        "radiographicFilms.inventory"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R42",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_rt_film",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "siteSampling.films",
+        "siteSampling.records",
+        "siteSampling.reports",
+        "siteSampling.weldIds"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R43",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_conditional_requirement",
+        "check_numeric_range",
+        "check_required",
+        "evaluate_corrosion_protection",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "coatingMaterial.manufacturingLicense",
+        "coatingMaterial.qualityCertificate",
+        "coatingMaterial.supervisionCertificate",
+        "coatingMaterial.typeTest",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R44",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_corrosion_protection",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "coating.constructionRecords",
+        "coating.inspectionRecords",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "insulation.constructionRecords",
+        "insulation.inspectionRecords",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R45",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_date_covers",
+        "check_required",
+        "evaluate_corrosion_protection",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "coatingHolidayTest.parameters",
+        "coatingHolidayTest.results",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "holidayDetector.calibrationValidity",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R46",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_corrosion_protection",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "cathodicProtection.acceptanceResults",
+        "cathodicProtection.constructionRecords",
+        "cathodicProtection.deviceType",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R47",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_corrosion_protection",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "staticGrounding.acceptanceResults",
+        "staticGrounding.constructionRecords",
+        "staticGrounding.measuredResults"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R48",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_pipeline_installation",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "crossing.ndtCoverage",
+        "crossing.sleeveSegments",
+        "crossing.structure",
+        "crossing.weldLayout",
+        "design.crossingRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R49",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_pipeline_installation",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "crossing.constructionRecords",
+        "crossing.inspectionRecords",
+        "design.crossingRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R50",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_corrosion_protection",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "inspection.records",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "project.hasCathodicProtection",
+        "sleeve.externalCoating",
+        "sleeve.internalInsulation"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R51",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_conditional_requirement",
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_pipeline_installation",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.requiresInsulatedSupport",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "insulatedSupport.inspectionRecords",
+        "insulatedSupport.results",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R52",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_sampling_requirement",
+        "evaluate_pipeline_installation",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "prefabrication.heatTreatmentRecords",
+        "prefabrication.ndtRecords",
+        "prefabrication.testRecords",
+        "prefabrication.weldRecords"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R53",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_pipeline_installation",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "equipment.anchorStatus",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "installation.alignmentRecords",
+        "installation.connectionMethod",
+        "installation.prohibitedMethods",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R54",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_pipeline_installation",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "compensator.precompression",
+        "compensator.prestretch",
+        "compensator.type",
+        "design.compensatorRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R55",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_pipeline_installation",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.supportRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "support.inspectionResults",
+        "support.location",
+        "support.type"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R56",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_cross_document_match",
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_safety_accessory",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.safetyAccessoryRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "safetyAccessory.license",
+        "safetyAccessory.location",
+        "safetyAccessory.model",
+        "safetyAccessory.qualityCertificate",
+        "safetyAccessory.typeTest"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R57",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_numeric_range",
+        "check_required",
+        "evaluate_safety_accessory",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.setPressure",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "safetyValve.calibrationReport",
+        "safetyValve.openingPressure",
+        "safetyValve.sealingPressure"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R58",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_safety_accessory",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "emergencyValve.functionItems",
+        "emergencyValve.results",
+        "emergencyValve.testReport",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R59",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_numeric_range",
+        "check_signature_completeness",
+        "evaluate_pressure_test",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "recognize_signatures_and_seals",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "pressureTestPlan.acceptanceCriteria",
+        "pressureTestPlan.instrumentRequirements",
+        "pressureTestPlan.medium",
+        "pressureTestPlan.pressurizationRate",
+        "pressureTestPlan.safetyMeasures",
+        "pressureTestPlan.signatureRoles",
+        "pressureTestPlan.timing"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R60",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_pressure_gauge_requirements",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "pressureTest.ambientTemperature",
+        "pressureTest.gauges",
+        "pressureTest.maxTestPressure",
+        "pressureTest.medium",
+        "pressureTest.mediumTemperature",
+        "pressureTest.testDate"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R61",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_pressure_test_parameters",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "pressureTest.allowableStressAtDesignTemperature",
+        "pressureTest.allowableStressAtTestTemperature",
+        "pressureTest.designPressure",
+        "pressureTest.holdMinutes",
+        "pressureTest.maximumAllowableTestPressure",
+        "pressureTest.method",
+        "pressureTest.pneumaticYieldLimitPressure",
+        "pressureTest.pressureSteps",
+        "pressureTest.testPressure",
+        "pressureTest.testResult"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R62",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": true,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_pressure_test_report_consistency",
+        "extract_document_fields",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "pressureTestObserved.parameters",
+        "pressureTestPlan.parameters",
+        "pressureTestReport.parameters",
+        "pressureTestReport.result",
+        "pressureTestReport.standardRef"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R63",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_stress_analysis",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.pipelineSystems",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "stressAnalysis.coveredSystems",
+        "stressAnalysis.designParameters",
+        "stressAnalysis.issuer"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R64",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "evaluate_leak_test",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.leakTestRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "sensitiveLeakTest.method",
+        "sensitiveLeakTest.parameters",
+        "sensitiveLeakTest.results"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R65",
+      "atomicCount": 3,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_rt_film",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "ndtReport.inventory",
+        "radiographicFilms.inventory",
+        "sampling.selectedWeldIds",
+        "weldInventory.totalCount"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R66",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_date_covers",
+        "check_numeric_range",
+        "evaluate_leak_test",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.designPressure",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "leakTest.ambientTemperature",
+        "leakTest.gauges",
+        "leakTest.medium",
+        "leakTest.mediumTemperature",
+        "leakTest.testPressure"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R67",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_numeric_range",
+        "check_required",
+        "evaluate_leak_test",
+        "extract_document_fields",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "design.leakTestRequirements",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs",
+        "leakTest.method",
+        "leakTestReport.holdMinutes",
+        "leakTestReport.parameters",
+        "leakTestReport.result",
+        "leakTestReport.standardRef"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R68",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_numeric_range",
+        "check_required",
+        "check_sampling_requirement",
+        "evaluate_blowing_cleaning",
+        "extract_document_fields",
+        "extract_table_records",
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "blowingCleaning.acceptanceResult",
+        "blowingCleaning.medium",
+        "blowingCleaning.plan",
+        "blowingCleaning.pressure",
+        "blowingCleaning.safetyMeasures",
+        "blowingCleaning.sequence",
+        "blowingCleaning.timing",
+        "evidence.bboxOrQuotedText",
+        "evidence.conflictStatus",
+        "evidence.ocrConfidence",
+        "evidence.pageNo",
+        "judgment.claimedFacts",
+        "judgment.evidenceRefs"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    },
+    {
+      "ruleId": "R69",
+      "atomicCount": 2,
+      "compilable": true,
+      "pilotEnabled": false,
+      "pendingCapabilities": [],
+      "tools": [
+        "check_document_set_completeness",
+        "extract_document_fields",
+        "locate_evidence_fragment",
+        "validate_evidence_grounding"
+      ],
+      "requiredFacts": [
+        "qualitySystemEvaluation.coveredProjectId",
+        "qualitySystemEvaluation.evaluationDate",
+        "qualitySystemEvaluation.evaluator",
+        "qualitySystemEvaluation.report",
+        "qualitySystemEvaluation.result",
+        "reviewRun.nodeResults"
+      ],
+      "businessAcceptance": "not_verified_by_inventory",
+      "scenarioAcceptance": {
+        "compliant": "pending_source_bound_acceptance",
+        "noncompliant": "pending_source_bound_acceptance",
+        "insufficient": "pending_source_bound_acceptance",
+        "not_applicable": "pending_source_bound_acceptance"
+      }
+    }
+  ]
+}
