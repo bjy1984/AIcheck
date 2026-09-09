@@ -84,3 +84,21 @@ W1 的自動測試覆蓋真實 69 節點/194 綁定、唯一歸屬、快照防�
 - 列表先排除無權存取的工程規則再分頁；單筆、差異、操作預覽與正式操作的預覽入口檢查工程成員與節點範圍。平台規則仍沿用全域讀取權限。
 - 差異的預設比較版本限定同工程／業務包；發布指紋只包含同範圍受影響規則，其他工程更新不會使預覽失效。預覽工程影響數依工程／業務包過濾。
 - 規則範圍、讀寫與預覽回歸 22 passed，Ruff 289 / 289。工程使用者專用授權路由及前端規則編輯入口仍待完成。
+
+### 完整後端回歸啟動方式
+
+與 backend-quality CI 相同，從 backend 工作目錄執行：
+
+```sh
+cd backend
+.venv/bin/python -m pytest tests --collect-only -q
+.venv/bin/python -m pytest tests -q --tb=short
+```
+
+倉庫根目錄與 backend 各有 scripts/openapi_contract.py；從倉庫根目錄直接執行後端 pytest 曾載入後端同名模組，導致 OpenApiContractError 匯入失敗。這是啟動路徑問題，不能把收集失敗視為測試通過。完整結果與服務整合環境分開記錄。
+
+### 完整後端回歸結果
+
+- 首輪：3061 passed / 2 failed / 66 skipped。R69 測試仍使用未指定要求的舊式掛載，已改為明確 requirementId；另因 routes.py 及 execution.py 超過巨石基線，抽出規則選擇、差異／預覽、工位初始化、輸出保存及工作佇列設定，沒有調高基線。
+- 修正後全量：3063 passed / 66 skipped / 6 warnings，243.84 秒，退出碼 0。完整紀錄：[backend regression](verification/2026-09-08-backend-regression.txt)。
+- 本地選擇性跳過不計入 PostgreSQL／MinIO／Temporal 實機驗收。本批無付費模型調用或生產操作。

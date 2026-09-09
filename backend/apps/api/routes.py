@@ -48,6 +48,7 @@ from apps.api.upload_session_workflow import (
 )
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
+from libs import rule_version_helpers
 from libs.ai_run_failure import ai_run_failure_view
 from libs.ai_run_order import sort_ai_runs_latest_first
 from libs.audit_context import (
@@ -303,6 +304,7 @@ from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtim
 from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.rule_scope import same_rule_scope
+from libs.rule_version_helpers import rule_version_sort_key
 from libs.runtime_database_scope import runtime_database_scope
 from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path
@@ -26798,19 +26800,6 @@ def list_rule_versions(request: Request, keyword: str | None = None, status: str
     return ok(page(items, page_no, page_size), request)
 
 
-def rule_version_sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
-    sequence = item.get("sourceSequence")
-    if sequence is None:
-        node_ids = item.get("nodeIds") or []
-        sequence = min((int(node_id) for node_id in node_ids if str(node_id).isdigit()), default=9999)
-    try:
-        sequence_value = int(sequence)
-    except (TypeError, ValueError):
-        sequence_value = 9999
-    status_rank = {"草稿": 0, "待发布": 1, "已发布": 2, "已回滚": 3}.get(str(item.get("status") or ""), 9)
-    return (sequence_value, status_rank, str(item.get("updatedAt") or ""), str(item.get("id") or ""))
-
-
 @router.get("/rules/versions/{version_id}")
 def get_rule_version(request: Request, version_id: str):
     rule = repo.find_one("rule_versions", version_id)
@@ -26950,73 +26939,12 @@ def fork_rule_version(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"versionId": version_id, "body": body})
 
 
-def matching_rule_target(
-    base: dict[str, Any],
-    *,
-    target_version_id: str | None = None,
-    target_version: str | None = None,
-) -> dict[str, Any] | None:
-    target = repo.find_one("rule_versions", target_version_id or "") if target_version_id else None
-    if target is None and target_version:
-        target = next(
-            (
-                item
-                for item in repo.state.get("rule_versions", [])
-                if item.get("version") == target_version
-                and same_rule_scope(base, item)
-                and (not base.get("ruleKey") or item.get("ruleKey") == base.get("ruleKey"))
-            ),
-            None,
-        )
-    if target and not same_rule_scope(base, target):
-        return None
-    if target and base.get("ruleKey") and target.get("ruleKey") != base.get("ruleKey"):
-        return None
-    return target
-
-
-def rule_version_changes(base: dict[str, Any], target: dict[str, Any] | None) -> list[dict[str, Any]]:
-    compared_fields = [
-        ("inspectionCategory", "监检项目（大类）"),
-        ("inspectionItem", "监检项目（内容）"),
-        ("inspectionClass", "类别"),
-        ("standardText", "判断准则 / 标准规范"),
-        ("witnessText", "方法及内容 / 工作见证"),
-        ("nodeIds", "适用节点"),
-        ("status", "状态"),
-    ]
-    changes = []
-    for field, label in compared_fields:
-        before = (target or {}).get(field)
-        after = base.get(field)
-        if before != after:
-            changes.append(
-                {
-                    "field": field,
-                    "label": label,
-                    "before": before,
-                    "after": after,
-                    "severity": "warning" if field in {"nodeIds", "standardText", "witnessText"} else "info",
-                    "changeType": "added" if not before and after else "removed" if before and not after else "changed",
-                }
-            )
-    return changes
+def matching_rule_target(base: dict[str, Any], *, target_version_id: str | None = None, target_version: str | None = None) -> dict[str, Any] | None:
+    return rule_version_helpers.matching_rule_target(repo.state.get("rule_versions", []), base, target_version_id=target_version_id, target_version=target_version)
 
 
 def rule_diff_payload(base: dict[str, Any], target: dict[str, Any] | None) -> dict[str, Any]:
-    changes = rule_version_changes(base, target)
-    return {
-        "base": versioned_record("rule-version", base),
-        "target": versioned_record("rule-version", target) if target else None,
-        "comparedAt": server_time(),
-        "summary": {
-            "added": len([item for item in changes if item["changeType"] == "added"]),
-            "changed": len([item for item in changes if item["changeType"] == "changed"]),
-            "removed": len([item for item in changes if item["changeType"] == "removed"]),
-            "warning": len([item for item in changes if item["severity"] == "warning"]),
-        },
-        "changes": changes,
-    }
+    return rule_version_helpers.rule_diff_payload(base, target, versioned_record=versioned_record, compared_at=server_time())
 
 
 def rule_operation_payload(action: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -27030,31 +26958,10 @@ def rule_operation_payload(action: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 def rule_operation_base_fingerprint(base: dict[str, Any], target: dict[str, Any] | None) -> str:
-    affected = [
-        item
-        for item in repo.state.get("rule_versions", [])
-        if item.get("id") in {base.get("id"), (target or {}).get("id")}
-        or (
-            same_rule_scope(base, item)
-            and normalize_rule_status(item.get("status")) == "已发布"
-            and (
-                bool(base.get("ruleKey") and item.get("ruleKey") == base.get("ruleKey"))
-                or bool(set(parse_rule_node_ids(base.get("nodeIds"))) & set(parse_rule_node_ids(item.get("nodeIds"))))
-            )
-        )
-    ]
-    return operation_fingerprint(
-        [
-            {
-                "id": item.get("id"),
-                "revision": item.get("revision"),
-                "updatedAt": item.get("updatedAt"),
-                "status": item.get("status"),
-                "nodeIds": item.get("nodeIds"),
-            }
-            for item in sorted(affected, key=lambda row: str(row.get("id") or ""))
-        ]
-    )
+    return operation_fingerprint(rule_version_helpers.rule_operation_fingerprint_payload(
+        repo.state.get("rule_versions", []), base, target,
+        normalize_rule_status=normalize_rule_status, parse_rule_node_ids=parse_rule_node_ids,
+    ))
 
 
 @router.get("/rules/versions/{version_id}/diff")

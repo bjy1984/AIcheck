@@ -136,3 +136,18 @@ def apply_station_messages(review_run: dict[str, Any], messages: list[dict[str, 
             continue
         output.append(deepcopy(message))
     return output
+
+
+def initialize_run_workstation(record, project, published_rule, catalog, hash_payload):
+    from libs.business_pack import load_business_pack, matching_rule_for_node
+    from libs.review_rule_snapshot import freeze_effective_rule
+
+    station_pack = deepcopy(project.get("businessPackSnapshot") or load_business_pack(record["businessPackId"]))
+    if record.get("atomicCheckToolBindingsSnapshot"):
+        station_pack["atomicCheckToolBindings"] = record["atomicCheckToolBindingsSnapshot"]
+    effective_rule = published_rule or matching_rule_for_node(station_pack, int(record["nodeId"]))
+    record["effectiveRuleSnapshot"] = freeze_effective_rule(record, effective_rule)
+    record["ruleSetVersion"] = effective_rule.get("version") or record["ruleSetVersion"]
+    record["workstationSnapshot"] = freeze_station(record["nodeId"], station_pack, catalog)
+    record["allowedTools"] = record["workstationSnapshot"]["allowedTools"]
+    record["inputHash"] = hash_payload({"legacyInputHash": record["inputHash"], "workstation": record["workstationSnapshot"]["snapshotHash"], "effectiveRule": record["effectiveRuleSnapshot"]["snapshotHash"]})

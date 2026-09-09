@@ -7304,6 +7304,7 @@ def test_r69_requires_inspection_workflow_evidence_and_keeps_human_decision_gate
                         "documentId": target["documentId"],
                         "documentVersionId": target["documentVersionId"],
                         "usage": "监检资料",
+                        "requirementId": "REQ-69-01",
                     }
                 ]
             },

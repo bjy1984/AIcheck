@@ -129,3 +129,12 @@ def cap_generated_findings(
     if len(capped) != len(drafts):
         metadata = {**metadata, "cappedFindings": {"before": len(drafts), "after": len(capped), "limit": MAX_FINDINGS_PER_NODE}}
     return capped, metadata
+
+
+def store_generated_findings(review_run, drafts, *, complete, hash_payload):
+    review_run["findingDrafts"] = deepcopy(drafts)
+    if complete:
+        review_run["findingRetention"] = "complete"
+        review_run["findingSummaryDrafts"] = cap_findings(review_run["findingDrafts"])
+    review_run["outputHash"] = hash_payload(review_run["findingDrafts"])
+    return {"findingDrafts": len(review_run["findingDrafts"]), "outputHash": review_run["outputHash"]}

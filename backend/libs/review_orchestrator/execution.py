@@ -127,17 +127,18 @@ from libs.review_orchestrator.rule_result_digest import (
     compact_tool_output,
 )
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_orchestrator.task_queues import review_task_queues
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
-from libs.review_rule_snapshot import effective_rule_snapshot, freeze_effective_rule
+from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.review_workstations import (
     apply_station_messages,
-    freeze_station,
+    initialize_run_workstation,
     scope_catalog,
     station_snapshot,
     tool_allowed,
 )
-from libs.rule_scope import rule_scope
+from libs.rule_scope import select_published_rule
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 from ._shared import (  # noqa: F401 - re-export，外部按 execution 路径引用
@@ -322,45 +323,8 @@ def mark_review_run_retry_exhausted(review_run_id: str) -> dict[str, Any] | None
     return review_run
 
 
-def review_rule_node_ids(rule: dict[str, Any]) -> set[int]:
-    node_ids: set[int] = set()
-    for raw in rule.get("nodeIds") or []:
-        if str(raw).isdigit():
-            node_ids.add(int(raw))
-    return node_ids
-
-
 def current_published_rule_for_node(node_id: int, *, business_pack_id: str | None = None, project_id: str | None = None) -> dict[str, Any] | None:
-    candidates = []
-    for rule in repo.state.get("rule_versions", []):
-        if rule.get("status") != "已发布":
-            continue
-        if node_id not in review_rule_node_ids(rule):
-            continue
-        owner_project, owner_pack = rule_scope(rule)
-        if owner_project and owner_project != project_id:
-            continue
-        if owner_pack != (business_pack_id or DEFAULT_BUSINESS_PACK_ID):
-            continue
-        candidates.append(rule)
-    candidates.sort(
-        key=lambda item: (
-            bool(project_id and rule_scope(item)[0] == project_id),
-            str(item.get("publishedAt") or item.get("updatedAt") or item.get("importedAt") or ""),
-        ),
-        reverse=True,
-    )
-    return repo.clone(candidates[0]) if candidates else None
-
-
-def review_task_queues() -> dict[str, str]:
-    return {
-        "workflow": os.getenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow"),
-        "graph": os.getenv("AICHECK_REVIEW_GRAPH_TASK_QUEUE", "review.graph"),
-        "llm": os.getenv("AICHECK_REVIEW_LLM_TASK_QUEUE", "review.llm"),
-        "retrieval": os.getenv("AICHECK_REVIEW_RETRIEVAL_TASK_QUEUE", "review.retrieval"),
-        "validation": os.getenv("AICHECK_REVIEW_VALIDATION_TASK_QUEUE", "review.validation"),
-    }
+    return select_published_rule(repo.state.get("rule_versions", []), node_id, business_pack_id=business_pack_id, project_id=project_id)
 
 
 def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "temporal") -> dict[str, Any]:
@@ -452,20 +416,9 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
     }
     if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() in {"1", "true", "yes"}:
         project = repo.require_project(str(record.get("projectId") or "")) or {}
-        station_pack = repo.clone(project.get("businessPackSnapshot") or load_business_pack(record["businessPackId"]))
-        if record.get("atomicCheckToolBindingsSnapshot"):
-            station_pack["atomicCheckToolBindings"] = record["atomicCheckToolBindingsSnapshot"]
-        effective_rule = (
-            current_published_rule_for_node(
-                int(record["nodeId"]), business_pack_id=record["businessPackId"],
-                project_id=record.get("projectId"),
-            ) or matching_rule_for_node(station_pack, int(record["nodeId"]))
-        )
-        record["effectiveRuleSnapshot"] = freeze_effective_rule(record, effective_rule)
-        record["ruleSetVersion"] = effective_rule.get("version") or record["ruleSetVersion"]
-        record["workstationSnapshot"] = freeze_station(record["nodeId"], station_pack, runtime_tool_catalog())
-        record["allowedTools"] = record["workstationSnapshot"]["allowedTools"]
-        record["inputHash"] = stable_hash_payload({"legacyInputHash": record["inputHash"], "workstation": record["workstationSnapshot"]["snapshotHash"], "effectiveRule": record["effectiveRuleSnapshot"]["snapshotHash"]})
+        initialize_run_workstation(record, project, current_published_rule_for_node(
+            int(record["nodeId"]), business_pack_id=record["businessPackId"], project_id=record.get("projectId"),
+        ), runtime_tool_catalog(), stable_hash_payload)
     repo.state["review_runs"].insert(0, record)
     bind_evidence_package_to_review_run(repo.state, ai_run_id=str(ai_run.get("id") or ""), review_run_id=review_run_id)
     frozen_clause_snapshot = freeze_review_run_clause_snapshot(
@@ -1953,12 +1906,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         )
         return result
     if node_key == "persist_drafts":
-        review_run["findingDrafts"] = repo.clone(context.get("findingDrafts") or [])
-        if station_snapshot(review_run):
-            review_run["findingRetention"] = "complete"
-            review_run["findingSummaryDrafts"] = output_contract.cap_findings(review_run["findingDrafts"])
-        review_run["outputHash"] = stable_hash_payload(review_run["findingDrafts"])
-        return {"findingDrafts": len(review_run["findingDrafts"]), "outputHash": review_run["outputHash"]}
+        return output_contract.store_generated_findings(review_run, context.get("findingDrafts") or [], complete=bool(station_snapshot(review_run)), hash_payload=stable_hash_payload)
     return {"skipped": True}
 
 
