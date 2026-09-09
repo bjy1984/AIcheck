@@ -108,15 +108,14 @@ def is_r19_formal_review(review_run: dict[str, Any]) -> bool:
 
 
 def build_r19_agent_context(state: dict[str, Any], review_run: dict[str, Any]) -> dict[str, Any]:
+    # Local import avoids the runtime registry -> R19 tool -> validator cycle.
+    from libs.review_orchestrator.runtime_tools import selected_parse_results
+
     requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
     documents: list[dict[str, Any]] = []
     evidence_index: dict[str, dict[str, Any]] = {}
-    for parse_result in state.get("ocr_parse_results", []):
-        if not isinstance(parse_result, dict):
-            continue
+    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
         version_id = str(parse_result.get("documentVersionId") or "")
-        if requested and version_id not in requested:
-            continue
         fields = [item for item in parse_result.get("fields") or [] if isinstance(item, dict)]
         tables = [item for item in parse_result.get("tables") or [] if isinstance(item, dict)]
         fragments = [item for item in parse_result.get("fragments") or [] if isinstance(item, dict)]
@@ -559,6 +558,8 @@ def _evidence_ref(document_version_id: str, candidate: dict[str, Any], quoted_te
         "bbox": candidate.get("bbox") or candidate.get("polygon"),
         "quotedText": quoted_text[:1500],
         "confidence": _numeric_confidence(candidate),
+        **({"correctionId": candidate["correctionId"], "humanCorrected": True}
+           if candidate.get("correctionId") else {}),
     }
 
 

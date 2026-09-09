@@ -489,3 +489,101 @@ def test_all_replaced_questions_skip_semantic_model_and_human_guard(monkeypatch)
     assert trace["submitted"] and trace["atomicJudgments"] == []
     assert not trace["llmCalled"] and not trace["requestedHumanInput"]
     assert ensure_r19_human_input_task(run, {}, requested_by="workflow_guard") is None
+
+
+def test_r19_context_restricts_documents_applies_corrections_and_detects_drift():
+    from copy import deepcopy
+
+    from libs.review_document_scope import freeze_document_scope
+
+    run = review_run()
+    state = r19_state()
+    field = state["ocr_parse_results"][0]["fields"][0]
+    field["fieldName"] = "material_grade"
+    foreign = deepcopy(state["ocr_parse_results"][0])
+    foreign["documentVersionId"] = "FOREIGN"
+    state["ocr_parse_results"].append(foreign)
+    state["fact_corrections"] = [{"id": "COR-R19", "fieldId": "F", "fieldName": "material_grade",
+        "documentVersionId": "DV-R19-1", "projectId": run["projectId"], "nodeId": 19,
+        "status": "active", "correctedValue": "CORRECTED-GRADE"}]
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    original = deepcopy(state)
+    context = build_r19_agent_context(state, run)
+    assert [item["documentVersionId"] for item in context["documents"]] == ["DV-R19-1"]
+    corrected = next(item for item in context["evidenceIndex"].values() if item.get("correctionId"))
+    assert corrected["quotedText"] == "CORRECTED-GRADE"
+    assert corrected["correctionId"] == "COR-R19"
+    assert state == original
+    state["fact_corrections"][0]["correctedValue"] = "CHANGED"
+    with pytest.raises(ValueError, match="sources_changed"):
+        build_r19_agent_context(state, run)
+    run.pop("documentScopeSnapshot")
+    run["inputDocumentVersionIds"] = []
+    empty = build_r19_agent_context(state, run)
+    assert empty["documents"] == [] and empty["evidenceIndex"] == {}
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_r19_runtime_reads_only_run_documents(monkeypatch, empty):
+    from copy import deepcopy
+
+    from libs.review_orchestrator import rule_planners as planner
+
+    run = review_run()
+    if empty:
+        run["inputDocumentVersionIds"] = []
+    state = r19_state()
+    foreign = deepcopy(state["ocr_parse_results"][0])
+    foreign["documentVersionId"] = "FOREIGN"
+    state["ocr_parse_results"].append(foreign)
+    monkeypatch.setitem(repo.state, "ocr_parse_results", state["ocr_parse_results"])
+    context = build_r19_agent_context(repo.state, run)
+    outputs = []
+    actual_dispatch = planner.dispatch_runtime_tool
+
+    def dispatch(state, name, arguments, *, context):
+        assert context["reviewRun"] is run
+        output = actual_dispatch(state, name, arguments, context=context)
+        outputs.append(output)
+        return output
+
+    class Client:
+        def chat_sync(self, *args, **kwargs):
+            return {"choices": [{"message": {"tool_calls": [
+                {"id": "read", "function": {"name": "get_document_ocr_result", "arguments": "{}"}},
+                {"id": "human", "function": {"name": "request_r19_human_input", "arguments": "{}"}},
+            ]}}]}
+
+    monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(planner, "qwen_runtime_client", lambda: Client())
+    monkeypatch.setattr(planner, "dispatch_runtime_tool", dispatch)
+    trace = plan_r19_semantic_review(run, context)
+    assert trace["requestedHumanInput"]
+    assert outputs[0]["documentVersionIds"] == ([] if empty else ["DV-R19-1"])
+    assert outputs[0]["fieldCount"] == (0 if empty else 1)
+
+
+def test_r19_source_change_during_model_call_requires_new_run(monkeypatch):
+    from libs.integrations.errors import IntegrationServiceError
+    from libs.review_document_scope import freeze_document_scope
+    from libs.review_orchestrator import rule_planners as planner
+
+    run = review_run()
+    monkeypatch.setitem(repo.state, "ocr_parse_results", r19_state()["ocr_parse_results"])
+    run["documentScopeSnapshot"] = freeze_document_scope(run, repo.state)
+    context = build_r19_agent_context(repo.state, run)
+
+    class Client:
+        def chat_sync(self, *args, **kwargs):
+            repo.state["ocr_parse_results"][0]["fields"][0]["fieldValue"] = "CHANGED"
+            return {"choices": [{"message": {"tool_calls": [
+                {"id": "human", "function": {"name": "request_r19_human_input", "arguments": "{}"}},
+            ]}}]}
+
+    monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(planner, "qwen_runtime_client", lambda: Client())
+    with pytest.raises(IntegrationServiceError) as error:
+        plan_r19_semantic_review(run, context)
+    assert error.value.reason == "REVIEW_INPUT_CHANGED_RECREATE_RUN"
+    assert run["humanInputTasks"] == []
+    assert repo.state["model_call_attempts"][0]["failureReason"] == error.value.reason

@@ -39,7 +39,7 @@ from libs.db.repository import (  # noqa: F401 -- public re-export and monkeypat
     repo,
 )
 from libs.integrations.errors import (
-    IntegrationServiceError,  # noqa: F401 -- public re-export and monkeypatch compatibility
+    IntegrationServiceError,
 )
 from libs.integrations.litellm_client import (  # noqa: F401 -- public re-export and monkeypatch compatibility
     LiteLLMClient,
@@ -64,6 +64,7 @@ from libs.reasoning_budget import (
     review_reasoning_effort,  # noqa: F401 -- public re-export and monkeypatch compatibility
     truncation_caused_by_reasoning,  # noqa: F401 -- public re-export and monkeypatch compatibility
 )
+from libs.review_document_scope import ensure_document_sources
 from libs.review_evidence import (  # noqa: F401 -- public re-export and monkeypatch compatibility
     bind_evidence_package_to_review_run,
     review_run_evidence_lineage,
@@ -370,6 +371,7 @@ def plan_r19_semantic_review(
     """Run the evidence-bound semantic Agent used for R19's open-format review."""
 
     ensure_review_state()
+    ensure_document_sources(review_run, repo.state)
     questions = r19_semantic_questions(review_run)
     agent_context["reviewQuestions"] = questions
     mode = review_llm_execution_mode()
@@ -618,6 +620,7 @@ def plan_r19_semantic_review(
         client = qwen_runtime_client()
         max_turns = max(4, min(20, int(os.getenv("AICHECK_R19_AGENT_MAX_TURNS", "12"))))
         for turn in range(1, max_turns + 1):
+            ensure_document_sources(review_run, repo.state)
             response = client.chat_sync(
                 messages,
                 model=str(review_run.get("modelAlias") or "review-chat"),
@@ -633,6 +636,7 @@ def plan_r19_semantic_review(
                     turn=turn,
                 ),
             )
+            ensure_document_sources(review_run, repo.state)
             last_response = response
             choices = response.get("choices") if isinstance(response.get("choices"), list) else []
             message = (choices[0].get("message") or {}) if choices and isinstance(choices[0], dict) else {}
@@ -659,6 +663,7 @@ def plan_r19_semantic_review(
                 break
             messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
             for call in tool_calls:
+                ensure_document_sources(review_run, repo.state)
                 function = call.get("function") if isinstance(call, dict) else {}
                 tool_name = str((function or {}).get("name") or "")
                 raw_arguments = (function or {}).get("arguments") or "{}"
@@ -673,7 +678,7 @@ def plan_r19_semantic_review(
                     else:
                         if not requested_ids:
                             arguments["documentVersionIds"] = sorted(document_version_ids)
-                        output = dispatch_runtime_tool(repo.state, tool_name, arguments)
+                        output = dispatch_runtime_tool(repo.state, tool_name, arguments, context={"reviewRun": review_run})
                         for evidence in output.get("evidenceRefs") or []:
                             if not isinstance(evidence, dict):
                                 continue
@@ -686,7 +691,7 @@ def plan_r19_semantic_review(
                 elif tool_name == "validate_r19_semantic_judgment":
                     arguments["knownEvidenceRefIds"] = sorted(known_evidence_ids)
                     arguments["evidenceIndex"] = evidence_index
-                    output = dispatch_runtime_tool(repo.state, tool_name, arguments)
+                    output = dispatch_runtime_tool(repo.state, tool_name, arguments, context={"reviewRun": review_run})
                 elif tool_name == "request_r19_human_input":
                     registered_ids = {item["questionId"] for item in questions}
                     selected_ids = [
@@ -774,7 +779,10 @@ def plan_r19_semantic_review(
             }
         )
         return trace
-    except Exception as exc:  # noqa: BLE001 -- LLM planning failure enters the recorded human/workflow guard
+    except Exception as exc:
+        if isinstance(exc, IntegrationServiceError) and exc.reason == "REVIEW_INPUT_CHANGED_RECREATE_RUN":
+            model_attempt.update(status="failed", failureReason=exc.reason, finishedAt=server_time(), updatedAt=server_time())
+            raise
         trace.update(
             {
                 "controlMode": "r19_llm_failed_human_guard",
