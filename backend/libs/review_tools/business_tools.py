@@ -96,6 +96,7 @@ from libs.review_tools.r24_r34_tools import (
 )
 from libs.review_tools.r35_tools import evaluate_ndt_quality_system
 from libs.review_tools.r36_tools import evaluate_r36_ndt_plan
+from libs.review_tools.r37_progressive import evaluate_r37_progressive_inspection
 from libs.review_tools.r37_reinspection import evaluate_r37_reinspection
 from libs.review_tools.r37_tools import evaluate_ndt_nonconformance
 
@@ -146,6 +147,7 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_ndt_quality_system",
     "evaluate_r36_ndt_plan",
     "evaluate_r37_reinspection",
+    "evaluate_r37_progressive_inspection",
     "evaluate_pipe_fit_up",
     "evaluate_pipeline_installation",
     "evaluate_pressure_test",
@@ -198,6 +200,7 @@ DOMAIN_TOOL_NAMES = (
 
 
 BUSINESS_TOOL_CAPABILITIES = {
+    "evaluate_r37_progressive_inspection": "R37按明确批次、相同件与焊工及缺陷记录核对累进检查覆盖和升级阶段；覆盖完成不代表缺陷修复或整批验收通过。",
     "evaluate_r37_reinspection": "按明确缺陷与返修轮次核对原检测方法、范围、验收准则及修复后重检结果；独立对象核对不代表批次累进检查完成。",
     "evaluate_r36_ndt_plan": "R36逐对象比对带证据的明确检测要求与方案方法、百分比、时机和验收级别，核对审批及人员设备准备事实；不自动生成标准限值或见证事实。",
     "evaluate_ndt_nonconformance": "R37核对明确的问题清单、处理程序、委托单、通知及反馈见证，按工程、机构、问题、对象与返修轮次匹配；不从文件存在推定处理完成。",
@@ -410,6 +413,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_ndt_nonconformance"
             else {"projectId": "string", "organizationId": "string", "case": "object?", "originalInspection": "object?", "disposition": "object?", "caseInventory": "object?", "originalInspections": ["object?"], "dispositions": ["object?"], "reinspections": ["object"]}
             if name == "evaluate_r37_reinspection"
+            else {"projectId": "string", "organizationId": "string", "event": "object", "batch": "object", "firstReports": ["object"], "secondReports": ["object"], "fullReports": ["object"]}
+            if name == "evaluate_r37_progressive_inspection"
             else {
                 "designItems": ["object"],
                 "ruleVersion": "string?",
@@ -686,6 +691,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,
         "evaluate_ndt_nonconformance": evaluate_ndt_nonconformance,
         "evaluate_r37_reinspection": evaluate_r37_reinspection,
+        "evaluate_r37_progressive_inspection": evaluate_r37_progressive_inspection,
         "check_license_registry_match": check_license_registry_match,
         "classify_r13_component_requirements": classify_r13_component_requirements,
         "classify_r14_component_applicability": classify_r14_component_applicability,
