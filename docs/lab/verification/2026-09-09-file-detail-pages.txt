@@ -1,0 +1,1 @@
+PASS: original FileDetailDialog renders classifications, selects page 11 via existing PDF iframe and hint; mismatched-version classifications removed. Seeded metadata / intercepted local real PDF, not authenticated API acceptance.
