@@ -151,6 +151,15 @@ def check() -> tuple[list[str], list[str]]:
             "（AICHECK_LLM_DAILY_COST_ALERT_CNY）——检查是否有重试风暴或 prompt 膨胀"
         )
 
+    # 模型这条路通不通。2026-09-10 生产的密钥失效，AI 审查、一键分析、文件分类
+    # 全停，最后一次成功是前一天 04:11——**没有任何一项巡检会发现**，是查别的事
+    # 撞上的。一键分析探针刻意不烧 LLM，熔断器只计 5xx/429/超时（401 不该退避，
+    # 退避也修不好一把错的密钥），于是密钥失效正好落在所有监控的缝里。
+    alerts_before = len(alerts)
+    alerts.extend(model_reachability_alerts(repo.state.get("model_call_attempts") or [], now))
+    if len(alerts) == alerts_before:
+        facts.append("模型可达")
+
     # 夜间探针（六角色写审计 + 一键分析可用性）必须**新鲜且全绿**。
     # 探针只在夜里跑，坏了没人看日志等于没跑；状态文件在宿主机挂载目录，
     # 跨部署持久，文件缺失本身就是异常（要么探针从没跑过，要么写不进去）。
@@ -166,6 +175,66 @@ def check() -> tuple[list[str], list[str]]:
             facts.append(f"{label}：新鲜且全绿")
 
     return alerts, facts
+
+
+def recent_model_success(attempts: list, now: datetime, hours: float = 6.0) -> bool:
+    """最近有没有一次真的成功调用。
+
+    有真实流量成功过，就不必再发探测请求——**真实流量本身就是最好的探针**，
+    而且不花钱。只在安静的时候才去探，那也正是故障最容易没人发现的时候。
+    """
+    from libs.contracts.responses import SERVER_TZ
+
+    for row in attempts:
+        if not isinstance(row, dict) or row.get("status") != "success":
+            continue
+        try:
+            at = datetime.strptime(str(row.get("createdAt") or ""), "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        if (now - at.replace(tzinfo=SERVER_TZ)).total_seconds() <= hours * 3600:
+            return True
+    return False
+
+
+def model_reachability_alerts(attempts: list, now: datetime) -> list[str]:
+    """安静时探一次；失效/欠费/连不上分开报，因为处置方式完全不同。"""
+    if recent_model_success(attempts, now):
+        return []
+    # 整段都要包住，不能只包 import：读配置、取密钥同样会抛，
+    # 而这个函数抛出去会让 main() 把整批巡检降级成一句"巡检脚本自身异常"，
+    # 其余十几项检查连跑都不跑——一个检查坏掉不该把监控整个关掉。
+    try:
+        import urllib.request
+
+        from libs.model_reachability import probe_provider, summarize
+        from libs.qwen_runtime import official_api_key, qwen_runtime_config
+
+        def opener(url, data, headers, timeout):
+            return urllib.request.urlopen(
+                urllib.request.Request(url, data=data, headers=headers), timeout=timeout
+            ).read()
+
+        config = qwen_runtime_config()
+        result = probe_provider(
+            "primary",
+            str(config.get("baseUrl") or ""),
+            official_api_key(config),
+            str((config.get("models") or {}).get("review") or "qwen-plus"),
+            opener=opener,
+            timeout=20.0,
+        )
+        outcome = summarize([result])
+    except Exception as exc:  # noqa: BLE001 -- 报出来，但不拖垮整批巡检
+        return [f"模型可达性检查无法执行：{exc.__class__.__name__}"]
+    if outcome["ok"]:
+        return []
+    hint = {
+        "invalid_key": "密钥无效，要在供应商控制台重新签发（退避重试修不好）",
+        "no_balance": "账户余额不足，要充值",
+        "not_configured": "地址或密钥没配",
+    }.get(str(result.get("reason")), "供应商侧不可用或网络不通，先观察")
+    return [f"模型调不动（{result.get('reason')}，HTTP {result.get('status')}）——{hint}"]
 
 
 def probe_status_alert(label: str, path: str, now: datetime) -> str | None:
