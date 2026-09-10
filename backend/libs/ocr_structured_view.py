@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from libs.ocr.document_pages import annotate_document_pages
+
 # 单份资料下发上限。261 个 block 全发会让响应膨胀，而监检在右侧面板里
 # 也不可能逐条读——超出部分由「查看原文」承担。
 MAX_LAYOUT_BLOCKS = 120
@@ -287,6 +289,13 @@ def build_ocr_structured_view(repo: Any, document: dict[str, Any]) -> dict[str, 
         }
 
     blocks = structured_layout_blocks(parse_result)
+    page_view = {"fragments": parse_result.get("fragments") or []}
+    if "documentPageClassification" in parse_result:
+        annotate_document_pages(page_view)
+    page_classes = [
+        {key: row[key] for key in ("pageNo", "status", "documentKind")}
+        for row in page_view.get("documentPageClassification", {}).get("pages", [])
+    ]
     total_blocks = len(
         [
             item
@@ -299,6 +308,8 @@ def build_ocr_structured_view(repo: Any, document: dict[str, Any]) -> dict[str, 
     return {
         "available": True,
         "parseResultId": str(parse_result.get("parseResultId") or parse_result.get("id") or ""),
+        "documentVersionId": version_id,
+        "pageClassifications": page_classes,
         "layoutBlocks": blocks,
         "tables": structured_tables(parse_result),
         "seals": structured_seals(parse_result),

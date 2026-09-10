@@ -1,0 +1,1 @@
+PASS: full counts, expansion, keyboard selection, 44px targets, light/dark rendering; synthetic component, not authenticated full-flow acceptance

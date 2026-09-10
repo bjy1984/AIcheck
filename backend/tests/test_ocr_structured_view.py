@@ -420,3 +420,19 @@ def test_column_order_source_tells_probe_whether_header_cells_exist() -> None:
 
     keys_only = {"tables": [{"tableId": "T-K", "normalizedRows": [{"备注": "√", "序号": "1", "焊条": "J422"}]}]}
     assert structured_tables(keys_only)[0]["columnOrderSource"] == "dict_keys"
+
+
+def test_page_classifications_are_current_version_only_and_omit_raw_fragments():
+    result = {"id": "P1", "documentVersionId": "DV-1", "documentPageClassification": {},
+              "fragments": [{"pageNo": 1, "text": "射线检测报告书", "confidence": .9, "bbox": [10, 10, 300, 30]},
+                            {"pageNo": 2, "text": "检测数据", "confidence": .9}]}
+    view = build_ocr_structured_view(_Repo(result), {"currentVersionId": "DV-1"})
+    assert view["documentVersionId"] == "DV-1"
+    assert view["pageClassifications"] == [
+        {"pageNo": 1, "status": "identified", "documentKind": "rt_report"},
+        {"pageNo": 2, "status": "unknown", "documentKind": None}]
+    assert "fragments" not in view
+    assert "titleEvidence" not in str(view)
+    other = build_ocr_structured_view(_Repo(result), {"currentVersionId": "DV-2"})
+    assert other["available"] is False
+    assert not other.get("pageClassifications")

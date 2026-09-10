@@ -347,6 +347,12 @@ export type OcrSealItem = {
 export type OcrStructuredView = {
   available: boolean
   parseResultId?: string
+  documentVersionId?: string
+  pageClassifications?: Array<{
+    pageNo: number
+    status: 'identified' | 'unknown' | 'ambiguous'
+    documentKind: string | null
+  }>
   layoutBlocks: OcrLayoutBlock[]
   tables: OcrStructuredTable[]
   seals: OcrSealItem[]
