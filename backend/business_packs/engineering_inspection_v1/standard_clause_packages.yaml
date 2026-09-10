@@ -8232,6 +8232,38 @@ standardClausePackages:
           standardRef: STD-GBT-20801.1-2025
           sourceClause: GB/T 20801.1-2025 8.6.2.3——试验压力大于 1.6MPa 应取得设计、建设（使用）、安装三方同意
           verifiedBy: null
+        - code: vacuum_airtightness_pressure_is_internal_0_1mpa
+          applicabilityPath: pressure.vacuumPipeline
+          actualPath: pressure.vacuumInternalPressureMPa
+          operator: equals
+          expected: 0.1
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.3——真空管道气密性试验压力应为内压 0.1 MPa
+          verifiedBy: null
+        - code: vacuum_degree_test_performed
+          applicabilityPath: pressure.vacuumPipeline
+          actualPath: vacuumTest.performedAfterPressureTest
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.3——除 8.6.1.1.6 b) 的情况外，真空管道系统在压力试验合格后还应按设计文件规定进行真空度试验
+          verifiedBy: null
+        - code: vacuum_degree_test_duration
+          applicabilityPath: vacuumTest.performedAfterPressureTest
+          actualPath: vacuumTest.durationHours
+          operator: gte
+          expected: 24
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.3——真空度试验时长为 24 h
+          verifiedBy: null
+        - code: vacuum_pressure_rise_within_limit
+          applicabilityPath: vacuumTest.performedAfterPressureTest
+          actualPath: vacuumTest.pressureRisePercent
+          operator: lte
+          expected: 5
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.3 与公式(55)——24 h 增压率 Δp=(p2-p1)/p1×100% 不应大于 5%
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 找到泄漏试验方案或记录、压力表检定证书
@@ -8351,6 +8383,62 @@ standardClausePackages:
           - passed
           standardRef: STD-GBT-20801.1-2025
           sourceClause: GB/T 20801.1-2025 8.6.2.2——以无可察泄漏为合格
+          verifiedBy: null
+        - code: exemption_requires_pneumatic_pass_and_no_disassembly
+          applicabilityPath: method.leakTestExemptionClaimed
+          actualPath: method.pneumaticPassedAndNotDisassembled
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.1.3——按 8.6.1.4 经气压试验合格、且试验后未经拆卸过的管道系统才可不进行泄漏试验；两个条件缺一不可
+          verifiedBy: null
+        - code: leak_hazard_medium_requires_leak_test
+          applicabilityPath: method.leakHazardMedium
+          actualPath: method.leakTestPerformedOrExempted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.1.1——输送泄漏危害性介质的管道，压力试验后还应当进行泄漏试验
+          verifiedBy: null
+        - code: bubble_method_test_pressure_floor
+          applicabilityPath: method.bubbleDirectPressure
+          actualPath: method.testPressurePercentOfDesign
+          operator: gte
+          expected: 25
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2.3 a) 1)——气泡泄漏检测（直接加压）试验压力不小于 25% 设计压力
+          verifiedBy: null
+        - code: bubble_method_no_repeating_bubbles
+          applicabilityPath: method.bubbleDirectPressure
+          actualPath: method.noRepeatingOrContinuousBubbles
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2.3 a) 3)——无重复或连续的气泡出现为合格
+          verifiedBy: null
+        - code: halogen_method_sensitivity
+          applicabilityPath: method.halogenLeakDetection
+          actualPath: method.sensitivityPaM3PerS
+          operator: lte
+          expected: 1.0e-05
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2.3 b) 1)——卤素泄漏检测检测灵敏度不低于 1e-5 Pa·m³/s
+          verifiedBy: null
+        - code: helium_method_sensitivity
+          applicabilityPath: method.heliumLeakDetection
+          actualPath: method.sensitivityPaM3PerS
+          operator: lte
+          expected: 1.0e-06
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2.3 b) 2) 3)——氦质谱吸枪法与示踪探头法灵敏度不低于 1e-6 Pa·m³/s
+          verifiedBy: null
+        - code: helium_mixture_sensitivity_scaled
+          applicabilityPath: method.heliumMixtureUsed
+          actualPath: method.mixtureSensitivityScaled
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2.3 b) 2) 3)——采用 1% 或 10% 氦的混合气体时，应按氦的比例相应提高灵敏度
           verifiedBy: null
   requiredEvidence:
   - 设计文件

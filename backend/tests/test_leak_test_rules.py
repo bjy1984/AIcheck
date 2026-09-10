@@ -28,11 +28,16 @@ CASES = {
         "medium": {"name": "干燥空气"},
         "conditions": {"mediumTemperature": "18℃", "ambientTemperature": "20℃"},
         "pressure": {"testPressureMPa": 1.0, "airtightnessTest": True, "equalsDesignPressure": True,
-                     "exceeds1_6MPa": False},
+                     "exceeds1_6MPa": False, "vacuumPipeline": False},
+        "vacuumTest": {"performedAfterPressureTest": False},
     }),
     "evaluate_r67_leak_test_method": (evaluate_r67_leak_test_method, "leakTestMethod", {
         "method": {"name": "气密性试验", "acuteToxicCategory1Or2Gas": False,
-                   "airtightnessSubstitutesSensitive": False},
+                   "airtightnessSubstitutesSensitive": False,
+                   "leakTestExemptionClaimed": False, "leakHazardMedium": True,
+                   "leakTestPerformedOrExempted": True, "bubbleDirectPressure": False,
+                   "halogenLeakDetection": False, "heliumLeakDetection": False,
+                   "heliumMixtureUsed": False},
         "report": {"standardRef": "GB/T 20801.1-2025", "holdMinutes": 30, "result": "无可察泄漏",
                    "itemsComplete": True},
     }),
@@ -181,3 +186,79 @@ def test_bindings_and_registration_point_at_the_dedicated_tools():
         assert node_id in NDT_FACT_BUILDERS
         binding = next(item for item in bindings if item.get("atomicCheckId") == check_id)
         assert tool_name in binding["tools"] and "evaluate_leak_test" not in binding["tools"]
+
+
+# 2026-09-10 补：8.6.2.1.3 豁免、敏感性方法门槛与 8.6.3 真空度试验。
+# 这三条原先在现况清单第 7 项里列为未完成。
+
+def test_r67_exemption_needs_both_conditions_at_once():
+    """8.6.2.1.3：经气压试验合格**且**试验后未经拆卸，两个条件缺一不可。"""
+    output = run("evaluate_r67_leak_test_method",
+                 {"method.leakTestExemptionClaimed": True,
+                  "method.pneumaticPassedAndNotDisassembled": False})
+    assert output["result"] == "failed"
+    assert "leaktestmethod_exemption_requires_pneumatic_pass_and_no_disassembly" in codes(output, "failed")
+
+    unknown = run("evaluate_r67_leak_test_method",
+                  {"method.leakTestExemptionClaimed": True,
+                   "method.pneumaticPassedAndNotDisassembled": None})
+    assert unknown["result"] == "evidence_insufficient", "两个条件是否同时满足取不到，不能当成满足"
+
+
+def test_r67_leak_hazard_medium_must_be_tested_or_exempted():
+    """8.6.2.1.1：输送泄漏危害性介质的管道，压力试验后还应当进行泄漏试验。"""
+    output = run("evaluate_r67_leak_test_method", {"method.leakTestPerformedOrExempted": False})
+    assert output["result"] == "failed"
+    assert "leaktestmethod_leak_hazard_medium_requires_leak_test" in codes(output, "failed")
+
+
+def test_r67_sensitivity_floors_differ_by_method():
+    """卤素法 1e-5、氦质谱法 1e-6——门槛不同，不能用同一个数放行。"""
+    halogen = run("evaluate_r67_leak_test_method",
+                  {"method.halogenLeakDetection": True, "method.sensitivityPaM3PerS": 5e-6})
+    assert halogen["result"] == "passed", "5e-6 优于卤素法要求的 1e-5"
+
+    helium = run("evaluate_r67_leak_test_method",
+                 {"method.heliumLeakDetection": True, "method.sensitivityPaM3PerS": 5e-6})
+    assert helium["result"] == "failed", "同一个 5e-6 达不到氦质谱法的 1e-6"
+    assert "leaktestmethod_helium_method_sensitivity" in codes(helium, "failed")
+
+
+def test_r67_helium_mixture_must_scale_the_sensitivity():
+    output = run("evaluate_r67_leak_test_method",
+                 {"method.heliumLeakDetection": True, "method.sensitivityPaM3PerS": 1e-7,
+                  "method.heliumMixtureUsed": True, "method.mixtureSensitivityScaled": False})
+    assert output["result"] == "failed"
+    assert "leaktestmethod_helium_mixture_sensitivity_scaled" in codes(output, "failed")
+
+
+def test_r67_bubble_method_pressure_floor():
+    """8.6.2.2.3 a) 1)：气泡法试验压力不小于 25% 设计压力。"""
+    output = run("evaluate_r67_leak_test_method",
+                 {"method.bubbleDirectPressure": True, "method.testPressurePercentOfDesign": 18,
+                  "method.noRepeatingOrContinuousBubbles": True})
+    assert output["result"] == "failed"
+    assert "leaktestmethod_bubble_method_test_pressure_floor" in codes(output, "failed")
+
+
+def test_r66_vacuum_degree_test_duration_and_rise():
+    """8.6.3：真空管道压力试验合格后还应做 24h 真空度试验，增压率不大于 5%。"""
+    base = {"pressure.vacuumPipeline": True, "pressure.vacuumInternalPressureMPa": 0.1,
+            "pressure.airtightnessTest": False, "pressure.equalsDesignPressure": None,
+            "vacuumTest.performedAfterPressureTest": True,
+            "vacuumTest.durationHours": 24, "vacuumTest.pressureRisePercent": 3.2}
+    assert run("evaluate_r66_leak_test_conditions", base)["result"] == "passed"
+
+    short = run("evaluate_r66_leak_test_conditions", {**base, "vacuumTest.durationHours": 8})
+    assert short["result"] == "failed"
+    assert "leaktestconditions_vacuum_degree_test_duration" in codes(short, "failed")
+
+    risen = run("evaluate_r66_leak_test_conditions", {**base, "vacuumTest.pressureRisePercent": 7.5})
+    assert risen["result"] == "failed"
+    assert "leaktestconditions_vacuum_pressure_rise_within_limit" in codes(risen, "failed")
+
+
+def test_r66_vacuum_rules_do_not_apply_to_a_normal_pipeline():
+    output = run("evaluate_r66_leak_test_conditions")
+    assert output["result"] == "passed"
+    assert "leaktestconditions_vacuum_degree_test_performed" in codes(output, "not_applicable")
