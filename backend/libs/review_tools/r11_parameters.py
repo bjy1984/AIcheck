@@ -23,11 +23,14 @@ def evaluate_r11_project_parameters(arguments):
         statuses = {row["result"] for row in rows}
         status = ("failed" if "failed" in statuses else "evidence_insufficient" if "evidence_insufficient" in statuses
                   else "not_applicable" if statuses == {"not_applicable"} else "passed")
+        if arguments.get("selectionIssues") and status in {"passed", "not_applicable"}:
+            status = "evidence_insufficient"
         output = result("evaluate_r11_project_parameters", status,
                         facts={"parameterChecks": rows, "wholeRuleAcceptance": "not_evaluated",
-                               "scope": "selected_object_required_parameters_only"},
+                               "scope": "selected_object_required_parameters_only",
+                               "selectionIssues": deepcopy(arguments.get("selectionIssues") or [])},
                         checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-                        rule_version="r11-project-parameter-comparison-v1")
+                        rule_version="r11-project-parameter-comparison-v2")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 

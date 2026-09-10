@@ -1,4 +1,6 @@
 """Reconcile every declared comparison object before aggregating R11 parameters."""
+from copy import deepcopy
+
 from libs.review_orchestrator.deterministic_tools import result
 from libs.review_tools.r39_tools import _refs, _text
 
@@ -14,17 +16,21 @@ def evaluate_inventory(arguments, evaluate_one):
     inventory_validated = False
 
     def finish(status, reason):
+        selection_issues = deepcopy(arguments.get("selectionIssues") or [])
+        if selection_issues and status in {"passed", "not_applicable"}:
+            status, reason = "evidence_insufficient", "r11_selected_pages_incomplete"
         value = result("evaluate_r11_project_parameters", status,
                        facts={"scope": "declared_complete_object_inventory", "reason": reason,
+                              "selectionIssues": selection_issues,
                               "objectResults": outputs, "wholeRuleAcceptance": "not_evaluated",
                               "coverage": {"inventoryValidated": inventory_validated,
                                            "requiredCount": len(required) if inventory_validated else None,
                                            "comparedCount": len(outputs),
                                            "missingObjects": [dict(zip(identity_fields, key, strict=True))
                                                               for key in sorted(required - seen)] if inventory_validated else [],
-                                           "complete": inventory_validated and required == seen and all(
+                                           "complete": not selection_issues and inventory_validated and required == seen and all(
                                                item["result"] in {"passed", "failed", "not_applicable"} for item in outputs)}},
-                       checks=[], rule_version="r11-project-parameter-inventory-v1")
+                       checks=[], rule_version="r11-project-parameter-inventory-v2")
         value["evidenceRefs"] = [*(_refs(inventory) if isinstance(inventory, dict) else []), *member_refs, *[ref for item in outputs for ref in item.get("evidenceRefs", [])]]
         return value
 

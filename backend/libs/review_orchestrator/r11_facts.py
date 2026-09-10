@@ -4,6 +4,7 @@ from copy import deepcopy
 from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.source_coverage import selected_source_issues
 from libs.review_tools.r11_parameters import SCOPE_FIELDS
 
 TABLES = {"construction_comparison_context": "contexts", "construction_comparison_basis": "bases",
@@ -54,6 +55,11 @@ def build_r11_business_facts(state, run):
     judgment = build_material_judgment([(name, rows, ("projectId", "objectId")) for name, rows in groups.items()])
     result = {"r11": {"sourceIssues": [], "sourceRecords": deepcopy(groups)}, **judgment}
     facts = result["r11"]
+    issues = selected_source_issues(state, run, node_id=11)
+    facts["selectionIssues"] = issues
+    if any(issue["code"] == "r11_selected_source_missing_or_ambiguous" for issue in issues):
+        facts["sourceIssues"].append("r11_selected_source_missing_or_ambiguous")
+        return result
     inventory = deepcopy(groups["inventories"][0]) if len(groups["inventories"]) == 1 else None
     if inventory is not None:
         inventory["members"] = deepcopy(groups["members"])
@@ -94,5 +100,5 @@ def build_r11_business_facts(state, run):
     if facts["sourceIssues"]:
         return result
     facts["projectParameters"] = {"projectId": run["projectId"], "inventory": inventory,
-                                 "objectComparisons": comparisons}
+                                 "objectComparisons": comparisons, "selectionIssues": deepcopy(issues)}
     return result
