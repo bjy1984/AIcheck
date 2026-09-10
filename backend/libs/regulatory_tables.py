@@ -285,10 +285,15 @@ def pressure_test_ratios() -> dict[str, float | None]:
         return float(value)
 
     ratios = {"hydro": positive("hydroTestRatio"), "pneumatic": positive("pneumaticTestRatioMin"),
-              "pneumaticMax": positive("pneumaticTestRatioMax")}
+              "pneumaticMax": positive("pneumaticTestRatioMax"),
+              # 8.6.1.4 e) 2）：气压试验还有第二个上限——屈服强度极限时试验压力的 90%，
+              # 与 1.33 倍取较小者。只判 1.33 倍等于只判了一半。
+              "pneumaticYieldFactor": positive("pneumaticYieldCeilingFactor")}
     if (ratios["pneumatic"] is not None and ratios["pneumaticMax"] is not None
             and ratios["pneumatic"] > ratios["pneumaticMax"]):
         ratios["pneumatic"] = ratios["pneumaticMax"] = None
+    if ratios["pneumaticYieldFactor"] is not None and ratios["pneumaticYieldFactor"] > 1:
+        ratios["pneumaticYieldFactor"] = None
     return ratios
 
 

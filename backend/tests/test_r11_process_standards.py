@@ -169,3 +169,33 @@ def test_tool_is_registered_and_bound_to_the_atomic_check():
     # 不表示有没有专用工具——AC-R11-02 早有 evaluate_r11_project_parameters，仍标 binding_only。
     # 这里跟随既有口径，改它会动到业务包契约的分组断言。
     assert binding["implementationStatus"] == "binding_only"
+
+
+def test_pneumatic_yield_ceiling_is_a_second_limit_not_covered_by_the_1_33_check():
+    """GB/T 20801.1-2025 8.6.1.4 e) 2）：气压试验还有屈服强度极限时试验压力的 90% 这一上限。
+
+    只判 1.33 倍等于只判了一半——算不出第二个上限时必须保留证据不足，
+    不能因为 1.33 倍那一条通过就放行。
+    """
+    domains = complete_domains()
+    domains[1]["requirements"].update(pneumaticTest=True, testPressureExceedsMax=False)
+
+    # 第二个上限算不出来 → 证据不足，而不是通过
+    unresolved = run(domains)
+    assert unresolved["result"] == "evidence_insufficient"
+    assert "pressuretest_pneumatic_yield_ceiling" in codes(unresolved, "evidence_insufficient")
+
+    # 明确没超过 → 通过
+    domains[1]["requirements"]["testPressureExceedsYieldCeiling"] = False
+    assert run(domains)["result"] == "passed"
+
+    # 1.33 倍没超但屈服上限超了 → 仍然不符合
+    domains[1]["requirements"]["testPressureExceedsYieldCeiling"] = True
+    exceeded = run(domains)
+    assert exceeded["result"] == "failed"
+    assert "pressuretest_pneumatic_yield_ceiling" in codes(exceeded, "failed")
+
+    # 液压试验不适用这一条
+    domains[1]["requirements"].update(pneumaticTest=False)
+    domains[1]["requirements"].pop("testPressureExceedsYieldCeiling")
+    assert run(domains)["result"] == "passed"

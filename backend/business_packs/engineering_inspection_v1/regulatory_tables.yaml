@@ -679,6 +679,9 @@ gbt20801_inspection:
     hydroFluid: 一般用洁净水；奥氏体不锈钢管道或连有奥氏体不锈钢组件时水中氯离子含量不超过 50 mg/L；可燃液体闪点不低于 49℃；试验时流体温度不低于 5℃
     pneumaticTestRatioMin: 1.1
     pneumaticTestRatioMax: 1.33
+    pneumaticYieldCeilingFactor: 0.90
+    pneumaticYieldCeilingNote: 8.6.1.4 e) 2）——气压试验压力还不得超过「管道屈服强度极限时的 90% 试验压力」。这是与 1.33 倍并列的第二个上限，取两者较小者；只判 1.33 倍等于只判了一半。
+    pneumaticYieldCeilingInputs: 需要试验温度下的屈服强度极限对应压力（由管道外径、最小壁厚与该温度下屈服强度算出）。设计文件未给出时该项判证据不足，不得因 1.33 倍通过就放行。
     pneumaticCeilingNote: 承受内压的金属管道，气压试验压力不低于 1.1 倍设计压力，同时不超过下列压力的较小者——1.33 倍设计压力；不超过管道屈服强度极限时的 90% 试验压力
     pneumaticMedium: 干燥洁净的空气、氮气或其他不可燃和无毒的气体
     pneumaticTemperature: 至少比管道系统材料的最低允许金属温度高 17℃；材料最低允许金属温度不明确时不低于 17℃；不准许包括铸铁等脆性材料

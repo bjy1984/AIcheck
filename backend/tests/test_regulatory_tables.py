@@ -48,7 +48,9 @@ def test_inspection_levels_and_ratios_follow_gbt20801_1_2025() -> None:
     assert volumetric_ndt_ratio("Ⅰ") == 100 and volumetric_ndt_ratio("Ⅱ") == 20
     assert volumetric_ndt_ratio("Ⅳ") == 5 and volumetric_ndt_ratio("Ⅴ") == 0
     # 8.6.1.4 e)：气压试验有上限，超过 1.33 倍设计压力是不符合
-    assert pressure_test_ratios() == {"hydro": 1.5, "pneumatic": 1.1, "pneumaticMax": 1.33}
+    assert pressure_test_ratios() == {"hydro": 1.5, "pneumatic": 1.1, "pneumaticMax": 1.33,
+                                      # 8.6.1.4 e) 2）的第二个上限：屈服强度极限时试验压力的 90%
+                                      "pneumaticYieldFactor": 0.9}
 
 
 def test_welder_code_decoder_matches_tables_a7_and_a8() -> None:

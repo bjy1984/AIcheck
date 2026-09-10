@@ -323,9 +323,15 @@ def design_changes(documents: list[dict[str, Any]], parse_results: dict[str, dic
 _CORROSION_RE = re.compile(r"(防腐|涂层|涂料|油漆|环氧|喷砂|除锈|镀锌|保温)")
 _COATING_CRITERIA_RE = re.compile(r"(涂层厚度\s*[:：]?\s*(?:不小于|≥|>=)?\s*\d+\s*(?:μm|um|微米)|附着力[^\n。；;]{0,20}|除锈等级\s*[:：]?\s*Sa\s*\d(?:\.\d)?)")
 _PRESSURE_METHOD_RE = re.compile(r"(液压试验|水压试验|气压试验|气液组合|耐压试验|压力试验)")
-_TEST_PRESSURE_RE = re.compile(r"(?<!泄漏)(?<!气密性)(?<!气密)(?:试验压力|耐压试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
+# 「屈服强度极限时试验压力为 X MPa」里也含「试验压力…MPa」，不加断言会被当成本次试验压力，
+# 再与倍率对不上就误报矛盾——与此前泄漏、气密压力被误读是同一类。
+_TEST_PRESSURE_RE = re.compile(r"(?<!泄漏)(?<!气密性)(?<!气密)(?<!屈服强度极限时)(?<!屈服极限时)(?:试验压力|耐压试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
 _TEST_RATIO_RE = re.compile(r"(?<!泄漏)(?<!气密性)(?<!气密)(?:试验压力|耐压试验压力)[^\n。；;]{0,20}?(\d(?:\.\d+)?)\s*倍")
 _PRESSURE_CRITERIA_RE = re.compile(r"(无泄漏|无渗漏|无变形|无异常|保压\s*\d+\s*(?:min|分钟)|压力(?:无|不)下降)")
+# 8.6.1.4 e) 2）的第二个上限要用「屈服强度极限时的试验压力」。设计文件写明这个值时才算得出，
+# 写不出就得判证据不足——不能因为 1.33 倍那一条通过就放行。
+_YIELD_LIMIT_PRESSURE_RE = re.compile(
+    r"(?:屈服强度极限|屈服极限|达到屈服强度)[^\n。；;]{0,24}?(\d+(?:\.\d+)?)\s*MPa")
 _LEAK_METHOD_RE = re.compile(r"(泄漏试验|气密性试验|气密试验|泄漏性试验|真空试验|卤素|氦)")
 _LEAK_PRESSURE_RE = re.compile(r"(?:泄漏试验压力|气密性?试验压力|泄漏性试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
 _LEAK_CRITERIA_RE = re.compile(r"(无泄漏|发泡剂|皂液|压力降\s*[^\n。；;]{0,15}|保压\s*\d+\s*(?:min|分钟))")
@@ -426,6 +432,13 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     is_pneumatic = methods == {"气压试验"}
     required_ratio = ratios["pneumatic"] if is_pneumatic else ratios["hydro"] if methods == {"hydro"} else None
     test_pressure_value = float(test_pressure.group(1)) if test_pressure else None
+    yield_match = _YIELD_LIMIT_PRESSURE_RE.search(text)
+    yield_limit_pressure = float(yield_match.group(1)) if yield_match else None
+    yield_factor = ratios.get("pneumaticYieldFactor")
+    yield_ceiling = (round(yield_limit_pressure * yield_factor, 6)
+                     if is_pneumatic and yield_limit_pressure is not None and yield_factor is not None else None)
+    exceeds_yield_ceiling = (test_pressure_value > yield_ceiling
+                             if yield_ceiling is not None and test_pressure_value is not None else None)
     ratio_value, meets_ratio, exceeds_max = pressure_ratio_calculation(
         ratio.group(1) if ratio else None, test_pressure.group(1) if test_pressure else None,
         design_pressure, required_ratio, ratios["pneumaticMax"] if is_pneumatic else None)
@@ -445,6 +458,11 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "pneumaticTest": True if is_pneumatic else False if methods == {"hydro"} else None,
             "maxTestPressureRatio": ratios["pneumaticMax"] if is_pneumatic else None,
             "testPressureExceedsMax": exceeds_max,
+            # 气压试验的第二个上限（8.6.1.4 e) 2）：屈服强度极限时试验压力的 90%，与 1.33 倍取较小者。
+            # 算不出来时保持 None——凭据式判据会把 None 判成证据不足，不会当成"没超过"。
+            "yieldLimitPressureMPa": yield_limit_pressure,
+            "pneumaticYieldCeilingMPa": yield_ceiling,
+            "testPressureExceedsYieldCeiling": exceeds_yield_ceiling,
             "acceptanceCriteria": pressure_criteria.group(1) if pressure_criteria else None,
         },
         standard_refs,

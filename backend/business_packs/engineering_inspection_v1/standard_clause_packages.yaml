@@ -926,6 +926,14 @@ standardClausePackages:
         standardRef: STD-GBT-20801.1-2025
         sourceClause: GB/T 20801.1-2025 8.6.1.4 e)1)（气压试验不超过1.33倍设计压力；e)2)屈服强度限制仍需另行核对）
         verifiedBy: null
+      - code: pneumatic_yield_ceiling
+        applicabilityPath: requirements.pneumaticTest
+        actualPath: requirements.testPressureExceedsYieldCeiling
+        operator: equals
+        expected: false
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.1-2025 8.6.1.4 e) 2）——与 1.33 倍并列的第二个上限，取两者较小者；算不出来时保留证据不足，不得因 1.33 倍通过就放行
+        verifiedBy: null
     leakTest:
       checks:
       - code: method_specified
@@ -1139,6 +1147,14 @@ standardClausePackages:
           expected: false
           standardRef: STD-GBT-20801.1-2025
           sourceClause: GB/T 20801.1-2025 8.6.1.4
+        - code: pneumatic_yield_ceiling
+          applicabilityPath: requirements.pneumaticTest
+          actualPath: requirements.testPressureExceedsYieldCeiling
+          operator: equals
+          expected: false
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.4 e) 2）——与 1.33 倍并列的第二个上限，取两者较小者；算不出来时保留证据不足，不得因 1.33 倍通过就放行
+          verifiedBy: null
         - code: hold_minutes
           actualPath: requirements.holdMinutes
           operator: gte
