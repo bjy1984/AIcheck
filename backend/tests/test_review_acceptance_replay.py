@@ -109,7 +109,10 @@ def test_rehashed_source_change_still_fails_frozen_scope():
             lambda f: f["frozenInput"]["reviewRun"].pop("documentScopeSnapshot"),
             "frozen_scope_required",
         ),
-        (lambda f: f["frozenInput"]["reviewRun"].update(nodeId=34), "fact_builder_not_supported"),
+        # 用一个永远不会是业务节点的编号，而不是随手挑一条当时还没注册的规则：
+        # 这里原本写 34，R34 一注册进登记本这条就红了——测的是"守卫在不在"，
+        # 不该跟着哪几条规则已经接进来而变。
+        (lambda f: f["frozenInput"]["reviewRun"].update(nodeId=99999), "fact_builder_not_supported"),
     ],
 )
 def test_invalid_replay_inputs_rejected(mutation, error):
