@@ -119,9 +119,9 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R10-01 | 先判断设计文件或工程规定是否采用了非默认、境外、企业或其他替代标准 | `design.adoptedStandardType`<br>`comparisonDeclaration.document`<br>`comparisonTable.coveredSafetyTopics` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`check_conditional_requirement`<br>`evaluate_alternative_standard`<br>`validate_evidence_grounding` | `profile=alternative_standard`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
-| AC-R10-02 | 逐项判断比照表是否覆盖材料、设计、制造、安装、检验、试验等关键安全要求，缺少申明或比照不完整时要求人工确认 | `design.adoptedStandardType`<br>`comparisonDeclaration.document`<br>`comparisonTable.coveredSafetyTopics` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`recognize_signatures_and_seals`<br>`check_signature_completeness`<br>`check_scope_coverage`<br>`evaluate_alternative_standard`<br>`validate_evidence_grounding` | `profile=alternative_standard`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
-| AC-R10-03 | 若采用其他标准，继续查找符合《工业管道安全技术规程》基本安全要求的符合性申明和比照表 | `design.adoptedStandardType`<br>`comparisonDeclaration.document`<br>`comparisonTable.coveredSafetyTopics` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_conditional_requirement`<br>`evaluate_alternative_standard`<br>`validate_evidence_grounding` | `profile=alternative_standard`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R10-01 | 先判断设计文件或工程规定是否采用了非默认、境外、企业或其他替代标准 | `r10.alternativeStandardAdoption` | `extract_table_records`<br>`evaluate_r10_standard_adoption`<br>`validate_evidence_grounding` | `profile=standard_adoption`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R10-02 | 逐项判断比照表是否覆盖材料、设计、制造、安装、检验、试验等关键安全要求，缺少申明或比照不完整时要求人工确认 | `r10.comparisonTableCoverage` | `extract_table_records`<br>`evaluate_r10_comparison_table`<br>`validate_evidence_grounding` | `profile=comparison_table_coverage`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R10-03 | 若采用其他标准，继续查找符合《工业管道安全技术规程》基本安全要求的符合性申明和比照表 | `r10.complianceDeclaration` | `extract_table_records`<br>`evaluate_r10_compliance_declaration`<br>`validate_evidence_grounding` | `profile=compliance_declaration`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R10-04 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R11
@@ -391,14 +391,14 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R43-01 | 工厂化预制的防腐管道元件需提供出厂质量证明文件，必要时提供型式试验证书、压力管道元件制造许可、制造监督检验证书 | `coatingMaterial.qualityCertificate`<br>`coatingMaterial.typeTest`<br>`coatingMaterial.manufacturingLicense`<br>`coatingMaterial.supervisionCertificate` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`check_numeric_range`<br>`check_conditional_requirement`<br>`evaluate_corrosion_protection`<br>`validate_evidence_grounding` | `profile=coating_material`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R43-01 | 工厂化预制的防腐管道元件需提供出厂质量证明文件，必要时提供型式试验证书、压力管道元件制造许可、制造监督检验证书 | `r43.materialCertificate` | `extract_table_records`<br>`evaluate_r43_material_certificate`<br>`validate_evidence_grounding` | `profile=material_certificate_review`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R43-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R44
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R44-01 | 工作见证：防腐施工及检查记录、保温施工及检查记录 | `coating.constructionRecords`<br>`coating.inspectionRecords`<br>`insulation.constructionRecords`<br>`insulation.inspectionRecords` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`evaluate_corrosion_protection`<br>`validate_evidence_grounding` | `profile=coating_insulation_process`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R44-01 | 工作见证：防腐施工及检查记录、保温施工及检查记录 | `r44.coatingConstruction` | `extract_table_records`<br>`evaluate_r44_coating_construction`<br>`validate_evidence_grounding` | `profile=coating_construction`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R44-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R45
@@ -412,7 +412,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R46-01 | 工作见证：牺牲阳极、外加电流阴极保护、杂散电流排流装置施工记录和验收报告 | `cathodicProtection.deviceType`<br>`cathodicProtection.constructionRecords`<br>`cathodicProtection.acceptanceResults` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`evaluate_corrosion_protection`<br>`validate_evidence_grounding` | `profile=cathodic_protection`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R46-01 | 工作见证：牺牲阳极、外加电流阴极保护、杂散电流排流装置施工记录和验收报告 | `r46.cathodicProtection` | `extract_table_records`<br>`evaluate_r46_cathodic_protection`<br>`validate_evidence_grounding` | `profile=cathodic_protection`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R46-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R47
@@ -433,7 +433,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R49-01 | 抽查穿跨越工程施工及检查记录是否符合技术规范、相关标准及设计文件的要求 | `crossing.constructionRecords`<br>`crossing.inspectionRecords`<br>`design.crossingRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`check_sampling_requirement`<br>`evaluate_pipeline_installation`<br>`validate_evidence_grounding` | `profile=crossing_construction`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R49-01 | 抽查穿跨越工程施工及检查记录是否符合技术规范、相关标准及设计文件的要求 | `r49.crossingConstruction` | `extract_table_records`<br>`evaluate_r49_crossing_construction`<br>`validate_evidence_grounding` | `profile=crossing_construction`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R49-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R50
@@ -483,22 +483,22 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R56-01 | 审查安全附件的制造许可证、型式试验证书、产品质量证明书等，设计、制造是否符合技术规范的要求 | `safetyAccessory.license`<br>`safetyAccessory.typeTest`<br>`safetyAccessory.qualityCertificate`<br>`safetyAccessory.location`<br>`safetyAccessory.model`<br>`design.safetyAccessoryRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`evaluate_safety_accessory`<br>`validate_evidence_grounding` | `profile=safety_accessory_installation`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
-| AC-R56-02 | 现场实物抽查安装位置、规格、型号、铭牌等是否符合设计文件等的要求 | `safetyAccessory.license`<br>`safetyAccessory.typeTest`<br>`safetyAccessory.qualityCertificate`<br>`safetyAccessory.location`<br>`safetyAccessory.model`<br>`design.safetyAccessoryRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`check_cross_document_match`<br>`check_sampling_requirement`<br>`evaluate_safety_accessory`<br>`validate_evidence_grounding` | `profile=safety_accessory_installation`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R56-01 | 审查安全附件的制造许可证、型式试验证书、产品质量证明书等，设计、制造是否符合技术规范的要求 | `r56.safetyAccessoryDocuments` | `extract_table_records`<br>`evaluate_r56_accessory_documents`<br>`validate_evidence_grounding` | `profile=safety_accessory_documents`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R56-02 | 现场实物抽查安装位置、规格、型号、铭牌等是否符合设计文件等的要求 | `r56.safetyAccessoryInstallation` | `extract_table_records`<br>`evaluate_r56_accessory_installation`<br>`validate_evidence_grounding` | `profile=safety_accessory_installation`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R56-03 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R57
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R57-01 | 审查安全阀校验报告中的开启压力、密封压力等是否符合安全技术规范等的要求 | `safetyValve.calibrationReport`<br>`safetyValve.openingPressure`<br>`safetyValve.sealingPressure`<br>`design.setPressure` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`check_numeric_range`<br>`evaluate_safety_accessory`<br>`validate_evidence_grounding` | `profile=safety_valve_calibration`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R57-01 | 审查安全阀校验报告中的开启压力、密封压力等是否符合安全技术规范等的要求 | `r57.safetyValveCalibration` | `extract_table_records`<br>`evaluate_r57_safety_valve_calibration`<br>`validate_evidence_grounding` | `profile=safety_valve_calibration`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R57-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R58
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R58-01 | 审查紧急切断阀性能测试报告中功能测试项目及内容等 | `emergencyValve.testReport`<br>`emergencyValve.functionItems`<br>`emergencyValve.results` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`evaluate_safety_accessory`<br>`validate_evidence_grounding` | `profile=emergency_valve_test`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R58-01 | 审查紧急切断阀性能测试报告中功能测试项目及内容等 | `r58.emergencyValveTest` | `extract_table_records`<br>`evaluate_r58_emergency_valve_test`<br>`validate_evidence_grounding` | `profile=emergency_valve_test`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R58-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R59

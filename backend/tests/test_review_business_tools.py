@@ -42,7 +42,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 117
+    assert len(BUSINESS_TOOL_NAMES) == 128
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -1393,8 +1393,19 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "evaluate_r67_leak_test_method",  # Dedicated frozen-rule cases in test_leak_test_rules.py.
     "evaluate_r63_stress_analysis",  # Dedicated frozen-rule cases in test_r63_stress_analysis.py.
     "evaluate_r68_blowing_cleaning",  # Dedicated frozen-rule cases in test_r68_blowing_cleaning.py.
+    "evaluate_r46_cathodic_protection",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
     "evaluate_r47_static_grounding",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
     "evaluate_r48_weld_layout",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r10_standard_adoption",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r10_compliance_declaration",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r10_comparison_table",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r56_accessory_documents",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r56_accessory_installation",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r57_safety_valve_calibration",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r58_emergency_valve_test",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r43_material_certificate",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r44_coating_construction",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r49_crossing_construction",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
     "evaluate_r50_sleeve_insulation",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
     "evaluate_r52_prefabrication",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
     "evaluate_r53_installation_connections",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.

@@ -233,8 +233,19 @@ for _check_id, _fact, _tool, _profile in (
 # evaluate_support_components——这些名字在 business_tools 里都没有实现。判据改为从各自规则包
 # 冻结的块取，来源全部是 GB/T 20801.1-2025 已逐句核对的正文。
 for _check_id, _fact, _tool, _profile in (
+    ("AC-R10-01", "r10.alternativeStandardAdoption", "evaluate_r10_standard_adoption", "standard_adoption"),
+    ("AC-R10-03", "r10.complianceDeclaration", "evaluate_r10_compliance_declaration", "compliance_declaration"),
+    ("AC-R10-02", "r10.comparisonTableCoverage", "evaluate_r10_comparison_table", "comparison_table_coverage"),
+    ("AC-R56-01", "r56.safetyAccessoryDocuments", "evaluate_r56_accessory_documents", "safety_accessory_documents"),
+    ("AC-R56-02", "r56.safetyAccessoryInstallation", "evaluate_r56_accessory_installation", "safety_accessory_installation"),
+    ("AC-R57-01", "r57.safetyValveCalibration", "evaluate_r57_safety_valve_calibration", "safety_valve_calibration"),
+    ("AC-R58-01", "r58.emergencyValveTest", "evaluate_r58_emergency_valve_test", "emergency_valve_test"),
+    ("AC-R43-01", "r43.materialCertificate", "evaluate_r43_material_certificate", "material_certificate_review"),
+    ("AC-R44-01", "r44.coatingConstruction", "evaluate_r44_coating_construction", "coating_construction"),
+    ("AC-R46-01", "r46.cathodicProtection", "evaluate_r46_cathodic_protection", "cathodic_protection"),
     ("AC-R47-01", "r47.staticGrounding", "evaluate_r47_static_grounding", "static_grounding"),
     ("AC-R48-01", "r48.weldLayout", "evaluate_r48_weld_layout", "crossing_weld_layout"),
+    ("AC-R49-01", "r49.crossingConstruction", "evaluate_r49_crossing_construction", "crossing_construction"),
     ("AC-R50-01", "r50.sleeveInsulation", "evaluate_r50_sleeve_insulation", "sleeve_insulation"),
     ("AC-R52-01", "r52.prefabrication", "evaluate_r52_prefabrication", "field_prefabrication"),
     ("AC-R53-01", "r53.installationConnections", "evaluate_r53_installation_connections", "installation_connections"),

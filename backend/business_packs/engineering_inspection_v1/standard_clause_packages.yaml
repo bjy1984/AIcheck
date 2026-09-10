@@ -1011,6 +1011,170 @@ standardClausePackages:
   - AC-R10-02
   - AC-R10-03
   - AC-R10-04
+  alternativeStandardAdoptionRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-TSG-31-2025
+        clauseNo: 1.9、3.1.3.2
+        purpose: 技术标准的采用与设计说明书应载明的设计依据
+        locatorVerification: source_verified
+      reviewedScope: standard_adoption_identification_only
+      humanVerified: false
+      limitations:
+      - 判据对应 TSG 31-2025 1.9（第 7 页）与 3.1.3.2（第 19 页）正文，正文取自本仓知识库已入库的条款记录（fileId KF-KB-E6E1201DF9），已按入库文本逐句核对；**入库文本由 OCR 流水线生成，未经人工与原件比对，也未经人工签字确认**
+      - 规则包为本节点登记的条款号是 3.1.3.1（设计文件内容），其正文只在"采用境外标准"一种情形下要求符合性申明与比照表；而 1.9(3) 的表述是"采用其他标准时"，范围更宽且与本规则名称一致。判据按 1.9(3) 写，并把 3.1.3.1 一并列入来源，**条款号登记建议由人工订正为 1.9(3)**
+      - 本域只判"是否采用了其他标准"这一步；申明与比照表是否存在由 AC-R10-03 判定，比照表覆盖是否完整由 AC-R10-02 判定，三者不重复
+    domains:
+      alternativeStandardAdoption:
+        name: 采用标准的识别
+        requiredPaths:
+        - design.adoptedStandardType
+        - design.designBasisDocumentNo
+        checks:
+        - code: design_basis_records_standards
+          actualPath: design.designBasisRecordsStandards
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 3.1.3.2(1)(2)——设计说明书至少包括设计依据（含设计使用年限）与遵循的标准规范
+          verifiedBy: null
+        - code: adoption_conclusion_consistent_with_clause_1_9
+          actualPath: design.adoptionConclusionConsistentWithClause19
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 1.9(1)(2)——GB/T 20801、GB/T 32270 为满足本规程基本安全要求的标准；站场工艺管道应采用 GB/T 34275 或 GB/T 20801
+          verifiedBy: null
+        - code: station_piping_uses_permitted_standard
+          applicabilityPath: design.stationProcessPiping
+          actualPath: design.stationStandardPermitted
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 1.9(2)——输油输气站场内的工艺管道应当采用 GB/T 34275 或者 GB/T 20801 进行设计
+          verifiedBy: null
+        - code: gb34275_scope_requirements_followed
+          applicabilityPath: design.designedToGb34275
+          actualPath: design.gb34275ScopeRequirementsFollowed
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 1.9(2)——采用 GB/T 34275 设计时，其材料、设计、安装、检验、使用以及安全附件、阻火器、机械安全联锁装置的要求应当符合 GB/T 34275 的规定
+          verifiedBy: null
+  complianceDeclarationRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-TSG-31-2025
+        clauseNo: 1.9(3)、3.1.3.1
+        purpose: 采用其他标准时的符合性申明与比照表
+        locatorVerification: source_verified
+      reviewedScope: declaration_and_table_presence_only
+      humanVerified: false
+      limitations:
+      - 判据对应 TSG 31-2025 1.9(3)（第 7 页）与 3.1.3.1（第 19 页）正文，取自知识库已入库条款记录，已逐句核对；入库文本由 OCR 流水线生成，未经人工与原件比对
+      - 只判"有没有"，不判申明内容是否属实——比照表逐项覆盖由 AC-R10-02 判定，申明的技术结论需人工核验
+      - 未采用其他标准时本域全部判据不适用；是否采用由 AC-R10-01 判定，此处不重复推断
+    domains:
+      complianceDeclaration:
+        name: 符合性申明与比照表
+        # 没有无条件必需项：未采用其他标准时本就不存在这份申明，把"申明所在文件"
+        # 列为必需会把"不适用"判成"该写没写"。三条判据都挂在适用性上。
+        requiredPaths: []
+        checks:
+        - code: compliance_declaration_present
+          applicabilityPath: declaration.alternativeStandardAdopted
+          actualPath: declaration.declarationPresent
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 1.9(3)——采用其他标准时，设计文件或者工程规定中包括符合本规程基本安全要求的符合性申明
+          verifiedBy: null
+        - code: comparison_table_present
+          applicabilityPath: declaration.alternativeStandardAdopted
+          actualPath: declaration.comparisonTablePresent
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 1.9(3)——采用其他标准时，设计文件或者工程规定中包括比照表（见附件 B）
+          verifiedBy: null
+        - code: carried_in_design_document_or_engineering_specification
+          applicabilityPath: declaration.alternativeStandardAdopted
+          actualPath: declaration.carriedInDesignOrEngineeringSpecification
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 1.9(3)——申明与比照表应载于设计文件或者工程规定之中
+          verifiedBy: null
+  comparisonTableCoverageRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-TSG-31-2025
+        clauseNo: 附件B
+        purpose: 工业管道设计文件与本规程基本安全要求比照表
+        locatorVerification: source_verified
+      reviewedScope: comparison_table_row_coverage_and_column_completeness
+      humanVerified: false
+      limitations:
+      - 覆盖清单取自 TSG 31-2025 附件 B 表格本身的 15 个行目（知识库入库文本，第 74~77 页），不是凭"材料、设计、制造、安装、检验、试验"这类概括词自拟；入库文本由 OCR 流水线生成，未经人工与原件比对
+      - 只判行目是否齐、四个栏位是否填写、不符合项是否按 1.9 条办理；**每一行的技术结论是否成立不在判定范围**，那需要逐条比对两套标准，属人工
+      - 附件 B 的行目随规程版本变化，冻结的是 2025 版的 15 行；换版必须重新核对
+    domains:
+      comparisonTableCoverage:
+        name: 比照表覆盖
+        requiredPaths:
+        - comparisonTable.documentNo
+        - comparisonTable.coveredSafetyTopics
+        checks:
+        - code: covers_all_annex_b_items
+          applicabilityPath: comparisonTable.alternativeStandardAdopted
+          actualPath: comparisonTable.coveredSafetyTopics
+          operator: contains_all
+          expected:
+          - 2.1.1
+          - 2.2.2
+          - "2.4"
+          - "2.5"
+          - "1.10"
+          - 3.1.6
+          - 3.2.1
+          - 3.1.4.1
+          - 3.2.4
+          - 4.3.1
+          - 4.2.8
+          - 4.4.2
+          - 4.4.3
+          - "4.5"
+          - 4.5.6
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 附件B——比照表行目为工业管规 2.1.1、2.2.2、2.4、2.5、1.10、3.1.6、3.2.1、3.1.4.1、3.2.4、4.3.1、4.2.8、4.4.2、4.4.3、4.5、4.5.6 共 15 项
+          verifiedBy: null
+        - code: every_row_has_conformity_statement
+          applicabilityPath: comparisonTable.alternativeStandardAdopted
+          actualPath: comparisonTable.everyRowHasConformityStatement
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 附件B——每行均设"符合性申明"栏（不适用／符合／处置后符合／不符合），应逐项勾选
+          verifiedBy: null
+        - code: standard_requirement_and_actual_condition_filled
+          applicabilityPath: comparisonTable.alternativeStandardAdopted
+          actualPath: comparisonTable.standardAndActualColumnsFilled
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 附件B——每行应填写"产品相应标准要求"与"产品实际情况"两栏
+          verifiedBy: null
+        - code: nonconforming_items_handled_per_clause_1_9
+          applicabilityPath: comparisonTable.hasNonConformingItems
+          actualPath: comparisonTable.nonConformingItemsHandled
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-31-2025
+          sourceClause: TSG 31-2025 附件B 备注栏——不符合的应当按照本规程 1.9 条办理（申报市场监管总局，实施沙盒监管与技术评审）
+          verifiedBy: null
   requiredEvidence:
   - 先判断设计文件
   - 记录
@@ -4208,6 +4372,56 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R43-01
   - AC-R43-02
+  materialCertificateRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: "8.5"
+        purpose: 检查合格证和记录
+        locatorVerification: source_verified
+      reviewedScope: certificate_marking_and_document_review_only
+      humanVerified: false
+      limitations:
+      - 判据来自 GB/T 20801.1-2025 8.5（PDF 第 124 页，印刷页 116）正文，已逐句核对，但未经人工签字确认
+      - 规则包为本节点登记的另一依据 GB/T 19285-2026 4.2、5.1，经核对正文分别是"腐蚀防护系统检验前的管段划分"与"建设期检验一般规定"，**不含材料质量证明文件的要求**，故未据以生成任何判据。看起来该节点想引的是 5.3.4 资料验收，但那一条已登记在 R44 名下——**这是条款挂错，需要人工重新指认后才能补齐**
+      - 绑定里声明的"型式试验、制造许可、监督检验"三项事实，在已核到的 8.5 正文里没有对应要求，故不生成判据，不凭印象补
+      - 只判"是否审阅并确信"这一层：材料与管道组成件是否为规定等级、是否已经过要求的热处理检查和试验、是否向检验人员提交了质量控制要求已执行的证明文件；证书真伪与签署权限属人工核验
+    domains:
+      materialCertificate:
+        name: 检查合格证和记录
+        requiredPaths:
+        - certificate.documentNo
+        - certificate.materialGrade
+        checks:
+        - code: certificates_and_marks_reviewed
+          actualPath: certificate.certificatesAndMarksReviewed
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.5——检查人员应通过审阅合格证、质量证明书、标记和其他证明文件进行确认
+          verifiedBy: null
+        - code: material_grade_matches_specification
+          actualPath: certificate.gradeMatchesSpecification
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.5——确信材料和管道组成件均为规定等级
+          verifiedBy: null
+        - code: required_heat_treatment_inspection_and_tests_done
+          actualPath: certificate.requiredProcessingAndTestsEvidenced
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.5——确信材料和管道组成件已经过要求的热处理、检查和试验
+          verifiedBy: null
+        - code: compliance_statement_submitted_to_inspector
+          actualPath: certificate.complianceStatementSubmitted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.5——检查人员应向检验人员提交说明规范和工程设计规定的全部质量控制要求已经执行的证明文件
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 防腐漆或其他特殊防腐材料的质量证明
@@ -4265,6 +4479,138 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R44-01
   - AC-R44-02
+  coatingConstructionRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-GBT-19285-2026
+        clauseNo: 5.3.2-5.3.4
+        purpose: 外防腐层安装过程检验、回填后检验与资料验收
+        locatorVerification: source_verified
+      reviewedScope: coating_field_joint_repair_backfill_inspection_and_document_handover
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 19285-2026 5.3.2~5.3.4 正文，正文取自本仓知识库已入库的条款记录（fileId KF-KB-D27E9BF359，第 13 页），已按入库文本逐句核对；**入库文本本身由 OCR 流水线生成，未经人工与原件比对，也未经人工签字确认**
+      - 厚度、粘结力的抽查比例与合格判据写在"相应外防腐层标准"与附录 D，本文件未给统一数值，故只判"是否按规定比例检测""是否满足设计要求"，不作数值比较
+      - 定向钻穿越管段防腐层电阻率不小于 5000 Ω·m² 是本条明列数值，直接比较；15 d 与"未与其他管段连接前"是时序条件，按布尔判定
+      - 漏点检测的电火花检测参数由 R45 判定，这里只判补口补伤区是否 100% 检测且无漏点
+      - 保温（隔热）部分在 5.3.2~5.3.4 中没有对应条文，故本规则不生成保温判据——节点名含"保温"但依据未覆盖，需人工补条款
+    domains:
+      coatingConstruction:
+        name: 防腐、补口、补伤
+        requiredPaths:
+        - coating.recordNo
+        - coating.coatingType
+        checks:
+        - code: prefabricated_coating_visually_checked_before_fitup
+          actualPath: coating.prefabCoatingCheckedBeforeFitUp
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.1——组对前应对预制防腐层进行外观检查；发现问题应暂停使用，处理并检验合格后才能使用
+          verifiedBy: null
+        - code: defective_prefab_coating_withheld_until_accepted
+          applicabilityPath: coating.prefabCoatingDefectFound
+          actualPath: coating.defectiveCoatingWithheldUntilAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.1——发现预制防腐层有问题时应暂停使用，按设计要求处理并经检验合格后才能使用
+          verifiedBy: null
+        - code: field_joint_visual_self_inspection
+          applicabilityPath: coating.fieldJointOrRepairPresent
+          actualPath: coating.selfInspectionCompleted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2 a)——补口或补伤完成后安装单位应自检，确保质量符合 5.3.1.2 的相关要求
+          verifiedBy: null
+        - code: field_joint_thickness_four_positions
+          applicabilityPath: coating.fieldJointOrRepairPresent
+          actualPath: coating.thicknessMeasuredAtFourPositions
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2 b)——每个补口部位应在上、下、左、右四个方位至少各测 1 点
+          verifiedBy: null
+        - code: field_joint_thickness_meets_design
+          applicabilityPath: coating.fieldJointOrRepairPresent
+          actualPath: coating.thicknessMeetsDesign
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2 b)——厚度应满足设计要求，按相应外防腐层标准规定的抽查比例检测
+          verifiedBy: null
+        - code: field_joint_holiday_test_full_coverage
+          applicabilityPath: coating.fieldJointOrRepairPresent
+          actualPath: coating.holidayTestCoveragePercent
+          operator: gte
+          expected: 100
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2 c)——对补伤、补口区应进行 100% 漏点检测
+          verifiedBy: null
+        - code: field_joint_no_holiday_remaining
+          applicabilityPath: coating.fieldJointOrRepairPresent
+          actualPath: coating.noHolidayRemaining
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2 c)——不应有漏点，否则应修复并重新检测合格后才能投入使用
+          verifiedBy: null
+        - code: field_joint_adhesion_tested_and_accepted
+          applicabilityPath: coating.fieldJointOrRepairPresent
+          actualPath: coating.adhesionTestedAndAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2 d)——粘结力（附着力或剥离强度）按相应外防腐层标准规定的抽查比例检测并评定，不合格的应重新补口
+          verifiedBy: null
+        - code: full_line_holiday_survey_after_backfill
+          applicabilityPath: coating.backfillCompleted
+          actualPath: coating.fullLineHolidaySurveyCompleted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.3——管道回填土自然沉降密实后，应对外防腐层进行全线破损点定位检测，符合设计规定或标准要求为合格
+          verifiedBy: null
+        - code: directional_drilling_coating_resistivity
+          applicabilityPath: coating.directionalDrillingCrossing
+          actualPath: coating.coatingResistivityOhmM2
+          operator: gte
+          expected: 5000
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.3——定向钻穿越管段防腐层电阻率大于或等于 5000 Ω·m² 为合格
+          verifiedBy: null
+        - code: directional_drilling_resistivity_timing
+          applicabilityPath: coating.directionalDrillingCrossing
+          actualPath: coating.resistivityTestedAfterFifteenDaysBeforeTieIn
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.3——定向钻穿越管段应在穿越完成 15 d 后且未与其他管段连接前进行防腐层电阻率检测
+          verifiedBy: null
+        - code: insufficient_resistivity_triggers_extra_cathodic_protection
+          applicabilityPath: coating.resistivityBelowThreshold
+          actualPath: coating.extraCathodicProtectionApplied
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.3——电阻率不合格时应确认防腐措施是否满足要求，不满足时应对穿越管段附加阴极保护措施
+          verifiedBy: null
+        - code: coating_documents_handed_over
+          actualPath: coating.qualityDocumentsHandedOver
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.4——相关单位应提交完整的外防腐层质量证明文件和施工的各种检验记录、报告
+          verifiedBy: null
+        - code: manufacturer_documents_traceable
+          actualPath: coating.manufacturerDocumentsTraceable
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.4——外防腐层生产厂家提供的质量证明文件应具备可追溯性
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 防腐施工及检查记录
@@ -4534,6 +4880,187 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R46-01
   - AC-R46-02
+  cathodicProtectionRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-GBT-33378-2025
+        clauseNo: 6.3.2、6.4、6.5、6.9、7.4
+        purpose: 电绝缘装置、牺牲阳极与强制电流的安装、交接验收资料与阴极保护记录
+        locatorVerification: source_verified
+      reviewedScope: cathodic_protection_installation_handover_and_records_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 33378-2025 6.3.2、6.4、6.5、6.9、7.4 正文（知识库入库条款记录 fileId KF-KB-091050A264，第 18~22 页），已按入库文本逐句核对；**入库文本由 OCR 流水线生成，未经人工与原件比对，也未经人工签字确认**
+      - 绝缘电阻大于 10 MΩ 是 6.3.2.1 明列数值，直接比较；该条同时要求"安装前、干燥空气中、1 kV 绝缘摇表"，测试条件是否满足按事实侧布尔判定，工具不推断
+      - 保护电位、极化时间（6.8.4 不少于 3 d）与保护率大于 90%（7.5.3）不在本节点登记的条款范围内，故不生成判据——需要判这些应另行登记条款
+      - 规则包为本节点登记的另一依据 GB/T 21448-2017 仅 visual_verified，未据以生成任何判据
+      - 排流保护（杂散电流）的具体判据在 6.3.2~6.5 中没有独立条文，本规则不覆盖
+    domains:
+      cathodicProtection:
+        name: 阴极保护施工与验收
+        requiredPaths:
+        - cathodicProtection.deviceType
+        - cathodicProtection.recordNo
+        checks:
+        - code: insulation_resistance_above_ten_megohm
+          applicabilityPath: cathodicProtection.insulationDeviceInstalled
+          actualPath: cathodicProtection.insulationResistanceMohm
+          operator: gt
+          expected: 10
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.3.2.1——安装前在干燥空气中用 1 kV 绝缘摇表检测，绝缘装置两侧的电阻值应大于 10 MΩ
+          verifiedBy: null
+        - code: insulation_test_conditions_met
+          applicabilityPath: cathodicProtection.insulationDeviceInstalled
+          actualPath: cathodicProtection.insulationTestConditionsMet
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.3.2.1——检测应在安装前、干燥的空气中，使用 1 kV 绝缘摇表进行
+          verifiedBy: null
+        - code: insulation_verified_after_installation
+          applicabilityPath: cathodicProtection.insulationDeviceInstalled
+          actualPath: cathodicProtection.insulationVerifiedAfterInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.3.2.2——安装后应检查和测量，以验证电绝缘是否满足要求
+          verifiedBy: null
+        - code: insulating_flange_protected_from_external_force
+          applicabilityPath: cathodicProtection.insulatingFlangeUsed
+          actualPath: cathodicProtection.insulatingFlangeProtected
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.3.2.3——采用绝缘法兰时应采取适当防护措施，保证绝缘性能不受外力破坏
+          verifiedBy: null
+        - code: internal_coating_on_cathodic_side
+          applicabilityPath: cathodicProtection.conductiveMediumPipeline
+          actualPath: cathodicProtection.internalCoatingApplied
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.3.2.4——输送导电介质的管道应在绝缘接头阴极（负电位）侧内表面涂覆内涂层，长度按介质电阻率计算以避免干扰电流腐蚀
+          verifiedBy: null
+        - code: prepackaged_anode_backfill_fully_encases
+          applicabilityPath: cathodicProtection.sacrificialAnodeUsed
+          actualPath: cathodicProtection.backfillFullyEncasesAnode
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.4.1.1——应检验预封装阳极，填包料应完全包覆在阳极周围
+          verifiedBy: null
+        - code: anode_cable_connection_sound
+          applicabilityPath: cathodicProtection.sacrificialAnodeUsed
+          actualPath: cathodicProtection.anodeCableSound
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.4.1.3——应检查阳极的连接电缆，电缆应连接牢固、无损伤
+          verifiedBy: null
+        - code: bagged_anode_kept_dry_in_storage
+          applicabilityPath: cathodicProtection.baggedAnodeUsed
+          actualPath: cathodicProtection.baggedAnodeKeptDry
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.4.1.5——储存期间袋装阳极应保持干燥
+          verifiedBy: null
+        - code: anode_centred_and_backfill_tamped
+          applicabilityPath: cathodicProtection.baggedAnodeUsed
+          actualPath: cathodicProtection.anodeCentredAndTamped
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.4.2.2——阳极应置于填包料中心位置，回填前将填包料捣实；电缆和接头不应受损伤且留有充分松弛度
+          verifiedBy: null
+        - code: bracelet_anode_coating_intact
+          applicabilityPath: cathodicProtection.braceletAnodeUsed
+          actualPath: cathodicProtection.braceletAnodeCoatingIntact
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.4.2.3——手镯式阳极下方的被保护体覆盖层应无缺陷，安装时应防止损伤覆盖层
+          verifiedBy: null
+        - code: power_supply_rating_matches_design
+          applicabilityPath: cathodicProtection.impressedCurrentUsed
+          actualPath: cathodicProtection.powerSupplyRatingMatchesDesign
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.5.1.2——电源设备的额定参数应与设计要求相符
+          verifiedBy: null
+        - code: all_cables_insulation_tested
+          applicabilityPath: cathodicProtection.impressedCurrentUsed
+          actualPath: cathodicProtection.allCablesInsulationTested
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.5.1.4——所有电缆均应检测其绝缘性能
+          verifiedBy: null
+        - code: external_breaker_and_reliable_grounding
+          applicabilityPath: cathodicProtection.impressedCurrentUsed
+          actualPath: cathodicProtection.breakerAndGroundingInstalled
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.5.2.4——应在交流回路中提供外部断路开关，恒电位仪外壳应可靠接地
+          verifiedBy: null
+        - code: impressed_anode_backfill_without_voids
+          applicabilityPath: cathodicProtection.impressedCurrentUsed
+          actualPath: cathodicProtection.anodeBackfillWithoutVoids
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.5.2.6——回填的填充料应保证阳极周围没有空隙，回填过程应防止损伤阳极和电缆
+          verifiedBy: null
+        - code: cables_connected_and_verified_before_energising
+          applicabilityPath: cathodicProtection.impressedCurrentUsed
+          actualPath: cathodicProtection.cablesConnectedBeforeEnergising
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.5.2.9——启动电源前阴极电缆应与被保护构筑物相连、阳极电缆应与阳极相连；接通后应测试确认连接正确
+          verifiedBy: null
+        - code: handover_inspection_completed
+          actualPath: cathodicProtection.handoverInspectionCompleted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.9.1——竣工验收应符合设计要求、技术文件齐全完整、外观检查合格、按设计要求测试检验并作记录
+          verifiedBy: null
+        - code: handover_documents_complete
+          actualPath: cathodicProtection.handoverDocumentTypes
+          operator: contains_all
+          expected:
+          - 实际施工图和竣工图
+          - 设计变更文件
+          - 产品和设备技术文件
+          - 安装施工记录
+          - 调试试验记录
+          - 隐蔽工程记录
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.9.2 a)~f)——交接验收应提交实际施工图和竣工图、设计变更文件、产品和设备说明书合格证件试验记录安装图样、安装施工记录、调试试验记录与阴极保护参数记录、隐蔽工程记录
+          verifiedBy: null
+        - code: as_built_deviations_marked
+          actualPath: cathodicProtection.asBuiltDeviationsMarked
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 6.2.2——所有与施工图不符之处均应在竣工图上标明
+          verifiedBy: null
+        - code: installation_records_cover_required_items
+          actualPath: cathodicProtection.installationRecordItems
+          operator: contains_all
+          expected:
+          - 安装位置
+          - 投产日期
+          - 阳极数量类型尺寸深度填料及间距
+          - 电缆规格和绝缘类型
+          standardRef: STD-GBT-33378-2025
+          sourceClause: GB/T 33378-2025 7.4.4.1——阴极保护安装记录应含仪器设备安装位置和投产日期、阳极的数量类型尺寸深度填料及间距、电缆规格和绝缘类型（强制电流另含电源设备规格）
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 流阴极保护、杂散电流排流装置施工记录
@@ -4963,6 +5490,124 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R49-01
   - AC-R49-02
+  crossingConstructionRules:
+    sourceReview:
+      method: agent_mineru_ocr_reading
+      documents:
+      - standardRef: STD-GB-50235-2010
+        clauseNo: 7.1.5、7.1.8-7.1.11
+        purpose: 穿越保护套管的设置要求与埋地管道施工时序
+        locatorVerification: visual_verified
+      reviewedScope: crossing_sleeve_requirements_and_buried_pipe_sequence_only
+      humanVerified: false
+      limitations:
+      - GB 50235-2010 本机 PDF 是纯扫描件，没有文字层。判据来自 MinerU 云端 OCR 重建的正文（2026-09-10 解析），已按重建文本逐句核对，并用 content_list 的 page_idx 定位到 7.1.5 在 PDF 第 40 页、7.1.9~7.1.11 在第 41 页；**OCR 重建不等于原件比对，未经人工签字确认**
+      - 规则包里该条款的 locatorVerification 仍是 visual_verified，本次未据 OCR 结果改写该字段——升级条款核验状态应由人工按原件确认
+      - 套管长度不得小于墙体厚度需比较两个实测值，工具不代算，按事实侧给出的布尔判定；穿过楼板高出楼面 50 mm 是条文明列数值，直接比较
+      - 穿越处的防腐等级与电绝缘由 R50 判定（GB/T 20801.1-2025 附录G），这里不重复
+      - 涵洞砌筑的结构要求、套管与管道的间隙尺寸未在本条给出，故不判
+    domains:
+      crossingConstruction:
+        name: 穿跨越工程施工
+        requiredPaths:
+        - crossing.location
+        - crossing.recordNo
+        checks:
+        - code: sleeve_or_culvert_installed
+          applicabilityPath: crossing.throughRoadWallFloorOrStructure
+          actualPath: crossing.sleeveOrCulvertInstalled
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.5——管道穿越道路、墙体、楼板或构筑物时，应加设套管或砌筑涵洞进行保护
+          verifiedBy: null
+        - code: no_weld_inside_sleeve
+          applicabilityPath: crossing.sleeveInstalled
+          actualPath: crossing.noWeldInsideSleeve
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.5-1——管道焊缝不应设置在套管内
+          verifiedBy: null
+        - code: wall_sleeve_length_covers_wall
+          applicabilityPath: crossing.throughWall
+          actualPath: crossing.sleeveLengthNotLessThanWallThickness
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.5-2——穿过墙体的套管长度不得小于墙体厚度
+          verifiedBy: null
+        - code: floor_sleeve_height_above_floor
+          applicabilityPath: crossing.throughFloor
+          actualPath: crossing.sleeveHeightAboveFloorMm
+          operator: gte
+          expected: 50
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.5-3——穿过楼板的套管应高出楼面 50 mm
+          verifiedBy: null
+        - code: roof_crossing_flashing_and_cap
+          applicabilityPath: crossing.throughRoof
+          actualPath: crossing.flashingAndRainCapInstalled
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.5-4——穿过屋面的管道应设置防水肩和防雨帽
+          verifiedBy: null
+        - code: annulus_filled_with_harmless_incombustible
+          applicabilityPath: crossing.sleeveInstalled
+          actualPath: crossing.annulusFilledWithHarmlessIncombustible
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.5-5——管道与套管之间应填塞对管道无害的不燃材料
+          verifiedBy: null
+        - code: buried_coating_applied_before_installation
+          applicabilityPath: crossing.buriedSection
+          actualPath: crossing.coatingAppliedBeforeInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.9——埋地管道防腐层的施工应在管道安装前进行，焊缝部位未经试压合格不得防腐
+          verifiedBy: null
+        - code: buried_coating_undamaged_on_delivery
+          applicabilityPath: crossing.buriedSection
+          actualPath: crossing.coatingUndamagedAtInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.9——运输和安装时不得损坏防腐层
+          verifiedBy: null
+        - code: buried_foundation_accepted_before_installation
+          applicabilityPath: crossing.buriedSection
+          actualPath: crossing.foundationAcceptedBeforeInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.10——埋地管道安装应在支承地基或基础检验合格后进行；有地下水或积水时应采取排水措施
+          verifiedBy: null
+        - code: buried_backfill_after_test_and_coating_accepted
+          applicabilityPath: crossing.buriedSection
+          actualPath: crossing.backfillAfterTestAndCoatingAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.11——埋地管道试压、防腐检验合格后应及时回填，并应分层夯实
+          verifiedBy: null
+        - code: concealed_work_record_filed
+          applicabilityPath: crossing.buriedSection
+          actualPath: crossing.concealedWorkRecordFiled
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.11——应填写"管道隐蔽工程(封闭)记录"（表 A.0.7）
+          verifiedBy: null
+        - code: installation_record_filed
+          actualPath: crossing.installationRecordFiled
+          operator: equals
+          expected: true
+          standardRef: STD-GB-50235-2010
+          sourceClause: GB 50235-2010 7.1.8——管道安装完毕应进行检查，并应填写"管道安装记录"（表 A.0.6）
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 抽查穿跨越工程施工及检查记录
@@ -6168,6 +6813,276 @@ standardClausePackages:
   - AC-R56-01
   - AC-R56-02
   - AC-R56-03
+  safetyAccessoryDocumentRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-TSG-92-2026
+        clauseNo: 1.4、2.1、3.3.4、4.1、附件D/E/F 3.4-3.5
+        purpose: 安全附件的产品标准、型式试验、出厂资料、质量证明书与铭牌
+        locatorVerification: visual_verified
+      reviewedScope: licence_type_test_certificate_and_nameplate_documents_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 TSG 92-2026 1.4、2.1、3.3.4、4.1 与附件 D/E/F 的 3.4、3.5（知识库入库条款记录 fileId KF-KB-7979D2C4C2，第 5~9、10、26、40~41、48 页），已按入库文本逐句核对；**入库文本由 OCR 流水线生成，未经人工与原件比对，也未经人工签字确认**
+      - 规则包里该条款的 locatorVerification 仍是 visual_verified，本次未据入库文本改写该字段——升级条款核验状态应由人工按原件确认
+      - 证书、许可证与印章的**真实性**属人工核验，本规则只判是否提供、编号是否记录、项目是否齐全
+      - 质量证明书的具体项目按安全附件类型分列于附件 D3.5、E3.5、F3.5，条目不同，故按事实侧给出的"该类型项目是否齐全"布尔判定，不在工具内按类型展开
+      - 现场安装位置、规格型号与铭牌实物核对由 AC-R56-02 判定，这里不重复
+    domains:
+      safetyAccessoryDocuments:
+        name: 安全附件证明文件
+        requiredPaths:
+        - accessory.accessoryType
+        - accessory.model
+        - accessory.manufacturer
+        checks:
+        - code: type_test_passed
+          actualPath: accessory.typeTestPassed
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 4.1——安全附件应当进行型式试验，未经型式试验合格的产品不应出厂或者交付使用
+          verifiedBy: null
+        - code: within_type_test_certificate_coverage
+          actualPath: accessory.withinTypeTestCoverage
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 4.1——超过型式试验证书覆盖范围的产品不应出厂或者交付使用；有证书不等于该规格已被覆盖
+          verifiedBy: null
+        - code: product_standard_within_annex_b
+          actualPath: accessory.standardWithinAnnexB
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 1.4(2)——本规程附件 B 所列产品标准为满足本规程基本安全要求的标准
+          verifiedBy: null
+        - code: comparison_table_when_outside_annex_b
+          applicabilityPath: accessory.standardOutsideAnnexB
+          actualPath: accessory.comparisonTableProvided
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 1.4(3)——采用附件 B 所列标准以外的产品标准时，制造单位应当提供符合基本安全要求的比照表（样式见附件 C）
+          verifiedBy: null
+        - code: shipment_documents_complete
+          actualPath: accessory.shipmentDocuments
+          operator: contains_all
+          expected:
+          - 产品合格证
+          - 产品质量证明书
+          - 使用说明书
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 3.3.4.2(1)——出厂时制造单位应当随产品至少提供产品合格证、产品质量证明书、使用说明书
+          verifiedBy: null
+        - code: certificate_signed_by_quality_engineer
+          actualPath: accessory.certificateSignedByQualityEngineer
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 3.3.4.2(2)——产品质量证明书应当由制造单位质量保证工程师签字或者盖章
+          verifiedBy: null
+        - code: certificate_states_manufacturer_and_licence_no
+          actualPath: accessory.certificateStatesManufacturerAndLicenceNo
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 3.3.4.2(3)——产品质量证明书应当注明制造单位名称和生产许可证书编号
+          verifiedBy: null
+        - code: certificate_items_complete_for_type
+          actualPath: accessory.certificateItemsCompleteForType
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D3.5、附件E E3.5、附件F F3.5——质量证明书应按安全附件类型载明规定项目
+          verifiedBy: null
+        - code: nameplate_shows_licence_number
+          actualPath: accessory.nameplateShowsLicenceNumber
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D3.4、附件E E3.4、附件F F3.4——铭牌应当包括特种设备生产许可证编号及标志
+          verifiedBy: null
+        - code: material_certificate_traceable_and_stamped
+          actualPath: accessory.materialCertificateTraceableAndStamped
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 2.1(3)——材料质量证明书内容应当齐全清晰，印制可追溯的信息化标志，并加盖材料制造单位质量检验章
+          verifiedBy: null
+        - code: material_certificate_original_or_stamped_copy
+          applicabilityPath: accessory.materialFromNonManufacturer
+          actualPath: accessory.materialCertificateOriginalOrStampedCopy
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 2.1(4)——从非材料制造单位取得材料时，应当取得材料质量证明书原件或者加盖材料供应单位公章和经办人签字（章）的复印件
+          verifiedBy: null
+  safetyAccessoryInstallationRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-TSG-92-2026
+        clauseNo: 5.2、5.3、附件D D4、附件E E4、附件F F4
+        purpose: 安全附件的选用与安装要求
+        locatorVerification: visual_verified
+      reviewedScope: field_selection_and_installation_checks_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 TSG 92-2026 5.2、5.3 与附件 D4、E4、F4（知识库入库条款记录 fileId KF-KB-7979D2C4C2，第 15、26~27、42、49 页），已按入库文本逐句核对；**入库文本由 OCR 流水线生成，未经人工与原件比对，也未经人工签字确认**
+      - 规则包里该条款的 locatorVerification 仍是 visual_verified，本次未据入库文本改写该字段
+      - 安全阀入口端压力损失不高于整定压力 3% 是条文明列数值，直接比较；泄放量是否满足被保护系统安全泄放量需要泄放量计算，工具不代算，按事实侧布尔判定
+      - 判据按安全附件类型分支适用：安全阀走 D4、爆破片装置走 E4、紧急切断阀走 F4；类型取不到值时保持证据不足，不按不适用放过
+      - 制造许可、型式试验证书与质量证明文件由 AC-R56-01 判定，这里不重复
+    domains:
+      safetyAccessoryInstallation:
+        name: 安全附件选用与安装
+        requiredPaths:
+        - installation.accessoryType
+        - installation.tagNo
+        - installation.location
+        checks:
+        - code: model_and_size_match_design
+          actualPath: installation.modelAndSizeMatchDesign
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 5.2(2)——应当根据运行最高压力、安全泄放量等因素综合确定安全泄放装置的规格和设置数量
+          verifiedBy: null
+        - code: total_relief_capacity_meets_system
+          applicabilityPath: installation.reliefDevice
+          actualPath: installation.totalReliefCapacityMeetsSystem
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 5.2(2)——参与泄放的安全泄放装置总泄放量应当大于或者等于被保护系统安全泄放量
+          verifiedBy: null
+        - code: inlet_outlet_flow_area_not_less_than_port
+          actualPath: installation.flowAreaNotLessThanPort
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 5.3(1)——安全附件进出口管道的最小流道面积应当不小于安全附件连接端口的面积
+          verifiedBy: null
+        - code: position_allows_fast_relief_and_maintenance
+          actualPath: installation.positionAllowsReliefAndMaintenance
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 5.3(2)——安装位置应当充分考虑系统超压时能够尽快释放压力或者快速截断介质，并且易于检查和修理
+          verifiedBy: null
+        - code: nameplate_legible_on_site
+          actualPath: installation.nameplateLegibleOnSite
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.1.1(1)、附件E E5.2.1(2)、附件F F5.1(1)——现场应核对铭牌标识是否完好清晰、参数是否符合运行要求
+          verifiedBy: null
+        - code: safety_valve_mounted_vertically
+          applicabilityPath: installation.safetyValve
+          actualPath: installation.mountedVertically
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D4.2(1)——除非有特殊安装要求，安全阀应当铅直安装
+          verifiedBy: null
+        - code: safety_valve_connection_matches_phase
+          applicabilityPath: installation.safetyValve
+          actualPath: installation.connectionMatchesMediumPhase
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D4.2(2)~(6)——蒸汽介质装于最高位置；气体介质连接顶部气相空间；液体介质装于液面之下；液化气体装于气相空间最高处；气液两相装于气相空间或与之相连管路
+          verifiedBy: null
+        - code: safety_valve_inlet_pressure_loss_within_three_percent
+          applicabilityPath: installation.safetyValve
+          actualPath: installation.inletPressureLossPercent
+          operator: lte
+          expected: 3
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D4.2(7)——安全阀入口端管道和其他元件的压力损失之和不得高于安全阀整定压力的 3%
+          verifiedBy: null
+        - code: safety_valve_outlet_not_obstructed
+          applicabilityPath: installation.safetyValve
+          actualPath: installation.outletNotObstructed
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D4.2(8)——出口侧管道管件、消音器、爆破片装置等的结构和流通面积不得妨碍安全泄放；蒸汽介质还应在管道最底部设置排泄孔
+          verifiedBy: null
+        - code: safety_valve_isolation_valve_locked_open
+          applicabilityPath: installation.isolationValvePresent
+          actualPath: installation.isolationValveLockedOpen
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.1.1(3)——进出口端设置截断阀的，截断阀应处于正常开启位置，开启位置的锁定或者铅封应完好
+          verifiedBy: null
+        - code: rupture_disc_undamaged_before_installation
+          applicabilityPath: installation.ruptureDisc
+          actualPath: installation.discUndamagedBeforeInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件E E4.2(1)——拆开包装后应检查爆破片有无损伤、拱面有无挤压痕迹，确认无损伤后才可以安装
+          verifiedBy: null
+        - code: rupture_disc_direction_and_discharge_clear
+          applicabilityPath: installation.ruptureDisc
+          actualPath: installation.discDirectionCorrectAndDischargeClear
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件E E4.2(2)(3)——应按安装使用说明书正确安装并确保排放口畅通，按正确方向装入夹持法兰后均匀拧紧螺栓
+          verifiedBy: null
+        - code: rupture_disc_nameplate_visible_after_installation
+          applicabilityPath: installation.ruptureDisc
+          actualPath: installation.discNameplateVisible
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件E E4.2(4)——爆破片装置的铭牌在安装后应当便于查看
+          verifiedBy: null
+        - code: rupture_disc_no_added_gasket_or_rework
+          applicabilityPath: installation.ruptureDisc
+          actualPath: installation.noAddedGasketOrRework
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件E E4.2(7)——安装过程不得损伤拱面，不得在爆破片与夹持器间附加密封垫片，不允许自行对夹持器进行任何修理加工
+          verifiedBy: null
+        - code: rupture_disc_pipe_coaxial
+          applicabilityPath: installation.ruptureDisc
+          actualPath: installation.dischargePipeCoaxial
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件E E4.2(8)——泄放管路中心线应当与爆破片装置中心线同轴，避免受力不均造成抽边或改变爆破压力
+          verifiedBy: null
+        - code: emergency_valve_cutoff_type_matches_scenario
+          applicabilityPath: installation.emergencyValve
+          actualPath: installation.cutOffTypeMatchesScenario
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F4.1——按场合选用过流、易熔、压力、拉断或电磁切断型紧急切断阀
+          verifiedBy: null
+        - code: pull_off_valve_axis_aligned_with_pipe
+          applicabilityPath: installation.pullOffTypeValve
+          actualPath: installation.pullOffAxisAligned
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F4.2(4)——拉断切断型紧急切断阀两端连接管道的布置应当尽可能与拉断阀的轴向拉断方向相同
+          verifiedBy: null
+        - code: solenoid_valve_upstream_horizontal_actuator_up
+          applicabilityPath: installation.solenoidTypeValve
+          actualPath: installation.solenoidMountingCorrect
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F4.2(5)——电磁式切断型紧急切断阀应当安装于易燃易爆介质上游处管道，阀体水平安装，电磁执行机构或者手动拉杆垂直向上
+          verifiedBy: null
   requiredEvidence:
   - 设计文件及产品技术文件
   - 审查安全附件的制造许可证
@@ -6232,6 +7147,167 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R57-01
   - AC-R57-02
+  safetyValveCalibrationRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-TSG-92-2026
+        clauseNo: 附件D D5、附录db
+        purpose: 安全阀校验周期、校验介质、校验方法与校验报告项目
+        locatorVerification: visual_verified
+      reviewedScope: safety_valve_calibration_period_medium_method_and_report_items
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 TSG 92-2026 附件D D5 与附录 db（知识库入库条款记录 fileId KF-KB-7979D2C4C2，第 29~33 页），已按入库文本逐句核对；**入库文本由 OCR 流水线生成，未经人工与原件比对，也未经人工签字确认**
+      - 规则包里该条款的 locatorVerification 仍是 visual_verified，本次未据入库文本改写该字段——升级条款核验状态应由人工按原件确认
+      - 最长校验周期 5 年、整定压力 3 次重复性试验、升压速度不高于 0.01 MPa/s、42 MPa 分界都是条文明列数值，直接比较
+      - 整定压力实测值是否落在铭牌整定压力范围内需要两个值比较，工具不代算，按事实侧布尔判定
+      - 密封试验泄漏率的合格判据在产品标准（GB/T 12243 等）里，本规程未给统一数值，故只判"是否按产品标准评定并合格"
+      - 校验机构资质与校验专用章的真实性属人工核验，不在判定范围
+    domains:
+      safetyValveCalibration:
+        name: 安全阀校验报告
+        requiredPaths:
+        - report.reportNo
+        - report.setPressureMpa
+        - report.calibrationDate
+        - report.nextCalibrationDate
+        checks:
+        - code: calibration_interval_within_five_years
+          actualPath: report.calibrationIntervalYears
+          operator: lte
+          expected: 5
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.3.2.2——安全阀最长校验周期不应当超过 5 年
+          verifiedBy: null
+        - code: shortened_interval_when_problems_found
+          applicabilityPath: report.problemsFoundInService
+          actualPath: report.intervalShortenedOrImmediateCalibration
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.3.3——使用中发现泄漏、频繁起跳等问题应适当缩短校验周期；严重影响正常运行的应立即校验
+          verifiedBy: null
+        - code: calibration_medium_matches_service
+          actualPath: report.mediumMatchesService
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.4——液体用安全阀一般用水，气体用空气或氮气，蒸汽用蒸汽（装置能力有限时可用空气或氮气代替），低温介质可用空气或氮气
+          verifiedBy: null
+        - code: online_calibration_only_when_permitted
+          applicabilityPath: report.onlineCalibration
+          actualPath: report.onlineCalibrationJustified
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.1——安全阀一般应当离线校验；仅在离线存在安全风险、不便拆卸或安全技术规范允许时可在线校验
+          verifiedBy: null
+        - code: macro_inspection_and_disassembly_done
+          applicabilityPath: report.offlineCalibration
+          actualPath: report.macroInspectionAndDisassemblyDone
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.1——校验前应进行内外表面宏观检查，必要时清洗并解体检查各零部件（出厂未使用的安全阀可免解体）
+          verifiedBy: null
+        - code: damaged_parts_repaired_or_replaced
+          applicabilityPath: report.damagedPartsFound
+          actualPath: report.damagedPartsRepairedOrReplaced
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.1(3)——发现阀瓣阀座密封面损伤、导向零件和阀杆损伤锈蚀的，应当修理或者更换
+          verifiedBy: null
+        - code: set_pressure_repeated_three_times
+          actualPath: report.setPressureTestCount
+          operator: gte
+          expected: 3
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.2(1)——整定压力值调整确定后应再进行 3 次重复性试验
+          verifiedBy: null
+        - code: all_three_results_meet_product_standard
+          actualPath: report.allSetPressureResultsAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.2(1)——3 次试验结果均应当符合产品标准的要求
+          verifiedBy: null
+        - code: set_pressure_within_nameplate_range
+          applicabilityPath: report.nameplateRangeMarked
+          actualPath: report.setPressureWithinNameplateRange
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附录db——报告应记录整定压力范围（铭牌有标示时），实测整定压力应落在该范围内
+          verifiedBy: null
+        - code: pilot_valve_tested_as_assembly
+          applicabilityPath: report.pilotOperatedValve
+          actualPath: report.pilotAndMainTestedTogether
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.2(1)——先导式安全阀应当进行导阀与主阀一体联动试验
+          verifiedBy: null
+        - code: power_assisted_valve_tested_as_assembly
+          applicabilityPath: report.powerAssistedValve
+          actualPath: report.powerAssistTestedAsAssembly
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.2(3)——带动力辅助装置的安全阀应当将动力辅助装置与阀门整体进行试验
+          verifiedBy: null
+        - code: high_pressure_valve_uses_gbt32291
+          applicabilityPath: report.setPressureAbove42Mpa
+          actualPath: report.testedPerGbt32291
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.2(2)、D5.2.6.2.3(3)——整定压力大于 42 MPa 的安全阀应按 GB/T 32291 进行整定压力试验与密封试验
+          verifiedBy: null
+        - code: seal_test_after_set_pressure_accepted
+          actualPath: report.sealTestAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件D D5.2.6.2.3——整定压力调整试验合格后降压至密封试验压力进行密封试验，结果应符合产品标准的要求
+          verifiedBy: null
+        - code: report_items_complete
+          actualPath: report.recordedItems
+          operator: contains_all
+          expected:
+          - 使用单位
+          - 制造单位
+          - 安全阀型号
+          - 产品编号
+          - 被保护设备种类
+          - 工作介质
+          - 整定压力
+          - 密封试验压力
+          - 校验介质
+          - 校验方式
+          - 校验结论
+          - 校验日期
+          - 下次校验日期
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附录db 安全阀校验报告——报告应载明使用单位、制造单位、型号、产品编号、被保护设备种类、工作介质、整定压力、密封试验压力、冷态试验差压力、校验介质、校验方式、校验结论、校验日期与下次校验日期
+          verifiedBy: null
+        - code: conclusion_accepted
+          actualPath: report.conclusion
+          operator: accepted
+          expected:
+          - 合格
+          - passed
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附录db——校验结论栏为"合格／不合格"，不合格即不成立
+          verifiedBy: null
+        - code: signed_by_calibrator_and_approver
+          actualPath: report.signedByCalibratorAndApprover
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附录db——报告应有校验人签署与审批签署，并加盖校验机构校验专用章
+          verifiedBy: null
   requiredEvidence:
   - 审查安全阀校验报告
   - 找到安全阀校验报告、设计文件
@@ -6288,6 +7364,158 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R58-01
   - AC-R58-02
+  emergencyValveTestRules:
+    sourceReview:
+      method: agent_knowledge_base_clause_reading
+      documents:
+      - standardRef: STD-TSG-92-2026
+        clauseNo: 附件F F3.3、F3.5、F5
+        purpose: 紧急切断阀出厂检验项目、质量证明书内容与使用期间的定期自行检查
+        locatorVerification: visual_verified
+      reviewedScope: emergency_valve_factory_test_items_certificate_and_periodic_check
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 TSG 92-2026 附件F F3.3、F3.5、F5（知识库入库条款记录 fileId KF-KB-7979D2C4C2，第 47~50 页），已按入库文本逐句核对；**入库文本由 OCR 流水线生成，未经人工与原件比对，也未经人工签字确认**
+      - 规则包里该条款的 locatorVerification 仍是 visual_verified，本次未据入库文本改写该字段——升级条款核验状态应由人工按原件确认
+      - 各项试验的合格数值判据在产品标准里，本规程只列项目，故只判"项目是否齐、结论是否合格"，不作数值比较
+      - 切断额定流量、切断压力设定值、拉断力等性能参数是否与工况相符属选型判断（F4.1），由 R56 判定，这里不重复
+      - 检验人员印章与质量保证工程师签字的真实性属人工核验
+    domains:
+      emergencyValveTest:
+        name: 紧急切断阀性能测试
+        requiredPaths:
+        - report.reportNo
+        - report.valveModel
+        - report.cutOffType
+        checks:
+        - code: factory_test_items_complete
+          actualPath: report.testedItems
+          operator: contains_all
+          expected:
+          - 壳体强度试验
+          - 内密封试验
+          - 紧急切断性能试验
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.3.1——出厂检验项目至少包括壳体强度试验、内密封试验、外密封试验（适用时）、紧急切断性能试验、切断压力精度试验（适用时）
+          verifiedBy: null
+        - code: external_seal_test_when_applicable
+          applicabilityPath: report.externalSealTestApplicable
+          actualPath: report.externalSealTested
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.3.1(3)——外密封试验（适用时）应当进行
+          verifiedBy: null
+        - code: cutoff_pressure_accuracy_when_applicable
+          applicabilityPath: report.cutOffPressureAccuracyApplicable
+          actualPath: report.cutOffPressureAccuracyTested
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.3.1(5)——切断压力精度试验（适用时）应当进行
+          verifiedBy: null
+        - code: every_function_tested_on_multifunction_valve
+          applicabilityPath: report.multiFunctionValve
+          actualPath: report.everyFunctionTested
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.3.1——具有两项及以上功能的紧急切断阀，所有项目均应当进行试验
+          verifiedBy: null
+        - code: passed_before_leaving_factory
+          actualPath: report.acceptedBeforeShipment
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.3.1——检验合格后方可出厂
+          verifiedBy: null
+        - code: certificate_items_complete
+          actualPath: report.certificateItems
+          operator: contains_all
+          expected:
+          - 产品型号
+          - 公称压力
+          - 公称尺寸
+          - 最高工作压力
+          - 制造日期
+          - 产品编号或批号
+          - 设计制造标准
+          - 适用温度
+          - 适用介质
+          - 切断型式或切断功能
+          - 切断功能的性能参数
+          - 阀体阀盖和密封面材料
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.5——质量证明书应包含产品型号、公称压力、公称尺寸、最高工作压力、制造日期、产品编号或批号、设计制造标准、适用温度、适用介质、切断型式或切断功能、切断功能的性能参数、阀体阀盖和密封面材料等
+          verifiedBy: null
+        - code: certificate_signed_and_stamped
+          actualPath: report.certificateSignedAndStamped
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.5(13)(14)——质量证明书应有合格标记、检验人员印章、质量保证工程师签字或盖章，以及制造单位名称、特种设备生产许可证编号、检验专用印章或公章
+          verifiedBy: null
+        - code: nameplate_items_complete
+          actualPath: report.nameplateItems
+          operator: contains_all
+          expected:
+          - 特种设备生产许可证编号
+          - 制造单位名称或商标
+          - 产品型号
+          - 公称压力
+          - 公称尺寸
+          - 最高工作压力
+          - 制造日期
+          - 产品编号或批号
+          - 设计制造标准
+          - 切断型式或切断功能
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.4——铭牌应包含生产许可证编号及标志、制造单位名称或商标、产品型号、公称压力、公称尺寸、最高工作压力、制造日期、产品编号或批号、设计制造标准、适用温度、适用介质、切断型式或切断功能等
+          verifiedBy: null
+        - code: material_reverified_after_restart
+          applicabilityPath: report.firstProductionOrRestartAfterOneYear
+          actualPath: report.materialReverified
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.1——首次试制造或者停产一年以上恢复生产时，制造单位应当对材料进行复验
+          verifiedBy: null
+        - code: periodic_self_check_performed
+          applicabilityPath: report.inService
+          actualPath: report.periodicSelfCheckPerformed
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F5——紧急切断阀使用期间应当进行定期自行检查，包括日常检查和年度检查
+          verifiedBy: null
+        - code: annual_check_items_complete
+          applicabilityPath: report.annualCheckDue
+          actualPath: report.annualCheckItems
+          operator: contains_all
+          expected:
+          - 安全技术档案与现场产品一致性
+          - 日常运行记录
+          - 上次定期检验重点监控部位
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F5.2——年度检查除日常检查项目外，还应核查安全技术档案记录与现场产品是否一致、检查日常运行记录、上次定期检验提出的重点监控部位
+          verifiedBy: null
+        - code: abnormal_condition_stops_use
+          applicabilityPath: report.abnormalConditionFound
+          actualPath: report.stoppedAndRepairedOrReplaced
+          operator: equals
+          expected: true
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F5.3——阀体损坏或泄漏、密封面损坏、导向机构锈蚀严重、弹簧锈蚀、易熔合金缺失损坏、铭牌脱落且使用记录丢失、选型不当时，应当停止使用并立即修理或更换
+          verifiedBy: null
+        - code: conclusion_accepted
+          actualPath: report.conclusion
+          operator: accepted
+          expected:
+          - 合格
+          - passed
+          standardRef: STD-TSG-92-2026
+          sourceClause: TSG 92-2026 附件F F3.3.1——检验合格后方可出厂，结论不合格即不成立
+          verifiedBy: null
   requiredEvidence:
   - 审查紧急切断阀性能测试报告
   - 找到紧急切断阀性能测试报告、设计文件
