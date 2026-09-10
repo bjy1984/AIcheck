@@ -149,3 +149,20 @@ def test_todo_summary_is_consistent_across_two_http_processes(isolated_postgres_
     finally:
         writer.close_sync_postgres()
         reset_request_tenant_id(token)
+        # 等这次起的 API 进程的连接真正从库里消失再交还。
+        #
+        # 子进程 terminate 之后连接不是立刻断的；而 _safe_incremental_watermark()
+        # 正是查 pg_stat_activity 算出来的，残留连接会让后续用例的水位线取到别的值。
+        # 2026-09-10 实测：本文件在则 tests/test_review_handoff_http_postgres.py 在
+        # 全量跑里失败于 40906，移走本文件则 5162 全过——责任在这里，不是那条用例。
+        import psycopg
+        deadline = time.monotonic() + 30
+        target = psycopg.conninfo.conninfo_to_dict(isolated_postgres_url).get('dbname')
+        while time.monotonic() < deadline:
+            with psycopg.connect(isolated_postgres_url, autocommit=True) as probe:
+                remaining = probe.execute(
+                    'SELECT count(*) FROM pg_stat_activity '
+                    'WHERE datname = %s AND pid <> pg_backend_pid()', (target,)).fetchone()[0]
+            if not remaining:
+                break
+            time.sleep(0.5)

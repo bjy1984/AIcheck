@@ -4885,10 +4885,22 @@ class InMemoryRepository:
                     full_reload_keys.add(state_key)
                     continue
                 try:
+                    # 用 >= 而不是 >。updated_at 取的是 now()，在 PostgreSQL 里等于
+                    # **事务开始时刻**；而水位线取最老活跃事务的 xact_start。当写入方
+                    # 恰好就是那个最老活跃事务时，它写出的行 updated_at 正好**等于**
+                    # 水位线——严格大于会把这一行永久跳过，内存里的 state 和
+                    # _persistence_baseline 就一起停在旧值，之后该进程再写同一条记录
+                    # 必然报 RESOURCE_STATE_CHANGED，而且重读也救不回来。
+                    #
+                    # 2026-09-10 实测：交接核验的跨进程用例只要本次会话还收集了任何
+                    # 另一个测试文件就稳定失败在这里；给 /todos 加同款刷新也复现出
+                    # 「加了刷新反而永远读不到」。
+                    #
+                    # 多合并一次同样的行是无害的：payload 与 baseline 都是幂等赋值。
                     changed = self.sync_postgres.execute(
                         """
                         SELECT object_id, payload, updated_at FROM aicheck_state
-                        WHERE tenant_id = %s AND collection = %s AND updated_at > %s
+                        WHERE tenant_id = %s AND collection = %s AND updated_at >= %s
                         """,
                         (effective_tenant_id, collection_name, watermark),
                     ).fetchall()

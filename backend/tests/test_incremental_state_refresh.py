@@ -105,7 +105,11 @@ def test_只查变化的行_不整表取payload() -> None:
 
     fetched = [s for s, _ in connection.statements if "payload" in s]
     assert fetched, "一条取 payload 的语句都没有？那什么都没刷新"
-    assert all("updated_at > " in s for s in fetched), (
+    # 断言的是「查询按 updated_at 有界」，不是某个具体的比较符。2026-09-10 把边界
+    # 从 > 改成 >=：updated_at 取 now()（事务开始时刻），水位线取最老活跃事务的
+    # xact_start，两者可以正好相等，严格大于会把那次修改永久跳过。详见
+    # tests/test_incremental_refresh_watermark.py。有界这件事不变。
+    assert all("updated_at >= " in s or "updated_at > " in s for s in fetched), (
         "还在整表取 payload——没变的行也被拉了一遍，这正是要修的东西"
     )
     by_id = {item["id"]: item for item in repository.state["knowledge_vectors"]}
