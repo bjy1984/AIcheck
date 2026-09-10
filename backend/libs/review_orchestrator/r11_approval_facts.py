@@ -15,17 +15,34 @@ def approval_arguments(run, groups, issues):
     context = groups["approvalContexts"][0]
     if context.get("planVersionId") not in run.get("inputDocumentVersionIds", []):
         return None
-    records = [(name, groups[name], ("signatureStatus", "decision", "projectId")) for name in TABLES.values()]
-    rows = [row for _, items, _ in records for row in items]
-    if any(type(row["evidence"].get("confidence")) not in (int, float) or not .75 <= row["evidence"]["confidence"] <= 1 for row in rows):
+    def trusted(row):
+        confidence = row.get("evidence", {}).get("confidence")
+        if (type(confidence) not in (int, float) or not .75 <= confidence <= 1
+                or type(row.get("conflicted", False)) is not bool):
+            return False
+        judgment = build_material_judgment([("approval", [row], ("signatureStatus", "decision", "projectId"))])["judgment"]
+        return validate_evidence_grounding({**judgment, "facts": judgment["claimedFacts"], "minConfidence": .75})["result"] == "passed"
+
+    if not trusted(context):
         return None
-    judgment = build_material_judgment(records)["judgment"]
-    if validate_evidence_grounding({**judgment, "facts": judgment["claimedFacts"], "minConfidence": .75})["result"] != "passed":
-        return None
+    groups = deepcopy(groups)
+    issues = deepcopy(issues)
+    for name in TABLES.values():
+        for row in groups[name]:
+            if not trusted(row):
+                # Preserve identity/cardinality so an untrusted duplicate cannot
+                # disappear and turn the remaining row into a unique match.
+                row["evidenceRefs"] = []
+                issues.append({"code": "r11_approval_record_source_untrusted", "recordGroup": name,
+                               "documentVersionId": row.get("documentVersionId"),
+                               "usageId": row.get("usageId"), "role": row.get("role")})
+    grounded = [(name, [row for row in groups[name] if row.get("evidenceRefs")],
+                 ("signatureStatus", "decision", "projectId")) for name in TABLES.values()]
     arguments = {"projectId": run["projectId"], "scope": deepcopy(context), "signatures": deepcopy(groups["approvalSignatures"]),
             "ownerApproval": deepcopy(groups["ownerApprovals"][0]) if len(groups["ownerApprovals"]) == 1 else None,
             "planUsage": deepcopy(groups["planUsages"][0]) if len(groups["planUsages"]) == 1 else None,
-            "selectionIssues": deepcopy(issues)}
+            "selectionIssues": deepcopy(issues),
+            "sourceJudgment": build_material_judgment(grounded)["judgment"]}
 
     if groups["usageInventories"] or len(groups["planUsages"]) > 1:
         arguments["planUsages"] = deepcopy(groups["planUsages"])

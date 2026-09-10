@@ -248,6 +248,11 @@ def build_tool_arguments(
     }:
         arguments.setdefault("documentVersionIds", document_version_ids)
     if tool_name == "validate_evidence_grounding":
+        if arguments.get("profile") == "construction_plan_approval":
+            scoped = nested_dict(nested_dict(nested_dict(facts, "r11"), "approval"), "sourceJudgment")
+            if scoped:
+                evidence_facts = scoped.get("claimedFacts") or []
+                evidence_refs = scoped.get("evidenceRefs") or []
         arguments.setdefault("facts", evidence_facts)
         arguments.setdefault("evidenceRefs", evidence_refs)
         return arguments

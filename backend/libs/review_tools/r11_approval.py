@@ -25,7 +25,7 @@ def evaluate_r11_approval(arguments):
             facts={"scope": "documented_plan_signatures_owner_reply_and_use_order_only", "wholeRuleAcceptance": "not_evaluated",
                    "evidenceVerified": False, "approvalChecks": rows, "selectionIssues": deepcopy(arguments.get("selectionIssues") or [])},
             checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-            rule_version="r11-documented-plan-approval-v3")
+            rule_version="r11-documented-plan-approval-v4")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
@@ -40,12 +40,14 @@ def evaluate_r11_approval(arguments):
         return isinstance(row, dict) and all(row.get(key) == scope[key] for key in SCOPE_FIELDS) and bool(_refs(row))
 
     signatures = arguments.get("signatures")
-    if not isinstance(signatures, list) or any(not matches(row) or row.get("role") not in ROLES for row in signatures):
+    if not isinstance(signatures, list):
         add("r11_signature_source_or_role_ambiguous", "evidence_insufficient")
     else:
+        if any(not isinstance(row, dict) or row.get("role") not in ROLES for row in signatures):
+            add("r11_signature_source_or_role_ambiguous", "evidence_insufficient")
         for role in ROLES:
-            matches_role = [row for row in signatures if row["role"] == role]
-            if len(matches_role) != 1:
+            matches_role = [row for row in signatures if isinstance(row, dict) and row.get("role") == role]
+            if len(matches_role) != 1 or not matches(matches_role[0]):
                 add(f"r11_signature_{role}_unresolved", "evidence_insufficient")
                 continue
             row = matches_role[0]
