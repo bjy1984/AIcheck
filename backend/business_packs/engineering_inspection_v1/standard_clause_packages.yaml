@@ -894,19 +894,29 @@ standardClausePackages:
         sourceClause: TSG 31-2025 3.1.3.2(4)
         verifiedBy: null
     pressureTest:
+      sourceReview:
+        method: agent_visual_comparison
+        documentPath: rules/standards/GBT+20801.1-2025.pdf
+        documentSha256: def7eb49f84a960632b9e9ed96f484001794bebc2c92deb33a84cb59be67bd7b
+        pdfPages: [127, 128]
+        printedPages: [119, 120]
+        reviewedScope: pressure_ratio_clause_labels_only
+        humanVerified: false
+        limitations:
+        - 基础倍率比较不代表温度应力修正、降压例外、气压屈服强度上限或其他适用条件已核验
       checks:
       - code: method_specified
         actualPath: requirements.method
         operator: present
         standardRef: STD-GBT-20801.1-2025
-        sourceClause: GB/T 20801.5 压力试验
+        sourceClause: GB/T 20801.1-2025 8.6.1.1、8.6.1.3、8.6.1.4（须确认试验方法及适用条件）
         verifiedBy: null
       - code: test_pressure_ratio
         actualPath: requirements.testPressureMeetsRatio
         operator: equals
         expected: true
         standardRef: STD-GBT-20801.1-2025
-        sourceClause: GB/T 20801.5 液压 1.5 倍 / 气压 1.15 倍设计压力
+        sourceClause: GB/T 20801.1-2025 8.6.1.3 b)、d)、e)；8.6.1.4 e)（液压基础下限 1.5；气压下限 1.1；并须核对修正、例外及上限）
         verifiedBy: null
     leakTest:
       checks:

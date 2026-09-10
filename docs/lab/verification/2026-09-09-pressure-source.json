@@ -1,0 +1,15 @@
+{
+  "documentPath": "rules/standards/GBT+20801.1-2025.pdf",
+  "sha256": "def7eb49f84a960632b9e9ed96f484001794bebc2c92deb33a84cb59be67bd7b",
+  "pdfPages": [
+    127,
+    128
+  ],
+  "printedPages": [
+    119,
+    120
+  ],
+  "method": "agent_visual_comparison",
+  "humanVerified": false,
+  "scope": "pressure_ratio_clause_labels_only"
+}
