@@ -1,0 +1,66 @@
+# 把 OCR 解析出的真實表格認出來，並把表頭對映成判據讀的欄位路徑。
+#
+# 為什麼需要這份檔：fact builder 按 businessSchema 名字取表，判據按 actualPath
+# 取值，但 2026-09-10 的盤點發現 OCR 分類器產生的 schema 名與 fact builder 要的
+# 73 個名字交集為零，而 465 個判據欄位路徑全倉沒有任何地方產生。缺的不是配置，
+# 是產生配置的機制——這份檔是機制的宣告面。
+#
+# 規矩（與凍結判據一致）：
+# - 對映不上的欄位就**不寫**，不猜。判據看到缺項會報缺證據，那是正確的結果；
+#   編一個值進去才是災難。
+# - 每條簽名都要寫 evidence，說明表頭是從哪份真實資料抽出來的。憑印象寫的簽名
+#   會在真實素材上默默配錯表。
+schemaVersion: table-schema-signatures-v1
+signatures:
+- businessSchema: material_certificate_domains
+  domain: materialCertificate
+  objectType: material_certificate
+  sourceRuleIds: [R43]
+  evidence: >-
+    生產庫 ocr_parse_results 真實表頭（2026-09-10 抽出）：产品质量证明书编号 |
+    元件名称 | 制造许可证编号 | 厂家 | 型式试验证书编号 | 序号 | 材质/标准 |
+    规格/炉批号，7 列，出自廣東 LNG 支線改造的材料質量證明文件匯總表。
+  match:
+    required: [产品质量证明书编号]
+    any: [元件名称, 材质/标准, 规格/炉批号, 制造许可证编号, 厂家, 型式试验证书编号]
+    minAny: 2
+  objectIdColumns: [产品质量证明书编号]
+  # 表存在即代表這批材料交了質量證明文件，R43 的文件審查因此適用。
+  # 這是一個**宣告的判斷**，不是從資料讀出來的；寫在這裡是為了可被覆核。
+  applicableWhen: table_present
+  fields:
+  - path: certificate.documentNo
+    columns: [产品质量证明书编号, 质量证明书编号, 产品质量证明书编号]
+    parse: text
+  - path: certificate.materialGrade
+    # 真實值形如「材质:S30408标准:GB/T14976-2025」，要按標籤切出材質，
+    # 整串塞進去會讓 materialGrade 混進標準號。
+    columns: [材质/标准, 材质, 材料牌号]
+    parse: labelled
+    label: 材质
+    stopLabels: [标准, 標準]
+
+- businessSchema: ndt_plan_items
+  domain: null
+  objectType: ndt_plan_item
+  sourceRuleIds: [R36]
+  evidence: >-
+    生產庫 ocr_parse_results 真實表頭（2026-09-10 抽出）：介质 | 公称直径 |
+    检测比例 | 管道号，出現 13 次，出自無損檢測委託／比例表。
+  match:
+    required: [管道号, 检测比例]
+    any: [介质, 公称直径, 管线号, 检测方法]
+    minAny: 1
+  objectIdColumns: [管道号, 管线号]
+  applicableWhen: table_present
+  fields:
+  - path: objectId
+    columns: [管道号, 管线号]
+    parse: text
+  - path: ratioPercent
+    # 真實值是「10%」這種字串；R36 的工具明確拒收字串百分比，必須轉成數。
+    columns: [检测比例, 无损检测比例]
+    parse: percent
+  - path: method
+    columns: [检测方法, 无损检测方法]
+    parse: text
