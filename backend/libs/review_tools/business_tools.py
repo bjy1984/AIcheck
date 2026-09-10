@@ -1739,6 +1739,7 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
         standard_checks: list[dict[str, Any]] = []
         violations: list[str] = []
         unresolved_rules: list[str] = []
+        not_applicable_rules: list[str] = []
         for index, rule in enumerate(rules, 1):
             actual_path = str(rule.get("actualPath") or "").strip()
             standard_ref = str(rule.get("standardRef") or "").strip()
@@ -1749,6 +1750,18 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
                     arguments,
                     f"{domain_name}_standard_rule_{index}_invalid",
                 )
+            if "applicabilityPath" in rule:
+                applicability_path = rule["applicabilityPath"]
+                if not isinstance(applicability_path, str) or not applicability_path.strip():
+                    return insufficient("evaluate_design_special_requirements", arguments, f"{domain_name}_rule_applicability_invalid")
+                applicable = read_path(domain, applicability_path)
+                rule_id = str(rule.get("code") or f"rule_{index}")
+                if applicable is False:
+                    not_applicable_rules.append(rule_id)
+                    continue
+                if applicable is not True:
+                    unresolved_rules.append(rule_id)
+                    continue
             actual = read_path(domain, actual_path)
             # Derived comparisons require known inputs. Unknown hazard/acceptance data
             # must not become a failed boolean comparison or a permissive default.
@@ -1794,6 +1807,7 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
                 "standardComplianceResult": ("failed" if not compliance_passed else
                     "evidence_insufficient" if unresolved_rules else "passed"),
                 "unresolvedRules": unresolved_rules,
+                "notApplicableRules": not_applicable_rules,
                 "missingPaths": missing_paths,
                 "violations": violations,
                 "standardRefs": sorted(referenced_standards),
@@ -1810,7 +1824,7 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
         overall,
         facts={"domains": domains},
         checks=checks,
-        rule_version=str(arguments.get("ruleVersion") or "r09-design-special-requirements-v1"),
+        rule_version=str(arguments.get("ruleVersion") or "r09-design-special-requirements-v2"),
     )
     output["domainResults"] = domain_results
     return output

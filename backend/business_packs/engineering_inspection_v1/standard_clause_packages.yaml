@@ -918,6 +918,14 @@ standardClausePackages:
         standardRef: STD-GBT-20801.1-2025
         sourceClause: GB/T 20801.1-2025 8.6.1.3 b)、d)、e)；8.6.1.4 e)（液压基础下限 1.5；气压下限 1.1；并须核对修正、例外及上限）
         verifiedBy: null
+      - code: pneumatic_ratio_ceiling
+        applicabilityPath: requirements.pneumaticTest
+        actualPath: requirements.testPressureExceedsMax
+        operator: equals
+        expected: false
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.1-2025 8.6.1.4 e)1)（气压试验不超过1.33倍设计压力；e)2)屈服强度限制仍需另行核对）
+        verifiedBy: null
     leakTest:
       checks:
       - code: method_specified

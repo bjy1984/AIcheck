@@ -437,6 +437,7 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "designPressureScopeIssue": pressure_scope_issue if ratio is None else None,
             "testPressureMeetsRatio": meets_ratio,
             # 气压试验有上限：超过 1.33 倍设计压力是不符合，不是"更保险"
+            "pneumaticTest": True if is_pneumatic else False if methods == {"hydro"} else None,
             "maxTestPressureRatio": ratios["pneumaticMax"] if is_pneumatic else None,
             "testPressureExceedsMax": exceeds_max,
             "acceptanceCriteria": pressure_criteria.group(1) if pressure_criteria else None,
