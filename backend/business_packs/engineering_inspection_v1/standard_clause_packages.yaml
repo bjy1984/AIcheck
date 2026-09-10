@@ -5676,6 +5676,52 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R64-01
   - AC-R64-02
+  alternativeTestRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 8.6.1.7、8.6.2.2
+        purpose: 替代性敏感泄漏试验
+        locatorVerification: source_verified
+      reviewedScope: alternative_test_precondition_and_sensitivity_only
+      humanVerified: false
+      limitations:
+      - 8.6.1.7 的免除（替代）要求"液压与气压都不切实际"且两类情形同时存在，本块只判是否有书面依据与三方同意，不代替对那两类情形本身的核验
+      - 敏感性灵敏度门槛取自法规表已录条文；各附录方法的试验压力与步骤未逐条展开
+    domains:
+      alternativeTest:
+        name: 替代性试验
+        requiredPaths:
+        - basis.writtenApproval
+        - method.name
+        - results.conclusion
+        checks:
+        - code: precondition_documented
+          actualPath: basis.bothTestsImpracticalDocumented
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.7——液压与气压试验都不切实际时才可免除或替代，须有书面依据
+          verifiedBy: null
+        - code: sensitivity_meets_threshold
+          applicabilityPath: method.sensitiveLeakTest
+          actualPath: method.sensitivityMeetsThreshold
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2——敏感性泄漏试验灵敏度不低于 1e-5 Pa·m³/s
+          verifiedBy: null
+        - code: conclusion_accepted
+          actualPath: results.conclusion
+          operator: accepted
+          expected:
+          - 合格
+          - 无可察泄漏
+          - passed
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2——以无可察泄漏为合格
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 是否符合技术规范、相关标准及设计文件
@@ -5819,6 +5865,53 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R66-01
   - AC-R66-02
+  leakTestConditionRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 8.6.2.1-8.6.2.3
+        purpose: 泄漏试验介质、压力、温度和方法
+        locatorVerification: source_verified
+      reviewedScope: leak_test_medium_pressure_and_gauge_items_only
+      humanVerified: false
+      limitations:
+      - 气密性试验压力"设计压力（真空管道内压 0.1MPa）"取自法规表已录条文；判据只比"是否等于设计压力"，不做温度修正
+      - 压力表数量、量程与精度等级标准未逐条核到原文，故只作"是否规定/是否在检定有效期内"的存在性判定
+      - 介质温度与环境温度只判是否记录，不判具体门槛——8.6.2 未给统一数值
+    domains:
+      leakTestConditions:
+        name: 泄漏试验条件
+        requiredPaths:
+        - gauges.calibrationValidUntil
+        - medium.name
+        - conditions.mediumTemperature
+        - conditions.ambientTemperature
+        - pressure.testPressureMPa
+        checks:
+        - code: gauges_calibration_valid
+          actualPath: gauges.calibrationValidAtTest
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.3——按 8.6.1.4 气压试验相关要求进行，压力表应在检定有效期内
+          verifiedBy: null
+        - code: airtightness_pressure_equals_design
+          applicabilityPath: pressure.airtightnessTest
+          actualPath: pressure.equalsDesignPressure
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.3——气密性试验压力为设计压力（真空管道内压 0.1MPa）
+          verifiedBy: null
+        - code: tripartite_approval_above_1_6mpa
+          applicabilityPath: pressure.exceeds1_6MPa
+          actualPath: pressure.tripartiteApprovalObtained
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.3——试验压力大于 1.6MPa 应取得设计、建设（使用）、安装三方同意
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 找到泄漏试验方案或记录、压力表检定证书
@@ -5883,6 +5976,62 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R67-01
   - AC-R67-02
+  leakTestMethodRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 8.6.2.2-8.6.2.3、8.7
+        purpose: 敏感泄漏／气密性试验及报告
+        locatorVerification: source_verified
+      reviewedScope: leak_test_method_sensitivity_and_report_items_only
+      humanVerified: false
+      limitations:
+      - 敏感性泄漏试验的灵敏度门槛 1e-5 Pa·m³/s 取自法规表已录条文；具体检测方法的附录要求未逐条展开
+      - 报告项目只判"是否齐全"这一布尔，未逐项列出 8.7 要求的记录清单
+      - 用气密性试验代替敏感性泄漏试验的三方同意已判；免除情形（8.6.2.1.3 经气压试验合格且未拆卸）未接入
+    domains:
+      leakTestMethod:
+        name: 泄漏试验方法与报告
+        requiredPaths:
+        - method.name
+        - report.standardRef
+        - report.holdMinutes
+        - report.result
+        checks:
+        - code: sensitivity_meets_threshold
+          applicabilityPath: method.acuteToxicCategory1Or2Gas
+          actualPath: method.sensitivityMeetsThreshold
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2——急性毒性危害类别 1 介质、类别 2 气体介质应优先采用灵敏度不低于 1e-5 Pa·m³/s 的方法
+          verifiedBy: null
+        - code: substitution_tripartite_approval
+          applicabilityPath: method.airtightnessSubstitutesSensitive
+          actualPath: method.substitutionApprovalObtained
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2——用气密性试验代替敏感性泄漏试验须经建设（使用）、设计、安装三方同意
+          verifiedBy: null
+        - code: report_items_complete
+          actualPath: report.itemsComplete
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.7——记录应由相关单位准备并保存
+          verifiedBy: null
+        - code: result_accepted
+          actualPath: report.result
+          operator: accepted
+          expected:
+          - 合格
+          - 无可察泄漏
+          - passed
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2.2——以无可察泄漏为合格
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 检查泄漏试验方法和报告

@@ -11,6 +11,11 @@ from libs.review_orchestrator.deterministic_tools import (
     parse_date,
     result,
 )
+from libs.review_tools.leak_test_rules import (
+    evaluate_r64_alternative_test,
+    evaluate_r66_leak_test_conditions,
+    evaluate_r67_leak_test_method,
+)
 from libs.review_tools.r11_approval import evaluate_r11_approval
 from libs.review_tools.r11_parameters import evaluate_r11_project_parameters
 from libs.review_tools.r11_process_standards import evaluate_r11_process_standards
@@ -145,6 +150,9 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_r11_project_parameters",
     "evaluate_r11_process_standards",
     "evaluate_r45_holiday_test",
+    "evaluate_r64_alternative_test",
+    "evaluate_r66_leak_test_conditions",
+    "evaluate_r67_leak_test_method",
     "evaluate_construction_plan",
     "evaluate_corrosion_protection",
     "evaluate_design_approval_level",
@@ -234,6 +242,9 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r37_progressive_inspection": "R37按明确批次、相同件与焊工及缺陷记录核对累进检查覆盖和升级阶段；覆盖完成不代表缺陷修复或整批验收通过。",
     "evaluate_r37_reinspection": "按明确缺陷与返修轮次核对原检测方法、范围、验收准则及修复后重检结果；独立对象核对不代表批次累进检查完成。",
     "evaluate_r11_project_parameters": "按同一对象逐项比对所选施工方案与设计固定版本的明确参数；单位、对象、原文或要求清单不明时保留不足，不代替施工技术要求验收。",
+    "evaluate_r64_alternative_test": "按冻结判据核对替代性试验：液压与气压都不切实际是否有书面依据、敏感性灵敏度是否达标、结论是否合格；不代替对免除前提本身的核验。",
+    "evaluate_r66_leak_test_conditions": "按冻结判据核对泄漏试验条件：压力表检定有效期、气密性试验压力是否等于设计压力、超过 1.6MPa 是否取得三方同意；介质与温度只判是否记录。",
+    "evaluate_r67_leak_test_method": "按冻结判据核对泄漏试验方法与报告：急性毒性介质的灵敏度门槛、以气密性代替敏感性是否经三方同意、报告项目是否齐全、结论是否合格。",
     "evaluate_r45_holiday_test": "按规则包冻结的判据核对防腐层电火花检测：仪器检定是否在有效期内、补口补伤是否 100% 漏点检测、发现漏点是否修补复检合格、报告项目是否齐全；该记没记判不符合，适用性不明保留证据不足。",
     "evaluate_r11_process_standards": "按规则包冻结的判据逐域核对所选施工方案里的焊接与试验内容是否满足施工标准：该写没写判不符合，写了但低于标准判不符合，适用性不明保留证据不足；判据与限值全部取自冻结规则，工具不自行推导。",
     "evaluate_r39_procedure_reference": "比对所选指导书引用的规程编号与版本；有来源的完整文件对清单按组核对并列出漏查项，不代替方法技术要求及整条规则验收。",
@@ -459,7 +470,9 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             else {"projectId": "string", "scope": "object?", "requirements": "object?", "signatureInventory": "object?", "inventory": "object?", "approvalCycles": ["object?"]}
             if name == "evaluate_r39_approval_chain"
             else {"projectId": "string", "scope": "object?", "standardRules": "object?", "domains": ["object?"], "selectionIssues": ["object?"]}
-            if name in {"evaluate_r11_process_standards", "evaluate_r45_holiday_test"}
+            if name in {"evaluate_r11_process_standards", "evaluate_r45_holiday_test",
+                        "evaluate_r64_alternative_test", "evaluate_r66_leak_test_conditions",
+                        "evaluate_r67_leak_test_method"}
             else {"projectId": "string", "scope": "object?", "basis": "object?", "parameters": ["object?"], "inventory": "object?", "objectComparisons": ["object?"]}
             if name == "evaluate_r11_project_parameters"
             else {"projectId": "string", "identityMode": "string?", "scope": "object?", "basis": "object?", "instructionReference": "object?", "procedureIdentity": "object?", "inventory": "object?", "referencePairs": ["object?"], "fieldPairs": ["object?"], "selectedDocumentVersionIds": ["string?"], "selectionIssues": ["object?"]}
@@ -771,6 +784,9 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_r11_project_parameters": evaluate_r11_project_parameters,
         "evaluate_r11_process_standards": evaluate_r11_process_standards,
         "evaluate_r45_holiday_test": evaluate_r45_holiday_test,
+        "evaluate_r64_alternative_test": evaluate_r64_alternative_test,
+        "evaluate_r66_leak_test_conditions": evaluate_r66_leak_test_conditions,
+        "evaluate_r67_leak_test_method": evaluate_r67_leak_test_method,
         "evaluate_ndt_quality_system": evaluate_ndt_quality_system,
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,
         "evaluate_r39_first_use_validation": evaluate_r39_first_use_validation,

@@ -212,6 +212,13 @@ def build_tool_arguments(
     if tool_name == "evaluate_r11_project_parameters":
         for key, value in nested_dict(nested_dict(facts, "r11"), "projectParameters").items():
             arguments.setdefault(key, deepcopy(value))
+    leak_inputs = {"evaluate_r64_alternative_test": ("r64", "alternativeTest"),
+                   "evaluate_r66_leak_test_conditions": ("r66", "leakTestConditions"),
+                   "evaluate_r67_leak_test_method": ("r67", "leakTestMethod")}
+    if tool_name in leak_inputs:
+        namespace, fact_key = leak_inputs[tool_name]
+        for key, value in nested_dict(nested_dict(facts, namespace), fact_key).items():
+            arguments.setdefault(key, deepcopy(value))
     if tool_name == "evaluate_r45_holiday_test":
         for key, value in nested_dict(nested_dict(facts, "r45"), "holidayTest").items():
             arguments.setdefault(key, deepcopy(value))

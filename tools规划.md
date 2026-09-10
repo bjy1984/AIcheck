@@ -541,7 +541,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R64-01 | 现场检查敏感性泄漏试验（试验方法和要求是否符合技术规范、相关标准及设计文件的要求） | `sensitiveLeakTest.method`<br>`sensitiveLeakTest.parameters`<br>`sensitiveLeakTest.results`<br>`design.leakTestRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`evaluate_leak_test`<br>`validate_evidence_grounding` | `profile=sensitive_leak_test`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R64-01 | 现场检查敏感性泄漏试验（试验方法和要求是否符合技术规范、相关标准及设计文件的要求） | `r64.alternativeTest` | `extract_table_records`<br>`evaluate_r64_alternative_test`<br>`validate_evidence_grounding` | `profile=alternative_test`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R64-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R65
@@ -556,14 +556,14 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R66-01 | 检查试验用压力表（直径、量程、精度检定有效期）、试验介质、介质温度、试验环境温度、试验压力（试验压力为设计压力） | `leakTest.gauges`<br>`leakTest.medium`<br>`leakTest.mediumTemperature`<br>`leakTest.ambientTemperature`<br>`leakTest.testPressure`<br>`design.designPressure` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_date_covers`<br>`check_numeric_range`<br>`evaluate_leak_test`<br>`validate_evidence_grounding` | `profile=leak_test_instruments`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R66-01 | 检查试验用压力表（直径、量程、精度检定有效期）、试验介质、介质温度、试验环境温度、试验压力（试验压力为设计压力） | `r66.leakTestConditions` | `extract_table_records`<br>`evaluate_r66_leak_test_conditions`<br>`validate_evidence_grounding` | `profile=leak_test_conditions`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R66-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R67
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R67-01 | 检查泄漏试验方法和报告（泄漏试验包括敏感性泄漏试验和气密性试验，应按设计文件规定的方法和要求进行，试验报告采用的标准、试验参数、保压时间、耐压试验结果等是否符合技术规范、相关标准及设计文件的要求） | `leakTest.method`<br>`leakTestReport.standardRef`<br>`leakTestReport.parameters`<br>`leakTestReport.holdMinutes`<br>`leakTestReport.result`<br>`design.leakTestRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`check_numeric_range`<br>`evaluate_leak_test`<br>`validate_evidence_grounding` | `profile=leak_test_report`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R67-01 | 检查泄漏试验方法和报告（泄漏试验包括敏感性泄漏试验和气密性试验，应按设计文件规定的方法和要求进行，试验报告采用的标准、试验参数、保压时间、耐压试验结果等是否符合技术规范、相关标准及设计文件的要求） | `r67.leakTestMethod` | `extract_table_records`<br>`evaluate_r67_leak_test_method`<br>`validate_evidence_grounding` | `profile=leak_test_method`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R67-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R68

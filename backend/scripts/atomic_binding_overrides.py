@@ -200,6 +200,20 @@ ATOMIC_BINDING_OVERRIDES["AC-R11-03"] = {
 # AC-R45-01 原先绑 evaluate_corrosion_protection——那个名字在 business_tools 里没有实现，
 # 落到通用解释器且 ruleChecks 无人产生，资料再齐也只返回"未配置"的证据不足。
 # 判据改为从规则包冻结的 holidayTestRules 取。
+# R64／R66／R67 原先都绑 evaluate_leak_test——那个名字在 business_tools 里没有实现。
+# 判据改为从各自规则包冻结的块取（8.6.1.7、8.6.2.1-8.6.2.3、8.7 均已 source_verified）。
+for _check_id, _fact, _tool, _profile in (
+    ("AC-R64-01", "r64.alternativeTest", "evaluate_r64_alternative_test", "alternative_test"),
+    ("AC-R66-01", "r66.leakTestConditions", "evaluate_r66_leak_test_conditions", "leak_test_conditions"),
+    ("AC-R67-01", "r67.leakTestMethod", "evaluate_r67_leak_test_method", "leak_test_method"),
+):
+    ATOMIC_BINDING_OVERRIDES[_check_id] = {
+        "requiredFacts": [_fact],
+        "tools": ["extract_table_records", _tool, "validate_evidence_grounding"],
+        "parameters": {"profile": _profile, "failurePolicy": "business_rule_result",
+                       "clauseSource": "frozen_standard_clause_package"},
+    }
+
 ATOMIC_BINDING_OVERRIDES["AC-R45-01"] = {
     "requiredFacts": ["r45.holidayTest"],
     "tools": ["extract_table_records", "evaluate_r45_holiday_test", "validate_evidence_grounding"],

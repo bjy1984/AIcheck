@@ -3414,20 +3414,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R64-01
   sourceRuleId: R64
   requiredFacts:
-  - sensitiveLeakTest.method
-  - sensitiveLeakTest.parameters
-  - sensitiveLeakTest.results
-  - design.leakTestRequirements
+  - r64.alternativeTest
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - evaluate_leak_test
+  - extract_table_records
+  - evaluate_r64_alternative_test
   - validate_evidence_grounding
   parameters:
-    profile: sensitive_leak_test
-    clauseSource: frozen_standard_clause_package
+    profile: alternative_test
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R64-02
@@ -3506,24 +3501,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R66-01
   sourceRuleId: R66
   requiredFacts:
-  - leakTest.gauges
-  - leakTest.medium
-  - leakTest.mediumTemperature
-  - leakTest.ambientTemperature
-  - leakTest.testPressure
-  - design.designPressure
+  - r66.leakTestConditions
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_date_covers
-  - check_numeric_range
-  - evaluate_leak_test
+  - evaluate_r66_leak_test_conditions
   - validate_evidence_grounding
   parameters:
-    profile: leak_test_instruments
-    clauseSource: frozen_standard_clause_package
+    profile: leak_test_conditions
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R66-02
@@ -3548,23 +3534,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R67-01
   sourceRuleId: R67
   requiredFacts:
-  - leakTest.method
-  - leakTestReport.standardRef
-  - leakTestReport.parameters
-  - leakTestReport.holdMinutes
-  - leakTestReport.result
-  - design.leakTestRequirements
+  - r67.leakTestMethod
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - check_numeric_range
-  - evaluate_leak_test
+  - extract_table_records
+  - evaluate_r67_leak_test_method
   - validate_evidence_grounding
   parameters:
-    profile: leak_test_report
-    clauseSource: frozen_standard_clause_package
+    profile: leak_test_method
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R67-02
