@@ -40,27 +40,11 @@ signatures:
     label: 材质
     stopLabels: [标准, 標準]
 
-- businessSchema: ndt_plan_items
-  domain: null
-  objectType: ndt_plan_item
-  sourceRuleIds: [R36]
-  evidence: >-
-    生產庫 ocr_parse_results 真實表頭（2026-09-10 抽出）：介质 | 公称直径 |
-    检测比例 | 管道号，出現 13 次，出自無損檢測委託／比例表。
-  match:
-    required: [管道号, 检测比例]
-    any: [介质, 公称直径, 管线号, 检测方法]
-    minAny: 1
-  objectIdColumns: [管道号, 管线号]
-  applicableWhen: table_present
-  fields:
-  - path: objectId
-    columns: [管道号, 管线号]
-    parse: text
-  - path: ratioPercent
-    # 真實值是「10%」這種字串；R36 的工具明確拒收字串百分比，必須轉成數。
-    columns: [检测比例, 无损检测比例]
-    parse: percent
-  - path: method
-    columns: [检测方法, 无损检测方法]
-    parse: text
+# 2026-09-10：這裡原本還有一條 ndt_plan_items 簽名，表頭取自生產庫的
+# 「介质 | 公称直径 | 检测比例 | 管道号」。逐張追來源後撤掉了：那 13 張表的
+# tableId 全是 TABLE-PARSE-FDE-*，內容逐字相同（PL8301/PL8302、天然气、DN100、
+# 10%），而且被掛在焊工資格證、焊工名冊、RT 檢測報告這些不相干的文件底下——
+# 是種子資料，不是 OCR 的產物（真實的表 tableId 是 MINERU-*，共 150 張）。
+#
+# 依種子資料寫的簽名，等於拿別人捏的樣本當真實表頭，正是本檔開頭那條規矩要防的事。
+# 等真的拿到無損檢測委託／比例表，再按真實表頭補回來。

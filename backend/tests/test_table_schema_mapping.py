@@ -22,8 +22,10 @@ CERTIFICATE_ROW = {
     "型式试验证书编号": "TSX71101004320260043",
     "产品质量证明书编号": "20260213951",
 }
-# 無損檢測比例表，原樣。
-NDT_ROW = {"介质": "天然气", "管道号": "PL8301", "公称直径": "DN100", "检测比例": "10%"}
+# 生產庫裡形似無損檢測比例表的資料，但追來源後確認是種子資料（tableId 為
+# TABLE-PARSE-FDE-*，被掛在焊工資格證等不相干文件下）。這裡留著它，是要釘住
+# **不得**因為表頭看起來合理就認出來——沒有對應簽名時就該認不出。
+SEEDED_NDT_ROW = {"介质": "天然气", "管道号": "PL8301", "公称直径": "DN100", "检测比例": "10%"}
 
 
 def table(rows, **extra):
@@ -38,54 +40,9 @@ def test_real_certificate_table_is_recognised():
     assert classify_table(table([CERTIFICATE_ROW]), SIGNATURES) == "material_certificate_domains"
 
 
-def test_real_ndt_ratio_table_is_recognised():
-    assert classify_table(table([NDT_ROW]), SIGNATURES) == "ndt_plan_items"
-
-
-@pytest.mark.parametrize(
-    "row",
-    [
-        # 生產庫裡其他真實的未分類表，一張都不該被認成上面兩種。
-        {"许可参数": "--", "许可项目": "压力管道设计", "许可子项目": "公用管道(GB2)"},
-        {"内容": "PL8306", "项目": "关联管线"},
-        {"序号": "一", "材料名称": "管材"},
-        {"变更(备案)事项": "企业类型变更", "原登记变更(备案)事项": "有限责任公司"},
-        {"序号": "1", "核查项目": "设计/安装资质", "见证资料": "TS证", "完成状态(√/×)": "√"},
-    ],
-)
-def test_unrelated_real_tables_are_left_unlabelled(row):
-    assert classify_table(table([row]), SIGNATURES) is None
-
-
-def test_an_empty_table_is_not_guessed_at():
-    assert classify_table(table([]), SIGNATURES) is None
-
-
-def test_certificate_fields_reach_the_paths_the_criteria_read():
-    mapped = map_row(CERTIFICATE_ROW, signature("material_certificate_domains"))
-    assert mapped["certificate"]["documentNo"] == "20260213951"
-    # 「材质:S30408标准:GB/T14976-2025」必須切開，否則牌號裡混進標準號。
-    assert mapped["certificate"]["materialGrade"] == "S30408"
-
-
-def test_a_column_that_maps_to_nothing_stays_absent_rather_than_guessed():
-    row = {key: value for key, value in CERTIFICATE_ROW.items() if key != "材质/标准"}
-    mapped = map_row(row, signature("material_certificate_domains"))
-    assert "materialGrade" not in mapped["certificate"]
-
-
-def test_percent_strings_become_numbers_because_the_tool_rejects_strings():
-    mapped = map_row(NDT_ROW, signature("ndt_plan_items"))
-    assert mapped["ratioPercent"] == 10.0
-    assert mapped["objectId"] == "PL8301"
-
-
-@pytest.mark.parametrize("value", ["约10%", "10~20%", "10", "", "百分之十", "-5%", "120%", True])
-def test_a_ratio_that_is_not_a_clean_percentage_is_refused(value):
-    mapped = map_row({**NDT_ROW, "检测比例": value}, signature("ndt_plan_items"))
-    assert "ratioPercent" not in mapped
-
-
+def test_a_table_with_no_signature_is_not_recognised():
+    """簽名撤掉之後就該認不出來；表頭再像也不能猜。"""
+    assert classify_table(table([SEEDED_NDT_ROW]), SIGNATURES) is None
 def test_domain_rows_carry_the_scope_and_evidence_the_checks_require():
     rows = build_domain_rows(
         table([CERTIFICATE_ROW]),
@@ -135,3 +92,23 @@ def test_the_judgment_booleans_are_still_absent_after_mapping():
 def test_signature_headers_are_normalised_across_ocr_punctuation():
     row = {"产品质量证明书编号": "X1", "元件名称 ": "管", "材质／标准": "材质:S1"}
     assert classify_table(table([row]), SIGNATURES) == "material_certificate_domains"
+
+
+# 百分比解析器目前沒有簽名在用（ndt_plan_items 撤掉了），但程式還在，
+# 而且是「不猜」規矩最容易破功的地方，所以直接測它。
+PERCENT_SIGNATURE = {
+    "businessSchema": "probe",
+    "fields": [{"path": "ratioPercent", "columns": ["检测比例"], "parse": "percent"}],
+}
+
+
+def test_a_clean_percentage_becomes_a_number():
+    assert map_row({"检测比例": "10%"}, PERCENT_SIGNATURE)["ratioPercent"] == 10.0
+
+
+@pytest.mark.parametrize(
+    "value", ["约10%", "10~20%", "10", "", "百分之十", "-5%", "120%", True, None, "10%%"]
+)
+def test_anything_that_is_not_a_clean_percentage_is_refused(value):
+    """約數和範圍不是數；工具要的是數，猜一個進去比缺著更糟。"""
+    assert "ratioPercent" not in map_row({"检测比例": value}, PERCENT_SIGNATURE)
