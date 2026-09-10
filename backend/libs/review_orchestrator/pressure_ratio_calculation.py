@@ -16,7 +16,16 @@ def _number(value):
         return None
 
 
+def pressure_ratio_conflict(explicit, pressure, design_pressure):
+    stated, actual, design = _number(explicit), _number(pressure), _number(design_pressure)
+    if stated is None or actual is None or design is None or design <= 0:
+        return None
+    return stated != actual / design
+
+
 def pressure_ratio_calculation(explicit, pressure, design_pressure, minimum, maximum):
+    if pressure_ratio_conflict(explicit, pressure, design_pressure) is True:
+        return None, None, None
     ratio = _number(explicit)
     if explicit is None:
         actual, design = _number(pressure), _number(design_pressure)

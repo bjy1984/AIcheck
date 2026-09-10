@@ -35,7 +35,10 @@ from libs.review_orchestrator.design_ndt_requirements import (
     method_value_summary,
 )
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
-from libs.review_orchestrator.pressure_ratio_calculation import pressure_ratio_calculation
+from libs.review_orchestrator.pressure_ratio_calculation import (
+    pressure_ratio_calculation,
+    pressure_ratio_conflict,
+)
 from libs.review_orchestrator.r11_facts import build_r11_business_facts
 from libs.standard_timeline import standard_reference_fact
 
@@ -320,8 +323,8 @@ def design_changes(documents: list[dict[str, Any]], parse_results: dict[str, dic
 _CORROSION_RE = re.compile(r"(防腐|涂层|涂料|油漆|环氧|喷砂|除锈|镀锌|保温)")
 _COATING_CRITERIA_RE = re.compile(r"(涂层厚度\s*[:：]?\s*(?:不小于|≥|>=)?\s*\d+\s*(?:μm|um|微米)|附着力[^\n。；;]{0,20}|除锈等级\s*[:：]?\s*Sa\s*\d(?:\.\d)?)")
 _PRESSURE_METHOD_RE = re.compile(r"(液压试验|水压试验|气压试验|气液组合|耐压试验|压力试验)")
-_TEST_PRESSURE_RE = re.compile(r"(?:试验压力|耐压试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
-_TEST_RATIO_RE = re.compile(r"(?:试验压力|耐压试验压力)[^\n。；;]{0,20}?(\d(?:\.\d+)?)\s*倍")
+_TEST_PRESSURE_RE = re.compile(r"(?<!泄漏)(?<!气密性)(?<!气密)(?:试验压力|耐压试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
+_TEST_RATIO_RE = re.compile(r"(?<!泄漏)(?<!气密性)(?<!气密)(?:试验压力|耐压试验压力)[^\n。；;]{0,20}?(\d(?:\.\d+)?)\s*倍")
 _PRESSURE_CRITERIA_RE = re.compile(r"(无泄漏|无渗漏|无变形|无异常|保压\s*\d+\s*(?:min|分钟)|压力(?:无|不)下降)")
 _LEAK_METHOD_RE = re.compile(r"(泄漏试验|气密性试验|气密试验|泄漏性试验|真空试验|卤素|氦)")
 _LEAK_PRESSURE_RE = re.compile(r"(?:泄漏试验压力|气密性?试验压力|泄漏性试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
@@ -435,6 +438,8 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "testPressureRatio": ratio_value,
             "requiredTestPressureRatio": required_ratio,
             "designPressureScopeIssue": pressure_scope_issue if ratio is None else None,
+            "pressureRatioConflict": pressure_ratio_conflict(
+                ratio.group(1) if ratio else None, test_pressure.group(1) if test_pressure else None, design_pressure),
             "testPressureMeetsRatio": meets_ratio,
             # 气压试验有上限：超过 1.33 倍设计压力是不符合，不是"更保险"
             "pneumaticTest": True if is_pneumatic else False if methods == {"hydro"} else None,
