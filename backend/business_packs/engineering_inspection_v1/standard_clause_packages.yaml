@@ -941,6 +941,14 @@ standardClausePackages:
         standardRef: STD-GBT-20801.1-2025
         sourceClause: GB/T 20801.1-2025 8.6.1.4 e) 2）——与 1.33 倍并列的第二个上限，取两者较小者；算不出来时保留证据不足，不得因 1.33 倍通过就放行
         verifiedBy: null
+      - code: hydro_temperature_correction
+        applicabilityPath: requirements.temperatureCorrectionApplies
+        actualPath: requirements.temperatureCorrectionResolved
+        operator: equals
+        expected: true
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.1-2025 8.6.1.3 b) 2）与公式(54)——设计温度高于试验温度时试验压力按 pT=1.5·p·S1/S2 计算。修正只会把要求抬高，故基础的 1.5 倍通过不等于符合；S1/S2 取不到时保留未决，不得放行
+        verifiedBy: null
     leakTest:
       checks:
       - code: method_specified

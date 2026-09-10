@@ -38,8 +38,8 @@ def test_exact_lower_bound_reaches_existing_business_rule(pressure, expected):
     from libs.review_orchestrator.design_facts import frozen_special_requirement_rules
     from libs.review_tools.business_tools import evaluate_design_special_requirements
 
-    facts = design_special_requirements(f'依据 GB/T 20801.1-2025，液压试验，试验压力 {pressure} MPa，保压 10 min 无泄漏无变形。',
-                                       [{'designPressureMPa': 1}])
+    facts = design_special_requirements(f'依据 GB/T 20801.1-2025，液压试验，试验压力 {pressure} MPa，试验温度 20℃，保压 10 min 无泄漏无变形。',
+                                       [{'designPressureMPa': 1, 'designTemperatureC': 20}])
     output = evaluate_design_special_requirements({'requirements': facts['domains'], 'standardRules': frozen_special_requirement_rules(),
         'domains': ['pressureTest'], 'requiredPathsByDomain': {'pressureTest': ['requirements.method', 'requirements.testPressure', 'requirements.acceptanceCriteria']}})
     assert output['result'] == expected

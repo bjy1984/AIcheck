@@ -333,6 +333,21 @@ _PRESSURE_CRITERIA_RE = re.compile(r"(无泄漏|无渗漏|无变形|无异常|�
 # 写不出就得判证据不足——不能因为 1.33 倍那一条通过就放行。
 _YIELD_LIMIT_PRESSURE_RE = re.compile(
     r"(?:屈服强度极限|屈服极限|达到屈服强度)[^\n。；;]{0,24}?(\d+(?:\.\d+)?)\s*MPa")
+# 8.6.1.3 b) 2)：设计温度高于试验温度时，试验压力按公式(54) pT = 1.5·p·S1/S2 计算。
+# 修正只会**抬高**要求，所以"不满足 1.5 倍"在任何修正下仍是不符合；但"满足 1.5 倍"
+# 在修正未算清前不能宣布符合——那正是把局部评估当成完整结论。
+_TEST_TEMPERATURE_RE = re.compile(r"试验温度\s*[:：]?\s*(-?\d+(?:\.\d+)?)\s*[℃C]?")
+_ALLOWABLE_STRESS_RATIO_RE = re.compile(r"S\s*1\s*/\s*S\s*2\s*[:：=]?\s*(\d+(?:\.\d+)?)")
+# 8.6.1.3 d)：超过屈服强度或 1.5 倍组成件额定值时，准许把试验压力降到不超过者的最大值。
+# 例外只会**降低**要求，所以"满足 1.5 倍"仍然成立；但"不满足"在例外成立时不能直接判不符合。
+_PRESSURE_REDUCTION_EXCEPTION_RE = re.compile(
+    r"(?:按|依据|根据)?\s*8\.6\.1\.3\s*d\)|降低(?:试验|耐压试验)压力[^\n。；;]{0,24}?(?:屈服强度|额定值)")
+# 8.6.1.2.5 试验用压力表
+_GAUGE_ACCURACY_RE = re.compile(r"压力表[^\n。；;]{0,20}?精度[^\n。；;]{0,8}?(\d(?:\.\d+)?)\s*级")
+_GAUGE_COUNT_RE = re.compile(r"压力表[^\n。；;]{0,16}?(?:不(?:应|得)少于|至少)\s*(\d+)\s*(?:块|只|个)")
+# 8.6.1.1.6 真空或外压管道
+_VACUUM_PIPE_RE = re.compile(r"(真空管道|外压管道|真空或外压)")
+
 _LEAK_METHOD_RE = re.compile(r"(泄漏试验|气密性试验|气密试验|泄漏性试验|真空试验|卤素|氦)")
 _LEAK_PRESSURE_RE = re.compile(r"(?:泄漏试验压力|气密性?试验压力|泄漏性试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
 _LEAK_CRITERIA_RE = re.compile(r"(无泄漏|发泡剂|皂液|压力降\s*[^\n。；;]{0,15}|保压\s*\d+\s*(?:min|分钟))")
@@ -474,6 +489,58 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     ratio_value, meets_ratio, exceeds_max = pressure_ratio_calculation(
         ratio.group(1) if ratio else None, test_pressure.group(1) if test_pressure else None,
         design_pressure, required_ratio, ratios["pneumaticMax"] if is_pneumatic else None)
+
+    # ---- 8.6.1.3 b) 2) 温度修正与 d) 折减例外 -------------------------------------
+    # 两者方向相反，各自只能推翻一个方向的结论：
+    #   温度修正只会把要求**抬高** → 原本判"不符合"在任何修正下仍不符合；原本判"符合"
+    #     在修正算不清前必须退回未决，否则就是拿 1.5 倍这一半冒充完整判定。
+    #   折减例外只会把要求**降低** → 原本判"符合"仍符合；原本判"不符合"在例外成立且
+    #     屈服强度/额定值取不到时必须退回未决，否则会误判成不符合。
+    test_temperature_match = _TEST_TEMPERATURE_RE.search(text)
+    test_temperature = float(test_temperature_match.group(1)) if test_temperature_match else None
+    # 设计温度与设计压力同一口径：只有单条管线时才认，多条时归属不清，
+    # 拿工程级温度去套某一次试验，正是上面注释警告的那类错误。
+    temperature_candidate = pipelines[0].get("designTemperatureC") if len(pipelines) == 1 else None
+    design_temperature = (float(temperature_candidate)
+                          if type(temperature_candidate) in (int, float) and math.isfinite(temperature_candidate)
+                          else None)
+    stress_ratio_match = _ALLOWABLE_STRESS_RATIO_RE.search(text)
+    stress_ratio = float(stress_ratio_match.group(1)) if stress_ratio_match else None
+    is_hydro = methods == {"hydro"}
+    if design_temperature is None:
+        temperature_correction_applies = None
+    elif test_temperature is None:
+        # 试验温度未写明：无法排除设计温度高于试验温度，故按"可能适用"处理。
+        temperature_correction_applies = None
+    else:
+        temperature_correction_applies = design_temperature > test_temperature
+    corrected_ratio = (round(ratios["hydro"] * stress_ratio, 6)
+                       if is_hydro and ratios["hydro"] is not None and stress_ratio is not None
+                       and temperature_correction_applies is not False else None)
+    reduction_exception = bool(_PRESSURE_REDUCTION_EXCEPTION_RE.search(text)) if is_hydro else None
+
+    # 温度修正单独成一条判据，不去改 testPressureMeetsRatio 的含义——那个字段就是
+    # 「按基础倍率比出来的结果」。混在一起会让"1.5 倍这一条到底判没判"说不清楚。
+    ratio_undecided_reason = None
+    temperature_correction_resolved = None
+    if is_hydro:
+        if temperature_correction_applies is False:
+            temperature_correction_resolved = None  # 不适用，由判据的 applicabilityPath 处理
+        elif corrected_ratio is not None and ratio_value is not None:
+            temperature_correction_resolved = ratio_value >= corrected_ratio
+        else:
+            ratio_undecided_reason = "hydro_temperature_correction_unresolved"
+    # 折减例外方向相反：它只会把要求降低，所以只可能把"不符合"退回未决，
+    # 绝不可能把"不符合"变成"符合"，不存在误放行的风险。
+    if is_hydro and meets_ratio is False and reduction_exception:
+        meets_ratio = None
+        ratio_undecided_reason = "hydro_reduction_exception_unresolved"
+
+    gauge_accuracy_match = _GAUGE_ACCURACY_RE.search(text)
+    gauge_count_match = _GAUGE_COUNT_RE.search(text)
+    gauge_accuracy = float(gauge_accuracy_match.group(1)) if gauge_accuracy_match else None
+    gauge_count = int(gauge_count_match.group(1)) if gauge_count_match else None
+    vacuum_pipeline = bool(_VACUUM_PIPE_RE.search(text))
     # 多条陈述时不再对外给单一的方法与压力：那等于把某一条管线的数据当成整个工程的。
     statements = pressure_test_statements(text)
     distinct = {(row["method"], row["testPressureMPa"], row["testPressureRatio"]) for row in statements}
@@ -501,6 +568,25 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "pressureRatioConflict": pressure_ratio_conflict(
                 ratio.group(1) if ratio else None, test_pressure.group(1) if test_pressure else None, design_pressure),
             "testPressureMeetsRatio": meets_ratio,
+            # 温度修正（公式54）与折减例外（8.6.1.3 d）各自只能推翻一个方向的结论；
+            # 退回未决时给出原因，让报告说得清"为什么判不了"，而不是含糊的证据不足。
+            "testTemperatureC": test_temperature,
+            "hydroTest": is_hydro,
+            # None = 判不了（设计温度或 S1/S2 取不到）；判据把 None 当未决，
+            # 不会因为基础的 1.5 倍通过就宣布符合。
+            "temperatureCorrectionApplies": temperature_correction_applies,
+            "temperatureCorrectionResolved": temperature_correction_resolved,
+            "allowableStressRatioS1S2": stress_ratio,
+            "temperatureCorrectedRatio": corrected_ratio,
+            "ratioReductionExceptionDocumented": reduction_exception,
+            "ratioUndecidedReason": ratio_undecided_reason,
+            # 8.6.1.2.5 试验用压力表：精度不低于 1.6 级、不少于 2 块
+            "gaugeAccuracyClass": gauge_accuracy,
+            "gaugeAccuracyMeetsRequirement": (gauge_accuracy <= 1.6) if gauge_accuracy is not None else None,
+            "gaugeCount": gauge_count,
+            "gaugeCountMeetsRequirement": (gauge_count >= 2) if gauge_count is not None else None,
+            # 8.6.1.1.6 真空或外压管道：以内外压力差的 1.5 倍且不小于 105 kPa 做内压试验
+            "vacuumOrExternalPressurePipeline": vacuum_pipeline,
             # 气压试验有上限：超过 1.33 倍设计压力是不符合，不是"更保险"
             "pneumaticTest": True if is_pneumatic else False if methods == {"hydro"} else None,
             "maxTestPressureRatio": ratios["pneumaticMax"] if is_pneumatic else None,

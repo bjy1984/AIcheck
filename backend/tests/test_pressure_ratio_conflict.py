@@ -10,7 +10,7 @@ from libs.review_tools.business_tools import evaluate_design_special_requirement
 
 @pytest.mark.parametrize('pressure,conflict,expected', [('1.5', False, 'passed'), ('1.2', True, 'evidence_insufficient'), ('1.5004', True, 'evidence_insufficient')])
 def test_stated_ratio_and_absolute_pressure_must_agree(pressure, conflict, expected):
-    facts = design_special_requirements(f'依据 GB/T 20801.1-2025，液压试验，试验压力 {pressure} MPa，试验压力为设计压力的 1.5 倍，保压 10 min 无泄漏无变形。', [{'designPressureMPa': 1}])
+    facts = design_special_requirements(f'依据 GB/T 20801.1-2025，液压试验，试验压力 {pressure} MPa，试验压力为设计压力的 1.5 倍，试验温度 20℃，保压 10 min 无泄漏无变形。', [{'designPressureMPa': 1, 'designTemperatureC': 20}])
     requirements = facts['domains']['pressureTest']['requirements']
     assert requirements['pressureRatioConflict'] is conflict
     assert requirements.get('testPressureMeetsRatio') is (None if conflict else True)

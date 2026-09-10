@@ -124,10 +124,11 @@ def test_design_special_requirements_feed_r09_frozen_rules() -> None:
     text = (
         "设计说明 依据 GB/T 20801.1-2025 与 TSG 31-2025。无损检测：焊缝采用射线检测(RT)，检测比例不低于 20%，Ⅱ级合格。"
         "防腐：管道外表面喷砂除锈 Sa2.5，环氧富锌底漆两道，涂层厚度不小于 200μm。"
-        "耐压试验：液压试验，试验压力为设计压力的 1.5 倍，保压 10 min 无泄漏无变形。"
+        "耐压试验：液压试验，试验压力为设计压力的 1.5 倍，试验温度 20℃，保压 10 min 无泄漏无变形。"
         "泄漏试验：气密性试验，泄漏试验压力 1.6MPa，采用发泡剂检查无泄漏。"
     )
-    pipelines = [{"pipelineId": "PL-101", "designPressureMPa": 1.6, "pipelineGrade": "GC2", "mediumToxicity": "无毒", "leakHazard": "否"}]
+    pipelines = [{"pipelineId": "PL-101", "designPressureMPa": 1.6, "designTemperatureC": 20,
+              "pipelineGrade": "GC2", "mediumToxicity": "无毒", "leakHazard": "否"}]
     requirements = design_special_requirements(text, pipelines)
     domains = requirements["domains"]
     assert domains["ndt"]["specified"] and domains["ndt"]["requirements"]["coverage"] == "20%" and domains["ndt"]["requirements"]["acceptanceCriteria"] == "Ⅱ级"
