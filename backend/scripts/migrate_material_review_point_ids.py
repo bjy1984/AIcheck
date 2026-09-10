@@ -204,9 +204,14 @@ def persist_preview(connection, original: dict[str, Any], preview: dict[str, Any
 
 def process_snapshot(args, payload, state, connection=None) -> int:
     exclusions = set(args.exclude_inactive_id)
-    if args.check_current:
-        referenced = {value for _, _, value in reference_ids(state)}
-        exclusions.update(str(p["id"]) for p in state["admin_config"].get("materialReviewPoints", []) if p.get("enabled") is False and str(p["id"]) not in referenced)
+    # 停用且无存活引用的审查点不参与迁移。这条排除规则**两种模式都要用**：
+    # --check-current 是部署闸门、--apply 是真正写入，两边算出的计画必须是同一个，
+    # 否则 --expect-plan-sha256 这道"批准的计画＝执行的计画"握手就永远对不上——
+    # 2026-09-10 的迁移演练正是卡在这里：闸门给的 sha 无法通过 apply 的核对，
+    # 报 unmatched 加 approved_plan_or_ids_changed，操作者只能手抄排除名单绕过。
+    referenced = {value for _, _, value in reference_ids(state)}
+    exclusions.update(str(point["id"]) for point in state["admin_config"].get("materialReviewPoints", [])
+                      if point.get("enabled") is False and str(point["id"]) not in referenced)
     report, preview = build_migration_plan(state, payload, args.business_pack, exclusions)
     if args.apply and (set(args.ids) != set(report["mapping"]) or args.expect_plan_sha256 != report["planSha256"]):
         report["errors"].append("approved_plan_or_ids_changed")

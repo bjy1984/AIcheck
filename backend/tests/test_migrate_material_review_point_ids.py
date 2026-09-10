@@ -172,3 +172,58 @@ def test_postgres_migration_is_read_only_until_apply_and_rolls_back(isolated_pos
         assert after['node_evidence_links'][0]['reviewPointId'] == 'MRP-NEW'
         report, _ = migration.build_migration_plan(after, asset, 'engineering_inspection_v1')
         assert report['safeToApply'] and report['mappingCount'] == 0
+
+
+def test_gate_and_apply_compute_the_same_plan(monkeypatch, tmp_path):
+    """--expect-plan-sha256 是「批准的计画＝执行的计画」的握手，两种模式必须算出同一个计画。
+
+    2026-09-10 的迁移演练发现：闸门（--check-current）会自动排除「停用且无存活引用」的
+    审查点，--apply 不会，于是闸门给出的 sha 永远通不过 apply 的核对，报 unmatched 加
+    approved_plan_or_ids_changed。操作者只能从闸门输出里手抄排除名单再传一次
+    --exclude-inactive-id 才能绕过——那道握手在文件写的路径上是走不通的。
+    """
+    import json
+    from contextlib import contextmanager
+
+    from scripts import migrate_material_review_point_ids as migration
+
+    state = {
+        'admin_config': {'materialReviewPoints': [
+            {'id': 'MRP-OLD', 'nodeId': 1, 'materialTypeCode': 'a'},
+            # 停用且没有任何引用：闸门会排除它，apply 也必须排除，否则两边计画不同。
+            {'id': 'MRP-RETIRED', 'nodeId': 9, 'materialTypeCode': 'old', 'enabled': False},
+        ]},
+        'bindings': [{'id': 'B1', 'reviewPointIds': ['MRP-OLD']}],
+    }
+    asset = tmp_path / 'asset.json'
+    asset.write_text(json.dumps({'businessPackId': 'engineering_inspection_v1',
+                                 'items': [{'id': 'MRP-NEW', 'nodeId': 1, 'materialTypeCode': 'a'}]}))
+
+    reports = []
+    original = migration.build_migration_plan
+
+    def record(*args, **kwargs):
+        report, preview = original(*args, **kwargs)
+        reports.append(report)
+        return report, preview
+
+    @contextmanager
+    def snapshot(**kwargs):
+        yield json.loads(json.dumps(state)), None
+
+    monkeypatch.setattr(migration, 'build_migration_plan', record)
+    monkeypatch.setattr(migration, 'persistent_snapshot', snapshot)
+    monkeypatch.setattr(migration, 'persist_preview', lambda *a, **k: None)
+
+    monkeypatch.setattr('sys.argv', ['migrate', '--asset', str(asset), '--check-current'])
+    assert migration.main() == 3, '需要迁移时闸门应当拦下部署'
+    gate = reports[-1]
+
+    monkeypatch.setattr('sys.argv', ['migrate', '--asset', str(asset), '--apply', '--maintenance-confirmed',
+                                     '--ids', *sorted(gate['mapping']),
+                                     '--expect-plan-sha256', gate['planSha256']])
+    assert migration.main() == 0, '闸门批准的计画必须能被 apply 原样执行'
+    applied = reports[-1]
+    assert applied['planSha256'] == gate['planSha256']
+    assert applied['errors'] == []
+    assert 'MRP-RETIRED' not in applied['mapping']
