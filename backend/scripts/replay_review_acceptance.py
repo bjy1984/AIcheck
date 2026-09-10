@@ -61,6 +61,20 @@ OFFLINE_TOOLS = {
     "evaluate_r66_leak_test_conditions",
     "evaluate_r67_leak_test_method",
     "evaluate_r68_blowing_cleaning",
+    # R39／R40 的工具与上面同类：只对传进来的 arguments 计算，导入闭包里
+    # 没有任何网络或数据库客户端（business_tools 那个总登记本除外——它导入
+    # 全部工具，用它做闭包起点会把无关的 httpx 客户端也算进来）。
+    # 它们缺席只是名单没跟上，不是判定上的差别。
+    "evaluate_r39_approval_chain",
+    "evaluate_r39_document_content",
+    "evaluate_r39_first_use_validation",
+    "evaluate_r39_inventory_consistency",
+    "evaluate_r39_procedure_reference",
+    "evaluate_r39_pt_emulsifier_application",
+    "evaluate_r40_conclusions",
+    "evaluate_r40_parameters",
+    "evaluate_ndt_process",
+    "check_required",
 }
 
 
