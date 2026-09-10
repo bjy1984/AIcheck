@@ -187,3 +187,10 @@ ATOMIC_BINDING_OVERRIDES.update({
         "parameters": {"profile": "construction_plan_object_comparison", "failurePolicy": "business_rule_result"},
     },
 })
+
+ATOMIC_BINDING_OVERRIDES["AC-R11-01"] = {
+    "requiredFacts": ["r11.approval"],
+    "tools": ["extract_table_records", "evaluate_construction_plan", "validate_evidence_grounding"],
+    "parameters": {"profile": "construction_plan_approval", "failurePolicy": "business_rule_result",
+                   "pendingCapabilities": ["signature_authenticity_and_authority", "owner_reply_validity_and_timing"]},
+}

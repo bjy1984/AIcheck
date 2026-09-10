@@ -11,6 +11,7 @@ from libs.review_orchestrator.deterministic_tools import (
     parse_date,
     result,
 )
+from libs.review_tools.r11_approval import evaluate_r11_approval
 from libs.review_tools.r11_parameters import evaluate_r11_project_parameters
 from libs.review_tools.r13_tools import (
     classify_r13_component_requirements,
@@ -433,6 +434,9 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
                 "ruleVersion": "string?",
             }
             if name == "check_license_registry_match"
+            else {"profile": "string", "projectId": "string?", "scope": "object?", "signatures": ["object?"],
+                  "ownerApproval": "object?", "selectionIssues": ["object?"], "facts": "object?", "requiredFields": ["string?"], "ruleChecks": ["object?"]}
+            if name == "evaluate_construction_plan"
             else {"projectId": "string", "organizationId": "string", "activityDate": "string",
                   "applicability": "object", "manual": ["object"], "controlledForms": ["object"],
                   "appointments": ["object"], "implementationRecords": ["object"],
@@ -726,7 +730,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
 BUSINESS_TOOL_NAMES = {item["name"] for item in BUSINESS_TOOL_DESCRIPTORS}
 
 
-PROFILE_BUSINESS_HANDLERS = {("evaluate_ndt_process", "ndt_record_report"): evaluate_r40_records}
+PROFILE_BUSINESS_HANDLERS = {("evaluate_ndt_process", "ndt_record_report"): evaluate_r40_records,
+                             ("evaluate_construction_plan", "construction_plan_approval"): evaluate_r11_approval}
 
 
 def profile_business_handler(tool_name: str, profile: Any):

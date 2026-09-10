@@ -16,7 +16,7 @@
 | R08 | 是 | 2 | True | evidence_insufficient | — | — |
 | R09 | 是 | 2 | True | evidence_insufficient | — | — |
 | R10 | 否 | 4 | True | evidence_insufficient | evaluate_alternative_standard | — |
-| R11 | 否 | 4 | True | evidence_insufficient | evaluate_construction_plan | — |
+| R11 | 否 | 4 | True | evidence_insufficient | evaluate_construction_plan | owner_reply_validity_and_timing, signature_authenticity_and_authority |
 | R12 | 是 | 2 | True | evidence_insufficient | — | — |
 | R13 | 是 | 3 | True | evidence_insufficient | — | — |
 | R14 | 是 | 4 | True | evidence_insufficient | — | — |

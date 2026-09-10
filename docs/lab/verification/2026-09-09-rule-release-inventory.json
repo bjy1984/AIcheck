@@ -1461,6 +1461,7 @@
         "evidence.pageNo",
         "judgment.claimedFacts",
         "judgment.evidenceRefs",
+        "r11.approval",
         "r11.projectParameters"
       ],
       "genericInterpreters": [
@@ -1469,8 +1470,17 @@
       "unconfiguredInterpreters": [
         "evaluate_construction_plan"
       ],
-      "profileDedicatedTools": [],
-      "pendingCapabilities": [],
+      "profileDedicatedTools": [
+        {
+          "atomicCheckId": "AC-R11-01",
+          "tool": "evaluate_construction_plan",
+          "profile": "construction_plan_approval"
+        }
+      ],
+      "pendingCapabilities": [
+        "owner_reply_validity_and_timing",
+        "signature_authenticity_and_authority"
+      ],
       "emptyInputResult": "evidence_insufficient",
       "evidenceGroundingBound": true,
       "scenarioAcceptance": {
@@ -1484,24 +1494,20 @@
           "atomicCheckId": "AC-R11-01",
           "sourceRuleId": "R11",
           "requiredFacts": [
-            "constructionPlan.signatureRoles",
-            "constructionPlan.ownerApproval",
-            "constructionPlan.projectParameters",
-            "design.projectParameters",
-            "constructionPlan.processRequirements"
+            "r11.approval"
           ],
           "tools": [
-            "get_document_ocr_result",
-            "extract_document_fields",
-            "recognize_signatures_and_seals",
-            "check_signature_completeness",
+            "extract_table_records",
             "evaluate_construction_plan",
             "validate_evidence_grounding"
           ],
           "parameters": {
-            "profile": "construction_plan",
-            "clauseSource": "frozen_standard_clause_package",
-            "failurePolicy": "business_rule_result"
+            "profile": "construction_plan_approval",
+            "failurePolicy": "business_rule_result",
+            "pendingCapabilities": [
+              "signature_authenticity_and_authority",
+              "owner_reply_validity_and_timing"
+            ]
           },
           "outputSchema": "deterministic-tool-result-v1",
           "implementationStatus": "binding_only",
@@ -5087,13 +5093,13 @@
           ],
           "parameters": {
             "profile": "ndt_record_report",
+            "clauseSource": "frozen_standard_clause_package",
+            "failurePolicy": "business_rule_result",
             "pendingCapabilities": [
               "technical_parameters",
               "design_requirements",
               "report_results"
-            ],
-            "clauseSource": "frozen_standard_clause_package",
-            "failurePolicy": "business_rule_result"
+            ]
           },
           "outputSchema": "deterministic-tool-result-v1",
           "implementationStatus": "binding_only",

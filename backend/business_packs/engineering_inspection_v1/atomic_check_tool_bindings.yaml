@@ -4,9 +4,6 @@ atomicCheckToolBindingSet:
   version: 2026.08.07
   lifecycleStatus: draft
   atomicCheckCount: 194
-  # implementationStatus 口径（2026-08-07 审计修正，见 issue #7）：
-  #   pilot_implemented — 存在专用 fact builder / tool handler（R04、R12-R34）；
-  #   binding_only      — 尚未完成整条业务验收，可含部分专用工具；不得据此发布。
   pilotRules:
   - R01
   - R02
@@ -424,7 +421,6 @@ atomicCheckToolBindings:
     profile: drawing_review_witness
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
-    # N-08 默认口径（业务方另定前）：审图机构合格书 / 审查意见书 + 设计回复 / 建设单位备案回执，三选一或组合
     acceptedTypes:
     - review_approval_certificate
     - review_opinion
@@ -775,23 +771,18 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R11-01
   sourceRuleId: R11
-  requiredFacts: &id002
-  - constructionPlan.signatureRoles
-  - constructionPlan.ownerApproval
-  - constructionPlan.projectParameters
-  - design.projectParameters
-  - constructionPlan.processRequirements
+  requiredFacts:
+  - r11.approval
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
+  - extract_table_records
   - evaluate_construction_plan
   - validate_evidence_grounding
   parameters:
-    profile: construction_plan
-    clauseSource: frozen_standard_clause_package
+    profile: construction_plan_approval
     failurePolicy: business_rule_result
+    pendingCapabilities:
+    - signature_authenticity_and_authority
+    - owner_reply_validity_and_timing
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R11-02
@@ -809,7 +800,12 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R11-03
   sourceRuleId: R11
-  requiredFacts: *id002
+  requiredFacts:
+  - constructionPlan.signatureRoles
+  - constructionPlan.ownerApproval
+  - constructionPlan.projectParameters
+  - design.projectParameters
+  - constructionPlan.processRequirements
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2442,12 +2438,12 @@ atomicCheckToolBindings:
   - validate_evidence_grounding
   parameters:
     profile: ndt_record_report
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
     pendingCapabilities:
     - technical_parameters
     - design_requirements
     - report_results
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R40-02
@@ -2941,7 +2937,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R53-01
   sourceRuleId: R53
-  requiredFacts: &id004
+  requiredFacts: &id002
   - installation.alignmentRecords
   - installation.connectionMethod
   - installation.prohibitedMethods
@@ -2962,7 +2958,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R53-02
   sourceRuleId: R53
-  requiredFacts: *id004
+  requiredFacts: *id002
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3075,7 +3071,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R56-01
   sourceRuleId: R56
-  requiredFacts: &id005
+  requiredFacts: &id003
   - safetyAccessory.license
   - safetyAccessory.typeTest
   - safetyAccessory.qualityCertificate
@@ -3096,7 +3092,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R56-02
   sourceRuleId: R56
-  requiredFacts: *id005
+  requiredFacts: *id003
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3466,7 +3462,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R65-01
   sourceRuleId: R65
-  requiredFacts: &id006
+  requiredFacts: &id004
   - ndtReport.inventory
   - radiographicFilms.inventory
   - weldInventory.totalCount
@@ -3485,7 +3481,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R65-02
   sourceRuleId: R65
-  requiredFacts: *id006
+  requiredFacts: *id004
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3647,7 +3643,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R69-01
   sourceRuleId: R69
-  requiredFacts: &id007
+  requiredFacts: &id005
   - qualitySystemEvaluation.report
   - qualitySystemEvaluation.result
   - qualitySystemEvaluation.evaluator
@@ -3673,7 +3669,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R69-02
   sourceRuleId: R69
-  requiredFacts: *id007
+  requiredFacts: *id005
   tools:
   - locate_evidence_fragment
   - extract_document_fields

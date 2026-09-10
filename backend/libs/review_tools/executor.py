@@ -212,6 +212,9 @@ def build_tool_arguments(
     if tool_name == "evaluate_r11_project_parameters":
         for key, value in nested_dict(nested_dict(facts, "r11"), "projectParameters").items():
             arguments.setdefault(key, deepcopy(value))
+    if tool_name == "evaluate_construction_plan" and arguments.get("profile") == "construction_plan_approval":
+        for key, value in nested_dict(nested_dict(facts, "r11"), "approval").items():
+            arguments.setdefault(key, deepcopy(value))
     if tool_name == "evaluate_ndt_process" and arguments.get("profile") == "ndt_record_report":
         for key, value in nested_dict(nested_dict(facts, "r40"), "recordReportCorrespondence").items():
             arguments.setdefault(key, deepcopy(value))

@@ -4,6 +4,8 @@ from copy import deepcopy
 from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.r11_approval_facts import TABLES as APPROVAL_TABLES
+from libs.review_orchestrator.r11_approval_facts import approval_arguments
 from libs.review_orchestrator.source_coverage import selected_source_issues
 from libs.review_tools.r11_parameters import SCOPE_FIELDS
 
@@ -49,7 +51,7 @@ def _build_single(state, run, groups):
 
 
 def build_r11_business_facts(state, run):
-    schemas = {**TABLES, "construction_comparison_inventory": "inventories",
+    schemas = {**TABLES, **APPROVAL_TABLES, "construction_comparison_inventory": "inventories",
                "construction_comparison_members": "members"}
     groups = read_ndt_tables(state, run, schemas, node_id=11)
     judgment = build_material_judgment([(name, rows, ("projectId", "objectId")) for name, rows in groups.items()])
@@ -60,6 +62,9 @@ def build_r11_business_facts(state, run):
     if any(issue["code"] == "r11_selected_source_missing_or_ambiguous" for issue in issues):
         facts["sourceIssues"].append("r11_selected_source_missing_or_ambiguous")
         return result
+    approval = approval_arguments(run, groups, issues)
+    if approval is not None:
+        facts["approval"] = approval
     inventory = deepcopy(groups["inventories"][0]) if len(groups["inventories"]) == 1 else None
     if inventory is not None:
         inventory["members"] = deepcopy(groups["members"])
