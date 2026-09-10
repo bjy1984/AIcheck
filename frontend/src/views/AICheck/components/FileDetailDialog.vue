@@ -26,7 +26,10 @@ import type {
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
-import { ocrReadinessLabel as readinessLabel, ocrReadinessAlert as readinessAlert } from './ocrReadinessPresentation'
+import {
+  ocrReadinessLabel as readinessLabel,
+  ocrReadinessAlert as readinessAlert
+} from './ocrReadinessPresentation'
 import StandardCanonicalDetail from './StandardCanonicalDetail.vue'
 import OcrDocumentPages from './OcrDocumentPages.vue'
 import { documentPageRows } from './documentPagePresentation'
@@ -334,8 +337,11 @@ const isPlaceholderField = (label: string) =>
  * 印章——这些不展示，等于让人对着一份读不懂的资料下结论。
  */
 const ocrStructured = computed(() => props.detail?.ocrStructured)
-const documentPages = computed(() => import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
-  ? documentPageRows(ocrStructured.value, currentVersion.value?.id) : [])
+const documentPages = computed(() =>
+  import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
+    ? documentPageRows(ocrStructured.value, currentVersion.value?.id)
+    : []
+)
 const ocrTables = computed(() => ocrStructured.value?.tables || [])
 const ocrSeals = computed(() => ocrStructured.value?.seals || [])
 const ocrBlocks = computed(() => ocrStructured.value?.layoutBlocks || [])
@@ -440,8 +446,13 @@ const fragmentsExpanded = ref(false)
 
 /** 表格/印章/正文块同样带页码与 bbox，纳入定位池后点一下就能跳到原文那页。 */
 const structuredLocatables = computed<LocatableItem[]>(() => [
-  ...documentPages.value.map(row => ({ key: `document-page:${row.pageNo}`, label: row.label,
-    value: row.label, pageNo: row.pageNo, kind: 'field' as const })),
+  ...documentPages.value.map((row) => ({
+    key: `document-page:${row.pageNo}`,
+    label: row.label,
+    value: row.label,
+    pageNo: row.pageNo,
+    kind: 'field' as const
+  })),
   ...ocrTables.value.map((table) => ({
     key: `table:${table.tableId}`,
     label: '表格',
@@ -719,9 +730,12 @@ watch(
                     <ElEmpty :image-size="60" description="暂无 OCR 结构化内容" />
                   </div>
                   <template v-else>
-                    <OcrDocumentPages v-if="documentPages.length" :rows="documentPages"
+                    <OcrDocumentPages
+                      v-if="documentPages.length"
+                      :rows="documentPages"
                       :active-page="activeLocatable?.pageNo"
-                      @locate="toggleLocateKey(`document-page:${$event}`)" />
+                      @locate="toggleLocateKey(`document-page:${$event}`)"
+                    />
                     <ul v-if="businessFieldItems.length" class="locate-list">
                       <li
                         v-for="item in businessFieldItems"

@@ -27,55 +27,57 @@ COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 MODE="${1:-all}"
 case "$MODE" in all|--backend|--frontend) ;; *) echo "Unknown deploy mode: $MODE" >&2; exit 2 ;; esac
 REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+# 服务器上收推送的 ref 名。它只是个落脚点，真正决定部署内容的是 REVISION：
+# push 之后按提交 detach，所以服务器的树不跟着任何分支漂。
+DEPLOY_REF="${AICHECK_DEPLOY_REF:-deploy-lab}"
+# 目标机没装 git 二进制，借容器执行。
+GIT_IMAGE="${AICHECK_GIT_IMAGE:-docker.m.daocloud.io/alpine/git:latest}"
 ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" 'command -v docker >/dev/null && command -v python3 >/dev/null'
 
 
-# backend/data/visual_extraction_pages 是被误提交的 OCR 页面图产物（1106 个 PNG，
-# 约 550MB）。部署不需要它，剔除后包体从 557MB 降到 3.5MB。
+# 源码同步走 git 拉取，不再打包上传。
+#
+# 为什么改：原先每次部署都 git archive 出整棵树、scp 几 MB 上去再解包。跳板机这段
+# 链路不稳，2026-09-10 一次部署里前端断了两次（退出码 255、banner exchange timeout），
+# 每次都得从头重传。git 只传增量、断了能续，而且服务器上直接就是一个可 checkout 的
+# 工作树——要回退到任意提交或切回 main 都是一条命令，不用重新打包。
+#
+# 脚本原注释说「GitHub 在该网络不可达」，2026-09-10 实测**已经可达**（HTTPS 200，
+# 容器内 git 可 ls-remote），且该仓库公开，匿名即可拉取，不需要 deploy key 或 token。
+# 目标机没装 git 二进制（无 sudo 装不了），所以借 alpine/git 容器执行。
 sync_backend() {
-  echo "==> 打包后端（HEAD=${COMMIT}）"
-  git -C "$REPO_ROOT" archive --format=tar HEAD backend openapi > "$STAGE/src.tar"
-  python3 - "$STAGE/src.tar" "$STAGE/src.tar.gz" <<'PY'
-import sys, tarfile
-src, dst = sys.argv[1], sys.argv[2]
-SKIP = ("backend/data/visual_extraction_pages/",)
-with tarfile.open(src) as si, tarfile.open(dst, "w:gz", compresslevel=9) as so:
-    for m in si:
-        if m.name.startswith(SKIP):
-            continue
-        so.addfile(m, si.extractfile(m) if m.isfile() else None)
-PY
-  scp -q "$STAGE/src.tar.gz" "$HOST:$REMOTE_HOME/aicheck-src.tar.gz"
-
-  echo "==> 只读检查审查点 ID；需要迁移时停止部署"
-  ssh "$HOST" 'bash -s' <<'ID_PREFLIGHT'
-    set -euo pipefail
-    stage=$(mktemp -d /tmp/aicheck-id-preflight.XXXXXXXX)
-    trap 'rm -rf "$stage"' EXIT
-    tar xzf /home/dev-bjy/aicheck-src.tar.gz -C "$stage" \
-      backend/scripts/migrate_material_review_point_ids.py backend/config/material_review_points.json
-    chmod -R a+rX "$stage"
-    docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.env \
-      -e PYTHONPATH=/app -v "$stage":/preflight:ro aicheck-api:local \
-      python /preflight/backend/scripts/migrate_material_review_point_ids.py \
-      --asset /preflight/backend/config/material_review_points.json --check-current
-ID_PREFLIGHT
-
-  echo "==> 服务器解包并提交到本地 git 仓库"
+  echo "==> 推送后端到服务器（目标提交 ${COMMIT}）"
+  # 直接 push 到服务器，不经 GitHub：2026-09-10 实测该网络能开 https://github.com
+  # 拿到 200、也能 ls-remote 别的公开仓库，但真正 fetch 本仓库会 SSL unexpected eof、
+  # 连 443 超时 127 秒。**轻量请求成功推不出持续传输可用**，脚本原来的判断是对的。
+  #
+  # 传输仍走 ssh，但传的是 git 增量而不是整棵树的 tar 包：首次推完整历史，之后每次
+  # 只传新提交，断了能续。原先每次部署都 scp 几 MB，跳板机一抖就得从头重来。
+  # LFS 指针不解引用：LFS 端点在 GitHub，这里够不着，而部署也不需要那些大文件。
+  GIT_LFS_SKIP_PUSH=1 git -C "$REPO_ROOT" push --quiet \
+    --receive-pack="$REMOTE_HOME/git-receive-pack.sh" \
+    "$HOST:$REMOTE_HOME/AIcheck" "$REVISION:refs/heads/$DEPLOY_REF"
   ssh "$HOST" "
     set -eo pipefail
-    cd $REMOTE_HOME
-    rm -rf AIcheck/backend AIcheck/openapi
-    tar xzf aicheck-src.tar.gz -C AIcheck
-    docker run --rm --entrypoint sh -v $REMOTE_HOME:/w -w /w/AIcheck docker.m.daocloud.io/alpine/git:latest -c '
-      git config --global --add safe.directory /w/AIcheck
-      git config --global user.email deploy@aicheck.local
-      git config --global user.name aicheck-deploy
-      git add -A
-      git commit -q -m \"deploy: $COMMIT\" 2>/dev/null || echo \"（无变更）\"
+    docker run --rm --entrypoint sh -v $REMOTE_HOME:/w -w /w/AIcheck \
+      -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+      -e GIT_LFS_SKIP_SMUDGE=1 $GIT_IMAGE -c '
+      # detach 到具体提交：服务器上的树只反映这一次部署，不跟着任何分支漂。
+      git checkout --quiet --detach $REVISION
+      git clean -qfd backend openapi
       git log --oneline -1
     '
-    docker run --rm --entrypoint sh -v $REMOTE_HOME:/w docker.m.daocloud.io/alpine/git:latest -c 'chown -R 1001:1001 /w/AIcheck'
+    docker run --rm --entrypoint sh -v $REMOTE_HOME:/w $GIT_IMAGE -c 'chown -R 1001:1001 /w/AIcheck'
+  "
+
+  echo "==> 只读检查审查点 ID；需要迁移时停止部署"
+  # 直接用服务器工作树里的文件，不再解 tar 包——checkout 之后它们就是目标提交的内容。
+  ssh "$HOST" "
+    set -eo pipefail
+    docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.env \
+      -e PYTHONPATH=/app -v $REMOTE_HOME/AIcheck:/preflight:ro aicheck-api:local \
+      python /preflight/backend/scripts/migrate_material_review_point_ids.py \
+      --asset /preflight/backend/config/material_review_points.json --check-current
   "
 
   echo "==> 重建 API 镜像并重建容器"
@@ -110,7 +112,11 @@ ID_PREFLIGHT
     # 让新容器完全不映射端口更简单，但那样切换后就没有直连后端的入口了，
     # 而 business_chain_probe 等工具都在用它——静默拿掉一个调试入口，
     # 下次有人查问题时会以为是服务坏了。
-    # 按**宿主侧**端口判断。docker port 的输出形如 `8000/tcp -> 127.0.0.1:8001`，
+    # 按**宿主侧**端口判断。docker port 的输出形如「8000/tcp -> 127.0.0.1:8001」，
+    # 这里不能用反引号写示例：整段是 ssh "$HOST" "..." 的双引号字串，反引号会被
+    # **本机** bash 当成命令替换执行，报「8000/tcp: No such file or directory」
+    # 并中止整条 ssh 命令——镜像不会重建，而前面的步骤都已经成功，看起来像是
+    # 部署到一半凭空停住。2026-09-10 实际发生过。
     # 直接 grep 8000 会命中容器侧那个 8000，于是永远选 8001——当前正好在 8001
     # 时就撞端口。实测报过 "Bind for 127.0.0.1:8001 failed: port is already allocated"。
     if docker port aicheck-api 2>/dev/null | grep -q "127.0.0.1:8000"; then
