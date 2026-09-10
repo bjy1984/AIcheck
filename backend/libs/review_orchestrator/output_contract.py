@@ -11,6 +11,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.review_orchestrator.approval_view import recorded_approval_checks
+
 TITLE_MAX_CHARS = 30
 DESCRIPTION_MAX_CHARS = 150
 MAX_FINDINGS_PER_NODE = 8
@@ -145,6 +147,7 @@ def review_view_with_limitations(run: dict[str, Any], state: dict[str, Any]) -> 
     view = deepcopy(run)
     run_id = run.get("reviewRunId") or run.get("id")
     limitations = set()
+    approval_checks = []
     for record in state.get("rule_check_results", []):
         if not run_id or record.get("reviewRunId") != run_id:
             continue
@@ -153,6 +156,7 @@ def review_view_with_limitations(run: dict[str, Any], state: dict[str, Any]) -> 
         for atomic in record.get("atomicCheckResults") or []:
             if not isinstance(atomic, dict):
                 continue
+            approval_checks.extend(recorded_approval_checks(atomic))
             for warning in atomic.get("warnings") or []:
                 if warning == "invalid_pending_capabilities":
                     limitations.add((str(atomic.get("atomicCheckId") or ""), warning))
@@ -161,6 +165,8 @@ def review_view_with_limitations(run: dict[str, Any], state: dict[str, Any]) -> 
                     if code:
                         limitations.add((str(atomic.get("atomicCheckId") or ""), code))
     # Derive solely from this run's recorded execution, never the current mutable pack.
+    if approval_checks:
+        view["approvalChecks"] = approval_checks
     view["automationLimitations"] = [
         {"atomicCheckId": atomic_id, "code": code, "requiresHumanReview": True}
         for atomic_id, code in sorted(limitations)

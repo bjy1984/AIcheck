@@ -25,7 +25,17 @@ export type ReviewBSession = {
   updatedAt: string
 }
 
+export type ReviewApprovalCheck = {
+  code: string
+  result?: string
+  usageId?: string
+  approvedAt?: string
+  startedAt?: string
+  evidenceRefs?: Record<string, unknown>[]
+}
+
 export type ReviewBRun = {
+  approvalChecks?: ReviewApprovalCheck[]
   automationLimitations?: Array<{
     atomicCheckId: string
     code: string

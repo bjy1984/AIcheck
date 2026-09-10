@@ -6,6 +6,7 @@ import type { ReviewBWorkspace } from '@/types/ai-review-b'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import { overviewProgress, overviewResult } from '../workstationOverview'
 import { documentPageLabel } from '../documentPageSelection'
+import ReviewApprovalChecks from './ReviewApprovalChecks.vue'
 import ReviewResultCard from './ReviewResultCard.vue'
 import ReviewAutomationLimitations from './ReviewAutomationLimitations.vue'
 const props = defineProps<{
@@ -74,6 +75,12 @@ const missing = computed(() => props.workspace?.evidenceReadiness.missingRequire
         </p>
         <ReviewAutomationLimitations
           :items="workspace.activeReviewRun?.automationLimitations || []"
+        />
+        <ReviewApprovalChecks
+          :key="workspace.activeReviewRun?.reviewRunId || workspace.activeReviewRun?.id"
+          :items="workspace.activeReviewRun?.approvalChecks || []"
+          :evidence-links="workspace.evidenceLinks"
+          @evidence="emit('evidence', $event)"
         />
         <ReviewResultCard
           v-if="result"
