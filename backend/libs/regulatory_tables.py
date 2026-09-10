@@ -274,14 +274,22 @@ def volumetric_ndt_ratio(level: str | None) -> int | None:
     return int(first) if first is not None else 0
 
 
-def pressure_test_ratios() -> dict[str, float]:
-    """液压下限、气压下限与气压上限（GB/T 20801.1-2025 8.6.1.3/8.6.1.4）。"""
+def pressure_test_ratios() -> dict[str, float | None]:
+    """Read recorded pressure ratios; absent/invalid source values stay unavailable."""
     section = table("gbt20801_inspection", "pressureTest")
-    return {
-        "hydro": float(section.get("hydroTestRatio") or 1.5),
-        "pneumatic": float(section.get("pneumaticTestRatioMin") or 1.1),
-        "pneumaticMax": float(section.get("pneumaticTestRatioMax") or 1.33),
-    }
+
+    def positive(key):
+        value = section.get(key)
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            return None
+        return float(value)
+
+    ratios = {"hydro": positive("hydroTestRatio"), "pneumatic": positive("pneumaticTestRatioMin"),
+              "pneumaticMax": positive("pneumaticTestRatioMax")}
+    if (ratios["pneumatic"] is not None and ratios["pneumaticMax"] is not None
+            and ratios["pneumatic"] > ratios["pneumaticMax"]):
+        ratios["pneumatic"] = ratios["pneumaticMax"] = None
+    return ratios
 
 
 def _norm_designation(value: str) -> str:

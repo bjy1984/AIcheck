@@ -1527,3 +1527,12 @@ cd backend
 - 已驗證保存工具結果透過原工作台／審計 API 回傳，排除其他租戶與舊任務且不改寫歷史。共用定位器修正相同 ID 但版本／頁碼／原文矛盾仍被開啟，以及空引用碰巧匹配單一證據的問題。
 - 6 項 API／投影測試、100 個前端測試檔、型別／lint／Ruff／monolith 通過；Chrome 增補錯誤版本／空引用不可點擊驗收。
 - 證據：`docs/lab/verification/2026-09-09-approval-link-integrity.md`。測試標頭與隔離資料不冒充真人帳號／真實案件，完整登入閉環仍待驗；整體未證明達 90%。
+
+
+## 2026-09-09：標準倍率缺失不再猜值
+
+- 已修 pressure_test_ratios 缺值／非法值回填固定倍率，及現有 R09 將未知／混合試驗方法預設液壓的問題；資料缺失保留無法判定，正常已入庫數值及採信策略不變。
+- 168 項針對性測試通過，Ruff 289／289、monolith 通過。證據：`docs/lab/verification/2026-09-09-pressure-availability.md`。
+- R11-03 完整施工技術判定仍未接線；凍結包舊版條款文字與數值表不一致另列待原文核對，沒有冒充已驗收。整體未證明達 90%。
+
+- 本階段完整後端回歸：4796 通過、0 失敗、75 跳過、6 警告（194.48 秒）；日誌 `docs/lab/verification/2026-09-09-pressure-availability-full-backend.txt`。

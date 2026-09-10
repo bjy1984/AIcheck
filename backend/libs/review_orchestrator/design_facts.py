@@ -408,8 +408,11 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     pressure_criteria = _PRESSURE_CRITERIA_RE.search(text)
     method_text = pressure_method.group(1) if pressure_method else None
     ratios = pressure_test_ratios()  # GB/T 20801.1-2025 8.6.1.3/8.6.1.4：液压 ≥1.5；气压 ≥1.1 且 ≤1.33
-    is_pneumatic = bool(method_text and "气压" in method_text)
-    required_ratio = ratios["pneumatic"] if is_pneumatic else ratios["hydro"]
+    methods = {"hydro" if match.group(1) in {"液压试验", "水压试验"} else match.group(1)
+               for match in _PRESSURE_METHOD_RE.finditer(text)
+               if match.group(1) not in {"耐压试验", "压力试验"}}
+    is_pneumatic = methods == {"气压试验"}
+    required_ratio = ratios["pneumatic"] if is_pneumatic else ratios["hydro"] if methods == {"hydro"} else None
     test_pressure_value = float(test_pressure.group(1)) if test_pressure else None
     ratio_value = float(ratio.group(1)) if ratio else (round(test_pressure_value / max_design_pressure, 3) if test_pressure_value and max_design_pressure else None)
     pressure_test = _domain(
@@ -420,10 +423,10 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "testPressureMPa": test_pressure_value,
             "testPressureRatio": ratio_value,
             "requiredTestPressureRatio": required_ratio,
-            "testPressureMeetsRatio": (ratio_value >= required_ratio) if ratio_value is not None else None,
+            "testPressureMeetsRatio": (ratio_value >= required_ratio) if ratio_value is not None and required_ratio is not None else None,
             # 气压试验有上限：超过 1.33 倍设计压力是不符合，不是"更保险"
             "maxTestPressureRatio": ratios["pneumaticMax"] if is_pneumatic else None,
-            "testPressureExceedsMax": (ratio_value > ratios["pneumaticMax"]) if (is_pneumatic and ratio_value is not None) else None,
+            "testPressureExceedsMax": (ratio_value > ratios["pneumaticMax"]) if (is_pneumatic and ratio_value is not None and ratios["pneumaticMax"] is not None) else None,
             "acceptanceCriteria": pressure_criteria.group(1) if pressure_criteria else None,
         },
         standard_refs,
