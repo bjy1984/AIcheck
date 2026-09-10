@@ -16,6 +16,7 @@ designDocuments.documents 永远为空，规则只能输出证据不足。这里
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -34,6 +35,7 @@ from libs.review_orchestrator.design_ndt_requirements import (
     method_value_summary,
 )
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
+from libs.review_orchestrator.pressure_ratio_calculation import pressure_ratio_calculation
 from libs.review_orchestrator.r11_facts import build_r11_business_facts
 from libs.standard_timeline import standard_reference_fact
 
@@ -347,7 +349,8 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     text = text or ""
     standard_refs = list(dict.fromkeys(standard_ref_id(match.group(0)) for match in REGULATION_CODE_RE.finditer(text)))
     source = source or {}
-    max_design_pressure = max((float(item["designPressureMPa"]) for item in pipelines if isinstance(item.get("designPressureMPa"), int | float)), default=None)
+    max_design_pressure = max((float(item["designPressureMPa"]) for item in pipelines if type(item.get("designPressureMPa")) in (int, float)
+                               and math.isfinite(item["designPressureMPa"]) and item["designPressureMPa"] > 0), default=None)
 
     ndt_details = design_ndt_requirements(text)
     ndt_methods = ndt_details["methods"]
@@ -414,7 +417,9 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     is_pneumatic = methods == {"气压试验"}
     required_ratio = ratios["pneumatic"] if is_pneumatic else ratios["hydro"] if methods == {"hydro"} else None
     test_pressure_value = float(test_pressure.group(1)) if test_pressure else None
-    ratio_value = float(ratio.group(1)) if ratio else (round(test_pressure_value / max_design_pressure, 3) if test_pressure_value and max_design_pressure else None)
+    ratio_value, meets_ratio, exceeds_max = pressure_ratio_calculation(
+        ratio.group(1) if ratio else None, test_pressure.group(1) if test_pressure else None,
+        max_design_pressure, required_ratio, ratios["pneumaticMax"] if is_pneumatic else None)
     pressure_test = _domain(
         bool(pressure_method or test_pressure),
         {
@@ -423,10 +428,10 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "testPressureMPa": test_pressure_value,
             "testPressureRatio": ratio_value,
             "requiredTestPressureRatio": required_ratio,
-            "testPressureMeetsRatio": (ratio_value >= required_ratio) if ratio_value is not None and required_ratio is not None else None,
+            "testPressureMeetsRatio": meets_ratio,
             # 气压试验有上限：超过 1.33 倍设计压力是不符合，不是"更保险"
             "maxTestPressureRatio": ratios["pneumaticMax"] if is_pneumatic else None,
-            "testPressureExceedsMax": (ratio_value > ratios["pneumaticMax"]) if (is_pneumatic and ratio_value is not None and ratios["pneumaticMax"] is not None) else None,
+            "testPressureExceedsMax": exceeds_max,
             "acceptanceCriteria": pressure_criteria.group(1) if pressure_criteria else None,
         },
         standard_refs,
