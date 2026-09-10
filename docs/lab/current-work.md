@@ -878,3 +878,13 @@ flowchart LR
 - 相關子集 243 條通過；完整後端回歸 **4948 通過、0 失敗、4 跳過**（339.62 秒）。Ruff 289／289、monolith 通過。
 - 證據：`docs/lab/verification/2026-09-10-pressure-object-mapping.md`。
 - 限制：歸屬只認「管道／管線／管段 + 編號」寫法，表格式與附錄式試驗清單、事件級去重與時序判定未覆蓋；溫度應力修正（公式 54）、8.6.1.1.3 a) 降壓例外、8.6.1.5 免除情形仍未接入。整體工程估算仍約 60%。
+
+## 2026-09-10：逐條核查 R10／R43–R58／R63–R68 的實作缺口
+
+- 綁定裡每條規則都寫著看起來像專用的工具名（`evaluate_corrosion_protection`、`evaluate_pipeline_installation`、`evaluate_safety_accessory`、`evaluate_leak_test` 等），但 `business_tools` 的 `handlers` 裡**沒有任何一個的實作**，全部落到通用的 `evaluate_rule_profile`；而它要求同時給出 `requiredFields` 與 `ruleChecks`，兩者都沒配時只返回 `requiredFields_not_configured` 的證據不足——**資料再齊也判不出符合或不符合**。一個工具覆蓋六條規則（R43/R44/R45/R46/R47/R50 共用一個）本身就是佔位的信號。
+- **更深一層**：全倉 grep `ruleChecks` 只有 `business_tools.py` 在消費，沒有任何地方產生它。所以不是「暫時沒配」，而是**還沒有配置它的機制**。補齊要先有產生判據的路徑——R09 的 `designSpecialRequirementRules` 與 R11 的 `constructionPlanProcessRules` 是目前唯二走通的樣板。
+- 規模：**27 個原子項、23 條規則**（194 項中），與交接記錄的 28 條對得上（當日已補 AC-R11-03）。
+- `tests/test_generic_interpreter_gap.py` 三條釘住：數字與規則清單不許變大；這些原子項資料再齊也只返回證據不足且提示必須是 `requiredFields_not_configured`（把「缺配置」與「缺資料」分開，不能一律顯示成「請補文件」）；全倉不得出現 `ruleChecks` 產生方而不同步更新方案。
+- **對發布門檻**：這 23 條規則的原子檢查目前不可能產出符合或不符合，不能拿「綁定已存在」冒充「判定已具備」——禁止只改 `lifecycleStatus` 就宣稱完成全量發布。
+- 建議補齊順序：條款已核到頁碼、必需事實已定義的優先，如 R45（GB/T 19285-2026 5.3.2.2(c) 已 source_verified、SY/T 4113.11-2023 第 4–7 章已 visual_verified，必需事實三項齊備），只差判據與產生機制。
+- 完整後端回歸 **4951 通過、0 失敗、4 跳過**（481.96 秒）。Ruff 289／289。證據：`docs/lab/verification/2026-09-10-generic-interpreter-gap.md` 及同目錄逐條明細。整體工程估算仍約 60%。

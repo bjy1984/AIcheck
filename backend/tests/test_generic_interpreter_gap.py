@@ -27,7 +27,7 @@ EXPECTED_RULES = {
 
 def dedicated_handler_names() -> set[str]:
     """business_tools 里真正有实现的判定工具（handlers 映射的键）。"""
-    import libs.review_tools.business_tools as business_tools
+    from libs.review_tools import business_tools
 
     source = inspect.getsource(business_tools)
     start = source.index("handlers: dict[str, Callable")
@@ -85,7 +85,8 @@ def test_nothing_in_the_repository_produces_rule_checks_yet():
     import subprocess
 
     root = pathlib.Path(__file__).resolve().parents[1]
+    # grep 找不到匹配时返回码为 1，这里"找不到"正是期望结果，所以 check=False。
     hits = subprocess.run(["grep", "-rln", "--include=*.py", "ruleChecks", "libs", "apps"], cwd=root,
-                          capture_output=True, text=True).stdout.split()
+                          capture_output=True, text=True, check=False).stdout.split()
     producers = [path for path in hits if not path.endswith("business_tools.py")]
     assert producers == [], f"出现了 ruleChecks 的产生方：{producers}；请同步更新本测试与补齐方案"
