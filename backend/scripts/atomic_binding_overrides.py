@@ -197,6 +197,16 @@ ATOMIC_BINDING_OVERRIDES["AC-R11-03"] = {
                    "clauseSource": "frozen_standard_clause_package"},
 }
 
+# AC-R45-01 原先绑 evaluate_corrosion_protection——那个名字在 business_tools 里没有实现，
+# 落到通用解释器且 ruleChecks 无人产生，资料再齐也只返回"未配置"的证据不足。
+# 判据改为从规则包冻结的 holidayTestRules 取。
+ATOMIC_BINDING_OVERRIDES["AC-R45-01"] = {
+    "requiredFacts": ["r45.holidayTest"],
+    "tools": ["extract_table_records", "evaluate_r45_holiday_test", "validate_evidence_grounding"],
+    "parameters": {"profile": "coating_holiday_test", "failurePolicy": "business_rule_result",
+                   "clauseSource": "frozen_standard_clause_package"},
+}
+
 ATOMIC_BINDING_OVERRIDES["AC-R11-01"] = {
     "requiredFacts": ["r11.approval"],
     "tools": ["extract_table_records", "evaluate_construction_plan", "validate_evidence_grounding"],

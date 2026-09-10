@@ -212,6 +212,9 @@ def build_tool_arguments(
     if tool_name == "evaluate_r11_project_parameters":
         for key, value in nested_dict(nested_dict(facts, "r11"), "projectParameters").items():
             arguments.setdefault(key, deepcopy(value))
+    if tool_name == "evaluate_r45_holiday_test":
+        for key, value in nested_dict(nested_dict(facts, "r45"), "holidayTest").items():
+            arguments.setdefault(key, deepcopy(value))
     if tool_name == "evaluate_r11_process_standards":
         for key, value in nested_dict(nested_dict(facts, "r11"), "processStandards").items():
             arguments.setdefault(key, deepcopy(value))

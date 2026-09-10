@@ -42,7 +42,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 103
+    assert len(BUSINESS_TOOL_NAMES) == 104
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -1387,6 +1387,7 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "evaluate_ndt_nonconformance",  # Dedicated R37 witness-chain tests replace generic profile success.
     "evaluate_r11_project_parameters",  # Dedicated same-object source tests.
     "evaluate_r11_process_standards",  # Dedicated frozen-rule cases in test_r11_process_standards.py.
+    "evaluate_r45_holiday_test",  # Dedicated frozen-rule cases in test_r45_holiday_test.py.
     "evaluate_r39_procedure_reference",  # Dedicated sourced pair comparison in test_r39_reference.py.
     "evaluate_r39_document_content",  # Dedicated document-kind content checks.
     "evaluate_r39_inventory_consistency",  # Dedicated cross-inventory identity checks.

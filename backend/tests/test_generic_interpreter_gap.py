@@ -17,10 +17,11 @@ import inspect
 
 from libs.business_pack.loader import load_business_pack
 
-# 2026-09-10 实测：27 项 / 23 条规则。R11-03 当日已补为专用判定，故比交接记录的 28 少一条。
-EXPECTED_UNCONFIGURED = 27
+# 2026-09-10 实测：交接记录 28 项 → 补 AC-R11-03 得 27 → 补 AC-R45-01 得 26。
+# R45 是第一条走通"判据冻结进规则包 + frozen_domain_checks 统一判定"这条路的通用解释器规则。
+EXPECTED_UNCONFIGURED = 26
 EXPECTED_RULES = {
-    "R10", "R11", "R43", "R44", "R45", "R46", "R47", "R48", "R49", "R50", "R51", "R52",
+    "R10", "R11", "R43", "R44", "R46", "R47", "R48", "R49", "R50", "R51", "R52",
     "R53", "R54", "R55", "R56", "R57", "R58", "R63", "R64", "R66", "R67", "R68",
 }
 
@@ -76,17 +77,28 @@ def test_the_generic_interpreter_cannot_conclude_without_configuration():
 
 
 def test_nothing_in_the_repository_produces_rule_checks_yet():
-    """全仓只有工具消费 ruleChecks，没有任何地方产生它。
+    """只有 business_tools 在消费 ruleChecks，没有任何地方**产生**它。
 
-    这决定了补齐方式：不是"往绑定里填几行"，而是先要有产生 ruleChecks 的机制
-    （像 R09/R11 那样把判据冻结进规则包，再由事实侧解析 actualPath）。
+    这决定了补齐方式：不是"往绑定里填几行 ruleChecks"，而是走 frozen_domain_checks
+    那条路——判据冻结进规则包，事实侧按 actualPath 解析。R11-03 与 R45 已按此走通。
+
+    这里只认"当成数据写出去"的用法（赋值或放进字典），注释与文档字符串里提到不算。
     """
+    import ast
     import pathlib
-    import subprocess
 
     root = pathlib.Path(__file__).resolve().parents[1]
-    # grep 找不到匹配时返回码为 1，这里"找不到"正是期望结果，所以 check=False。
-    hits = subprocess.run(["grep", "-rln", "--include=*.py", "ruleChecks", "libs", "apps"], cwd=root,
-                          capture_output=True, text=True, check=False).stdout.split()
-    producers = [path for path in hits if not path.endswith("business_tools.py")]
+    producers = []
+    for path in list((root / "libs").rglob("*.py")) + list((root / "apps").rglob("*.py")):
+        if path.name == "business_tools.py":
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            written = isinstance(node, ast.Constant) and node.value == "ruleChecks"
+            if written and not isinstance(getattr(node, "parent", None), ast.Expr):
+                producers.append(str(path.relative_to(root)))
+                break
     assert producers == [], f"出现了 ruleChecks 的产生方：{producers}；请同步更新本测试与补齐方案"

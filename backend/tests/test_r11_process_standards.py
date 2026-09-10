@@ -127,7 +127,7 @@ def test_evidence_must_come_from_the_selected_plan_version():
     domains[0]["evidenceRefs"] = [{"documentVersionId": "OTHER-VERSION", "pageNo": 3}]
     output = run(domains)
     assert output["result"] == "evidence_insufficient"
-    assert "welding_evidence_not_from_selected_plan" in codes(output, "evidence_insufficient")
+    assert "welding_evidence_not_from_selected_document" in codes(output, "evidence_insufficient")
 
 
 def test_ambiguous_or_foreign_object_never_selects_a_row():

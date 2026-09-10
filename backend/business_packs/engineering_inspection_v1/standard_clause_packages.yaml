@@ -4357,6 +4357,63 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R45-01
   - AC-R45-02
+  holidayTestRules:
+    sourceReview:
+      method: agent_clause_purpose_reading
+      documents:
+      - standardRef: STD-GBT-19285-2026
+        clauseNo: 5.3.2.2(c)
+        purpose: 补口补伤 100% 漏点检测及修补复检
+        locatorVerification: source_verified
+      - standardRef: STD-SYT-4113.11-2023
+        clauseNo: 第 4-7 章
+        purpose: 漏点检测仪器、试件、检测步骤和报告
+        locatorVerification: visual_verified
+      reviewedScope: clause_purpose_and_required_items_only
+      humanVerified: false
+      limitations:
+      - 判据由规则包已核到页码的条款用途转述而来，未逐字对照原文正文
+      - 检测电压、试件与仪器校验的具体数值未录，故只作"是否规定/是否在有效期内"的存在性与布尔判定，不作数值比较
+      - 未覆盖防腐层厚度、粘结力等其他防腐验收项（那属于 R43/R44/R47）
+    domains:
+      holidayTest:
+        name: 防腐层电火花检测
+        requiredPaths:
+        - detector.calibrationCertificateNo
+        - detector.calibrationValidUntil
+        - test.voltage
+        - test.results
+        checks:
+        - code: detector_calibration_valid
+          actualPath: detector.calibrationValidAtTest
+          operator: equals
+          expected: true
+          standardRef: STD-SYT-4113.11-2023
+          sourceClause: SY/T 4113.11-2023 第 4 章——检测仪器应在检定有效期内
+          verifiedBy: null
+        - code: field_joint_coverage_full
+          applicabilityPath: test.fieldJointOrRepairPresent
+          actualPath: test.coveragePercent
+          operator: gte
+          expected: 100
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2(c)——补口补伤应 100% 漏点检测
+          verifiedBy: null
+        - code: repair_recheck_closed
+          applicabilityPath: test.holidaysFound
+          actualPath: test.repairsRecheckedAndPassed
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-19285-2026
+          sourceClause: GB/T 19285-2026 5.3.2.2(c)——发现漏点应修补并复检合格
+          verifiedBy: null
+        - code: report_items_complete
+          actualPath: test.reportItemsComplete
+          operator: equals
+          expected: true
+          standardRef: STD-SYT-4113.11-2023
+          sourceClause: SY/T 4113.11-2023 第 7 章——检测报告应含规定项目
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 电火花检测仪检定报告

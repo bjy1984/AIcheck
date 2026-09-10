@@ -2620,21 +2620,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R45-01
   sourceRuleId: R45
   requiredFacts:
-  - holidayDetector.calibrationValidity
-  - coatingHolidayTest.parameters
-  - coatingHolidayTest.results
+  - r45.holidayTest
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_date_covers
-  - evaluate_corrosion_protection
+  - evaluate_r45_holiday_test
   - validate_evidence_grounding
   parameters:
-    profile: holiday_test
-    clauseSource: frozen_standard_clause_package
+    profile: coating_holiday_test
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R45-02
