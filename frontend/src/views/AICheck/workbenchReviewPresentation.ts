@@ -191,6 +191,9 @@ export type WorkbenchAiPresentation = {
   running: boolean
 }
 
+export const canShowWorkbenchAiConclusion = (presentation: WorkbenchAiPresentation): boolean =>
+  Boolean(presentation.runId.trim()) && !presentation.running && !presentation.errorMessage
+
 export const inspectionReviewDirectoryItemsWithAiStatus = (
   items: InspectionAuditItem[],
   presentation: WorkbenchAiPresentation

@@ -1,0 +1,1 @@
+PASS: original panel hides conclusions for absent/running/failed runs; completed insufficient result remains; switching to empty removes stale conclusion

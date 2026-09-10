@@ -5,6 +5,7 @@ import { ElButton, ElIcon } from 'element-plus'
 
 import {
   buildWorkbenchAiConclusion,
+  canShowWorkbenchAiConclusion,
   workbenchFindingDisplay,
   type WorkbenchAiFinding,
   type WorkbenchAiFindingGroupKey,
@@ -39,7 +40,7 @@ const emit = defineEmits<{
  * 推导出的"未见问题"会误导——那时只显示状态横幅。
  */
 const conclusion = computed(() =>
-  props.presentation.running || props.presentation.errorMessage
+  !canShowWorkbenchAiConclusion(props.presentation)
     ? undefined
     : buildWorkbenchAiConclusion({
         findings: props.presentation.findings,
