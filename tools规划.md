@@ -419,14 +419,14 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R47-01 | 工作见证：静电接地施工记录和验收报告 | `staticGrounding.constructionRecords`<br>`staticGrounding.measuredResults`<br>`staticGrounding.acceptanceResults` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`evaluate_corrosion_protection`<br>`validate_evidence_grounding` | `profile=static_grounding`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R47-01 | 工作见证：静电接地施工记录和验收报告 | `r47.staticGrounding` | `extract_table_records`<br>`evaluate_r47_static_grounding`<br>`validate_evidence_grounding` | `profile=static_grounding`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R47-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R48
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R48-01 | 抽查管道结构、焊缝布置施工检查记录或现场抽查是否符合相关标准及设计要求（如管道穿越墙、道路时应设套管保护，套管内的管段不宜有环焊缝存在，如有应进行100%无损检测等） | `crossing.structure`<br>`crossing.weldLayout`<br>`crossing.sleeveSegments`<br>`crossing.ndtCoverage`<br>`design.crossingRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`check_sampling_requirement`<br>`evaluate_pipeline_installation`<br>`validate_evidence_grounding` | `profile=crossing_weld_layout`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R48-01 | 抽查管道结构、焊缝布置施工检查记录或现场抽查是否符合相关标准及设计要求（如管道穿越墙、道路时应设套管保护，套管内的管段不宜有环焊缝存在，如有应进行100%无损检测等） | `r48.weldLayout` | `extract_table_records`<br>`evaluate_r48_weld_layout`<br>`validate_evidence_grounding` | `profile=crossing_weld_layout`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R48-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R49
@@ -440,7 +440,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R50-01 | 抽查套管防腐绝缘检查记录（如穿跨越段钢套管一般外部需要进行防腐，内部与管道绝缘隔离（有阴极保护时），以防止阴极保护电流的流失及可能造成的套管内管段电屏蔽腐蚀） | `sleeve.externalCoating`<br>`sleeve.internalInsulation`<br>`project.hasCathodicProtection`<br>`inspection.records` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`check_sampling_requirement`<br>`evaluate_corrosion_protection`<br>`validate_evidence_grounding` | `profile=sleeve_insulation`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R50-01 | 抽查套管防腐绝缘检查记录（如穿跨越段钢套管一般外部需要进行防腐，内部与管道绝缘隔离（有阴极保护时），以防止阴极保护电流的流失及可能造成的套管内管段电屏蔽腐蚀） | `r50.sleeveInsulation` | `extract_table_records`<br>`evaluate_r50_sleeve_insulation`<br>`validate_evidence_grounding` | `profile=sleeve_insulation`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R50-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R51
@@ -454,29 +454,29 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R52-01 | 现场抽查预制管道的焊接、焊后热处理质量（对加工制作、焊接、热处理、检查、检测、试验等进行抽查） | `prefabrication.weldRecords`<br>`prefabrication.heatTreatmentRecords`<br>`prefabrication.ndtRecords`<br>`prefabrication.testRecords` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_sampling_requirement`<br>`evaluate_pipeline_installation`<br>`validate_evidence_grounding` | `profile=site_prefabrication`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R52-01 | 现场抽查预制管道的焊接、焊后热处理质量（对加工制作、焊接、热处理、检查、检测、试验等进行抽查） | `r52.prefabrication` | `extract_table_records`<br>`evaluate_r52_prefabrication`<br>`validate_evidence_grounding` | `profile=field_prefabrication`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R52-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R53
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R53-01 | 抽查管道布管与连接方式穿跨越检查试验记录（如不得用强力对口、加热管子、加偏垫或者加多层垫等方法来消除接口端面的空隙、偏斜、错口或者不同轴等缺陷 | `installation.alignmentRecords`<br>`installation.connectionMethod`<br>`installation.prohibitedMethods`<br>`equipment.anchorStatus` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`check_sampling_requirement`<br>`evaluate_pipeline_installation`<br>`validate_evidence_grounding` | `profile=pipe_connection`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
-| AC-R53-02 | 与设备的连接应当在设备安装定位紧固地脚螺栓后自然地进行） | `installation.alignmentRecords`<br>`installation.connectionMethod`<br>`installation.prohibitedMethods`<br>`equipment.anchorStatus` | `get_document_ocr_result`<br>`extract_document_fields`<br>`evaluate_pipeline_installation`<br>`validate_evidence_grounding` | `profile=pipe_connection`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R53-01 | 抽查管道布管与连接方式穿跨越检查试验记录（如不得用强力对口、加热管子、加偏垫或者加多层垫等方法来消除接口端面的空隙、偏斜、错口或者不同轴等缺陷 | `r53.installationConnections` | `extract_table_records`<br>`evaluate_r53_installation_connections`<br>`validate_evidence_grounding` | `profile=installation_connections`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R53-02 | 与设备的连接应当在设备安装定位紧固地脚螺栓后自然地进行） | `r53.equipmentConnection` | `extract_table_records`<br>`evaluate_r53_equipment_connection`<br>`validate_evidence_grounding` | `profile=equipment_connection`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R53-03 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R54
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R54-01 | 抽查管道补偿装置检查试验记录（按照设计文件的规定进行预拉伸或者预压缩） | `compensator.type`<br>`compensator.prestretch`<br>`compensator.precompression`<br>`design.compensatorRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`check_sampling_requirement`<br>`evaluate_pipeline_installation`<br>`validate_evidence_grounding` | `profile=compensator`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R54-01 | 抽查管道补偿装置检查试验记录（按照设计文件的规定进行预拉伸或者预压缩） | `r54.compensator` | `extract_table_records`<br>`evaluate_r54_compensator`<br>`validate_evidence_grounding` | `profile=compensator_installation`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R54-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R55
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R55-01 | 抽查管道支撑件检查试验记录 | `support.type`<br>`support.location`<br>`support.inspectionResults`<br>`design.supportRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`check_sampling_requirement`<br>`evaluate_pipeline_installation`<br>`validate_evidence_grounding` | `profile=pipe_support`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R55-01 | 抽查管道支撑件检查试验记录 | `r55.supports` | `extract_table_records`<br>`evaluate_r55_supports`<br>`validate_evidence_grounding` | `profile=support_components`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R55-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R56

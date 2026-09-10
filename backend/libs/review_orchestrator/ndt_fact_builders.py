@@ -1,4 +1,13 @@
 """Node-specific NDT fact builders; registration does not publish rule bindings."""
+from libs.review_orchestrator.installation_domain_facts import (
+    build_r47_business_facts,
+    build_r48_business_facts,
+    build_r50_business_facts,
+    build_r52_business_facts,
+    build_r53_business_facts,
+    build_r54_business_facts,
+    build_r55_business_facts,
+)
 from libs.review_orchestrator.leak_test_facts import (
     build_r64_business_facts,
     build_r66_business_facts,
@@ -19,4 +28,8 @@ NDT_FACT_BUILDERS = {35: build_r35_business_facts, 36: build_r36_business_facts,
                      45: build_r45_business_facts,
                      64: build_r64_business_facts, 66: build_r66_business_facts,
                      67: build_r67_business_facts,
-                     63: build_r63_business_facts, 68: build_r68_business_facts}
+                     63: build_r63_business_facts, 68: build_r68_business_facts,
+                     47: build_r47_business_facts, 48: build_r48_business_facts,
+                     50: build_r50_business_facts, 52: build_r52_business_facts,
+                     53: build_r53_business_facts,
+                     54: build_r54_business_facts, 55: build_r55_business_facts}

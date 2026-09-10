@@ -228,6 +228,27 @@ for _check_id, _fact, _tool, _profile in (
                        "clauseSource": "frozen_standard_clause_package"},
     }
 
+# R47／R48／R50／R53／R54／R55 原先分别绑 evaluate_static_grounding、evaluate_crossing_structure、
+# evaluate_corrosion_protection、evaluate_pipe_installation、evaluate_compensator、
+# evaluate_support_components——这些名字在 business_tools 里都没有实现。判据改为从各自规则包
+# 冻结的块取，来源全部是 GB/T 20801.1-2025 已逐句核对的正文。
+for _check_id, _fact, _tool, _profile in (
+    ("AC-R47-01", "r47.staticGrounding", "evaluate_r47_static_grounding", "static_grounding"),
+    ("AC-R48-01", "r48.weldLayout", "evaluate_r48_weld_layout", "crossing_weld_layout"),
+    ("AC-R50-01", "r50.sleeveInsulation", "evaluate_r50_sleeve_insulation", "sleeve_insulation"),
+    ("AC-R52-01", "r52.prefabrication", "evaluate_r52_prefabrication", "field_prefabrication"),
+    ("AC-R53-01", "r53.installationConnections", "evaluate_r53_installation_connections", "installation_connections"),
+    ("AC-R53-02", "r53.equipmentConnection", "evaluate_r53_equipment_connection", "equipment_connection"),
+    ("AC-R54-01", "r54.compensator", "evaluate_r54_compensator", "compensator_installation"),
+    ("AC-R55-01", "r55.supports", "evaluate_r55_supports", "support_components"),
+):
+    ATOMIC_BINDING_OVERRIDES[_check_id] = {
+        "requiredFacts": [_fact],
+        "tools": ["extract_table_records", _tool, "validate_evidence_grounding"],
+        "parameters": {"profile": _profile, "failurePolicy": "business_rule_result",
+                       "clauseSource": "frozen_standard_clause_package"},
+    }
+
 ATOMIC_BINDING_OVERRIDES["AC-R45-01"] = {
     "requiredFacts": ["r45.holidayTest"],
     "tools": ["extract_table_records", "evaluate_r45_holiday_test", "validate_evidence_grounding"],

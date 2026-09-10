@@ -31,4 +31,16 @@ ssh "$HOST" "set -eu
 "
 if [ "$#" = 0 ]; then set -- tests; fi
 printf -v PYTEST_ARGS ' %q' "$@"
-ssh "$HOST" "docker run --rm -v '$REMOTE_WS':/ws -w /ws/backend '$IMAGE' python -m pytest -q -p no:cacheprovider$PYTEST_ARGS"
+# Opt-in only: integration tests otherwise skip with an explicit reason. The DSN must
+# name a throwaway database on an isolated network -- never the production one, which
+# is why the production network is still never attached here.
+EXTRA=""
+if [ -n "${AICHECK_TEST_POSTGRES_URL:-}" ]; then
+  NET="${AICHECK_TEST_NETWORK:-aicheck-tests-net}"
+  [[ "$NET" =~ ^aicheck-tests-[a-zA-Z0-9_-]+$ ]] || { echo 'Test network must be a dedicated aicheck-tests-* network' >&2; exit 2; }
+  case "$AICHECK_TEST_POSTGRES_URL" in
+    *aicheck-postgres*|*aicheck-net*) echo 'Refusing to point tests at the production database' >&2; exit 2 ;;
+  esac
+  printf -v EXTRA ' --network %q -e AICHECK_TEST_POSTGRES_URL=%q' "$NET" "$AICHECK_TEST_POSTGRES_URL"
+fi
+ssh "$HOST" "docker run --rm -v '$REMOTE_WS':/ws -w /ws/backend$EXTRA '$IMAGE' python -m pytest -q -p no:cacheprovider$PYTEST_ARGS"

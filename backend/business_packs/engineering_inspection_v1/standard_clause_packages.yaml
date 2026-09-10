@@ -4598,6 +4598,99 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R47-01
   - AC-R47-02
+  staticGroundingRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.7.13.1-7.7.13.4、附录G G.9.4-G.9.5
+        purpose: 静电接地的跨接电阻、对地电阻、异种金属过渡与安装后测试
+        locatorVerification: source_verified
+      reviewedScope: static_grounding_resistance_transition_and_post_installation_test
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.7.13（PDF 第 115 页，印刷页 107）与附录 G G.9.4、G.9.5（PDF 第 237 页，印刷页 229）正文，已按文本层逐句核对，但未经人工签字确认
+      - 跨接电阻 0.03Ω 与对地电阻 100Ω／1000Ω 是条文明列数值；测点数量、测试仪器精度与测试方法标准未核到原文，故不判
+      - 7.7.13.2 允许"设计另有规定"，工具按 measurement.designDefaultLimitApplies 分支；设计另有规定时 100Ω 判据不适用，此时应由人工按设计值复核
+      - G.9 其余条（屏蔽保护、非导体管段跨接线规格）未纳入判据
+    domains:
+      staticGrounding:
+        name: 静电接地
+        requiredPaths:
+        - installation.groundingLocation
+        - installation.connectionMethod
+        - measurement.groundResistanceOhm
+        checks:
+        - code: joint_bonding_resistance_within_limit
+          applicabilityPath: design.staticGroundingRequired
+          actualPath: measurement.maxJointBondingResistanceOhm
+          operator: lte
+          expected: 0.03
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.13.1——每对法兰接头、螺纹接头或其他接头间的跨接电阻不应大于 0.03Ω
+          verifiedBy: null
+        - code: bonding_conductor_added_when_exceeded
+          applicabilityPath: measurement.bondingResistanceExceeded
+          actualPath: installation.bondingConductorInstalled
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.13.1——跨接电阻不满足要求时应设导线跨接
+          verifiedBy: null
+        - code: ground_resistance_within_default_limit
+          applicabilityPath: measurement.designDefaultLimitApplies
+          actualPath: measurement.groundResistanceOhm
+          operator: lte
+          expected: 100
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.13.2——除非设计另有规定，对地电阻值不应大于 100Ω
+          verifiedBy: null
+        - code: ground_resistance_within_high_resistivity_limit
+          applicabilityPath: site.highSoilResistivity
+          actualPath: measurement.groundResistanceOhm
+          operator: lte
+          expected: 1000
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录G G.9.5——山区等土壤电阻率较高的场所，对地电阻值也不大于 1000Ω
+          verifiedBy: null
+        - code: location_and_method_match_design
+          actualPath: installation.matchesDesignDocument
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.13.2——接地电阻值、接地位置及连接方式应符合设计文件的规定
+          verifiedBy: null
+        - code: dissimilar_metal_transition_plate
+          applicabilityPath: pipeline.stainlessOrNonFerrous
+          actualPath: installation.sameMaterialTransitionPlate
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.13.3——不锈钢管或有色金属管道的导线跨接或接地引线不应与管道直接连接，应采用同材质连接板过渡
+          verifiedBy: null
+        - code: tested_after_installation
+          actualPath: measurement.testedAfterInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.13.4——静电接地安装完毕后应进行测试
+          verifiedBy: null
+        - code: adjusted_when_out_of_limit
+          applicabilityPath: measurement.resistanceOutOfLimit
+          actualPath: installation.adjustmentCompleted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.13.4——电阻值超过规定时应进行调整
+          verifiedBy: null
+        - code: bolted_flange_conductive_contact
+          applicabilityPath: installation.metalFlangeBoltedWithoutBondingWire
+          actualPath: installation.atLeastTwoBoltsConductiveContact
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录G G.9.4——金属法兰以金属螺栓或卡子紧固时可不另装静电连接线，但需保证至少两个螺栓或卡子间具有良好的导电接触面
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 静电接地施工记录和验收报告
@@ -4662,6 +4755,143 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R48-01
   - AC-R48-02
+  weldLayoutRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.4.6、7.7.1.6
+        purpose: 焊缝设置的间距、净距、开孔与十字焊缝要求
+        locatorVerification: source_verified
+      reviewedScope: weld_layout_spacing_clearance_and_opening_rules_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.4.6（PDF 第 97 页，印刷页 89）与 7.7.1.6（PDF 第 111 页，印刷页 103）正文，已按文本层逐句核对，但未经人工签字确认
+      - 7.4.6 a) 的"3 倍管子厚度、需焊后热处理时 6 倍"与 c) 的"焊缝宽度 5 倍"依赖壁厚与焊缝宽度，工具不代算，按事实侧给出的布尔判定；DN 门槛下的绝对下限（150 mm／50 mm／100 mm／50 mm）为条文明列数值，直接比较
+      - 套管防腐绝缘由 R50 判定（附录G G.6.7.2 d），这里只判套管内管段的环焊缝要求，不重复判定绝缘
+      - 夹套管焊缝布置（7.7.8.2）不在本规则范围
+    domains:
+      weldLayout:
+        name: 焊缝设置
+        requiredPaths:
+        - weldLayout.girthWeldSpacingMm
+        - weldLayout.pipeOuterDiameterMm
+        - weldLayout.nominalDiameterDn
+        checks:
+        - code: spacing_meets_thickness_multiple
+          actualPath: weldLayout.spacingMeetsThicknessMultiple
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 a)——直管段两对接环焊缝中心面间距不应小于 3 倍管子厚度；需焊后热处理时不应小于 6 倍管子厚度
+          verifiedBy: null
+        - code: spacing_ge_150mm_for_large_dn
+          applicabilityPath: weldLayout.dnAtLeast150
+          actualPath: weldLayout.girthWeldSpacingMm
+          operator: gte
+          expected: 150
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 a) 1)——公称直径大于或等于 DN150 时，间距不小于 150 mm
+          verifiedBy: null
+        - code: spacing_ge_50mm_for_small_dn
+          applicabilityPath: weldLayout.dnBelow150
+          actualPath: weldLayout.girthWeldSpacingMm
+          operator: gte
+          expected: 50
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 a) 2)——公称直径小于 DN150 时，间距不小于管子外径且不小于 50 mm
+          verifiedBy: null
+        - code: spacing_ge_outer_diameter_for_small_dn
+          applicabilityPath: weldLayout.dnBelow150
+          actualPath: weldLayout.spacingMeetsOuterDiameter
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 a) 2)——公称直径小于 DN150 时，间距不小于管子外径
+          verifiedBy: null
+        - code: bend_clearance_ge_100mm
+          actualPath: weldLayout.bendStartDistanceMm
+          operator: gte
+          expected: 100
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 b)——环焊缝距弯管起弯点的距离不应小于管子外径，且不应小于 100 mm
+          verifiedBy: null
+        - code: bend_clearance_ge_outer_diameter
+          actualPath: weldLayout.bendClearanceMeetsOuterDiameter
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 b)——环焊缝距弯管起弯点的距离不应小于管子外径
+          verifiedBy: null
+        - code: support_clearance_ge_50mm
+          actualPath: weldLayout.supportClearanceMm
+          operator: gte
+          expected: 50
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 c)——环焊缝与支吊架的净距离不宜小于 50 mm
+          verifiedBy: null
+        - code: pwht_support_clearance_meets_rule
+          applicabilityPath: weldLayout.postWeldHeatTreatmentRequired
+          actualPath: weldLayout.pwhtSupportClearanceMeetsRule
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 c)——需热处理的焊缝与支吊架净距离不应小于焊缝宽度的 5 倍，且不应小于 100 mm
+          verifiedBy: null
+        - code: branch_opening_clearance_ge_50mm
+          actualPath: weldLayout.branchOpeningClearanceMm
+          operator: gte
+          expected: 50
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 d)——环焊缝距支管或管接头开孔边缘不应小于 50 mm，且不小于孔径
+          verifiedBy: null
+        - code: branch_opening_clearance_ge_bore
+          actualPath: weldLayout.branchClearanceMeetsBoreDiameter
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 d)——环焊缝距开孔边缘不小于孔径
+          verifiedBy: null
+        - code: opening_on_weld_ndt_accepted
+          applicabilityPath: weldLayout.openingOnWeld
+          actualPath: weldLayout.openingAreaNdtAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 e)——无法避免在焊缝上开孔时，以开孔中心为中心、1.5 倍开孔直径或补强板直径范围内的焊缝应按第 8 章无损检测合格后方可开孔
+          verifiedBy: null
+        - code: reinforcement_pad_weld_ground_flush
+          applicabilityPath: weldLayout.reinforcementPadPresent
+          actualPath: weldLayout.coveredWeldGroundFlush
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 e)——补强板覆盖的焊缝应磨平，管孔边缘不应存在焊接缺陷
+          verifiedBy: null
+        - code: cross_weld_ndt_accepted
+          applicabilityPath: weldLayout.crossWeldOrCloseLongitudinalSeam
+          actualPath: weldLayout.crossWeldNdtAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.4.6 f)——无法避免十字焊缝或纵缝错开距离小于等于 100 mm 时，该部位焊缝应经射线检测或超声检测合格
+          verifiedBy: null
+        - code: sleeve_girth_weld_full_ndt
+          applicabilityPath: crossing.girthWeldInsideSleeve
+          actualPath: crossing.sleeveGirthWeldFullNdtAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.1.6——管道穿越墙、道路或铁路时应设套管，套管内管段不宜有环焊缝；如有环焊缝应按第 8 章进行 100% 无损检测
+          verifiedBy: null
+        - code: crossing_sleeve_installed
+          applicabilityPath: crossing.throughWallRoadOrRail
+          actualPath: crossing.sleeveInstalled
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.1.6——管道穿越墙、道路或铁路时应设套管加以保护
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 抽查管道结构、焊缝布置施工检查记录
@@ -4790,6 +5020,66 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R50-01
   - AC-R50-02
+  sleeveInsulationRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 附录G G.6.7.1-G.6.7.2
+        purpose: 直埋管道外防腐等级与钢套管的电绝缘、端部密封
+        locatorVerification: source_verified
+      reviewedScope: sleeve_coating_grade_electrical_isolation_and_end_seal_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 附录G G.6.7.1、G.6.7.2（PDF 第 235 页，印刷页 227）正文，已按文本层逐句核对，但未经人工签字确认
+      - 防腐等级只判"穿越道路、铁路及改变埋设深度弯管处是否为特加强级"与"是否按土壤腐蚀性确定"；具体涂层厚度、粘结力、材料型号未核到原文，故不判（那属于 R43／R44）
+      - 阴极保护方式的选择（牺牲阳极／强制电流／排流）由 R46 判定，这里不重复
+      - 绝缘支撑与端部密封只作存在性与布尔判定，绝缘电阻实测值未纳入判据
+    domains:
+      sleeveInsulation:
+        name: 套管防腐绝缘
+        requiredPaths:
+        - sleeve.externalCoatingGrade
+        - sleeve.endSealMaterial
+        checks:
+        - code: coating_grade_based_on_soil_corrosivity
+          actualPath: sleeve.gradeBasedOnSoilCorrosivity
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录G G.6.7.1 b)——外表面绝缘防腐蚀等级需根据土壤的腐蚀性程度确定
+          verifiedBy: null
+        - code: crossing_coating_grade_extra_reinforced
+          applicabilityPath: sleeve.roadRailCrossingOrDepthChangeBend
+          actualPath: sleeve.coatingGradeExtraReinforced
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录G G.6.7.1 b)——直埋管道穿越道路、铁路以及改变埋设深度时的弯管处，防腐蚀等级为特加强级
+          verifiedBy: null
+        - code: insulated_from_aboveground_piping
+          actualPath: sleeve.insulatedFromAbovegroundPiping
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录G G.6.7.2 d)——直埋管道采用绝缘法兰、螺栓、垫片与地上管道绝缘隔断
+          verifiedBy: null
+        - code: insulating_support_between_sleeve_and_pipe
+          applicabilityPath: sleeve.steelSleeveUsed
+          actualPath: sleeve.insulatingSupportInstalled
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录G G.6.7.2 d)——局部采用钢套管时，套管间设绝缘支撑进行电绝缘
+          verifiedBy: null
+        - code: sleeve_ends_nonconductive_seal
+          applicabilityPath: sleeve.steelSleeveUsed
+          actualPath: sleeve.endsSealedWithNonConductiveMaterial
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录G G.6.7.2 d)——套管两端采用牢固的非导电材料密封
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 抽查套管防腐绝缘检查记录
@@ -4911,6 +5201,210 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R52-01
   - AC-R52-02
+  prefabricationRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.3.1-7.3.5
+        purpose: 管道现场制作的切割坡口、标记移植、弯管、板焊管与斜接弯头
+        locatorVerification: source_verified
+      reviewedScope: fabrication_cutting_marking_bend_platewelded_pipe_and_miter_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.3.1~7.3.5（PDF 第 88~91 页，印刷页 80~83）正文，已按文本层逐句核对，但未经人工签字确认
+      - 不圆度公式(45)与褶皱高度公式(46)不在工具内代算，事实侧须给出已算好的百分比与毫米值；表 30（弯管制作前壁厚）、表 31（板焊管周长与直径允差）、表 32（对接焊缝错边量）依赖弯曲半径与母材厚度分档取值，由事实侧给布尔
+      - 支吊架制作（7.3.8）由 R55 判定，焊接与热处理（7.4、7.6）及检验（第 8 章）由各自规则判定，这里不重复
+      - 棱角度 E 的测量方法（弦长 1/6Di 且不小于 300 mm 的样板）未纳入判据，只比数值
+    domains:
+      prefabrication:
+        name: 管道现场制作
+        requiredPaths:
+        - prefabrication.recordNo
+        - prefabrication.componentType
+        checks:
+        - code: thermal_cut_surface_cleaned
+          applicabilityPath: prefabrication.thermalCuttingUsed
+          actualPath: prefabrication.cutSurfaceCleaned
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.1.1——采用热切割方法时，切割后应采用机械加工或打磨方法清除表面熔渣和影响焊接质量的表面层
+          verifiedBy: null
+        - code: cutting_method_suits_material
+          actualPath: prefabrication.cuttingMethodSuitsMaterial
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.1.2、7.3.1.3——低温镍钢和合金钢宜用机械加工；不锈钢、有色金属应采用机械加工或等离子切割，并使用专用砂轮片
+          verifiedBy: null
+        - code: repaired_wall_thickness_not_below_design
+          applicabilityPath: prefabrication.surfaceDamageRepaired
+          actualPath: prefabrication.repairedThicknessNotBelowDesign
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.1.4——有严重伤痕的部位应补焊或修磨，修磨处的壁厚不应小于设计壁厚
+          verifiedBy: null
+        - code: material_marking_preserved_or_transferred
+          actualPath: prefabrication.markingPreservedOrTransferred
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.2.1——制作过程中需核对并尽量保存材料原始标记，无法保存时应采用移植方法重新标识
+          verifiedBy: null
+        - code: no_hard_stamp_on_restricted_material
+          applicabilityPath: prefabrication.lowTemperatureStainlessOrNonFerrous
+          actualPath: prefabrication.hardStampAvoided
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.2.2——低温用钢、不锈钢及有色金属不准许使用硬印标记；色码印色不应含硫、铅、氯等有害物质
+          verifiedBy: null
+        - code: field_bend_not_used_on_gc1_or_severe_cyclic
+          applicabilityPath: prefabrication.bendFabricated
+          actualPath: prefabrication.notGc1OrSevereCyclic
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.3.1——GC1 级和剧烈循环工况的管道不应采用制作弯管
+          verifiedBy: null
+        - code: welded_pipe_bend_seam_off_stress_zone
+          applicabilityPath: prefabrication.bendFromWeldedPipe
+          actualPath: prefabrication.bendSeamOffTensionCompressionZone
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.3.3——采用焊管制作弯管时，焊缝应避开受拉（压）区
+          verifiedBy: null
+        - code: internal_pressure_bend_ovality_within_limit
+          applicabilityPath: prefabrication.bendUnderInternalPressure
+          actualPath: prefabrication.bendOvalityPercent
+          operator: lte
+          expected: 8
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.3.4 a) 2)——承受内压的弯管，不圆度不应大于 8%
+          verifiedBy: null
+        - code: external_pressure_bend_ovality_within_limit
+          applicabilityPath: prefabrication.bendUnderExternalPressure
+          actualPath: prefabrication.bendOvalityPercent
+          operator: lte
+          expected: 3
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.3.4 a) 2)——承受外压的弯管，不圆度不应大于 3%
+          verifiedBy: null
+        - code: bend_wrinkle_height_within_limit
+          applicabilityPath: prefabrication.bendFabricated
+          actualPath: prefabrication.wrinkleHeightWithinThreePercentOfDiameter
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.3.4 b)——弯管内侧褶皱高度 hm 不应大于管子外径 D1 的 3%
+          verifiedBy: null
+        - code: bend_wave_pitch_within_limit
+          applicabilityPath: prefabrication.bendFabricated
+          actualPath: prefabrication.wavePitchAtLeastTwelveTimesWrinkleHeight
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.3.4 b)——波浪间距 a 不应小于 12hm
+          verifiedBy: null
+        - code: bend_final_thickness_not_below_design
+          applicabilityPath: prefabrication.bendFabricated
+          actualPath: prefabrication.bendFinalThicknessNotBelowDesign
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.3.4 c)——弯管制作后的最小厚度不小于直管的设计厚度
+          verifiedBy: null
+        - code: plate_welded_shell_course_length
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.shellCourseLengthMm
+          operator: gte
+          expected: 300
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 a)——单个筒节的长度不应小于 300 mm
+          verifiedBy: null
+        - code: plate_welded_adjacent_seam_offset
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.adjacentCourseSeamOffsetMm
+          operator: gt
+          expected: 100
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 a)——相邻筒节纵缝应错开 100 mm 以上
+          verifiedBy: null
+        - code: plate_welded_longitudinal_seam_spacing
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.longitudinalSeamSpacingMm
+          operator: gte
+          expected: 200
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 b)——同一筒节上纵向焊缝不应大于两条，纵缝间距不应小于 200 mm
+          verifiedBy: null
+        - code: plate_welded_peak_within_limit
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.peakValueMm
+          operator: lte
+          expected: 5
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 e)——棱角度 E 值不应大于壁厚的 10% 加 2 mm，且不大于 5 mm
+          verifiedBy: null
+        - code: plate_welded_peak_within_thickness_rule
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.peakWithinThicknessRule
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 e)——棱角度 E 值不应大于壁厚的 10% 加 2 mm
+          verifiedBy: null
+        - code: plate_welded_straightness_within_limit
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.straightnessPercentOfLength
+          operator: lte
+          expected: 0.2
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 g)——板焊管的直度允差不应大于其单根长度的 0.2%
+          verifiedBy: null
+        - code: plate_welded_misalignment_within_table32
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.misalignmentWithinTable32
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 f) 表 32——对接焊缝错边量按母材厚度分档；单面焊缝内壁错边量不大于壁厚 25% 且不大于 2 mm
+          verifiedBy: null
+        - code: plate_welded_circumference_within_table31
+          applicabilityPath: prefabrication.plateWeldedPipeDn400OrAbove
+          actualPath: prefabrication.circumferenceAndDiameterWithinTable31
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.4.2 d) 表 31——板焊管的周长及管端直径应符合表 31 的允差规定
+          verifiedBy: null
+        - code: miter_bend_full_penetration_joint
+          applicabilityPath: prefabrication.miterBendFabricated
+          actualPath: prefabrication.miterFullPenetrationJoint
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.5.3——斜接弯头的焊接接头应采用全焊透形式；DN≥600 时宜进行双面焊
+          verifiedBy: null
+        - code: miter_bend_minimum_inner_width
+          applicabilityPath: prefabrication.miterBendAboveDn400
+          actualPath: prefabrication.miterInnerWidthMm
+          operator: gte
+          expected: 50
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.5.2——公称直径大于 DN400 的斜接弯头可增加中节数量，但其内侧的最小宽度不应小于 50 mm
+          verifiedBy: null
+        - code: miter_bend_circumference_tolerance
+          applicabilityPath: prefabrication.miterBendFabricated
+          actualPath: prefabrication.miterCircumferenceToleranceMet
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.5.4——DN>1000 时周长允许偏差 ±6 mm；DN≤1000 时 ±4 mm
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 找到预制管道清单、现场制作记录
@@ -4973,6 +5467,270 @@ standardClausePackages:
   - AC-R53-01
   - AC-R53-02
   - AC-R53-03
+  installationConnectionRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.7.1-7.7.4
+        purpose: 管道布管、法兰连接、螺纹连接及其他形式连接的装配要求
+        locatorVerification: source_verified
+      reviewedScope: alignment_flange_thread_and_other_joint_assembly_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.7.1~7.7.4（PDF 第 111~113 页，印刷页 103~105）正文，已按文本层逐句核对，但未经人工签字确认
+      - 法兰平行度 1 mm/200 mm、螺栓孔偏移 3 mm 是条文明列数值，直接比较；表 40 的自由／封闭管段加工偏差与表 41 的动设备接口偏差未纳入判据（后者属 7.7.6，不在本规则条款范围）
+      - 7.4.4.3.4 已录在规则包条款号内，但该页正文未逐句核对，故未据以生成任何判据
+      - 材质标记复查（7.7.1.8）的光谱分析结果由 R21 判定，这里只判是否完成复查
+    domains:
+      installationConnections:
+        name: 布管与连接方式
+        requiredPaths:
+        - installation.connectionMethod
+        - installation.recordNo
+        checks:
+        - code: no_forced_fitup_or_harmful_correction
+          actualPath: installation.noForcedFitUp
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.1.5——不准许强力对接、加热管子、加偏垫或加多层垫等方法消除空隙、偏斜、错口或不同心，也不应采用扭曲方法组对
+          verifiedBy: null
+        - code: assembled_spool_cleaned_and_capped
+          actualPath: installation.spoolCleanedAndCapped
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.1.4——装配完毕的管段应将内部清理干净，及时封闭管口
+          verifiedBy: null
+        - code: no_additional_load_after_installation
+          actualPath: installation.noAdditionalLoad
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.1.7——管道安装后不应承受设计以外的附加荷载
+          verifiedBy: null
+        - code: material_marking_reverified
+          applicabilityPath: installation.alloyOrSpecialMaterial
+          actualPath: installation.materialMarkingReverified
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.1.8——铬钼合金钢、含镍低温钢、不锈钢及镍钛锆合金管道组成件安装完毕后应检查材质标记，无标记或不清晰时应用光谱分析等方法复查
+          verifiedBy: null
+        - code: sealing_faces_inspected_before_flange_joint
+          applicabilityPath: installation.flangeJointPresent
+          actualPath: installation.sealingFacesInspected
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.2.1——法兰连接前应检查、清理法兰密封面和垫片密封面，不应有影响密封性能的缺陷
+          verifiedBy: null
+        - code: single_gasket_per_flange_pair
+          applicabilityPath: installation.flangeJointPresent
+          actualPath: installation.singleGasketPerPair
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.2.2——每对法兰密封面间只允许使用 1 个垫片，垫片应与法兰同轴且不阻挡介质流道
+          verifiedBy: null
+        - code: flange_parallelism_within_limit
+          applicabilityPath: installation.flangeJointPresent
+          actualPath: installation.flangeParallelismMmPer200mm
+          operator: lte
+          expected: 1
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.2.3 a)——上紧螺栓前，两个法兰的平行度（偏转）偏差不应大于 1 mm/200 mm
+          verifiedBy: null
+        - code: no_bolt_forcing_to_correct_deflection
+          applicabilityPath: installation.flangeJointPresent
+          actualPath: installation.noBoltForcingToCorrectDeflection
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.2.3 b)——不准许用强紧螺栓的方法消除法兰接头的偏转
+          verifiedBy: null
+        - code: bolt_hole_offset_within_limit
+          applicabilityPath: installation.flangeJointPresent
+          actualPath: installation.boltHoleOffsetMm
+          operator: lte
+          expected: 3
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.2.3 d)——法兰螺栓孔需对准，孔与孔之间的偏移不大于 3 mm
+          verifiedBy: null
+        - code: bolts_same_spec_and_fully_engaged
+          applicabilityPath: installation.flangeJointPresent
+          actualPath: installation.boltsSameSpecAndFullyEngaged
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.2.4——应使用同一规格、同一材质的螺栓对称紧固，每个螺栓不超过 1 个垫圈，螺母螺纹应完全啮合
+          verifiedBy: null
+        - code: gc1_flange_joint_written_procedure_approved
+          applicabilityPath: installation.gc1FlangeJoint
+          actualPath: installation.writtenFlangeProcedureApproved
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.2.5——GC1 级管道的法兰接头应编制书面安装程序文件，经安装单位技术负责人批准后方可装配，并符合 GB/T 38343
+          verifiedBy: null
+        - code: thread_compound_suitable_for_service
+          applicabilityPath: installation.threadedJointPresent
+          actualPath: installation.threadCompoundSuitable
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.3.1——螺纹保护剂或润滑剂应适用于工况条件，且对流体和管道材料不产生不良影响
+          verifiedBy: null
+        - code: no_thread_compound_on_seal_welded_joint
+          applicabilityPath: installation.sealWeldedThreadedJoint
+          actualPath: installation.noThreadCompoundOnSealWeldedJoint
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.3.2——进行密封焊的螺纹接头不准许使用螺纹保护剂和密封材料
+          verifiedBy: null
+        - code: seal_weld_covers_full_exposed_thread
+          applicabilityPath: installation.sealWeldedThreadedJoint
+          actualPath: installation.sealWeldCoversFullThread
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.3.4——螺纹接头采用密封焊时，外露螺纹应在整个周长密封焊接
+          verifiedBy: null
+        - code: thread_loosening_prevented
+          applicabilityPath: installation.threadedJointPresent
+          actualPath: installation.threadLooseningPrevented
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.3.5——应采取措施防止螺纹接头因热膨胀导致的螺纹松动
+          verifiedBy: null
+        - code: fitting_material_matches_pipe
+          applicabilityPath: installation.tubeFittingPresent
+          actualPath: installation.fittingMaterialMatchesPipe
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.4.1 a)——管接头成套部件为配套厂家生产，材质与管道材质一致
+          verifiedBy: null
+        - code: fitting_surface_free_of_defects_and_centred
+          applicabilityPath: installation.tubeFittingPresent
+          actualPath: installation.fittingSurfaceAcceptedAndCentred
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.4.1 b) c)——连接处管道表面无皱褶、扁平、凹陷、凸起、划痕，端部断面水平、毛刺清理干净，拧紧前保证与管道对中
+          verifiedBy: null
+        - code: ferrule_fitting_instructions_available
+          applicabilityPath: installation.ferruleFittingPresent
+          actualPath: installation.ferruleFittingInstructionsAvailable
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.4.1 f)——卡套式管接头的安装需在无额外作用力下进行，制造商需提供含材料要求、加工要求、安装拆卸要求与推荐工具的安装使用说明书
+          verifiedBy: null
+        - code: stuffing_box_expansion_gap_reserved
+          applicabilityPath: installation.stuffingBoxJointPresent
+          actualPath: installation.stuffingBoxExpansionGapReserved
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.4.2——用于吸收热膨胀的填料函接头，在承口底部应留有适当的膨胀间隙
+          verifiedBy: null
+  equipmentConnectionRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.7.6
+        purpose: 连接设备的管道装配要求与动设备接口偏差
+        locatorVerification: source_verified
+      reviewedScope: equipment_connection_sequence_alignment_and_realignment_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.7.6（PDF 第 112 页，印刷页 104）正文，已按文本层逐句核对，但未经人工签字确认
+      - 表 41 的平行度与同心度允许偏差按动设备转速分三档（<3000、3000~6000、>6000），依赖转速分档取值，工具不代算，按事实侧给出的布尔判定；位移值 0.02 mm／0.05 mm 是条文明列数值，直接比较
+      - 储罐基础沉降的影响（7.7.6.3）只判"是否在储罐液压或充水试验后安装"这一时序，沉降量本身不判
+      - 布管与法兰、螺纹等连接方式的装配要求由 AC-R53-01 判定，这里不重复
+    domains:
+      equipmentConnection:
+        name: 连接设备的管道
+        requiredPaths:
+        - equipment.tagNo
+        - equipment.connectionRecordNo
+        checks:
+        - code: connected_after_equipment_anchored
+          actualPath: equipment.connectedAfterAnchorBoltsTightened
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.1——管道与设备的连接应在设备安装定位并紧固地脚螺栓后进行
+          verifiedBy: null
+        - code: free_state_alignment_checked
+          applicabilityPath: equipment.rotatingEquipment
+          actualPath: equipment.freeStateAlignmentChecked
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.2 a)——管道与动设备连接前，需在自由状态下检验法兰的平行度和同心度
+          verifiedBy: null
+        - code: parallelism_within_table41
+          applicabilityPath: equipment.rotatingEquipment
+          actualPath: equipment.parallelismWithinTable41
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.2 a) 表 41——法兰平行度允许偏差按转速分档：<3000 r/min ≤0.40 mm、3000~6000 r/min ≤0.15 mm、>6000 r/min ≤0.10 mm
+          verifiedBy: null
+        - code: concentricity_within_table41
+          applicabilityPath: equipment.rotatingEquipment
+          actualPath: equipment.concentricityWithinTable41
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.2 a) 表 41——法兰同心度允许偏差按转速分档：<3000 r/min ≤0.80 mm、3000~6000 r/min ≤0.50 mm、>6000 r/min ≤0.20 mm
+          verifiedBy: null
+        - code: dial_gauge_monitoring_at_final_connection
+          applicabilityPath: equipment.rotatingEquipment
+          actualPath: equipment.dialGaugeMonitoringApplied
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.2 b)——管道系统与动设备最终连接时，需在联轴器上架设百分表监视动设备位移
+          verifiedBy: null
+        - code: displacement_below_high_speed_limit
+          applicabilityPath: equipment.ratedSpeedAbove6000
+          actualPath: equipment.displacementMm
+          operator: lt
+          expected: 0.02
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.2 b)——动设备额定转速大于 6000 r/min 时，位移值需小于 0.02 mm
+          verifiedBy: null
+        - code: displacement_below_normal_speed_limit
+          applicabilityPath: equipment.ratedSpeedAtMost6000
+          actualPath: equipment.displacementMm
+          operator: lt
+          expected: 0.05
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.2 b)——动设备额定转速小于或等于 6000 r/min 时，位移值需小于 0.05 mm
+          verifiedBy: null
+        - code: tank_piping_installed_after_tank_test
+          applicabilityPath: equipment.largeStorageTankConnection
+          actualPath: equipment.installedAfterTankTest
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.3——大型储罐的管道应在储罐液压或充水试验后安装，或将储罐接口法兰在液压试验且基础初阶段沉降后再连接
+          verifiedBy: null
+        - code: realignment_checked_after_test_and_flush
+          applicabilityPath: equipment.rotatingEquipment
+          actualPath: equipment.realignmentCheckedAfterTestAndFlush
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.6.4——管道试压、吹扫与清洗合格后，应对管道与动设备的接口进行复位检查，其偏差值应符合表 41
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 管道布管与连接方式穿跨越检查试验记录
@@ -5037,6 +5795,99 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R54-01
   - AC-R54-02
+  compensatorRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.7.11、附录P P.4
+        purpose: 补偿装置及金属波纹膨胀节的安装要求
+        locatorVerification: source_verified
+      reviewedScope: compensator_installation_requirements_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.7.11（PDF 第 114 页，印刷页 106）与附录P P.4（PDF 第 274 页，印刷页 266）正文，已按文本层逐句核对，但未经人工签字确认
+      - 只覆盖"安装"环节；膨胀节的制造检验与压力试验（附录P P.3.3）由制造方文件与 R23／压力试验规则判定，这里不重复
+      - 预拉伸／预压缩量的数值不在工具内复算，只判是否按设计文件执行；波距比 1.15／1.20 的屈曲判据属于制造压力试验，不在安装记录范围
+      - 补偿装置型式选择是否恰当属于设计审查，不在本规则范围
+    domains:
+      compensator:
+        name: 补偿装置
+        requiredPaths:
+        - compensator.type
+        - compensator.installationRecordNo
+        checks:
+        - code: matches_design_and_product_documents
+          actualPath: compensator.matchesDesignAndProductDocuments
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.11——管道补偿装置的安装应符合设计文件、产品技术文件和相关标准的规定
+          verifiedBy: null
+        - code: flow_marker_matches_flow_direction
+          applicabilityPath: compensator.metalBellowsType
+          actualPath: compensator.flowMarkerMatchesFlowDirection
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录P P.4 a)——膨胀节安装时应使导流标志方向与介质流向一致
+          verifiedBy: null
+        - code: not_used_to_absorb_installation_deviation
+          applicabilityPath: compensator.metalBellowsType
+          actualPath: compensator.notUsedToAbsorbInstallationDeviation
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录P P.4 b)——不应利用膨胀节的变形来调整或弥补管道的安装偏差
+          verifiedBy: null
+        - code: bellows_free_of_installation_damage
+          applicabilityPath: compensator.metalBellowsType
+          actualPath: compensator.bellowsFreeOfDamage
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录P P.4 c)——安装时需避免波纹管产生划痕、焊弧、焊接飞溅或凹陷等缺陷
+          verifiedBy: null
+        - code: lifting_not_applied_to_bellows
+          applicabilityPath: compensator.metalBellowsType
+          actualPath: compensator.liftingNotAppliedToBellows
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录P P.4 d)——吊装时不应将提升装置直接作用在波纹管或其外保护罩上，并避免法兰密封面机械损伤
+          verifiedBy: null
+        - code: pressure_test_after_guides_and_anchors
+          applicabilityPath: compensator.metalBellowsType
+          actualPath: compensator.pressureTestAfterGuidesAndAnchors
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录P P.4 e)——在所有导向支架和固定支架正确安装完毕前，不应进行压力试验或对其抽真空
+          verifiedBy: null
+        - code: shipping_restraints_removed_after_anchors
+          applicabilityPath: compensator.metalBellowsType
+          actualPath: compensator.shippingRestraintsRemoved
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录P P.4 f)——管道固定支架安装完毕并得到正确支承和导向后，应拆除膨胀节上的运输固定装置
+          verifiedBy: null
+        - code: manufacturer_instructions_followed
+          applicabilityPath: compensator.metalBellowsType
+          actualPath: compensator.manufacturerInstructionsFollowed
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 附录P P.4 g)——膨胀节安装还应满足制造商安装说明书的要求
+          verifiedBy: null
+        - code: prestretch_per_design_document
+          applicabilityPath: compensator.prestretchRequired
+          actualPath: compensator.prestretchPerDesignDocument
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.5——管道预拉伸或预压缩应符合设计文件规定
+          verifiedBy: null
   requiredEvidence:
   - 设计文件及产品技术文件
   - 抽查管道补偿装置检查试验记录
@@ -5101,6 +5952,143 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R55-01
   - AC-R55-02
+  supportRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.3.8、7.7.12
+        purpose: 支吊架的制作检验与安装要求
+        locatorVerification: source_verified
+      reviewedScope: support_fabrication_and_installation_requirements_only
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.3.8（PDF 第 92 页，印刷页 84）与 7.7.12（PDF 第 114~115 页，印刷页 106~107）正文，已按文本层逐句核对，但未经人工签字确认
+      - 全焊透焊缝抽检"不少于 20% 且焊缝长度不小于 200 mm"是条文明列数值，直接比较；抽检部位的代表性未纳入判据
+      - 弹簧安装高度、偏置量的具体数值应符合设计文件，工具不代算，只判是否按设计调整
+      - GB/T 17116 各部分对支吊架形式与加工尺寸的具体要求未核到原文，故只判"是否符合设计文件、相关标准和产品技术文件"这一声明
+    domains:
+      supports:
+        name: 支吊架
+        requiredPaths:
+        - support.type
+        - support.location
+        - support.inspectionResult
+        checks:
+        - code: form_material_and_dimensions_match_documents
+          actualPath: support.matchesDesignAndProductDocuments
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.8.1——支吊架的形式、材质、加工尺寸及精度应符合设计文件、相关标准和产品技术文件的规定
+          verifiedBy: null
+        - code: fabrication_visual_inspection_and_deformation_corrected
+          actualPath: support.fabricationVisualAccepted
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.8.2——制作后应对焊缝进行目视检查，焊接变形应予以矫正，螺纹连接按设计要求锁紧
+          verifiedBy: null
+        - code: full_penetration_weld_ndt_ratio
+          applicabilityPath: support.fullPenetrationWeldRequired
+          actualPath: support.fullPenetrationNdtPercent
+          operator: gte
+          expected: 20
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.8.3——要求全焊透的焊缝应进行射线或超声检测，检测数量不少于 20%
+          verifiedBy: null
+        - code: full_penetration_weld_ndt_length
+          applicabilityPath: support.fullPenetrationWeldRequired
+          actualPath: support.fullPenetrationNdtLengthMm
+          operator: gte
+          expected: 200
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.8.3——要求全焊透的焊缝检测焊缝长度不小于 200 mm
+          verifiedBy: null
+        - code: rust_protection_and_alloy_marking
+          actualPath: support.rustProtectionApplied
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.3.8.4——制作合格的支吊架应进行防锈处理并妥善分类保管，合金钢支吊架应有材质标记
+          verifiedBy: null
+        - code: position_correct_and_contact_good
+          actualPath: support.positionCorrectAndContactGood
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.2——支吊架位置应正确，管子和支承面接触应良好
+          verifiedBy: null
+        - code: hanger_rod_vertical_or_offset_per_design
+          actualPath: support.hangerRodVerticalOrOffsetPerDesign
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.3——吊杆应垂直安装；要求偏置安装时，偏置量和偏置方向应符合设计文件
+          verifiedBy: null
+        - code: anchor_fixed_before_compensator_prestretch
+          applicabilityPath: support.compensatorPresent
+          actualPath: support.anchorFixedBeforePrestretch
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.4——固定支架应在补偿装置预拉伸或预压缩前固定
+          verifiedBy: null
+        - code: single_anchor_on_uncompensated_straight_run
+          applicabilityPath: support.uncompensatedStraightRun
+          actualPath: support.singleAnchorOnStraightRun
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.4——没有补偿装置的冷、热管道直管段上，不应同时安置两个或两个以上的固定支架
+          verifiedBy: null
+        - code: spring_height_adjusted_per_design
+          applicabilityPath: support.springSupportPresent
+          actualPath: support.springHeightAdjustedPerDesign
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.5——弹簧支吊架的弹簧安装高度应按设计文件规定进行调整
+          verifiedBy: null
+        - code: spring_temporary_restraint_removed_at_right_time
+          applicabilityPath: support.springSupportPresent
+          actualPath: support.temporaryRestraintRemovedAfterInsulationAndTest
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.5——弹簧支架的临时固定件应待系统安装、试压、隔热完毕后，在试车前方可拆除
+          verifiedBy: null
+        - code: welded_by_qualified_welder_without_defects
+          actualPath: support.weldedByQualifiedWelderWithoutDefects
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.6——支吊架焊接应由合格焊工施焊，不应有漏焊、欠焊或焊接裂纹；管道不应有咬边、烧穿
+          verifiedBy: null
+        - code: branch_support_does_not_restrain_main_movement
+          applicabilityPath: support.branchFromThermallyMovingMain
+          actualPath: support.branchSupportDoesNotRestrainMain
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.7——从有热位移的主管引出支管时，支管支吊架不应限制主管的位移
+          verifiedBy: null
+        - code: sliding_face_clean_without_binding
+          applicabilityPath: support.guideOrSlidingSupportPresent
+          actualPath: support.slidingFaceCleanWithoutBinding
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.8——导向或滑动支架的滑动面应洁净平整，不应有歪斜和卡涩现象
+          verifiedBy: null
+        - code: no_tack_weld_on_sliding_base_plate
+          applicabilityPath: support.guideOrSlidingSupportPresent
+          actualPath: support.noTackWeldOrInstrumentBracketOnSlidingSupport
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.7.12.8——不准许在滑动支架底板处临时点焊定位；仪表及电气的支撑件不应焊在滑动支架上
+          verifiedBy: null
   requiredEvidence:
   - 设计文件及产品技术文件
   - 抽查管道支撑件检查试验记录

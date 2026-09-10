@@ -2691,20 +2691,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R47-01
   sourceRuleId: R47
   requiredFacts:
-  - staticGrounding.constructionRecords
-  - staticGrounding.measuredResults
-  - staticGrounding.acceptanceResults
+  - r47.staticGrounding
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - evaluate_corrosion_protection
+  - evaluate_r47_static_grounding
   - validate_evidence_grounding
   parameters:
     profile: static_grounding
-    clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R47-02
@@ -2729,23 +2724,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R48-01
   sourceRuleId: R48
   requiredFacts:
-  - crossing.structure
-  - crossing.weldLayout
-  - crossing.sleeveSegments
-  - crossing.ndtCoverage
-  - design.crossingRequirements
+  - r48.weldLayout
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_sampling_requirement
-  - evaluate_pipeline_installation
+  - evaluate_r48_weld_layout
   - validate_evidence_grounding
   parameters:
     profile: crossing_weld_layout
-    clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R48-02
@@ -2809,22 +2796,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R50-01
   sourceRuleId: R50
   requiredFacts:
-  - sleeve.externalCoating
-  - sleeve.internalInsulation
-  - project.hasCathodicProtection
-  - inspection.records
+  - r50.sleeveInsulation
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_sampling_requirement
-  - evaluate_corrosion_protection
+  - evaluate_r50_sleeve_insulation
   - validate_evidence_grounding
   parameters:
     profile: sleeve_insulation
-    clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R50-02
@@ -2889,20 +2869,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R52-01
   sourceRuleId: R52
   requiredFacts:
-  - prefabrication.weldRecords
-  - prefabrication.heatTreatmentRecords
-  - prefabrication.ndtRecords
-  - prefabrication.testRecords
+  - r52.prefabrication
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_sampling_requirement
-  - evaluate_pipeline_installation
+  - extract_table_records
+  - evaluate_r52_prefabrication
   - validate_evidence_grounding
   parameters:
-    profile: site_prefabrication
-    clauseSource: frozen_standard_clause_package
+    profile: field_prefabrication
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R52-02
@@ -2926,37 +2901,30 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R53-01
   sourceRuleId: R53
-  requiredFacts: &id002
-  - installation.alignmentRecords
-  - installation.connectionMethod
-  - installation.prohibitedMethods
-  - equipment.anchorStatus
+  requiredFacts:
+  - r53.installationConnections
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_sampling_requirement
-  - evaluate_pipeline_installation
+  - evaluate_r53_installation_connections
   - validate_evidence_grounding
   parameters:
-    profile: pipe_connection
-    clauseSource: frozen_standard_clause_package
+    profile: installation_connections
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R53-02
   sourceRuleId: R53
-  requiredFacts: *id002
+  requiredFacts:
+  - r53.equipmentConnection
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - evaluate_pipeline_installation
+  - extract_table_records
+  - evaluate_r53_equipment_connection
   - validate_evidence_grounding
   parameters:
-    profile: pipe_connection
-    clauseSource: frozen_standard_clause_package
+    profile: equipment_connection
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R53-03
@@ -2981,22 +2949,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R54-01
   sourceRuleId: R54
   requiredFacts:
-  - compensator.type
-  - compensator.prestretch
-  - compensator.precompression
-  - design.compensatorRequirements
+  - r54.compensator
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_sampling_requirement
-  - evaluate_pipeline_installation
+  - evaluate_r54_compensator
   - validate_evidence_grounding
   parameters:
-    profile: compensator
-    clauseSource: frozen_standard_clause_package
+    profile: compensator_installation
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R54-02
@@ -3021,22 +2982,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R55-01
   sourceRuleId: R55
   requiredFacts:
-  - support.type
-  - support.location
-  - support.inspectionResults
-  - design.supportRequirements
+  - r55.supports
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_sampling_requirement
-  - evaluate_pipeline_installation
+  - evaluate_r55_supports
   - validate_evidence_grounding
   parameters:
-    profile: pipe_support
-    clauseSource: frozen_standard_clause_package
+    profile: support_components
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R55-02
@@ -3060,7 +3014,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R56-01
   sourceRuleId: R56
-  requiredFacts: &id003
+  requiredFacts: &id002
   - safetyAccessory.license
   - safetyAccessory.typeTest
   - safetyAccessory.qualityCertificate
@@ -3081,7 +3035,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R56-02
   sourceRuleId: R56
-  requiredFacts: *id003
+  requiredFacts: *id002
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3441,7 +3395,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R65-01
   sourceRuleId: R65
-  requiredFacts: &id004
+  requiredFacts: &id003
   - ndtReport.inventory
   - radiographicFilms.inventory
   - weldInventory.totalCount
@@ -3460,7 +3414,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R65-02
   sourceRuleId: R65
-  requiredFacts: *id004
+  requiredFacts: *id003
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3594,7 +3548,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R69-01
   sourceRuleId: R69
-  requiredFacts: &id005
+  requiredFacts: &id004
   - qualitySystemEvaluation.report
   - qualitySystemEvaluation.result
   - qualitySystemEvaluation.evaluator
@@ -3620,7 +3574,7 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R69-02
   sourceRuleId: R69
-  requiredFacts: *id005
+  requiredFacts: *id004
   tools:
   - locate_evidence_fragment
   - extract_document_fields

@@ -42,7 +42,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 109
+    assert len(BUSINESS_TOOL_NAMES) == 117
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -1393,6 +1393,14 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "evaluate_r67_leak_test_method",  # Dedicated frozen-rule cases in test_leak_test_rules.py.
     "evaluate_r63_stress_analysis",  # Dedicated frozen-rule cases in test_r63_stress_analysis.py.
     "evaluate_r68_blowing_cleaning",  # Dedicated frozen-rule cases in test_r68_blowing_cleaning.py.
+    "evaluate_r47_static_grounding",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r48_weld_layout",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r50_sleeve_insulation",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r52_prefabrication",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r53_installation_connections",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r53_equipment_connection",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r54_compensator",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
+    "evaluate_r55_supports",  # Dedicated frozen-rule cases in test_installation_domain_rules.py.
     "evaluate_r39_procedure_reference",  # Dedicated sourced pair comparison in test_r39_reference.py.
     "evaluate_r39_document_content",  # Dedicated document-kind content checks.
     "evaluate_r39_inventory_consistency",  # Dedicated cross-inventory identity checks.
