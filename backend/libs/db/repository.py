@@ -152,6 +152,10 @@ STATE_COLLECTIONS = {
     "document_ai_shadow_runs": "document_ai_shadow_runs",
     "document_audit_pipeline_comparison_runs": "document_audit_pipeline_comparison_runs",
     "model_call_attempts": "model_call_attempts",
+    # agent 读正文得出的判据事实。存成集合而不是在事实构建里现调模型，
+    # 是为了让验收重放读到当时记下的那一份——否则同一份 fixture 每跑一次
+    # 都要重新问模型，冻结判据就形同虚设。
+    "domain_judgments": "domain_judgments",
     "ocr_corrections": "ocr_corrections",
     "ocr_eval_runs": "ocr_eval_runs",
     "ocr_annotation_tasks": "ocr_annotation_tasks",
@@ -334,6 +338,7 @@ class InMemoryRepository:
         self.state.setdefault("document_ai_shadow_runs", [])
         self.state.setdefault("document_audit_pipeline_comparison_runs", [])
         self.state.setdefault("model_call_attempts", [])
+        self.state.setdefault("domain_judgments", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])

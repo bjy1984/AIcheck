@@ -72,6 +72,10 @@ def main() -> int:
     parser.add_argument("--pack-id", default="engineering_inspection_v1")
     parser.add_argument("--max-pages", type=int, default=6)
     parser.add_argument("--model", default=os.getenv("AICHECK_JUDGMENT_MODEL", "review-chat"))
+    parser.add_argument("--project-id", help="连同 --node-id、--object-id 给出时，把结果写入 state")
+    parser.add_argument("--node-id", type=int)
+    parser.add_argument("--object-id")
+    parser.add_argument("--persist", action="store_true", help="写入 domain_judgments 集合")
     args = parser.parse_args()
 
     from libs.db import repository
@@ -117,6 +121,39 @@ def main() -> int:
         "coverage": f"{len(outcome['values'])}/{len(declared_paths(spec))}",
     }
     (args.out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    if args.persist:
+        # 五个定位字段缺一不可——对不上号的判定会被 judgment_for 忽略，
+        # 写进去只会变成一条永远没人读、也没人知道没人读的记录。
+        missing = [
+            name for name, value in (
+                ("--project-id", args.project_id), ("--node-id", args.node_id),
+                ("--object-id", args.object_id),
+            ) if value in (None, "")
+        ]
+        if missing:
+            raise SystemExit("--persist 需要同时给出：" + "、".join(missing))
+        from hashlib import sha256
+
+        from libs.contracts.responses import server_time
+        from libs.review_orchestrator.domain_judgment_store import COLLECTION
+
+        identity = "|".join(str(part) for part in (
+            args.project_id, args.node_id, args.domain, args.object_id, args.document_version_id))
+        record_id = "DJ-" + sha256(identity.encode()).hexdigest()[:16].upper()
+        rows = repository.repo.state.setdefault(COLLECTION, [])
+        # 同一个对象重跑要替换上一次，不能并存：judgment_for 命中两条就当来源
+        # 含糊、一条都不给，那等于把这次调用的钱白花了。
+        rows[:] = [row for row in rows if row.get("id") != record_id]
+        rows.append({
+            "id": record_id,
+            "projectId": args.project_id, "nodeId": args.node_id, "domain": args.domain,
+            "objectId": args.object_id, "recordVersionId": args.document_version_id,
+            "values": outcome["values"], "evidenceRefs": outcome["evidenceRefs"],
+            "rejected": outcome["rejected"], "model": response.get("model"),
+            "createdAt": server_time(),
+        })
+        repository.flush_state({COLLECTION})
+        report["persisted"] = True
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

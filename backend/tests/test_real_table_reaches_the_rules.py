@@ -77,3 +77,28 @@ def test_an_unrelated_real_table_is_not_dragged_in():
     state, run = state_and_run(rows=unrelated)
     rows = read_ndt_tables(state, run, {"material_certificate_domains": "domains"}, node_id=43)["domains"]
     assert rows == []
+
+
+def test_an_agent_judgment_completes_the_row_without_calling_a_model():
+    """第 3 层的产出是记在 state 里的证据；事实构建只读它，不调模型。"""
+    from libs.review_orchestrator.domain_judgment_store import COLLECTION
+
+    state, run = state_and_run()
+    state[COLLECTION] = [
+        {
+            "projectId": "P1", "nodeId": 43, "domain": "materialCertificate",
+            "objectId": "20260213951", "recordVersionId": "MAT-V1",
+            "values": {
+                "certificate.certificatesAndMarksReviewed": True,
+                "certificate.gradeMatchesSpecification": True,
+            },
+            "evidenceRefs": [{"documentVersionId": "MAT-V1", "pageNo": 1, "quotedText": "已审阅"}],
+            "rejected": [],
+        }
+    ]
+    facts = build_r43_business_facts(state, run)["r43"]["materialCertificate"]
+    certificate = facts["domains"][0]["certificate"]
+    # 表格给的值仍在，agent 给的判断补上了。
+    assert certificate["documentNo"] == "20260213951"
+    assert certificate["materialGrade"] == "S30408"
+    assert certificate["certificatesAndMarksReviewed"] is True

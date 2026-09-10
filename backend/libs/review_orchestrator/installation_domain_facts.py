@@ -5,6 +5,7 @@
 """
 from copy import deepcopy
 
+from libs.review_orchestrator.domain_judgment_store import judgment_for, merge_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.source_coverage import selected_source_issues
 from libs.review_tools.installation_domain_rules import SCOPE_FIELDS, frozen_installation_rules
@@ -46,7 +47,12 @@ def _build(node_id, state, run):
             return {namespace: {fact_key: {"projectId": run["projectId"], "scope": None, "standardRules": {},
                                            "domains": [], "selectionIssues": deepcopy(issues),
                                            "sourceIssues": [f"{namespace}_source_object_conflict"]}}}
-        domains.append(deepcopy(row))
+        # agent 读正文得出的判断（若有）并进来；表格里已有的值不被覆盖。
+        # 这些判断是此前记进 state 的证据，不是这里现调模型——事实构建保持离线。
+        domains.append(merge_judgment(deepcopy(row), judgment_for(
+            state, project_id=run.get("projectId"), node_id=node_id, domain=fact_key,
+            object_id=row.get("objectId"), record_version_id=row.get("recordVersionId"),
+        )))
     return {namespace: {fact_key: {"projectId": run["projectId"], "scope": deepcopy(scope), "domains": domains,
                                    "standardRules": frozen_installation_rules(tool_name, run),
                                    "selectionIssues": deepcopy(issues)}}}
