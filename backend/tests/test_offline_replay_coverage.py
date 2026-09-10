@@ -51,3 +51,31 @@ def test_the_rules_without_fact_builders_are_the_only_remaining_gap():
     assert covered <= all_rules
     # 有构建器的都能重放（上面那条测的），所以缺口就等于没有构建器的那些。
     assert len(all_rules) - len(covered) == len(all_rules - covered)
+
+
+def test_a_registered_fact_builder_builds_facts_with_the_network_cut(monkeypatch):
+    """重放的确定性取决于工具**和**事实构建器，之前只守住了工具那一半。
+
+    先试过用导入闭包来查，结论是**这个办法在这里没用**：每个构建器都经
+    runtime_tools（工具总目录，它导入全部工具）连到 r12_registry 再到
+    cnse_client，于是所有模块都"有网络依赖"，测了等于没测。能不能 import 到一个
+    客户端，和建事实时会不会真去调它，是两回事。
+
+    所以改成运行时验证：把 socket 掐掉再建一次事实。真去连网的构建器会当场炸，
+    只是把客户端 import 进来的则不受影响。
+    """
+    import socket
+
+    from libs.review_orchestrator.installation_domain_facts import build_r43_business_facts
+    from test_real_table_reaches_the_rules import state_and_run
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("事实构建期间尝试建立网络连接；重放将不再确定")
+
+    monkeypatch.setattr(socket, "socket", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+
+    state, run = state_and_run()
+    facts = build_r43_business_facts(state, run)["r43"]["materialCertificate"]
+    # 断网还能把真实表格的值建出来，才算真的离线。
+    assert facts["domains"][0]["certificate"]["documentNo"] == "20260213951"
