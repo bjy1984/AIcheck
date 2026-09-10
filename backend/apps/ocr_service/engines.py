@@ -530,7 +530,7 @@ class PpStructureEngine(LocalOcrEngine):
 
 class OpenCvTableGridSubprocessEngine(LocalOcrEngine):
     name = "opencv_table_grid_subprocess"
-    version = "opencv-grid@2"
+    version = "opencv-grid@3"
 
     def available(self) -> bool:
         if not env_bool("AICHECK_ENABLE_OPENCV_TABLE_GRID", True):
@@ -708,6 +708,26 @@ class OpenCvTableGridSubprocessEngine(LocalOcrEngine):
                 "sourceEngine": "opencv_table_grid_subprocess",
                 "qualityFlags": ["opencv_grid_structure"],
             }
+            # Closed contours preserve merged cells that global x/y intervals split.
+            horizontal = cv2.morphologyEx(adaptive, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (50, 1)))
+            vertical = cv2.morphologyEx(adaptive, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50)))
+            borders = cv2.dilate(horizontal | vertical, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+            contours, hierarchy = cv2.findContours(borders, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+            closed_cells = []
+            if hierarchy is not None:
+                for index, contour in enumerate(contours):
+                    if hierarchy[0][index][3] < 0:
+                        continue
+                    x, y, w, h = cv2.boundingRect(contour)
+                    if w > 35 and h > 20:
+                        if len(closed_cells) >= max_cells:
+                            closed_cells = []
+                            diagnostics.append({"code": "OPENCV_CLOSED_CELLS_TRUNCATED", "level": "warning", "message": "closed cell limit exceeded; field joins disabled"})
+                            break
+                        closed_cells.append({"cellId": f"closed_{index}", "bbox": [x, y, x + w, y + h]})
+            table["closedCells"] = closed_cells
+            table["closedCellsCoordinateSystem"] = "pixel"
+            table["closedCellsTableBBox"] = list(table["bbox"])
             print(json.dumps({"ok": True, "tables": [table], "diagnostics": diagnostics}, ensure_ascii=False))
             """
         )

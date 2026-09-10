@@ -1,0 +1,1876 @@
+{
+  "source": "test2/9.1金辉焊接工艺评定20.pdf",
+  "page": 11,
+  "renderDpi": 180,
+  "imageSize": [
+    1490,
+    2105
+  ],
+  "engineVersion": "opencv-grid@3",
+  "closedCellCount": 195,
+  "fields": [
+    {
+      "fieldCode": "report_date",
+      "fieldName": "报告日期",
+      "fieldValue": "2023年10月 23日",
+      "pageNo": 11,
+      "bbox": [
+        948.4599658698769,
+        1847.9941862504147,
+        1275.8316089362831,
+        1878.5901154632477
+      ],
+      "coordinateSystem": "pixel",
+      "sourceCoordinateSystem": null,
+      "coordinateTransform": null,
+      "coordinateTransformStatus": null,
+      "qualityFlags": [],
+      "variantId": null,
+      "selectedVariantId": null,
+      "confidence": 0.5,
+      "extractionMethod": "profile_heuristic",
+      "sourceEngine": "apple_vision_local"
+    },
+    {
+      "fieldCode": "report_no",
+      "fieldName": "报告编号",
+      "fieldValue": "2023SHZH-022RTBG-01",
+      "pageNo": 11,
+      "bbox": [
+        798.0,
+        364.0,
+        958.0,
+        444.0
+      ],
+      "coordinateSystem": "pixel",
+      "sourceCoordinateSystem": null,
+      "coordinateTransform": null,
+      "coordinateTransformStatus": null,
+      "qualityFlags": [
+        "layout_join_requires_source_review"
+      ],
+      "variantId": null,
+      "selectedVariantId": null,
+      "confidence": 1,
+      "extractionMethod": "closed_cell_line_join",
+      "sourceEngine": "apple_vision_local",
+      "sourceFragments": [
+        {
+          "text": "2023SHZH-0",
+          "pageNo": 11,
+          "bbox": [
+            807.3463770765495,
+            365.5132512296214,
+            948.8343226331903,
+            402.4445973331846
+          ],
+          "confidence": 1,
+          "sourceEngine": "apple_vision_local",
+          "coordinateSystem": "pixel"
+        },
+        {
+          "text": "22RTBG-01",
+          "pageNo": 11,
+          "bbox": [
+            813.7560140679526,
+            412.6683363699104,
+            936.3055898736166,
+            440.95811779272026
+          ],
+          "confidence": 1,
+          "sourceEngine": "apple_vision_local",
+          "coordinateSystem": "pixel"
+        }
+      ],
+      "sourceTableId": "opencv_grid_table_1",
+      "sourceCellId": "closed_198"
+    }
+  ],
+  "tables": [
+    {
+      "tableId": "opencv_grid_table_1",
+      "pageNo": 11,
+      "bbox": [
+        147,
+        191,
+        1406,
+        1879
+      ],
+      "gridDetection": {
+        "lineSource": "adaptive_sensitive",
+        "kernelDivisor": 240,
+        "thresholds": {
+          "yRatio": 0.035,
+          "xRatio": 0.05
+        },
+        "candidateCount": 4,
+        "score": 461.3095
+      },
+      "sourceEngine": "opencv_table_grid_subprocess",
+      "closedCells": [
+        {
+          "cellId": "closed_10",
+          "bbox": [
+            940,
+            1763,
+            1394,
+            1885
+          ]
+        },
+        {
+          "cellId": "closed_11",
+          "bbox": [
+            498,
+            1756,
+            939,
+            1879
+          ]
+        },
+        {
+          "cellId": "closed_12",
+          "bbox": [
+            137,
+            1750,
+            497,
+            1873
+          ]
+        },
+        {
+          "cellId": "closed_13",
+          "bbox": [
+            1259,
+            1715,
+            1395,
+            1764
+          ]
+        },
+        {
+          "cellId": "closed_14",
+          "bbox": [
+            1122,
+            1712,
+            1257,
+            1762
+          ]
+        },
+        {
+          "cellId": "closed_15",
+          "bbox": [
+            1046,
+            1711,
+            1120,
+            1760
+          ]
+        },
+        {
+          "cellId": "closed_16",
+          "bbox": [
+            942,
+            1710,
+            1044,
+            1759
+          ]
+        },
+        {
+          "cellId": "closed_17",
+          "bbox": [
+            780,
+            1707,
+            940,
+            1758
+          ]
+        },
+        {
+          "cellId": "closed_18",
+          "bbox": [
+            635,
+            1705,
+            778,
+            1756
+          ]
+        },
+        {
+          "cellId": "closed_19",
+          "bbox": [
+            500,
+            1703,
+            633,
+            1754
+          ]
+        },
+        {
+          "cellId": "closed_20",
+          "bbox": [
+            139,
+            1697,
+            498,
+            1751
+          ]
+        },
+        {
+          "cellId": "closed_21",
+          "bbox": [
+            1259,
+            1661,
+            1395,
+            1713
+          ]
+        },
+        {
+          "cellId": "closed_22",
+          "bbox": [
+            1123,
+            1659,
+            1257,
+            1711
+          ]
+        },
+        {
+          "cellId": "closed_23",
+          "bbox": [
+            942,
+            1657,
+            1121,
+            1709
+          ]
+        },
+        {
+          "cellId": "closed_24",
+          "bbox": [
+            781,
+            1655,
+            940,
+            1707
+          ]
+        },
+        {
+          "cellId": "closed_25",
+          "bbox": [
+            636,
+            1652,
+            779,
+            1705
+          ]
+        },
+        {
+          "cellId": "closed_26",
+          "bbox": [
+            501,
+            1650,
+            634,
+            1702
+          ]
+        },
+        {
+          "cellId": "closed_27",
+          "bbox": [
+            139,
+            1644,
+            499,
+            1700
+          ]
+        },
+        {
+          "cellId": "closed_28",
+          "bbox": [
+            1260,
+            1612,
+            1396,
+            1660
+          ]
+        },
+        {
+          "cellId": "closed_29",
+          "bbox": [
+            1123,
+            1610,
+            1258,
+            1659
+          ]
+        },
+        {
+          "cellId": "closed_30",
+          "bbox": [
+            943,
+            1607,
+            1122,
+            1657
+          ]
+        },
+        {
+          "cellId": "closed_31",
+          "bbox": [
+            782,
+            1605,
+            941,
+            1654
+          ]
+        },
+        {
+          "cellId": "closed_32",
+          "bbox": [
+            636,
+            1602,
+            780,
+            1652
+          ]
+        },
+        {
+          "cellId": "closed_33",
+          "bbox": [
+            501,
+            1599,
+            635,
+            1650
+          ]
+        },
+        {
+          "cellId": "closed_34",
+          "bbox": [
+            140,
+            1594,
+            500,
+            1648
+          ]
+        },
+        {
+          "cellId": "closed_35",
+          "bbox": [
+            1261,
+            1560,
+            1397,
+            1611
+          ]
+        },
+        {
+          "cellId": "closed_36",
+          "bbox": [
+            1124,
+            1558,
+            1259,
+            1609
+          ]
+        },
+        {
+          "cellId": "closed_37",
+          "bbox": [
+            944,
+            1556,
+            1122,
+            1607
+          ]
+        },
+        {
+          "cellId": "closed_38",
+          "bbox": [
+            783,
+            1555,
+            942,
+            1604
+          ]
+        },
+        {
+          "cellId": "closed_39",
+          "bbox": [
+            637,
+            1553,
+            781,
+            1601
+          ]
+        },
+        {
+          "cellId": "closed_40",
+          "bbox": [
+            502,
+            1551,
+            635,
+            1599
+          ]
+        },
+        {
+          "cellId": "closed_41",
+          "bbox": [
+            141,
+            1545,
+            500,
+            1597
+          ]
+        },
+        {
+          "cellId": "closed_42",
+          "bbox": [
+            1261,
+            1511,
+            1397,
+            1559
+          ]
+        },
+        {
+          "cellId": "closed_43",
+          "bbox": [
+            1125,
+            1509,
+            1259,
+            1557
+          ]
+        },
+        {
+          "cellId": "closed_44",
+          "bbox": [
+            944,
+            1507,
+            1123,
+            1556
+          ]
+        },
+        {
+          "cellId": "closed_45",
+          "bbox": [
+            783,
+            1505,
+            942,
+            1554
+          ]
+        },
+        {
+          "cellId": "closed_46",
+          "bbox": [
+            638,
+            1503,
+            781,
+            1552
+          ]
+        },
+        {
+          "cellId": "closed_47",
+          "bbox": [
+            503,
+            1501,
+            636,
+            1550
+          ]
+        },
+        {
+          "cellId": "closed_48",
+          "bbox": [
+            142,
+            1496,
+            501,
+            1548
+          ]
+        },
+        {
+          "cellId": "closed_49",
+          "bbox": [
+            1262,
+            1461,
+            1398,
+            1511
+          ]
+        },
+        {
+          "cellId": "closed_50",
+          "bbox": [
+            1125,
+            1459,
+            1260,
+            1509
+          ]
+        },
+        {
+          "cellId": "closed_51",
+          "bbox": [
+            945,
+            1456,
+            1123,
+            1506
+          ]
+        },
+        {
+          "cellId": "closed_52",
+          "bbox": [
+            784,
+            1453,
+            943,
+            1504
+          ]
+        },
+        {
+          "cellId": "closed_53",
+          "bbox": [
+            639,
+            1451,
+            782,
+            1502
+          ]
+        },
+        {
+          "cellId": "closed_54",
+          "bbox": [
+            504,
+            1449,
+            637,
+            1501
+          ]
+        },
+        {
+          "cellId": "closed_55",
+          "bbox": [
+            142,
+            1443,
+            502,
+            1499
+          ]
+        },
+        {
+          "cellId": "closed_56",
+          "bbox": [
+            1262,
+            1409,
+            1399,
+            1460
+          ]
+        },
+        {
+          "cellId": "closed_57",
+          "bbox": [
+            1126,
+            1407,
+            1261,
+            1458
+          ]
+        },
+        {
+          "cellId": "closed_58",
+          "bbox": [
+            946,
+            1404,
+            1124,
+            1456
+          ]
+        },
+        {
+          "cellId": "closed_59",
+          "bbox": [
+            784,
+            1402,
+            944,
+            1453
+          ]
+        },
+        {
+          "cellId": "closed_60",
+          "bbox": [
+            639,
+            1400,
+            783,
+            1451
+          ]
+        },
+        {
+          "cellId": "closed_61",
+          "bbox": [
+            504,
+            1398,
+            637,
+            1448
+          ]
+        },
+        {
+          "cellId": "closed_62",
+          "bbox": [
+            143,
+            1392,
+            502,
+            1446
+          ]
+        },
+        {
+          "cellId": "closed_63",
+          "bbox": [
+            1263,
+            1358,
+            1400,
+            1409
+          ]
+        },
+        {
+          "cellId": "closed_64",
+          "bbox": [
+            1127,
+            1356,
+            1262,
+            1406
+          ]
+        },
+        {
+          "cellId": "closed_65",
+          "bbox": [
+            946,
+            1353,
+            1125,
+            1404
+          ]
+        },
+        {
+          "cellId": "closed_66",
+          "bbox": [
+            785,
+            1351,
+            945,
+            1402
+          ]
+        },
+        {
+          "cellId": "closed_67",
+          "bbox": [
+            640,
+            1348,
+            783,
+            1400
+          ]
+        },
+        {
+          "cellId": "closed_68",
+          "bbox": [
+            505,
+            1346,
+            638,
+            1398
+          ]
+        },
+        {
+          "cellId": "closed_69",
+          "bbox": [
+            144,
+            1340,
+            503,
+            1395
+          ]
+        },
+        {
+          "cellId": "closed_70",
+          "bbox": [
+            1264,
+            1307,
+            1400,
+            1358
+          ]
+        },
+        {
+          "cellId": "closed_71",
+          "bbox": [
+            1127,
+            1305,
+            1262,
+            1355
+          ]
+        },
+        {
+          "cellId": "closed_72",
+          "bbox": [
+            947,
+            1302,
+            1125,
+            1353
+          ]
+        },
+        {
+          "cellId": "closed_73",
+          "bbox": [
+            786,
+            1300,
+            945,
+            1350
+          ]
+        },
+        {
+          "cellId": "closed_74",
+          "bbox": [
+            640,
+            1297,
+            784,
+            1348
+          ]
+        },
+        {
+          "cellId": "closed_75",
+          "bbox": [
+            506,
+            1295,
+            639,
+            1346
+          ]
+        },
+        {
+          "cellId": "closed_76",
+          "bbox": [
+            144,
+            1289,
+            504,
+            1343
+          ]
+        },
+        {
+          "cellId": "closed_77",
+          "bbox": [
+            1265,
+            1257,
+            1401,
+            1306
+          ]
+        },
+        {
+          "cellId": "closed_78",
+          "bbox": [
+            1128,
+            1255,
+            1263,
+            1304
+          ]
+        },
+        {
+          "cellId": "closed_79",
+          "bbox": [
+            948,
+            1253,
+            1126,
+            1302
+          ]
+        },
+        {
+          "cellId": "closed_80",
+          "bbox": [
+            787,
+            1250,
+            946,
+            1299
+          ]
+        },
+        {
+          "cellId": "closed_81",
+          "bbox": [
+            641,
+            1247,
+            785,
+            1297
+          ]
+        },
+        {
+          "cellId": "closed_82",
+          "bbox": [
+            506,
+            1245,
+            639,
+            1295
+          ]
+        },
+        {
+          "cellId": "closed_83",
+          "bbox": [
+            145,
+            1238,
+            504,
+            1293
+          ]
+        },
+        {
+          "cellId": "closed_84",
+          "bbox": [
+            1266,
+            1206,
+            1401,
+            1256
+          ]
+        },
+        {
+          "cellId": "closed_85",
+          "bbox": [
+            1129,
+            1204,
+            1264,
+            1254
+          ]
+        },
+        {
+          "cellId": "closed_86",
+          "bbox": [
+            948,
+            1201,
+            1127,
+            1252
+          ]
+        },
+        {
+          "cellId": "closed_87",
+          "bbox": [
+            787,
+            1200,
+            947,
+            1249
+          ]
+        },
+        {
+          "cellId": "closed_88",
+          "bbox": [
+            642,
+            1197,
+            785,
+            1247
+          ]
+        },
+        {
+          "cellId": "closed_89",
+          "bbox": [
+            507,
+            1195,
+            640,
+            1244
+          ]
+        },
+        {
+          "cellId": "closed_90",
+          "bbox": [
+            145,
+            1190,
+            505,
+            1242
+          ]
+        },
+        {
+          "cellId": "closed_91",
+          "bbox": [
+            1266,
+            1156,
+            1402,
+            1205
+          ]
+        },
+        {
+          "cellId": "closed_92",
+          "bbox": [
+            1129,
+            1154,
+            1264,
+            1203
+          ]
+        },
+        {
+          "cellId": "closed_93",
+          "bbox": [
+            949,
+            1152,
+            1128,
+            1201
+          ]
+        },
+        {
+          "cellId": "closed_94",
+          "bbox": [
+            788,
+            1149,
+            947,
+            1199
+          ]
+        },
+        {
+          "cellId": "closed_95",
+          "bbox": [
+            643,
+            1146,
+            786,
+            1197
+          ]
+        },
+        {
+          "cellId": "closed_96",
+          "bbox": [
+            507,
+            1144,
+            641,
+            1195
+          ]
+        },
+        {
+          "cellId": "closed_97",
+          "bbox": [
+            146,
+            1139,
+            506,
+            1193
+          ]
+        },
+        {
+          "cellId": "closed_98",
+          "bbox": [
+            1267,
+            1106,
+            1402,
+            1156
+          ]
+        },
+        {
+          "cellId": "closed_99",
+          "bbox": [
+            1130,
+            1104,
+            1265,
+            1153
+          ]
+        },
+        {
+          "cellId": "closed_100",
+          "bbox": [
+            950,
+            1101,
+            1128,
+            1152
+          ]
+        },
+        {
+          "cellId": "closed_101",
+          "bbox": [
+            789,
+            1099,
+            948,
+            1149
+          ]
+        },
+        {
+          "cellId": "closed_102",
+          "bbox": [
+            643,
+            1097,
+            787,
+            1146
+          ]
+        },
+        {
+          "cellId": "closed_103",
+          "bbox": [
+            508,
+            1094,
+            641,
+            1144
+          ]
+        },
+        {
+          "cellId": "closed_104",
+          "bbox": [
+            147,
+            1088,
+            506,
+            1142
+          ]
+        },
+        {
+          "cellId": "closed_105",
+          "bbox": [
+            1268,
+            1053,
+            1403,
+            1105
+          ]
+        },
+        {
+          "cellId": "closed_106",
+          "bbox": [
+            1131,
+            1052,
+            1265,
+            1103
+          ]
+        },
+        {
+          "cellId": "closed_107",
+          "bbox": [
+            951,
+            1049,
+            1129,
+            1101
+          ]
+        },
+        {
+          "cellId": "closed_108",
+          "bbox": [
+            789,
+            1046,
+            949,
+            1099
+          ]
+        },
+        {
+          "cellId": "closed_109",
+          "bbox": [
+            644,
+            1044,
+            787,
+            1096
+          ]
+        },
+        {
+          "cellId": "closed_110",
+          "bbox": [
+            509,
+            1041,
+            642,
+            1094
+          ]
+        },
+        {
+          "cellId": "closed_111",
+          "bbox": [
+            148,
+            1035,
+            507,
+            1092
+          ]
+        },
+        {
+          "cellId": "closed_112",
+          "bbox": [
+            1268,
+            1002,
+            1404,
+            1053
+          ]
+        },
+        {
+          "cellId": "closed_113",
+          "bbox": [
+            1131,
+            1001,
+            1266,
+            1051
+          ]
+        },
+        {
+          "cellId": "closed_114",
+          "bbox": [
+            951,
+            998,
+            1129,
+            1049
+          ]
+        },
+        {
+          "cellId": "closed_115",
+          "bbox": [
+            790,
+            995,
+            949,
+            1046
+          ]
+        },
+        {
+          "cellId": "closed_116",
+          "bbox": [
+            645,
+            993,
+            788,
+            1043
+          ]
+        },
+        {
+          "cellId": "closed_117",
+          "bbox": [
+            510,
+            991,
+            643,
+            1041
+          ]
+        },
+        {
+          "cellId": "closed_118",
+          "bbox": [
+            148,
+            984,
+            508,
+            1039
+          ]
+        },
+        {
+          "cellId": "closed_119",
+          "bbox": [
+            1269,
+            951,
+            1404,
+            1002
+          ]
+        },
+        {
+          "cellId": "closed_120",
+          "bbox": [
+            1132,
+            949,
+            1267,
+            1000
+          ]
+        },
+        {
+          "cellId": "closed_121",
+          "bbox": [
+            952,
+            946,
+            1130,
+            998
+          ]
+        },
+        {
+          "cellId": "closed_122",
+          "bbox": [
+            791,
+            944,
+            950,
+            995
+          ]
+        },
+        {
+          "cellId": "closed_123",
+          "bbox": [
+            645,
+            941,
+            789,
+            993
+          ]
+        },
+        {
+          "cellId": "closed_124",
+          "bbox": [
+            511,
+            939,
+            643,
+            990
+          ]
+        },
+        {
+          "cellId": "closed_125",
+          "bbox": [
+            149,
+            933,
+            508,
+            988
+          ]
+        },
+        {
+          "cellId": "closed_126",
+          "bbox": [
+            1270,
+            901,
+            1405,
+            951
+          ]
+        },
+        {
+          "cellId": "closed_127",
+          "bbox": [
+            1133,
+            899,
+            1267,
+            949
+          ]
+        },
+        {
+          "cellId": "closed_128",
+          "bbox": [
+            953,
+            896,
+            1131,
+            946
+          ]
+        },
+        {
+          "cellId": "closed_129",
+          "bbox": [
+            791,
+            894,
+            950,
+            944
+          ]
+        },
+        {
+          "cellId": "closed_130",
+          "bbox": [
+            646,
+            891,
+            789,
+            941
+          ]
+        },
+        {
+          "cellId": "closed_131",
+          "bbox": [
+            511,
+            889,
+            644,
+            939
+          ]
+        },
+        {
+          "cellId": "closed_132",
+          "bbox": [
+            150,
+            882,
+            509,
+            936
+          ]
+        },
+        {
+          "cellId": "closed_133",
+          "bbox": [
+            1270,
+            850,
+            1406,
+            900
+          ]
+        },
+        {
+          "cellId": "closed_134",
+          "bbox": [
+            1134,
+            847,
+            1268,
+            898
+          ]
+        },
+        {
+          "cellId": "closed_135",
+          "bbox": [
+            953,
+            845,
+            1132,
+            896
+          ]
+        },
+        {
+          "cellId": "closed_136",
+          "bbox": [
+            792,
+            843,
+            951,
+            894
+          ]
+        },
+        {
+          "cellId": "closed_137",
+          "bbox": [
+            647,
+            840,
+            790,
+            891
+          ]
+        },
+        {
+          "cellId": "closed_138",
+          "bbox": [
+            512,
+            838,
+            645,
+            889
+          ]
+        },
+        {
+          "cellId": "closed_139",
+          "bbox": [
+            150,
+            832,
+            510,
+            886
+          ]
+        },
+        {
+          "cellId": "closed_140",
+          "bbox": [
+            1271,
+            793,
+            1407,
+            849
+          ]
+        },
+        {
+          "cellId": "closed_141",
+          "bbox": [
+            1134,
+            791,
+            1269,
+            847
+          ]
+        },
+        {
+          "cellId": "closed_142",
+          "bbox": [
+            954,
+            788,
+            1132,
+            844
+          ]
+        },
+        {
+          "cellId": "closed_143",
+          "bbox": [
+            793,
+            786,
+            952,
+            842
+          ]
+        },
+        {
+          "cellId": "closed_144",
+          "bbox": [
+            647,
+            784,
+            791,
+            840
+          ]
+        },
+        {
+          "cellId": "closed_145",
+          "bbox": [
+            512,
+            782,
+            645,
+            838
+          ]
+        },
+        {
+          "cellId": "closed_146",
+          "bbox": [
+            312,
+            778,
+            511,
+            835
+          ]
+        },
+        {
+          "cellId": "closed_147",
+          "bbox": [
+            151,
+            775,
+            309,
+            832
+          ]
+        },
+        {
+          "cellId": "closed_148",
+          "bbox": [
+            1272,
+            735,
+            1408,
+            792
+          ]
+        },
+        {
+          "cellId": "closed_149",
+          "bbox": [
+            1135,
+            733,
+            1270,
+            790
+          ]
+        },
+        {
+          "cellId": "closed_150",
+          "bbox": [
+            955,
+            731,
+            1133,
+            788
+          ]
+        },
+        {
+          "cellId": "closed_151",
+          "bbox": [
+            794,
+            728,
+            953,
+            786
+          ]
+        },
+        {
+          "cellId": "closed_152",
+          "bbox": [
+            648,
+            725,
+            792,
+            783
+          ]
+        },
+        {
+          "cellId": "closed_153",
+          "bbox": [
+            513,
+            723,
+            646,
+            781
+          ]
+        },
+        {
+          "cellId": "closed_154",
+          "bbox": [
+            312,
+            720,
+            511,
+            779
+          ]
+        },
+        {
+          "cellId": "closed_155",
+          "bbox": [
+            152,
+            717,
+            310,
+            776
+          ]
+        },
+        {
+          "cellId": "closed_156",
+          "bbox": [
+            1272,
+            680,
+            1409,
+            735
+          ]
+        },
+        {
+          "cellId": "closed_157",
+          "bbox": [
+            1136,
+            678,
+            1271,
+            733
+          ]
+        },
+        {
+          "cellId": "closed_158",
+          "bbox": [
+            956,
+            675,
+            1134,
+            730
+          ]
+        },
+        {
+          "cellId": "closed_159",
+          "bbox": [
+            794,
+            672,
+            954,
+            728
+          ]
+        },
+        {
+          "cellId": "closed_160",
+          "bbox": [
+            649,
+            669,
+            793,
+            725
+          ]
+        },
+        {
+          "cellId": "closed_161",
+          "bbox": [
+            514,
+            667,
+            647,
+            723
+          ]
+        },
+        {
+          "cellId": "closed_162",
+          "bbox": [
+            313,
+            663,
+            512,
+            721
+          ]
+        },
+        {
+          "cellId": "closed_163",
+          "bbox": [
+            153,
+            660,
+            311,
+            718
+          ]
+        },
+        {
+          "cellId": "closed_164",
+          "bbox": [
+            1273,
+            623,
+            1409,
+            680
+          ]
+        },
+        {
+          "cellId": "closed_165",
+          "bbox": [
+            1137,
+            621,
+            1271,
+            677
+          ]
+        },
+        {
+          "cellId": "closed_166",
+          "bbox": [
+            956,
+            618,
+            1135,
+            675
+          ]
+        },
+        {
+          "cellId": "closed_167",
+          "bbox": [
+            795,
+            615,
+            954,
+            672
+          ]
+        },
+        {
+          "cellId": "closed_168",
+          "bbox": [
+            650,
+            613,
+            794,
+            669
+          ]
+        },
+        {
+          "cellId": "closed_169",
+          "bbox": [
+            515,
+            610,
+            648,
+            666
+          ]
+        },
+        {
+          "cellId": "closed_170",
+          "bbox": [
+            314,
+            607,
+            513,
+            664
+          ]
+        },
+        {
+          "cellId": "closed_171",
+          "bbox": [
+            153,
+            603,
+            312,
+            660
+          ]
+        },
+        {
+          "cellId": "closed_172",
+          "bbox": [
+            1274,
+            566,
+            1410,
+            623
+          ]
+        },
+        {
+          "cellId": "closed_173",
+          "bbox": [
+            1137,
+            563,
+            1272,
+            620
+          ]
+        },
+        {
+          "cellId": "closed_174",
+          "bbox": [
+            957,
+            560,
+            1136,
+            618
+          ]
+        },
+        {
+          "cellId": "closed_175",
+          "bbox": [
+            796,
+            558,
+            955,
+            615
+          ]
+        },
+        {
+          "cellId": "closed_176",
+          "bbox": [
+            650,
+            555,
+            794,
+            613
+          ]
+        },
+        {
+          "cellId": "closed_177",
+          "bbox": [
+            515,
+            553,
+            649,
+            610
+          ]
+        },
+        {
+          "cellId": "closed_178",
+          "bbox": [
+            315,
+            549,
+            514,
+            608
+          ]
+        },
+        {
+          "cellId": "closed_179",
+          "bbox": [
+            154,
+            546,
+            313,
+            604
+          ]
+        },
+        {
+          "cellId": "closed_180",
+          "bbox": [
+            1275,
+            510,
+            1411,
+            565
+          ]
+        },
+        {
+          "cellId": "closed_181",
+          "bbox": [
+            1138,
+            508,
+            1273,
+            562
+          ]
+        },
+        {
+          "cellId": "closed_182",
+          "bbox": [
+            958,
+            505,
+            1136,
+            561
+          ]
+        },
+        {
+          "cellId": "closed_183",
+          "bbox": [
+            797,
+            503,
+            956,
+            558
+          ]
+        },
+        {
+          "cellId": "closed_184",
+          "bbox": [
+            651,
+            501,
+            795,
+            555
+          ]
+        },
+        {
+          "cellId": "closed_185",
+          "bbox": [
+            516,
+            497,
+            650,
+            552
+          ]
+        },
+        {
+          "cellId": "closed_186",
+          "bbox": [
+            315,
+            493,
+            515,
+            550
+          ]
+        },
+        {
+          "cellId": "closed_187",
+          "bbox": [
+            155,
+            490,
+            314,
+            546
+          ]
+        },
+        {
+          "cellId": "closed_188",
+          "bbox": [
+            1275,
+            453,
+            1411,
+            510
+          ]
+        },
+        {
+          "cellId": "closed_189",
+          "bbox": [
+            1139,
+            451,
+            1273,
+            507
+          ]
+        },
+        {
+          "cellId": "closed_190",
+          "bbox": [
+            959,
+            447,
+            1137,
+            505
+          ]
+        },
+        {
+          "cellId": "closed_191",
+          "bbox": [
+            798,
+            445,
+            957,
+            502
+          ]
+        },
+        {
+          "cellId": "closed_192",
+          "bbox": [
+            652,
+            442,
+            796,
+            500
+          ]
+        },
+        {
+          "cellId": "closed_193",
+          "bbox": [
+            517,
+            439,
+            650,
+            497
+          ]
+        },
+        {
+          "cellId": "closed_194",
+          "bbox": [
+            316,
+            435,
+            515,
+            494
+          ]
+        },
+        {
+          "cellId": "closed_195",
+          "bbox": [
+            156,
+            432,
+            315,
+            490
+          ]
+        },
+        {
+          "cellId": "closed_196",
+          "bbox": [
+            1140,
+            371,
+            1413,
+            453
+          ]
+        },
+        {
+          "cellId": "closed_197",
+          "bbox": [
+            960,
+            368,
+            1138,
+            448
+          ]
+        },
+        {
+          "cellId": "closed_198",
+          "bbox": [
+            798,
+            364,
+            958,
+            444
+          ]
+        },
+        {
+          "cellId": "closed_199",
+          "bbox": [
+            653,
+            362,
+            797,
+            442
+          ]
+        },
+        {
+          "cellId": "closed_200",
+          "bbox": [
+            317,
+            355,
+            652,
+            439
+          ]
+        },
+        {
+          "cellId": "closed_201",
+          "bbox": [
+            157,
+            352,
+            316,
+            432
+          ]
+        },
+        {
+          "cellId": "closed_202",
+          "bbox": [
+            961,
+            197,
+            1416,
+            374
+          ]
+        },
+        {
+          "cellId": "closed_203",
+          "bbox": [
+            519,
+            188,
+            961,
+            365
+          ]
+        },
+        {
+          "cellId": "closed_204",
+          "bbox": [
+            158,
+            180,
+            519,
+            357
+          ]
+        }
+      ],
+      "closedCellsCoordinateSystem": "pixel",
+      "closedCellsTableBBox": [
+        147,
+        191,
+        1406,
+        1879
+      ]
+    }
+  ]
+}

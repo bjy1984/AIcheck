@@ -1,5 +1,6 @@
 """Read explicit NDT labels without inferring conclusions or joining unrelated cells."""
 from libs.ocr.ndt_procedure import extract_explicit_fields
+from libs.ocr.ndt_table_fields import extract_closed_cell_report_number
 
 LABELS = {
     "report_no": ["报告编号", "报告号"],
@@ -17,3 +18,4 @@ LABELS = {
 
 def extract_report_fields(result, append_field):
     extract_explicit_fields(result, append_field, field_labels=LABELS, conflict_code="NDT_REPORT_LABEL_CONFLICT")
+    extract_closed_cell_report_number(result, append_field)
