@@ -245,10 +245,20 @@ const summary = {
 
 console.log(JSON.stringify(summary, null, 2))
 
-if (
+// 打不开页面不是"样式没问题"，是这次根本没量到东西。原来它和样式发现一起被
+// strict 挡住：非 strict 模式下 32 个路由全部 ERR_CONNECTION_REFUSED，摘要照样
+// 报 lowContrast: 0、undersizedTargets: 0，退出码 0——**一个量不到东西却说没问题
+// 的守卫，比没有守卫更糟**，因为它给的是假的放心。所以加载失败两种模式都算失败。
+if (summary.failedLoads) {
+  console.error(
+    `\n视觉稽核没有量到东西：${summary.failedLoads}/${summary.checks} 个路由打不开` +
+      `（${baseUrl}）。上面那些 0 是"没测"，不是"没问题"。` +
+      '\n先把前端跑起来（pnpm dev 或 vite preview）再跑本稽核。'
+  )
+  process.exitCode = 1
+} else if (
   strict &&
-  (summary.failedLoads ||
-    summary.underTwelve ||
+  (summary.underTwelve ||
     summary.excessiveWeight ||
     summary.lowContrast ||
     summary.undersizedTargets ||
