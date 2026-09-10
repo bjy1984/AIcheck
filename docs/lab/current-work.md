@@ -850,3 +850,13 @@ flowchart LR
 - 完整後端回歸 **4919 通過、0 失敗、4 跳過**（351.54 秒）；本機已配置 PostgreSQL，整合用例不再跳過，故高於先前記錄的 4835。Ruff 289／289、monolith 通過。
 - 證據：`docs/lab/verification/2026-09-10-handoff-commit-race.md`、`docs/lab/verification/2026-09-10-workbench-service-sync.md`。
 - 未完成：在使用者已登入的工作台實測新接口需監檢帳號，本輪未代輸憑證。整體工程估算仍約 60%。
+
+## 2026-09-10：R11-03 專用業務判定
+
+- AC-R11-03「焊接、試驗等內容是否滿足施工標準要求」原先只綁通用的 `evaluate_construction_plan`，本輪補上專用判定 `evaluate_r11_process_standards`。判據寫進規則包 `CLAUSE-PKG-R11` 的 `constructionPlanProcessRules`（焊接／耐壓試驗／無損檢測／泄漏試驗四域），**工具不自行推導限值**；數值口徑與 R09 的 `designSpecialRequirementRules` 同源，復用 `evaluate_rule_check`／`read_path`，不另寫比較語義。
+- 邊界：該寫沒寫判**不符合**（不是證據不足——方案本來就該寫）；寫了但低於標準判不符合；適用性判不了保留證據不足，不按不適用放過；派生布林取不到值不當成 False 也不當成 True；證據不是所選方案版本、對象含糊、領域重複或未知一律證據不足，不挑第一行。
+- `sourceReview.humanVerified: false`，寫明三條局限（GB 50236 條號由既有業務規則文本轉述未逐頁對照；未覆蓋焊接工藝評定覆蓋性、焊工資格、焊材質量證明——那是序號 25／24／26）。
+- 綁定經 `scripts/atomic_binding_overrides.py` 生成；`implementationStatus` 沿用 `binding_only`（本專案該欄位只表示是否屬試點實裝範圍，AC-R11-02 早有專用工具也仍標 binding_only）。
+- 14 條專項用例；相關子集 127 條通過；完整後端回歸 **4933 通過、0 失敗、4 跳過**（418.96 秒）。Ruff 289／289、monolith 通過。工具總數棘輪 102→103 同步。
+- 證據：`docs/lab/verification/2026-09-10-r11-03-process-standards.md`。
+- 未完成：合成參數用例，未跑真實案件。R11 其餘缺口（簽名真實性、簽署權限、批復效力）不在本項範圍，仍阻擋發布。整體工程估算仍約 60%。
