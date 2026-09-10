@@ -62,17 +62,26 @@ export const resolveProjectAnalysisEvidenceLink = (
   evidence: Record<string, unknown>,
   evidenceLinks: EvidenceLink[]
 ) => {
-  const evidenceLinkId = String(evidence.evidenceLinkId || '')
-  if (evidenceLinkId) {
-    const exactIdMatches = evidenceLinks.filter((item) => item.id === evidenceLinkId)
-    return exactIdMatches.length === 1 ? exactIdMatches[0] : undefined
-  }
-
-  const fileId = String(evidence.fileId || '')
-  const documentVersionId = String(evidence.documentVersionId || '')
-  const pageNo = Number(evidence.pageNo || 0)
+  const identity = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+  const evidenceLinkId = identity(evidence.evidenceLinkId)
+  const fileId = identity(evidence.fileId)
+  const documentVersionId = identity(evidence.documentVersionId)
+  if (!evidenceLinkId && !fileId && !documentVersionId) return undefined
+  const rawPage = evidence.pageNo
+  const pageNo = rawPage == null ? undefined : Number(rawPage)
+  if (
+    rawPage != null &&
+    ((typeof rawPage !== 'number' && !(typeof rawPage === 'string' && /^\d+$/.test(rawPage))) ||
+      !Number.isSafeInteger(pageNo) ||
+      Number(pageNo) < 1)
+  )
+    return undefined
+  // An ID is a selector, not permission to ignore a conflicting version or page.
+  if (evidenceLinkId && evidenceLinks.filter((item) => item.id === evidenceLinkId).length !== 1)
+    return undefined
   const quotedText = String(evidence.quotedText || '').trim()
   let candidates = evidenceLinks.filter((item) => {
+    if (evidenceLinkId && item.id !== evidenceLinkId) return false
     if (fileId && String(item.documentId || '') !== fileId) return false
     if (documentVersionId && String(item.documentVersionId || '') !== documentVersionId) {
       return false

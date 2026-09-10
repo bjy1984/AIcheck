@@ -1,0 +1,1 @@
+PASS: counts, pending/all, preserved judgment, keyboard evidence event, unavailable reference, 44px, light/dark; synthetic component, not authenticated case acceptance

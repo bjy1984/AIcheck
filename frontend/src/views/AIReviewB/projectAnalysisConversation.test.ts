@@ -160,3 +160,32 @@ assert.match(resultCard, /emit\('open-evidence', resolved\)/)
     '二次合并产生了重复的分析卡片'
   )
 }
+
+for (const reference of [
+  {},
+  { quotedText: '第一页证据原文' },
+  { pageNo: 1 },
+  { evidenceLinkId: 'EV-1', documentVersionId: 'OTHER' },
+  { evidenceLinkId: 'EV-1', fileId: 'OTHER' },
+  { evidenceLinkId: 'EV-1', pageNo: 2 },
+  { evidenceLinkId: 'EV-1', quotedText: '另一份文件内容' },
+  ...[0, -1, 1.5, true, 'NaN', '', '1.5', '1e0', Number.NaN].map((pageNo) => ({
+    evidenceLinkId: 'EV-1',
+    pageNo
+  }))
+])
+  assert.equal(resolveProjectAnalysisEvidenceLink(reference, [evidenceLinks[0]]), undefined)
+assert.equal(
+  resolveProjectAnalysisEvidenceLink(
+    { evidenceLinkId: 'EV-1', documentVersionId: 'DV-1', pageNo: '1' },
+    evidenceLinks
+  )?.id,
+  'EV-1'
+)
+assert.equal(
+  resolveProjectAnalysisEvidenceLink({ evidenceLinkId: 'EV-1' }, [
+    evidenceLinks[0],
+    evidenceLinks[0]
+  ]),
+  undefined
+)

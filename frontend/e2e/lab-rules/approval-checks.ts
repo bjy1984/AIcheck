@@ -10,7 +10,7 @@ createApp({ setup() {
     h('p', '原节点结果元件 · 合成资料验收'),
     h(ReviewApprovalChecks, { items: [
       { code: 'r11_signature_编制', result: 'passed' },
-      { code: 'r11_owner_approval_before_use', result: 'failed', usageId: 'U1', approvedAt: '2026-09-03', startedAt: '2026-09-02', evidenceRefs: [evidence] },
+      { code: 'r11_owner_approval_before_use', result: 'failed', usageId: 'U1', approvedAt: '2026-09-03', startedAt: '2026-09-02', evidenceRefs: [evidence, { evidenceLinkId: 'E1', documentVersionId: 'OTHER', pageNo: 3 }, {}] },
       { code: 'r11_usage_inventory', result: 'evidence_insufficient', evidenceRefs: [{ documentVersionId: 'UNKNOWN', pageNo: 9 }] }
     ], evidenceLinks: [evidence], onEvidence: (link: EvidenceLink) => { opened.value = `定位 ${link.documentVersionId} 第 ${link.pageNo} 页` } }),
     h('output', opened.value)

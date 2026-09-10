@@ -10,6 +10,8 @@ try {
  assert.equal(await page.locator('li').count(), 2)
  assert.match(await page.locator('section').innerText(), /共 3 项，2 项待核对/)
  await page.locator('summary').first().click()
+ assert.equal(await page.getByRole('button', { name: /查看原文/ }).count(), 1)
+ assert.equal(await page.getByText('第 3 页 · 引用暂时打不开，请到所选文件核对。').count(), 1)
  const button = page.getByRole('button', { name: '第 3 页 · 查看原文' })
  await button.focus()
  await page.keyboard.press('Enter')
