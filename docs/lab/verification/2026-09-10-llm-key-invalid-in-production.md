@@ -25,8 +25,29 @@
 `AICHECK_LLM_API_KEY` 的值是 `sk-ws-` 開頭、116 字元。DashScope 的 API key 不長
 這樣。這個變數裡放的很可能根本不是 DashScope 的密鑰。
 
-沒有 `AICHECK_LLM_PROJECT_REVIEW_API_KEY`，所以 `projectReview` 角色也回落到同一
-把密鑰，一樣 401。視覺角色另有 `AICHECK_LLM_VISION_API_KEY`，沒測。
+## 三條路全查了，三條都不通
+
+在三個容器（api / worker-llm / ocr-service）裡逐一比對密鑰的前綴與長度：
+
+| 變數 | 前綴 | 長度 | 供應商 | 實測 |
+|---|---|---|---|---|
+| `AICHECK_LLM_API_KEY` | `sk-ws-H…` | 116 | DashScope | **401 invalid_api_key** |
+| `AICHECK_LLM_VISION_API_KEY` | `sk-ws-H…` | 116 | DashScope | **401 invalid_api_key**（和上面同一把） |
+| `AICHECK_LLM_FALLBACK_API_KEY`＝`DEEPSEEK_API_KEY` | `sk-41526…` | 35 | DeepSeek | **402 Insufficient Balance** |
+| `LITELLM_API_KEY` | `sk-Iasyo…` | 47 | LiteLLM | **代理容器沒在跑**（`docker ps -a` 也沒有） |
+
+所以：
+
+- **通義那把是無效的密鑰**（不是餘額問題，阿里雲明說 `invalid_api_key`）。
+  `sk-ws-` 開頭、116 字元，不是 DashScope API key 的形狀。視覺角色用的是同一把，
+  所以視覺也一起壞了。
+- **DeepSeek 那把密鑰是好的，但賬戶沒錢**（402 Insufficient Balance）。
+  9 月 3 日那 112 次 deepseek-v4-pro 成功就是走這條，之後餘額用完了。
+- LiteLLM 的虛擬密鑰還在，但代理根本沒有這個容器。
+
+另外 `aicheck-runtime.env` 的修改時間是 **2026-09-10 18:08**（今天）。倉庫裡沒有任
+何腳本會寫這個檔（`grep` 過），最近的備份還停在 8 月——**是有人今天手動改過**。
+改了什麼無從比對，但值得問一句。
 
 ## 從什麼時候開始的
 
@@ -52,8 +73,14 @@
 - 使用者明確要求：**絕不手改** `/home/dev-bjy/aicheck-runtime.env`
 - 我手上沒有有效的 DashScope 密鑰
 
-要恢復，需要有人在阿里雲百煉控制台簽發一把新的 API key，寫進
-`AICHECK_LLM_API_KEY`，然後重啟 API 與 worker 容器。
+要恢復，二選一（或都做）：
+
+1. **阿里雲百煉**控制台簽一把新的 API key（`sk-` 開頭、約 35 字元那種），寫進
+   `AICHECK_LLM_API_KEY`；視覺要不要分開一把再說。
+2. **DeepSeek** 賬戶充值，`AICHECK_LLM_FALLBACK_API_KEY` 那把密鑰本身是好的，
+   充完即可用。
+
+兩者都要重啟 API 與四個 worker 容器才會讀到新值。
 
 ## 順帶暴露的問題：密鑰失效沒有告警
 
