@@ -801,20 +801,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R11-03
   sourceRuleId: R11
   requiredFacts:
-  - constructionPlan.signatureRoles
-  - constructionPlan.ownerApproval
-  - constructionPlan.projectParameters
-  - design.projectParameters
-  - constructionPlan.processRequirements
+  - r11.processStandards
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - evaluate_construction_plan
+  - extract_table_records
+  - evaluate_r11_process_standards
   - validate_evidence_grounding
   parameters:
-    profile: construction_plan
-    clauseSource: frozen_standard_clause_package
+    profile: construction_plan_process_standards
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R11-04

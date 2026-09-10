@@ -188,6 +188,15 @@ ATOMIC_BINDING_OVERRIDES.update({
     },
 })
 
+# AC-R11-03「焊接、试验等内容是否满足施工标准要求」原先只绑通用的 evaluate_construction_plan，
+# 等于没有专用判定。判据取自规则包冻结的 constructionPlanProcessRules，工具不自行推导限值。
+ATOMIC_BINDING_OVERRIDES["AC-R11-03"] = {
+    "requiredFacts": ["r11.processStandards"],
+    "tools": ["extract_table_records", "evaluate_r11_process_standards", "validate_evidence_grounding"],
+    "parameters": {"profile": "construction_plan_process_standards", "failurePolicy": "business_rule_result",
+                   "clauseSource": "frozen_standard_clause_package"},
+}
+
 ATOMIC_BINDING_OVERRIDES["AC-R11-01"] = {
     "requiredFacts": ["r11.approval"],
     "tools": ["extract_table_records", "evaluate_construction_plan", "validate_evidence_grounding"],

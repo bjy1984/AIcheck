@@ -13,6 +13,7 @@ from libs.review_orchestrator.deterministic_tools import (
 )
 from libs.review_tools.r11_approval import evaluate_r11_approval
 from libs.review_tools.r11_parameters import evaluate_r11_project_parameters
+from libs.review_tools.r11_process_standards import evaluate_r11_process_standards
 from libs.review_tools.r13_tools import (
     classify_r13_component_requirements,
     evaluate_r13_supervision_certificate_completeness,
@@ -141,6 +142,7 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_blowing_cleaning",
     "evaluate_component_manufacturer_scope",
     "evaluate_r11_project_parameters",
+    "evaluate_r11_process_standards",
     "evaluate_construction_plan",
     "evaluate_corrosion_protection",
     "evaluate_design_approval_level",
@@ -230,6 +232,7 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r37_progressive_inspection": "R37按明确批次、相同件与焊工及缺陷记录核对累进检查覆盖和升级阶段；覆盖完成不代表缺陷修复或整批验收通过。",
     "evaluate_r37_reinspection": "按明确缺陷与返修轮次核对原检测方法、范围、验收准则及修复后重检结果；独立对象核对不代表批次累进检查完成。",
     "evaluate_r11_project_parameters": "按同一对象逐项比对所选施工方案与设计固定版本的明确参数；单位、对象、原文或要求清单不明时保留不足，不代替施工技术要求验收。",
+    "evaluate_r11_process_standards": "按规则包冻结的判据逐域核对所选施工方案里的焊接与试验内容是否满足施工标准：该写没写判不符合，写了但低于标准判不符合，适用性不明保留证据不足；判据与限值全部取自冻结规则，工具不自行推导。",
     "evaluate_r39_procedure_reference": "比对所选指导书引用的规程编号与版本；有来源的完整文件对清单按组核对并列出漏查项，不代替方法技术要求及整条规则验收。",
     "evaluate_r39_document_content": "按NB/T47013.1-2015第7.2.2/7.2.3核对规程或指导书必备内容；有来源的完整文件清单逐份核对并列漏查项，漏读与明确缺项分开，不代替技术参数或整条R39验收。",
     "evaluate_r39_approval_chain": "按有来源的质量体系要求核对文件同版本同审批周期的签批、授权、先后与人员分离；具来源的完整周期清单逐项核对并列漏查项，不默认角色或等级，不代替整条R39验收。",
@@ -452,6 +455,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r39_first_use_validation"
             else {"projectId": "string", "scope": "object?", "requirements": "object?", "signatureInventory": "object?", "inventory": "object?", "approvalCycles": ["object?"]}
             if name == "evaluate_r39_approval_chain"
+            else {"projectId": "string", "scope": "object?", "standardRules": "object?", "domains": ["object?"], "selectionIssues": ["object?"]}
+            if name == "evaluate_r11_process_standards"
             else {"projectId": "string", "scope": "object?", "basis": "object?", "parameters": ["object?"], "inventory": "object?", "objectComparisons": ["object?"]}
             if name == "evaluate_r11_project_parameters"
             else {"projectId": "string", "identityMode": "string?", "scope": "object?", "basis": "object?", "instructionReference": "object?", "procedureIdentity": "object?", "inventory": "object?", "referencePairs": ["object?"], "fieldPairs": ["object?"], "selectedDocumentVersionIds": ["string?"], "selectionIssues": ["object?"]}
@@ -761,6 +766,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_r40_parameters": evaluate_r40_parameters,
         "evaluate_r40_conclusions": evaluate_r40_conclusions,
         "evaluate_r11_project_parameters": evaluate_r11_project_parameters,
+        "evaluate_r11_process_standards": evaluate_r11_process_standards,
         "evaluate_ndt_quality_system": evaluate_ndt_quality_system,
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,
         "evaluate_r39_first_use_validation": evaluate_r39_first_use_validation,

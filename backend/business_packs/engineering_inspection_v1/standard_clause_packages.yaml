@@ -1071,6 +1071,120 @@ standardClausePackages:
   - AC-R11-02
   - AC-R11-03
   - AC-R11-04
+  constructionPlanProcessRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - path: rules/standards/GBT+20801.1-2025.pdf
+        clauses: 8.3.2 射线与超声的技术等级与合格级别、8.3.3 表面无损检测、8.6.1 压力试验、8.6.2 泄漏试验
+      - path: GB 50236-2011
+        clauses: 3.0.1 施工组织设计应包含的技术内容、7.3.1 焊接工艺与检验要求
+      reviewedScope: construction_plan_process_presence_and_shared_numeric_limits
+      humanVerified: false
+      limitations:
+      - 数值口径与 R09 的 designSpecialRequirementRules 同源；本块只是把同一批冻结判据用到施工方案侧
+      - GB 50236-2011 的条号由既有业务规则文本转述，未逐页对照原文；presence 类判据不涉及数值
+      - 未覆盖焊接工艺评定覆盖性（属序号25）、焊工资格（序号24）与焊材质量证明（序号26）
+    domains:
+      welding:
+        name: 焊接
+        requiredPaths:
+        - requirements.fillerMetal
+        - requirements.preheat
+        - requirements.postWeldHeatTreatment
+        - requirements.ndtCoverage
+        checks:
+        - code: filler_metal_specified
+          actualPath: requirements.fillerMetal
+          operator: present
+          standardRef: STD-GB-50236-2011
+          sourceClause: GB 50236-2011 3.0.1、7.3.1
+        - code: preheat_specified
+          actualPath: requirements.preheat
+          operator: present
+          standardRef: STD-GB-50236-2011
+          sourceClause: GB 50236-2011 7.3.1
+        - code: pwht_specified
+          actualPath: requirements.postWeldHeatTreatment
+          operator: present
+          standardRef: STD-GB-50236-2011
+          sourceClause: GB 50236-2011 7.3.1
+        - code: ndt_coverage_specified
+          actualPath: requirements.ndtCoverage
+          operator: present
+          standardRef: STD-GB-50236-2011
+          sourceClause: GB 50236-2011 7.3.1
+      pressureTest:
+        name: 耐压试验
+        requiredPaths:
+        - requirements.method
+        - requirements.testPressure
+        - requirements.holdMinutes
+        checks:
+        - code: method_specified
+          actualPath: requirements.method
+          operator: present
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1
+        - code: test_pressure_ratio
+          actualPath: requirements.testPressureMeetsRatio
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.3
+        - code: pneumatic_ratio_ceiling
+          applicabilityPath: requirements.pneumaticTest
+          actualPath: requirements.testPressureExceedsMax
+          operator: equals
+          expected: false
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.4
+        - code: hold_minutes
+          actualPath: requirements.holdMinutes
+          operator: gte
+          expected: 10
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.1.4
+      ndt:
+        name: 无损检测
+        requiredPaths:
+        - requirements.method
+        - requirements.coverage
+        - requirements.acceptanceCriteria
+        checks:
+        - code: method_specified
+          actualPath: requirements.method
+          operator: present
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.3.1
+        - code: coverage_meets_grade_requirement
+          actualPath: requirements.coverageMeetsRequirement
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.3.2 表 42
+        - code: acceptance_level_meets_requirement
+          actualPath: requirements.acceptanceLevelMeetsRequirement
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.3.2.2、8.3.2.3
+      leakTest:
+        name: 泄漏试验
+        requiredPaths:
+        - requirements.method
+        - requirements.acceptanceCriteria
+        checks:
+        - code: method_specified
+          actualPath: requirements.method
+          operator: present
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2
+        - code: acceptance_specified
+          actualPath: requirements.acceptanceCriteria
+          operator: present
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.2
   requiredEvidence:
   - 格、材质、长度等信息）是否与设计文件
   - 找到施工组织设计文件

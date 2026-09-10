@@ -11,6 +11,7 @@ from libs.review_tools.r11_parameters import SCOPE_FIELDS
 
 TABLES = {"construction_comparison_context": "contexts", "construction_comparison_basis": "bases",
           "construction_comparison_parameters": "parameters"}
+PROCESS_TABLES = {"construction_process_domains": "processDomains"}
 
 
 def _build_single(state, run, groups):
@@ -106,4 +107,41 @@ def build_r11_business_facts(state, run):
         return result
     facts["projectParameters"] = {"projectId": run["projectId"], "inventory": inventory,
                                  "objectComparisons": comparisons, "selectionIssues": deepcopy(issues)}
+    facts["processStandards"] = _process_standards(state, run, issues)
     return result
+
+
+def _process_standards(state, run, issues):
+    """AC-R11-03：施工方案的焊接与试验内容对照规则包里冻结的判据。
+
+    判据只从冻结规则来；取不到就把领域留空，让工具报"判据缺失"，不在这里编。
+    对象唯一性沿用 R11 其余判定的口径：同一 scope 出现多行就是来源含糊，不挑第一行。
+    """
+    rows = read_ndt_tables(state, run, PROCESS_TABLES, node_id=11)["processDomains"]
+    scope = None
+    domains = []
+    for row in rows:
+        key = {field: row.get(field) for field in SCOPE_FIELDS}
+        if scope is None:
+            scope = key
+        elif key != scope:
+            return {"projectId": run["projectId"], "scope": None, "standardRules": {},
+                    "domains": [], "selectionIssues": deepcopy(issues),
+                    "sourceIssues": ["r11_process_source_object_conflict"]}
+        domains.append(deepcopy(row))
+    return {"projectId": run["projectId"], "scope": deepcopy(scope), "domains": domains,
+            "standardRules": frozen_construction_plan_process_rules(run),
+            "selectionIssues": deepcopy(issues)}
+
+
+def frozen_construction_plan_process_rules(run=None):
+    """规则包 CLAUSE-PKG-R11 里冻结的 constructionPlanProcessRules。"""
+    from libs.business_pack.loader import DEFAULT_BUSINESS_PACK_ID, load_business_pack
+
+    pack_id = str((run or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+    pack = load_business_pack(pack_id)
+    for package in pack.get("standardClausePackages") or []:
+        if isinstance(package, dict) and str(package.get("sourceRuleId") or "") == "R11":
+            rules = package.get("constructionPlanProcessRules")
+            return deepcopy(rules) if isinstance(rules, dict) else {}
+    return {}
