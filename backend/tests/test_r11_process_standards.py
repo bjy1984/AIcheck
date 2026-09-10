@@ -24,7 +24,9 @@ def complete_domains():
         domain("welding", {"fillerMetal": "E5015", "preheat": "100℃", "postWeldHeatTreatment": "690℃×2h",
                            "ndtCoverage": "20%"}),
         domain("pressureTest", {"method": "液压", "testPressure": "1.5倍设计压力", "holdMinutes": 15,
-                                "testPressureMeetsRatio": True, "pneumaticTest": False}),
+                                "testPressureMeetsRatio": True, "pneumaticTest": False,
+                                # 归属明确：本方案只对一个对象说了一次耐压试验
+                                "objectMappingResolved": True}),
         domain("ndt", {"method": "RT", "coverage": "20%", "acceptanceCriteria": "Ⅲ级",
                        "coverageMeetsRequirement": True, "acceptanceLevelMeetsRequirement": True}),
         domain("leakTest", {"method": "气密性试验", "acceptanceCriteria": "无可察泄漏"}),

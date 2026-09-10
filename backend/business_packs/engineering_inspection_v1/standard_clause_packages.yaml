@@ -911,6 +911,13 @@ standardClausePackages:
         standardRef: STD-GBT-20801.1-2025
         sourceClause: GB/T 20801.1-2025 8.6.1.1、8.6.1.3、8.6.1.4（须确认试验方法及适用条件）
         verifiedBy: null
+      - code: pressure_object_mapping
+        actualPath: requirements.objectMappingResolved
+        operator: equals
+        expected: true
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.1-2025 8.6.1——试验压力属于具体管道系统；一份说明里多条管线各自的试验不能合并成一个工程级数值，归属不清时保留证据不足
+        verifiedBy: null
       - code: test_pressure_ratio
         actualPath: requirements.testPressureMeetsRatio
         operator: equals
@@ -1134,6 +1141,13 @@ standardClausePackages:
           operator: present
           standardRef: STD-GBT-20801.1-2025
           sourceClause: GB/T 20801.1-2025 8.6.1
+        - code: pressure_object_mapping
+          actualPath: requirements.objectMappingResolved
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1——试验压力属于具体管道系统；一份说明里多条管线各自的试验不能合并成一个工程级数值，归属不清时保留证据不足
+          verifiedBy: null
         - code: test_pressure_ratio
           actualPath: requirements.testPressureMeetsRatio
           operator: equals

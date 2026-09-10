@@ -73,3 +73,42 @@ def test_frozen_rules_carry_the_second_pneumatic_ceiling():
     yield_rule = next(item for item in checks if item['code'] == 'pneumatic_yield_ceiling')
     assert yield_rule['applicabilityPath'] == 'requirements.pneumaticTest'
     assert yield_rule['expected'] is False
+
+
+def test_multiple_pipeline_statements_are_not_collapsed_into_one_project_value():
+    """一份说明里两条管线各自的耐压试验，不能拿第一条当成整个工程的数据。
+
+    此前整段文本只取第一处匹配：PL-1 的液压 1.5MPa 被当成工程级数值，
+    PL-2 那条低于下限的气压试验完全不可见。
+    """
+    pipelines = [{'pipelineId': 'PL-1', 'pipelineGrade': 'GC2', 'designPressureMPa': 1.0, 'mediumToxicity': '无毒'},
+                 {'pipelineId': 'PL-2', 'pipelineGrade': 'GC2', 'designPressureMPa': 1.0, 'mediumToxicity': '无毒'}]
+    facts = design_special_requirements(
+        '管道 PL-1：液压试验，试验压力为 1.5 MPa，保压 10 min 无泄漏。'
+        '管道 PL-2：气压试验，试验压力为 0.8 MPa，保压 10 min 无泄漏。', pipelines)
+    pressure = facts['domains']['pressureTest']['requirements']
+
+    assert pressure.get('testPressureMPa') is None, '不能拿某一条管线的压力冒充整个工程'
+    assert pressure.get('objectMappingResolved') is None, '归属不清应保留未决'
+    statements = pressure['pressureTestStatements']
+    assert [row['objectRef'] for row in statements] == ['PL-1', 'PL-2']
+    assert [row['testPressureMPa'] for row in statements] == [1.5, 0.8]
+    assert pressure['method'] == '液压试验、气压试验', '两种方法都要露出来'
+
+
+def test_single_statement_keeps_the_resolved_value():
+    """只有一条陈述时照常给值，归属明确。"""
+    facts = design_special_requirements(
+        '液压试验，试验压力为 1.5 MPa，保压 10 min 无泄漏。',
+        [{'pipelineId': 'PL-1', 'pipelineGrade': 'GC2', 'designPressureMPa': 1.0, 'mediumToxicity': '无毒'}])
+    pressure = facts['domains']['pressureTest']['requirements']
+    assert pressure['testPressureMPa'] == 1.5
+    assert pressure['objectMappingResolved'] is True
+    assert 'pressureTestStatements' not in pressure
+
+
+def test_object_mapping_check_is_frozen_in_the_rule_package():
+    checks = frozen_special_requirement_rules()['pressureTest']['checks']
+    mapping = next(item for item in checks if item['code'] == 'pressure_object_mapping')
+    assert mapping['actualPath'] == 'requirements.objectMappingResolved'
+    assert mapping['expected'] is True and mapping['verifiedBy'] is None

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+from copy import deepcopy
 from typing import Any
 
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
@@ -353,6 +354,37 @@ def _domain(specified: bool, requirements: dict[str, Any], standard_refs: list[s
     return {"specified": specified, "requirements": {key: value for key, value in requirements.items() if value not in (None, "")}, "standardRefs": standard_refs, "source": source}
 
 
+# 一份设计说明里常常写了多条管线各自的耐压试验。此前整段文本只取第一处匹配，
+# 于是 PL-1 的液压 1.5MPa 被当成整个工程的数据，PL-2 那条低于下限的气压试验完全不可见。
+# 这里按句切开、逐条抽取，能归到具体管线就带上管线号。
+_PRESSURE_SENTENCE_SPLIT_RE = re.compile(r"[。；;\n]")
+_PIPELINE_REF_RE = re.compile(r"(?:管道|管线|管段)\s*([A-Za-z0-9][A-Za-z0-9\-_/]{0,23})")
+
+
+def pressure_test_statements(text: str) -> list[dict[str, Any]]:
+    """把文本里每一条耐压试验陈述单独取出来；不做跨句合并，也不猜归属。"""
+    statements: list[dict[str, Any]] = []
+    for sentence in _PRESSURE_SENTENCE_SPLIT_RE.split(text or ""):
+        if not sentence.strip():
+            continue
+        method = _PRESSURE_METHOD_RE.search(sentence)
+        pressure = _TEST_PRESSURE_RE.search(sentence)
+        ratio = _TEST_RATIO_RE.search(sentence)
+        if not (method or pressure or ratio):
+            continue
+        if method and method.group(1) in {"耐压试验", "压力试验"} and not (pressure or ratio):
+            continue
+        reference = _PIPELINE_REF_RE.search(sentence)
+        statements.append({
+            "objectRef": reference.group(1) if reference else None,
+            "method": method.group(1) if method else None,
+            "testPressureMPa": float(pressure.group(1)) if pressure else None,
+            "testPressureRatio": float(ratio.group(1)) if ratio else None,
+            "sourceText": sentence.strip(),
+        })
+    return statements
+
+
 def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, source: dict[str, Any] | None = None) -> dict[str, Any]:
     """从设计说明/设计规定文本抽四领域要求；数值判定（试验压力倍数）在这里算好，规则只比布尔与存在性。"""
     text = text or ""
@@ -442,10 +474,25 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     ratio_value, meets_ratio, exceeds_max = pressure_ratio_calculation(
         ratio.group(1) if ratio else None, test_pressure.group(1) if test_pressure else None,
         design_pressure, required_ratio, ratios["pneumaticMax"] if is_pneumatic else None)
+    # 多条陈述时不再对外给单一的方法与压力：那等于把某一条管线的数据当成整个工程的。
+    statements = pressure_test_statements(text)
+    distinct = {(row["method"], row["testPressureMPa"], row["testPressureRatio"]) for row in statements}
+    multiple_objects = len(distinct) > 1
+    if multiple_objects:
+        method_text = "、".join(dict.fromkeys(row["method"] for row in statements if row["method"])) or None
+        test_pressure_value = None
+        ratio_value = None
+        meets_ratio = exceeds_max = exceeds_yield_ceiling = None
+        yield_ceiling = None
+    object_mapping_resolved = None if multiple_objects else (True if statements else None)
     pressure_test = _domain(
         bool(pressure_method or test_pressure),
         {
             "method": method_text,
+            # None = 归属不清（多条陈述各自对应不同对象）；判据把 None 当未决，
+            # 不会因为"没写不符合"而放过，也不会拿第一条冒充整个工程。
+            "objectMappingResolved": object_mapping_resolved,
+            "pressureTestStatements": deepcopy(statements) if multiple_objects else None,
             "testPressure": f"{test_pressure_value}MPa" if test_pressure_value is not None else (f"{ratio.group(1)}倍设计压力" if ratio else None),
             "testPressureMPa": test_pressure_value,
             "testPressureRatio": ratio_value,
