@@ -3376,20 +3376,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R63-01
   sourceRuleId: R63
   requiredFacts:
-  - stressAnalysis.issuer
-  - stressAnalysis.coveredSystems
-  - stressAnalysis.designParameters
-  - design.pipelineSystems
+  - r63.stressAnalysis
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - evaluate_stress_analysis
+  - extract_table_records
+  - evaluate_r63_stress_analysis
   - validate_evidence_grounding
   parameters:
-    profile: stress_analysis
-    clauseSource: frozen_standard_clause_package
+    profile: flexibility_stress_analysis
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R63-02
@@ -3567,26 +3562,15 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R68-01
   sourceRuleId: R68
   requiredFacts:
-  - blowingCleaning.plan
-  - blowingCleaning.timing
-  - blowingCleaning.medium
-  - blowingCleaning.pressure
-  - blowingCleaning.sequence
-  - blowingCleaning.safetyMeasures
-  - blowingCleaning.acceptanceResult
+  - r68.blowingCleaning
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_sampling_requirement
-  - check_numeric_range
-  - evaluate_blowing_cleaning
+  - evaluate_r68_blowing_cleaning
   - validate_evidence_grounding
   parameters:
-    profile: blowing_cleaning
-    clauseSource: frozen_standard_clause_package
+    profile: blowing_and_cleaning
     failurePolicy: business_rule_result
+    clauseSource: frozen_standard_clause_package
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R68-02

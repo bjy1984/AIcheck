@@ -214,6 +214,20 @@ for _check_id, _fact, _tool, _profile in (
                        "clauseSource": "frozen_standard_clause_package"},
     }
 
+# AC-R63-01 原绑 evaluate_stress_analysis、AC-R68-01 原绑 evaluate_blowing_cleaning——
+# 两个名字在 business_tools 里都没有实现。判据改为从各自规则包冻结的块取
+# （6.7.5.5／8.6.1.7、7.9.1-7.9.5 均已 source_verified，正文已逐句核对）。
+for _check_id, _fact, _tool, _profile in (
+    ("AC-R63-01", "r63.stressAnalysis", "evaluate_r63_stress_analysis", "flexibility_stress_analysis"),
+    ("AC-R68-01", "r68.blowingCleaning", "evaluate_r68_blowing_cleaning", "blowing_and_cleaning"),
+):
+    ATOMIC_BINDING_OVERRIDES[_check_id] = {
+        "requiredFacts": [_fact],
+        "tools": ["extract_table_records", _tool, "validate_evidence_grounding"],
+        "parameters": {"profile": _profile, "failurePolicy": "business_rule_result",
+                       "clauseSource": "frozen_standard_clause_package"},
+    }
+
 ATOMIC_BINDING_OVERRIDES["AC-R45-01"] = {
     "requiredFacts": ["r45.holidayTest"],
     "tools": ["extract_table_records", "evaluate_r45_holiday_test", "validate_evidence_grounding"],

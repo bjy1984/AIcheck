@@ -10,8 +10,13 @@ from libs.review_orchestrator.r37_facts import build_r37_business_facts
 from libs.review_orchestrator.r39_facts import build_r39_business_facts
 from libs.review_orchestrator.r40_facts import build_r40_business_facts
 from libs.review_orchestrator.r45_facts import build_r45_business_facts
+from libs.review_orchestrator.r63_r68_facts import (
+    build_r63_business_facts,
+    build_r68_business_facts,
+)
 
 NDT_FACT_BUILDERS = {35: build_r35_business_facts, 36: build_r36_business_facts, 37: build_r37_business_facts, 39: build_r39_business_facts, 40: build_r40_business_facts,
                      45: build_r45_business_facts,
                      64: build_r64_business_facts, 66: build_r66_business_facts,
-                     67: build_r67_business_facts}
+                     67: build_r67_business_facts,
+                     63: build_r63_business_facts, 68: build_r68_business_facts}

@@ -534,7 +534,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R63-01 | 检查由设计单位出具的管道系统柔性（应力）分析报告 | `stressAnalysis.issuer`<br>`stressAnalysis.coveredSystems`<br>`stressAnalysis.designParameters`<br>`design.pipelineSystems` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`evaluate_stress_analysis`<br>`validate_evidence_grounding` | `profile=stress_analysis`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R63-01 | 检查由设计单位出具的管道系统柔性（应力）分析报告 | `r63.stressAnalysis` | `extract_table_records`<br>`evaluate_r63_stress_analysis`<br>`validate_evidence_grounding` | `profile=flexibility_stress_analysis`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R63-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R64
@@ -570,7 +570,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R68-01 | 抽查吹扫、清洗记录及方案（吹扫和清洗的时机、吹扫和清洗的介质、吹扫压力、吹扫和清洗的顺序、安全事项和合格要求） | `blowingCleaning.plan`<br>`blowingCleaning.timing`<br>`blowingCleaning.medium`<br>`blowingCleaning.pressure`<br>`blowingCleaning.sequence`<br>`blowingCleaning.safetyMeasures`<br>`blowingCleaning.acceptanceResult` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`check_required`<br>`check_sampling_requirement`<br>`check_numeric_range`<br>`evaluate_blowing_cleaning`<br>`validate_evidence_grounding` | `profile=blowing_cleaning`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R68-01 | 抽查吹扫、清洗记录及方案（吹扫和清洗的时机、吹扫和清洗的介质、吹扫压力、吹扫和清洗的顺序、安全事项和合格要求） | `r68.blowingCleaning` | `extract_table_records`<br>`evaluate_r68_blowing_cleaning`<br>`validate_evidence_grounding` | `profile=blowing_and_cleaning`<br>`failurePolicy=business_rule_result`<br>`clauseSource=frozen_standard_clause_package` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R68-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R69

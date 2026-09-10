@@ -118,6 +118,8 @@ from libs.review_tools.r40_conclusions import evaluate_r40_conclusions
 from libs.review_tools.r40_parameters import evaluate_r40_parameters
 from libs.review_tools.r40_records import evaluate_r40_records
 from libs.review_tools.r45_holiday_test import evaluate_r45_holiday_test
+from libs.review_tools.r63_stress_analysis import evaluate_r63_stress_analysis
+from libs.review_tools.r68_blowing_cleaning import evaluate_r68_blowing_cleaning
 
 COMMON_TOOL_NAMES = (
     "check_required",
@@ -153,6 +155,8 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_r64_alternative_test",
     "evaluate_r66_leak_test_conditions",
     "evaluate_r67_leak_test_method",
+    "evaluate_r63_stress_analysis",
+    "evaluate_r68_blowing_cleaning",
     "evaluate_construction_plan",
     "evaluate_corrosion_protection",
     "evaluate_design_approval_level",
@@ -245,6 +249,8 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r64_alternative_test": "按冻结判据核对替代性试验：液压与气压都不切实际是否有书面依据、敏感性灵敏度是否达标、结论是否合格；不代替对免除前提本身的核验。",
     "evaluate_r66_leak_test_conditions": "按冻结判据核对泄漏试验条件：压力表检定有效期、气密性试验压力是否等于设计压力、超过 1.6MPa 是否取得三方同意；介质与温度只判是否记录。",
     "evaluate_r67_leak_test_method": "按冻结判据核对泄漏试验方法与报告：急性毒性介质的灵敏度门槛、以气密性代替敏感性是否经三方同意、报告项目是否齐全、结论是否合格。",
+    "evaluate_r63_stress_analysis": "按冻结判据核对管道系统柔性（应力）分析报告：分析范围是否覆盖申请免除压力试验的全部系统、位移应力范围是否在限值内、当量循环次数超过 10^6 时是否另做疲劳分析、结论是否合格；8.6.1.7 要求三项前置同时满足，这里只核该声明，a) c) 两项本身由 R35／R36 与 R64／R67 判定。",
+    "evaluate_r68_blowing_cleaning": "按冻结判据核对管道清理、吹扫和清洗：方案是否在安装前提出、吹洗方法是否按口径与介质选定、仪表阀门是否拆除或旁路、奥氏体不锈钢水冲洗氯离子是否不超过 50 mg/L、空气吹扫压力是否不超过设计压力、蒸汽吹扫顺序与临时管道措施、化学清洗防护与废液处理、吹洗后是否封闭防再污染。",
     "evaluate_r45_holiday_test": "按规则包冻结的判据核对防腐层电火花检测：仪器检定是否在有效期内、补口补伤是否 100% 漏点检测、发现漏点是否修补复检合格、报告项目是否齐全；该记没记判不符合，适用性不明保留证据不足。",
     "evaluate_r11_process_standards": "按规则包冻结的判据逐域核对所选施工方案里的焊接与试验内容是否满足施工标准：该写没写判不符合，写了但低于标准判不符合，适用性不明保留证据不足；判据与限值全部取自冻结规则，工具不自行推导。",
     "evaluate_r39_procedure_reference": "比对所选指导书引用的规程编号与版本；有来源的完整文件对清单按组核对并列出漏查项，不代替方法技术要求及整条规则验收。",
@@ -472,7 +478,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             else {"projectId": "string", "scope": "object?", "standardRules": "object?", "domains": ["object?"], "selectionIssues": ["object?"]}
             if name in {"evaluate_r11_process_standards", "evaluate_r45_holiday_test",
                         "evaluate_r64_alternative_test", "evaluate_r66_leak_test_conditions",
-                        "evaluate_r67_leak_test_method"}
+                        "evaluate_r67_leak_test_method", "evaluate_r63_stress_analysis",
+                        "evaluate_r68_blowing_cleaning"}
             else {"projectId": "string", "scope": "object?", "basis": "object?", "parameters": ["object?"], "inventory": "object?", "objectComparisons": ["object?"]}
             if name == "evaluate_r11_project_parameters"
             else {"projectId": "string", "identityMode": "string?", "scope": "object?", "basis": "object?", "instructionReference": "object?", "procedureIdentity": "object?", "inventory": "object?", "referencePairs": ["object?"], "fieldPairs": ["object?"], "selectedDocumentVersionIds": ["string?"], "selectionIssues": ["object?"]}
@@ -787,6 +794,8 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_r64_alternative_test": evaluate_r64_alternative_test,
         "evaluate_r66_leak_test_conditions": evaluate_r66_leak_test_conditions,
         "evaluate_r67_leak_test_method": evaluate_r67_leak_test_method,
+        "evaluate_r63_stress_analysis": evaluate_r63_stress_analysis,
+        "evaluate_r68_blowing_cleaning": evaluate_r68_blowing_cleaning,
         "evaluate_ndt_quality_system": evaluate_ndt_quality_system,
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,
         "evaluate_r39_first_use_validation": evaluate_r39_first_use_validation,

@@ -5612,6 +5612,102 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R63-01
   - AC-R63-02
+  stressAnalysisRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 6.7.5.5、8.6.1.7
+        purpose: 位移应力范围评定与免除压力试验的前置条件
+        locatorVerification: source_verified
+      reviewedScope: flexibility_analysis_report_coverage_parameters_and_exemption_preconditions
+      humanVerified: false
+      limitations:
+      - 判据取自 GB/T 20801.1-2025 6.7.5.5（PDF 第 76~77 页）与 8.6.1.7（PDF 第 128 页）正文，已按文本层逐句核对，但未经人工签字确认
+      - 公式(33)(36)(37)的数值不在工具内复算，只判报告是否声明已按该方法评定；位移应力范围、应力范围系数 f 与当量循环次数 N 的具体数值需人工复核
+      - 8.6.1.7 a)（环向纵向螺旋焊缝 100% RT/UT、其余焊接接头 100% MT/PT）与 c)（敏感性泄漏试验合格）分别由 R35／R36 与 R64／R67 判定，这里只核"三项是否同时满足"这一声明，不重复判定各项本身
+      - parameters_match_design_document 是对 8.6.1.7 b)"按第 6 章的有关规定"的工程转述，非条文逐字；一致性按报告与设计文件的录入值比对，不代算
+    domains:
+      stressAnalysis:
+        name: 管道系统柔性（应力）分析
+        requiredPaths:
+        - report.issuer
+        - report.reportNo
+        - coverage.analyzedSystems
+        - parameters.designTemperature
+        - parameters.designPressure
+        checks:
+        - code: exemption_requires_all_preconditions
+          applicabilityPath: exemption.pressureTestExemptionClaimed
+          actualPath: exemption.allPreconditionsMet
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.7——同时满足 a) 焊接接头检测、b) 已通过柔性分析、c) 敏感性泄漏试验合格三项要求时，才可免除压力试验
+          verifiedBy: null
+        - code: coverage_includes_all_exempted_systems
+          applicabilityPath: exemption.pressureTestExemptionClaimed
+          actualPath: coverage.coversAllExemptedSystems
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.7 b)——申请免除压力试验的管道系统应是按第 6 章规定已通过柔性分析的系统
+          verifiedBy: null
+        - code: displacement_stress_range_within_limit
+          actualPath: result.displacementStressRangeWithinLimit
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 6.7.5.5——位移应力范围应满足许用位移应力范围的限制条件
+          verifiedBy: null
+        - code: stress_range_factor_derived_from_cycles
+          actualPath: result.stressRangeFactorDerivedFromCycles
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 6.7.5.5——位移应力范围系数 f 应按公式(36)由当量循环次数 N 计算或由图 13 查取，且不超过最大值 fm
+          verifiedBy: null
+        - code: fatigue_analysis_above_one_million_cycles
+          applicabilityPath: parameters.equivalentCyclesAboveOneMillion
+          actualPath: result.fatigueAnalysisPerformed
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 6.7.5.5 注——当量循环次数 N 大于 10^6 时公式(36)与图 13 不适用，应按附录 Q 或其他相应规范进行疲劳分析
+          verifiedBy: null
+        - code: expansion_joint_designed_separately
+          applicabilityPath: design.expansionJointPresent
+          actualPath: result.expansionJointDesignedSeparately
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 6.7.5.5 注——公式(36)或图 13 不适用于膨胀节本体的设计
+          verifiedBy: null
+        - code: properties_from_cycle_temperature_extremes
+          actualPath: parameters.propertiesFromCycleExtremes
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 6.7.5.5.4 a)——计算应力范围时应根据材料在温度循环中最高和最低工作温度下从表 C.1 查取线膨胀系数
+          verifiedBy: null
+        - code: parameters_match_design_document
+          actualPath: parameters.matchDesignDocument
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.7 b)——柔性分析应按第 6 章的有关规定进行，即分析所用设计参数应与设计文件一致（工程转述，非条文逐字）
+          verifiedBy: null
+        - code: conclusion_accepted
+          actualPath: result.conclusion
+          operator: accepted
+          expected:
+          - 合格
+          - 通过
+          - 满足
+          - passed
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 8.6.1.7 b)——免除压力试验的前提是管道系统"已通过"柔性分析，结论不合格即不成立
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 位出具的管道系统柔性（应力）分析报告
@@ -6110,6 +6206,199 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R68-01
   - AC-R68-02
+  blowingCleaningRules:
+    sourceReview:
+      method: agent_text_layer_reading
+      documents:
+      - standardRef: STD-GBT-20801.1-2025
+        clauseNo: 7.9.1-7.9.5
+        purpose: 管道清理、吹扫和清洗
+        locatorVerification: source_verified
+      reviewedScope: blowing_and_cleaning_plan_medium_pressure_sequence_and_acceptance
+      humanVerified: false
+      limitations:
+      - 判据逐条对应 GB/T 20801.1-2025 7.9.1~7.9.5 正文（PDF 第 116~117 页，印刷页 108~109），已按文本层逐句核对，但未经人工签字确认
+      - GB 50235-2010 第 9 章仅 visual_verified，其水冲洗流速、空气吹扫的白布/靶板检查、蒸汽吹扫靶板检验等具体验收方法未纳入判据
+      - 除奥氏体不锈钢水冲洗氯离子含量不超过 50 mg/L 外，其余均为布尔与存在性判定；吹扫压力只比"是否超过设计压力"，不在工具内代算
+      - 未覆盖脱脂剂选择与化学清洗液配方本身的有效性评价——7.9.5.2 要求的"经过鉴定并经实践证明"只判是否声明，不判鉴定结论
+    domains:
+      blowingCleaning:
+        name: 吹扫与清洗
+        requiredPaths:
+        - plan.documentNo
+        - plan.method
+        - medium.name
+        - acceptance.conclusion
+        checks:
+        - code: plan_issued_before_installation
+          actualPath: plan.issuedBeforeInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.4——吹扫、清洗方案应在管道安装之前提出
+          verifiedBy: null
+        - code: reserved_positions_marked
+          actualPath: plan.reservedPositionsMarked
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.4——带控制点的工艺流程图和设计施工图上应标明吹扫、清洗管道的预留位置
+          verifiedBy: null
+        - code: method_matches_diameter_and_medium
+          actualPath: plan.methodConformsToSelectionRules
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.5——吹洗方法应根据管道的使用要求、工作介质及内表面脏污程度确定（a~e 项）
+          verifiedBy: null
+        - code: steam_only_on_thermal_pipelines
+          applicabilityPath: medium.steamBlowing
+          actualPath: plan.thermalPipelineConfirmed
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.5 d)——蒸汽管道采用蒸汽吹扫，非热力管道不准许采用蒸汽吹扫
+          verifiedBy: null
+        - code: degreasing_before_installation_for_strong_oxidizer
+          applicabilityPath: medium.strongOxidizerService
+          actualPath: plan.degreasingBeforeInstallation
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.2——强氧化性流体（如氧或氟）管道应在装配后、安装前分段或单件进行脱脂
+          verifiedBy: null
+        - code: low_temperature_oil_grease_moisture_removed
+          applicabilityPath: plan.lowTemperatureService
+          actualPath: plan.oilGreaseMoistureRemoved
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.3——低温使用的管道应吹扫清除系统中的油、脂、水气
+          verifiedBy: null
+        - code: instruments_removed_or_bypassed
+          actualPath: plan.instrumentsRemovedOrBypassed
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.6——吹洗前不应安装孔板及法兰或螺纹连接的调节阀、重要阀门、节流阀、安全阀、仪表；焊接连接的应旁路或卸掉阀芯并保护阀座
+          verifiedBy: null
+        - code: non_blowable_items_isolated
+          applicabilityPath: plan.nonBlowableItemsPresent
+          actualPath: plan.isolationApplied
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.7——对于不准许吹洗的设备及管道，应采取有效的隔离措施
+          verifiedBy: null
+        - code: safety_environment_provided_by_owner_and_designer
+          actualPath: safety.ownerAndDesignerRequirementsProvided
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.8——建设单位（使用单位）和设计单位应提供吹洗工作所需要的安全环境和安全操作技术要求
+          verifiedBy: null
+        - code: hazardous_medium_precautions_documented
+          applicabilityPath: medium.flammableOrToxic
+          actualPath: safety.preventiveMeasuresDocumented
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.8——清理、冲洗或吹扫介质不宜采用易燃、有毒流体，不可避免时应制定专门的预防措施
+          verifiedBy: null
+        - code: hazardous_medium_work_area_isolated_and_marked
+          applicabilityPath: medium.flammableOrToxic
+          actualPath: safety.workAreaIsolatedAndMarked
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.8 c)——对吹洗工作区域进行隔离，四周设置警戒标识，对进入人员进行管控
+          verifiedBy: null
+        - code: reprotection_after_cleaning
+          actualPath: acceptance.reprotectionApplied
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.9——已清理、吹扫或清洗干净的管道应及时封闭管口或充氮保护，防止再污染
+          verifiedBy: null
+        - code: acceptance_meets_standard_and_design
+          actualPath: acceptance.meetsStandardAndDesign
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.1.10——质量检验和验收应符合相关标准及设计文件的规定
+          verifiedBy: null
+        - code: water_chloride_within_limit
+          applicabilityPath: medium.austeniticStainlessWaterFlush
+          actualPath: medium.chlorideMgPerL
+          operator: lte
+          expected: 50
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.2——冲洗奥氏体不锈钢管道时，水中氯离子含量不应超过 50 mg/L
+          verifiedBy: null
+        - code: water_drained_after_flush
+          applicabilityPath: medium.waterFlush
+          actualPath: acceptance.waterDrained
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.2——管道水冲洗后应及时将系统内的积水排放干净
+          verifiedBy: null
+        - code: air_pressure_not_exceeding_design
+          applicabilityPath: medium.airBlowing
+          actualPath: pressure.notExceedingDesignPressure
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.3——空气的吹扫压力不应超过容器和管道的设计压力
+          verifiedBy: null
+        - code: steam_preheat_drain_and_displacement_checked
+          applicabilityPath: medium.steamBlowing
+          actualPath: sequence.preheatDrainAndDisplacementChecked
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.4.1——蒸汽吹扫前应先行暖管、及时排水，并应检查管道热位移
+          verifiedBy: null
+        - code: steam_heat_cool_reheat_cycle
+          applicabilityPath: medium.steamBlowing
+          actualPath: sequence.heatCoolReheatCycle
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.4.1——蒸汽吹扫应按加热—冷却—再加热的顺序循环进行
+          verifiedBy: null
+        - code: steam_temporary_line_and_silencer_compliant
+          applicabilityPath: medium.steamBlowing
+          actualPath: safety.temporaryLineAndSilencerCompliant
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.4.2——临时管道应按蒸汽管道技术要求安装，排汽管管口朝上倾斜并加装消音器，吹扫时设置禁区
+          verifiedBy: null
+        - code: chemical_cleaning_protective_equipment
+          applicabilityPath: medium.chemicalCleaning
+          actualPath: safety.protectiveEquipmentProvided
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.5.1——操作人员应穿专用防护服装，并按清洗液危害程度佩戴护目镜、防毒面具等防护用具
+          verifiedBy: null
+        - code: chemical_cleaning_formula_qualified
+          applicabilityPath: medium.chemicalCleaning
+          actualPath: plan.cleaningSolutionFormulaQualified
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.5.2——清洗液的配方应经过鉴定，且曾在生产装置中使用并经实践证明其有效可靠
+          verifiedBy: null
+        - code: chemical_waste_disposal_compliant
+          applicabilityPath: medium.chemicalCleaning
+          actualPath: acceptance.wasteDisposalCompliant
+          operator: equals
+          expected: true
+          standardRef: STD-GBT-20801.1-2025
+          sourceClause: GB/T 20801.1-2025 7.9.5.3——化学清洗后的废液处理和排放应符合环境保护的规定
+          verifiedBy: null
   requiredEvidence:
   - 设计文件
   - 抽查吹扫、清洗记录及方案

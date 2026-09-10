@@ -18,12 +18,13 @@ import inspect
 from libs.business_pack.loader import load_business_pack
 
 # 2026-09-10 实测：交接记录 28 项 → 补 AC-R11-03 得 27 → 补 AC-R45-01 得 26
-# → 补 AC-R64-01／AC-R66-01／AC-R67-01（泄漏试验一组）得 23。
+# → 补 AC-R64-01／AC-R66-01／AC-R67-01（泄漏试验一组）得 23
+# → 补 AC-R63-01（柔性分析）／AC-R68-01（吹扫清洗）得 21。
 # R45 是第一条走通"判据冻结进规则包 + frozen_domain_checks 统一判定"这条路的通用解释器规则。
-EXPECTED_UNCONFIGURED = 23
+EXPECTED_UNCONFIGURED = 21
 EXPECTED_RULES = {
     "R10", "R11", "R43", "R44", "R46", "R47", "R48", "R49", "R50", "R51", "R52",
-    "R53", "R54", "R55", "R56", "R57", "R58", "R63", "R68",
+    "R53", "R54", "R55", "R56", "R57", "R58",
 }
 
 
