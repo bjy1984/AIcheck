@@ -122,5 +122,6 @@ export type HandoffNodeStatuses = {
 }
 export const getHandoffNodeStatuses = (projectId: string) =>
   request.get<HandoffNodeStatuses>({
-    url: `/api/projects/${encodeURIComponent(projectId)}/review-handoff-node-statuses`
+    url: `/api/projects/${encodeURIComponent(projectId)}/review-handoff-node-statuses`,
+    headers: { 'X-Silent-Http-Error': 'true', 'X-Silent-Business-Error': 'true' }
   })

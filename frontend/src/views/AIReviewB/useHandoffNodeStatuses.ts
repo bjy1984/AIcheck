@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { ProjectTreePayload } from '@/api/aicheck'
 import { getHandoffNodeStatuses, type HandoffNodeStatuses } from '@/api/aicheck/reviewHandoffs'
+import { handoffStatusError } from './handoffStatusError'
 import { withHandoffStatuses } from './handoffNodeStatuses'
 
 export const useHandoffNodeStatuses = (props: {
@@ -28,9 +29,8 @@ export const useHandoffNodeStatuses = (props: {
       if (response.data.projectId !== projectId || !Array.isArray(response.data.items))
         throw new Error('invalid project response')
       report.value = response.data
-    } catch {
-      if (attempt === generation)
-        error.value = '暂时无法核对交接状态，请重新核对；这不代表没有需重验节点。'
+    } catch (cause) {
+      if (attempt === generation) error.value = handoffStatusError(cause)
     } finally {
       if (attempt === generation) busy.value = false
     }

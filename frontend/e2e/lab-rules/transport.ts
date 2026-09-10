@@ -8,7 +8,10 @@ const send = async (method: string, config: Config) => {
     return { data: await response.blob() }
   }
   const payload = await response.json()
-  if (!response.ok || payload.code !== 0) throw new Error(payload.message || '请求失败')
+  if (!response.ok || payload.code !== 0)
+    throw Object.assign(new Error(payload.message || '请求失败'), {
+      response: { status: response.status, data: payload }
+    })
   return payload
 }
 export default { get: (c: Config) => send('GET', c), post: (c: Config) => send('POST', c), patch: (c: Config) => send('PATCH', c) }

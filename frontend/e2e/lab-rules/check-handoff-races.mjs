@@ -53,6 +53,27 @@ try {
   await waitRequest(7)
   await finish(6, 'B')
   await expect(summary).toContainText('0 个节点需重验')
+  for (const [status, code, message] of [
+    [404, 404, '接口当前不可用'],
+    [403, 403, '工程权限'],
+    [200, 403, '工程权限'],
+    [200, 401, '重新登录'],
+    [501, 501, '状态未知']
+  ]) {
+    const index = pending.length
+    await summary.getByRole('button', { name: '刷新工位交接状态' }).click()
+    await waitRequest(index + 1)
+    await pending[index].fulfill({ status, json: { code, message: 'internal secret' } })
+    await expect(summary.getByRole('alert')).toContainText(message)
+    await expect(summary).not.toContainText('0 个节点需重验')
+    await expect(summary).not.toContainText('internal secret')
+  }
+  const recovery = pending.length
+  await summary.getByRole('button', { name: '刷新工位交接状态' }).click()
+  await waitRequest(recovery + 1)
+  await finish(recovery, 'B', true)
+  await expect(summary).toContainText('2 个节点需重验')
+  await expect(summary.getByRole('alert')).toHaveCount(0)
   expect(errors).toEqual([])
-  console.log('PASS: original workstation component; late project response, 503 without false zero, recovery, wrong-project rejection, unmount/remount; no page errors')
+  console.log('PASS: original workstation component; late project response, 503/404/403/401/501 without false zero, HTTP 200 business errors, recovery, wrong-project rejection, unmount/remount; no page errors')
 } finally { await browser.close() }
