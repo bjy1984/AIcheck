@@ -3,6 +3,7 @@ from copy import deepcopy
 
 from libs.review_orchestrator.deterministic_tools import check, result
 from libs.review_tools.r11_approval_timing import approval_timing
+from libs.review_tools.r11_usage_inventory import usage_checks
 from libs.review_tools.r39_tools import _refs, _text
 
 SCOPE_FIELDS = ("projectId", "planVersionId", "ownerOrganizationId", "approvalCycleId")
@@ -24,7 +25,7 @@ def evaluate_r11_approval(arguments):
             facts={"scope": "documented_plan_signatures_owner_reply_and_use_order_only", "wholeRuleAcceptance": "not_evaluated",
                    "evidenceVerified": False, "approvalChecks": rows, "selectionIssues": deepcopy(arguments.get("selectionIssues") or [])},
             checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-            rule_version="r11-documented-plan-approval-v2")
+            rule_version="r11-documented-plan-approval-v3")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
@@ -60,5 +61,8 @@ def evaluate_r11_approval(arguments):
         status = approval.get("decision")
         outcome = "passed" if status == "approved" else "failed" if status == "rejected" else "evidence_insufficient"
         add("r11_owner_reply", outcome, _refs(approval))
-    rows.append(approval_timing(scope, approval, arguments.get("planUsage")))
+    if "planUsages" in arguments or "usageInventory" in arguments:
+        rows.extend(usage_checks(scope, approval, arguments.get("planUsages"), arguments.get("usageInventory")))
+    else:
+        rows.append(approval_timing(scope, approval, arguments.get("planUsage")))
     return finish()

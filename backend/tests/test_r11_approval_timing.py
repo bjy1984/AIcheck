@@ -66,7 +66,8 @@ def test_ascii_label_separator_does_not_hide_supported_dates():
 
 @pytest.mark.parametrize('approved,started,expected', [('2026-09-01', '2026-09-02', 'passed'),
     ('2026-09-03', '2026-09-02', 'failed'), ('2026-09-02', '2026-09-02', 'evidence_insufficient')])
-def test_frozen_usage_table_reaches_real_node_timing_check(approved, started, expected):
+@pytest.mark.parametrize('batch', [False, 'complete', 'missing', 'duplicate', 'duplicate_inventory'])
+def test_frozen_usage_table_reaches_real_node_timing_check(approved, started, expected, batch):
     from test_r11_parameters import fixture
 
     from libs.business_pack import load_business_pack
@@ -85,6 +86,17 @@ def test_frozen_usage_table_reaches_real_node_timing_check(approved, started, ex
         table.update(tableId=schema, businessSchema=schema, normalizedRows=values,
                      contentMarkdown=f'明确记录：批复 {approved}，采用 {started}')
         parse['tables'].append(table)
+    if batch:
+        parse = state['ocr_parse_results'][0]
+        usage_table = parse['tables'][-1]
+        usage_table['normalizedRows'] = [dict(deepcopy(args['planUsage']), usageId=identity) for identity in ('U1', 'U2')]
+        inventory = deepcopy(usage_table)
+        inventory.update(tableId='usage-inventory', businessSchema='construction_plan_usage_inventory',
+            normalizedRows=[dict(deepcopy(args['scope']), complete=True, usageIds=['U1', 'U2'])])
+        parse['tables'].append(inventory)
+        if batch == 'missing': usage_table['normalizedRows'].pop()
+        if batch == 'duplicate': usage_table['normalizedRows'].append(deepcopy(usage_table['normalizedRows'][0]))
+        if batch == 'duplicate_inventory': parse['tables'].append(deepcopy(inventory))
     run['documentScopeSnapshot'] = freeze_document_scope(run, state)
     before = deepcopy(state)
     facts = build_design_business_facts(state, run)
@@ -102,8 +114,12 @@ def test_frozen_usage_table_reaches_real_node_timing_check(approved, started, ex
         evidence_facts=facts['judgment']['claimedFacts'], evidence_refs=facts['judgment']['evidenceRefs'], tool_runner=runner)
     assert len(seen) == 1
     timing = next(row for row in seen[0]['facts']['approvalChecks'] if row['code'] == 'r11_owner_approval_before_use')
-    assert timing['result'] == expected
-    assert {ref['documentVersionId'] for ref in timing['evidenceRefs']} == {'PLAN', 'DESIGN'}
+    if batch:
+        checks = seen[0]['facts']['approvalChecks']
+        assert {row.get('usageId') for row in checks if row['code'] == 'r11_owner_approval_before_use'} == {'U1', 'U2'}
+        assert next(row for row in checks if row['code'] == 'r11_usage_inventory')['result'] == ('passed' if batch == 'complete' else 'evidence_insufficient')
+    assert timing['result'] == ('evidence_insufficient' if batch == 'duplicate' else expected)
+    assert {ref['documentVersionId'] for ref in timing['evidenceRefs']} == (set() if batch == 'duplicate' else {'PLAN', 'DESIGN'})
     atomic = next(row for row in output['atomicResults'] if row['atomicCheckId'] == 'AC-R11-01')
     assert atomic['result'] == ('evidence_insufficient' if expected == 'passed' else expected)
     assert state == before

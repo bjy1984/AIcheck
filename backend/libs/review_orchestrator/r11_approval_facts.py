@@ -5,7 +5,8 @@ from libs.review_orchestrator.deterministic_tools import validate_evidence_groun
 from libs.review_orchestrator.material_facts import build_material_judgment
 
 TABLES = {"construction_approval_context": "approvalContexts", "construction_approval_signatures": "approvalSignatures",
-          "construction_owner_approval": "ownerApprovals", "construction_plan_usage": "planUsages"}
+          "construction_owner_approval": "ownerApprovals", "construction_plan_usage": "planUsages",
+          "construction_plan_usage_inventory": "usageInventories"}
 
 
 def approval_arguments(run, groups, issues):
@@ -21,7 +22,12 @@ def approval_arguments(run, groups, issues):
     judgment = build_material_judgment(records)["judgment"]
     if validate_evidence_grounding({**judgment, "facts": judgment["claimedFacts"], "minConfidence": .75})["result"] != "passed":
         return None
-    return {"projectId": run["projectId"], "scope": deepcopy(context), "signatures": deepcopy(groups["approvalSignatures"]),
+    arguments = {"projectId": run["projectId"], "scope": deepcopy(context), "signatures": deepcopy(groups["approvalSignatures"]),
             "ownerApproval": deepcopy(groups["ownerApprovals"][0]) if len(groups["ownerApprovals"]) == 1 else None,
             "planUsage": deepcopy(groups["planUsages"][0]) if len(groups["planUsages"]) == 1 else None,
             "selectionIssues": deepcopy(issues)}
+
+    if groups["usageInventories"] or len(groups["planUsages"]) > 1:
+        arguments["planUsages"] = deepcopy(groups["planUsages"])
+        arguments["usageInventory"] = deepcopy(groups["usageInventories"][0]) if len(groups["usageInventories"]) == 1 else None
+    return arguments
