@@ -18,7 +18,10 @@ def body():
         "scope": {**scope, "completePlanSet": True, "planVersionIds": ["PLAN"], "evidenceRefs": refs("PLAN")},
         "signatures": [{**scope, "role": role, "signerName": name, "signatureStatus": "present", "evidenceRefs": refs("PLAN")}
                        for role, name in [("编制", "张一"), ("审核", "李二"), ("审批", "王三")]],
-        "ownerApproval": {**scope, "decision": "approved", "evidenceRefs": refs("DESIGN")}}
+        "ownerApproval": {**scope, "decision": "approved", "documentVersionId": "DESIGN", "approvedAt": "2026-09-01",
+                          "evidenceRefs": [{"documentVersionId": "DESIGN", "pageNo": 1, "quotedText": "批复日期：2026-09-01"}]},
+        "planUsage": {**scope, "documentVersionId": "PLAN", "usageStatus": "started", "startedAt": "2026-09-02",
+                      "evidenceRefs": [{"documentVersionId": "PLAN", "pageNo": 1, "quotedText": "采用日期：2026-09-02"}]}}
 
 
 @pytest.mark.parametrize("case,expected", [("complete", "passed"), ("missing_role", "evidence_insufficient"),

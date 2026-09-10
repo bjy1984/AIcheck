@@ -435,7 +435,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             }
             if name == "check_license_registry_match"
             else {"profile": "string", "projectId": "string?", "scope": "object?", "signatures": ["object?"],
-                  "ownerApproval": "object?", "selectionIssues": ["object?"], "facts": "object?", "requiredFields": ["string?"], "ruleChecks": ["object?"]}
+                  "ownerApproval": "object?", "planUsage": "object?", "selectionIssues": ["object?"], "facts": "object?", "requiredFields": ["string?"], "ruleChecks": ["object?"]}
             if name == "evaluate_construction_plan"
             else {"projectId": "string", "organizationId": "string", "activityDate": "string",
                   "applicability": "object", "manual": ["object"], "controlledForms": ["object"],

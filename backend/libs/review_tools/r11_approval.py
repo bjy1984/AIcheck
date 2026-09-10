@@ -1,7 +1,8 @@
-"""Documented plan signatures and owner reply; not signature authentication."""
+"""Documented plan signatures, owner reply and use order; not signature authentication."""
 from copy import deepcopy
 
 from libs.review_orchestrator.deterministic_tools import check, result
+from libs.review_tools.r11_approval_timing import approval_timing
 from libs.review_tools.r39_tools import _refs, _text
 
 SCOPE_FIELDS = ("projectId", "planVersionId", "ownerOrganizationId", "approvalCycleId")
@@ -20,10 +21,10 @@ def evaluate_r11_approval(arguments):
         if arguments.get("selectionIssues") and status == "passed":
             status = "evidence_insufficient"
         output = result("evaluate_construction_plan", status,
-            facts={"scope": "documented_plan_signatures_and_owner_reply_only", "wholeRuleAcceptance": "not_evaluated",
+            facts={"scope": "documented_plan_signatures_owner_reply_and_use_order_only", "wholeRuleAcceptance": "not_evaluated",
                    "evidenceVerified": False, "approvalChecks": rows, "selectionIssues": deepcopy(arguments.get("selectionIssues") or [])},
             checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-            rule_version="r11-documented-plan-approval-v1")
+            rule_version="r11-documented-plan-approval-v2")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
@@ -59,4 +60,5 @@ def evaluate_r11_approval(arguments):
         status = approval.get("decision")
         outcome = "passed" if status == "approved" else "failed" if status == "rejected" else "evidence_insufficient"
         add("r11_owner_reply", outcome, _refs(approval))
+    rows.append(approval_timing(scope, approval, arguments.get("planUsage")))
     return finish()
