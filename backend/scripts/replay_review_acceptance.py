@@ -31,6 +31,36 @@ OFFLINE_TOOLS = {
     "evaluate_r36_ndt_plan",
     "evaluate_ndt_nonconformance",
     "evaluate_r37_defect_closure",
+    # 走 frozen_domain_checks 的判定工具：只按规则包里冻结的判据算传进来的 facts，
+    # 不读网络、不读数据库、不查标准库，因此离线重放与在线执行结果一致。
+    # 2026-09-10 接入后这份名单没跟着更新，导致真实运行只有 R35~R37 能重放，
+    # 其余全部卡在 replay_nonlocal_or_unsupported_tools。
+    "evaluate_r10_comparison_table",
+    "evaluate_r10_compliance_declaration",
+    "evaluate_r10_standard_adoption",
+    "evaluate_r11_process_standards",
+    "evaluate_r43_material_certificate",
+    "evaluate_r44_coating_construction",
+    "evaluate_r45_holiday_test",
+    "evaluate_r46_cathodic_protection",
+    "evaluate_r47_static_grounding",
+    "evaluate_r48_weld_layout",
+    "evaluate_r49_crossing_construction",
+    "evaluate_r50_sleeve_insulation",
+    "evaluate_r52_prefabrication",
+    "evaluate_r53_equipment_connection",
+    "evaluate_r53_installation_connections",
+    "evaluate_r54_compensator",
+    "evaluate_r55_supports",
+    "evaluate_r56_accessory_documents",
+    "evaluate_r56_accessory_installation",
+    "evaluate_r57_safety_valve_calibration",
+    "evaluate_r58_emergency_valve_test",
+    "evaluate_r63_stress_analysis",
+    "evaluate_r64_alternative_test",
+    "evaluate_r66_leak_test_conditions",
+    "evaluate_r67_leak_test_method",
+    "evaluate_r68_blowing_cleaning",
 }
 
 
