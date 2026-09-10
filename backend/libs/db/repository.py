@@ -22,6 +22,7 @@ import orjson
 
 from libs.audit_context import current_request_audit_context
 from libs.contracts.responses import server_time
+from libs.db.review_handoff_commit_guard import assert_handoff_sources_unchanged
 from libs.db.state_freshness import StateFreshnessProbe
 from libs.field_confidence import field_review_status, is_low_confidence
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
@@ -5806,6 +5807,10 @@ class InMemoryRepository:
             vector_dirty = bool(plan["vector_dirty"])
             tenant_id = configured_tenant_id()
             with self.sync_postgres.transaction():
+                # 结论落库前，在同一个事务里把交接来源再读一遍。执行前那道闸走的是
+                # 另一条连接的只读事务，闸放行到写入之间还有窗口；而这里的乐观锁只
+                # 比对被写的那一行，上游交接是另一行，改了不会失配。
+                assert_handoff_sources_unchanged(self.sync_postgres, dirty_documents, tenant_id)
                 if new_audit_records:
                     self.prepare_audit_records_for_postgres_transaction(
                         {"audit_logs": new_audit_records},
