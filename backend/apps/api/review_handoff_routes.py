@@ -204,6 +204,10 @@ def list_handoffs(request: Request, project_id: str, page: int = Query(default=1
                   event_id: str | None = Query(default=None, alias="eventId")):
     if error := _guard(request, project_id):
         return error
+    if error := _refresh_dependency_state(request):
+        return error
+    if error := _guard(request, project_id):
+        return error
     repo.ensure_deferred_loaded("review_handoffs", "review_runs")
     visible_versions = _visible_versions(request, project_id)
     used_ids = set()
@@ -268,6 +272,10 @@ def verify_handoff(request: Request, project_id: str, handoff_id: str,
 
 @router.get("/projects/{project_id}/review-handoffs/{handoff_id}")
 def get_handoff(request: Request, project_id: str, handoff_id: str, contextRunId: str | None = Query(default=None)):
+    if error := _guard(request, project_id):
+        return error
+    if error := _refresh_dependency_state(request):
+        return error
     if error := _guard(request, project_id):
         return error
     repo.ensure_deferred_loaded("review_handoffs")

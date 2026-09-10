@@ -76,7 +76,8 @@ def test_status_list_preserves_role_and_feature_guard(case, monkeypatch):
     assert client.get(URL, headers=headers).json()["code"] != 0
 
 
-@pytest.mark.parametrize("suffix", ["review-handoff-node-statuses", "review-runs/TARGET/handoff-dependencies"])
+@pytest.mark.parametrize("suffix", ["review-handoff-node-statuses", "review-runs/TARGET/handoff-dependencies",
+                                    "review-handoffs", "review-handoffs/UNAVAILABLE"])
 def test_database_refresh_failure_does_not_return_cached_status(monkeypatch, suffix):
     from types import SimpleNamespace
 
