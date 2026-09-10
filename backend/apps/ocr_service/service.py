@@ -51,6 +51,7 @@ from apps.ocr_service.runtime_doctor import build_runtime_doctor
 from libs.capacity_guard import disk_capacity_status
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
+from libs.ocr.document_pages import annotate_document_pages
 from libs.ocr.ndt_procedure import extract_explicit_fields as extract_ndt_procedure_fields
 from libs.ocr.ndt_record_identity import extract_record_identity
 from libs.ocr.ndt_report_fields import extract_report_fields
@@ -4089,6 +4090,7 @@ def detect_engineering_drawing_list_profile(
 
 
 def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]) -> None:
+    annotate_document_pages(result)
     if profile.get("profileId") == "ndt_procedure_v1":
         extract_ndt_procedure_fields(result, add_field_if_missing)
         add_profile_quality_diagnostics(result, profile)

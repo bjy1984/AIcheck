@@ -1,0 +1,267 @@
+[
+  {
+    "file": "test/8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+    "version": "explicit-page-titles-v1",
+    "scope": "observed_fragment_pages_only",
+    "complete": false,
+    "pages": [
+      {
+        "pageNo": 1,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 2,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 3,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 4,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 5,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 6,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      }
+    ]
+  },
+  {
+    "file": "test2/9.1金辉焊接工艺评定20.pdf",
+    "version": "explicit-page-titles-v1",
+    "scope": "observed_fragment_pages_only",
+    "complete": false,
+    "pages": [
+      {
+        "pageNo": 1,
+        "status": "identified",
+        "documentKind": "pqr",
+        "titleEvidence": [
+          {
+            "documentKind": "pqr",
+            "source": {
+              "text": "焊接工艺评定报告",
+              "confidence": 1,
+              "pageNo": 1,
+              "bbox": [
+                0.2808250520884477,
+                0.2801777716253222,
+                0.715008057607009,
+                0.3234947187146233
+              ],
+              "coordinateSystem": "normalized",
+              "sourceEngine": "apple_vision_local"
+            }
+          }
+        ]
+      },
+      {
+        "pageNo": 2,
+        "status": "ambiguous",
+        "documentKind": null,
+        "titleEvidence": [
+          {
+            "documentKind": "pwps",
+            "source": {
+              "text": "预焊接工艺规程",
+              "confidence": 1,
+              "pageNo": 2,
+              "bbox": [
+                0.23408624526910898,
+                0.17141500478016736,
+                0.37371662824218466,
+                0.1875593542578502
+              ],
+              "coordinateSystem": "normalized",
+              "sourceEngine": "apple_vision_local"
+            }
+          },
+          {
+            "documentKind": "pqr",
+            "source": {
+              "text": "焊接工艺评定报告",
+              "confidence": 1,
+              "pageNo": 2,
+              "bbox": [
+                0.2320328545308711,
+                0.2003798668369552,
+                0.3942505157292247,
+                0.21511627875487793
+              ],
+              "coordinateSystem": "normalized",
+              "sourceEngine": "apple_vision_local"
+            }
+          },
+          {
+            "documentKind": "welding_record",
+            "source": {
+              "text": "焊接工艺评定焊接及检验记录",
+              "confidence": 1,
+              "pageNo": 2,
+              "bbox": [
+                0.2320328569608232,
+                0.22819767424748272,
+                0.49486652264218856,
+                0.2441860468038739
+              ],
+              "coordinateSystem": "normalized",
+              "sourceEngine": "apple_vision_local"
+            }
+          }
+        ]
+      },
+      {
+        "pageNo": 3,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 4,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 5,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 6,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 7,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 8,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 9,
+        "status": "identified",
+        "documentKind": "welding_record",
+        "titleEvidence": [
+          {
+            "documentKind": "welding_record",
+            "source": {
+              "text": "焊接工艺评定焊接及检验记录",
+              "confidence": 1,
+              "pageNo": 9,
+              "bbox": [
+                0.3244353195835656,
+                0.05365622004167725,
+                0.6755646747901511,
+                0.07558139454107304
+              ],
+              "coordinateSystem": "normalized",
+              "sourceEngine": "apple_vision_local"
+            }
+          }
+        ]
+      },
+      {
+        "pageNo": 10,
+        "status": "identified",
+        "documentKind": "rt_report",
+        "titleEvidence": [
+          {
+            "documentKind": "rt_report",
+            "source": {
+              "text": "射线检测报告书",
+              "confidence": 1,
+              "pageNo": 10,
+              "bbox": [
+                0.25197809585985403,
+                0.21331390866336652,
+                0.7460292572482768,
+                0.26840938021124594
+              ],
+              "coordinateSystem": "normalized",
+              "sourceEngine": "apple_vision_local"
+            }
+          }
+        ]
+      },
+      {
+        "pageNo": 11,
+        "status": "identified",
+        "documentKind": "rt_report",
+        "titleEvidence": [
+          {
+            "documentKind": "rt_report",
+            "source": {
+              "text": "射线检测报告（主页）",
+              "confidence": 1,
+              "pageNo": 11,
+              "bbox": [
+                0.3608997503787036,
+                0.10873592848445035,
+                0.6206238591834959,
+                0.1338444162286142
+              ],
+              "coordinateSystem": "normalized",
+              "sourceEngine": "apple_vision_local"
+            }
+          }
+        ]
+      },
+      {
+        "pageNo": 12,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 13,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 14,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 15,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      },
+      {
+        "pageNo": 16,
+        "status": "unknown",
+        "documentKind": null,
+        "titleEvidence": []
+      }
+    ]
+  }
+]

@@ -5,6 +5,7 @@ import os
 from copy import deepcopy
 from typing import Any
 
+from libs.ocr.document_pages import annotate_document_pages
 from libs.ocr.page_coverage import review_coverage_gap
 
 
@@ -48,6 +49,8 @@ def restrict_parse_result(parse: dict[str, Any], bounds: dict[str, int]) -> dict
                        if isinstance(row, dict) and located_record_in_range(row, bounds)]
     result["reviewPageScope"] = deepcopy(bounds)
     result["reviewCoverageGap"] = deepcopy(review_coverage_gap(parse, bounds))
+    if "documentPageClassification" in parse:
+        annotate_document_pages(result)
     return result
 
 
