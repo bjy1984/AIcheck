@@ -6,16 +6,30 @@
 
 ## 1. 換一把通義密鑰　【最急，卡住最多東西】
 
-**現況**：`AICHECK_LLM_API_KEY` 的值是 `sk-ws-` 開頭、116 字元。阿里雲直接回
-`invalid_api_key`。DashScope 的 key 是 `sk-` 開頭約 35 字元，形狀就不對。
+**現況**：那把 key **沒被改過**——用雜湊比對 2026-08-18 的備份，
+`AICHECK_LLM_VISION_API_KEY` 一字不差（len=116，`817ee02b…`），而現在的
+`AICHECK_LLM_API_KEY` 就是同一把。8 月時主供應商還是 DeepSeek
+（`api.deepseek.com` + deepseek-v4-pro），後來有人把主供應商切成通義、複用了視覺
+那把 key，並把原 DeepSeek key 挪去當回退。切換之後它是**能用的**：
+`model_call_attempts` 顯示 2026-09-09 04:11 qwen3.8-max 成功過 22 次。
+
+**所以變的不在伺服器上，在阿里雲那邊**——同一把 key、同一個 base，現在回
+`invalid_api_key`。（我先前說「`sk-ws-` 不是 DashScope key 的形狀」是猜的，猜錯了。）
+
+**先去控制台查，不要直接新簽**：
+- key 還在且正常 → 查帳號欠費／額度／workspace 狀態
+- key 被刪或停用 → 才需要新簽
+
+**影響比我先前報的大**：`AICHECK_EMBEDDING_API_KEY` 也是同一把，實測向量化同樣
+401——**知識庫切片向量化也停了**，不只審查與分類。
 
 **現在壞掉的**：AI 審查、一鍵分析、文件自動分類。從 **2026-09-09 04:11** 起全停。
 
 **你要做的**：
 
 1. 阿里雲百煉控制台 → API-KEY → 新建，複製那把 `sk-` 開頭的
-2. 改 `/home/dev-bjy/aicheck-runtime.env` 裡的 `AICHECK_LLM_API_KEY=`
-   （視覺角色 `AICHECK_LLM_VISION_API_KEY` 目前是同一把壞的，一併換）
+2. 改 `/home/dev-bjy/aicheck-runtime.env`。**三個變數現在共用同一把**，要一起換：
+   `AICHECK_LLM_API_KEY`、`AICHECK_LLM_VISION_API_KEY`、`AICHECK_EMBEDDING_API_KEY`
 3. 重啟：`aicheck-api` 和四個 worker（`aicheck-worker-llm`、`-business`、
    `-cpu-heavy`、`-ocr-remote`）
 
