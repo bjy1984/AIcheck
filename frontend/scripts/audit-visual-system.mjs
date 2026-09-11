@@ -150,7 +150,23 @@ const inspectPage = async (page, viewport) =>
         ancestorClassName: String(classifiedAncestor?.className || '').slice(0, 100),
         fontSize: Number.parseFloat(style.fontSize),
         fontWeight: Number(style.fontWeight) || (style.fontWeight === 'bold' ? 700 : 400),
-        contrast: contrast(style.color, background)
+        contrast: contrast(style.color, background),
+        // 只报一个对比度数字，等于把「哪两个颜色」留给人去猜。2026-09-10 修这批
+        // 低对比时就为此猜错了三次（先当成 error、又当成 info、再怀疑特指度），
+        // 每次都要重跑一遍稽核才知道猜错。把实际取到的前景/背景一并带出来，
+        // 下一个人可以直接拿去搜代码。
+        color: style.color,
+        background,
+        // 记下最近一个带 class 的祖先链，光有 ancestorClassName 常常定位不到元素。
+        ancestorTrail: (() => {
+          const trail = []
+          let node = element.parentElement
+          while (node && trail.length < 4) {
+            if (node.className) trail.push(String(node.className).slice(0, 40))
+            node = node.parentElement
+          }
+          return trail
+        })()
       }
     })
     const targets = Array.from(

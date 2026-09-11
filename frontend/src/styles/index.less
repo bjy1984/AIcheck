@@ -362,19 +362,19 @@ body,
    和 Element 自己的 `.el-alert__description` 打平，靠加载顺序决胜负，
    实测就是输掉、颜色没改成。这里写全类名，拿到 (0,2,0)。 */
 .el-message--error .el-message__content,
-.el-alert--error .el-alert__content,
-.el-alert--error .el-alert__title,
+.el-alert.el-alert--error .el-alert__content,
+.el-alert.el-alert--error .el-alert__title,
 .el-alert--error .el-alert__description,
-.el-alert--danger .el-alert__content,
-.el-alert--danger .el-alert__title,
-.el-alert--danger .el-alert__description {
+.el-alert.el-alert--danger .el-alert__content,
+.el-alert.el-alert--danger .el-alert__title,
+.el-alert.el-alert--danger .el-alert__description {
   color: #b42318;
 }
 
 .el-message--warning .el-message__content,
-.el-alert--warning .el-alert__content,
-.el-alert--warning .el-alert__title,
-.el-alert--warning .el-alert__description {
+.el-alert.el-alert--warning .el-alert__content,
+.el-alert.el-alert--warning .el-alert__title,
+.el-alert.el-alert--warning .el-alert__description {
   color: #92400e;
 }
 
@@ -382,8 +382,8 @@ body,
    「Request failed with status code 500」这种其实是错误的文案会以 info 呈现，
    Element 的 info 文字在浅灰底上同样只有 2.61:1。 */
 .el-message--info .el-message__content,
-.el-alert--info .el-alert__content,
-.el-alert--info .el-alert__title,
-.el-alert--info .el-alert__description {
+.el-alert.el-alert--info .el-alert__content,
+.el-alert.el-alert--info .el-alert__title,
+.el-alert.el-alert--info .el-alert__description {
   color: #334155;
 }
