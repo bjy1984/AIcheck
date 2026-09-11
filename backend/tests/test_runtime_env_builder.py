@@ -111,34 +111,46 @@ TOKEN_PLAN = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 DASHSCOPE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
-def test_有TokenPlan密钥时文本与视觉整体切到TokenPlan端点(tmp_path: pathlib.Path):
-    """三种百炼密钥与端点互不通用；2026-09-10 一把好密钥打错端点连错三轮。"""
+def test_有TokenPlan密钥时文本切到TokenPlan而视觉留在按量端点(tmp_path: pathlib.Path):
+    """三种百炼密钥与端点互不通用；按量端点才有 qwen-vl-max，视觉不该跟着切。"""
     env = _build(tmp_path, {
         "AICHECK_POSTGRES_PASSWORD": "pw",
         "AICHECK_LLM_VISION_API_BASE": DASHSCOPE,
-        "AICHECK_LLM_VISION_API_KEY": "sk-old-dashscope",
+        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
         "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
     })
     assert env["AICHECK_LLM_API_BASE"] == TOKEN_PLAN
     assert env["AICHECK_LLM_API_KEY"] == "sk-sp-token-plan"
-    assert env["AICHECK_LLM_VISION_API_BASE"] == TOKEN_PLAN
-    assert env["AICHECK_LLM_VISION_API_KEY"] == "sk-sp-token-plan"
-    # Token Plan 没有 qwen-vl-max；qwen3.7-plus 实测能读图
-    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3.7-plus"
+    # 视觉凭证齐备就留在按量端点，用专门的视觉模型
+    assert env["AICHECK_LLM_VISION_API_BASE"] == DASHSCOPE
+    assert env["AICHECK_LLM_VISION_API_KEY"] == "sk-ws-payg"
+    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen-vl-max"
     # 文本模型名不动——它们在 Token Plan 上就是这些名字
     assert env["AICHECK_LLM_MODEL_REVIEW"] == "qwen3.7-plus"
     assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
+
+
+def test_没有按量视觉凭证时视觉才退回TokenPlan(tmp_path: pathlib.Path):
+    """只配一半（有密钥没地址）也算不齐，退回 Token Plan，不拼出错配的组合。"""
+    env = _build(tmp_path, {
+        "AICHECK_POSTGRES_PASSWORD": "pw",
+        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
+        "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
+    })
+    assert env["AICHECK_LLM_VISION_API_BASE"] == TOKEN_PLAN
+    assert env["AICHECK_LLM_VISION_API_KEY"] == "sk-sp-token-plan"
+    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3.7-plus"
 
 
 def test_TokenPlan不接管embeddings(tmp_path: pathlib.Path):
     """Token Plan 没有 text-embedding-v4（404）；向量化必须留在按量端点。"""
     env = _build(tmp_path, {
         "AICHECK_POSTGRES_PASSWORD": "pw",
-        "AICHECK_LLM_VISION_API_KEY": "sk-old-dashscope",
+        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
         "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
     })
     assert env["AICHECK_EMBEDDING_API_BASE"] == DASHSCOPE
-    assert env["AICHECK_EMBEDDING_API_KEY"] == "sk-old-dashscope"
+    assert env["AICHECK_EMBEDDING_API_KEY"] == "sk-ws-payg"
     assert env["AICHECK_EMBEDDING_API_KEY"] != env["AICHECK_LLM_API_KEY"]
 
 
@@ -146,7 +158,7 @@ def test_凭证里显式的embedding密钥优先(tmp_path: pathlib.Path):
     """按量密钥失效后新签一把只给 embeddings 用，不该被视觉那把盖掉。"""
     env = _build(tmp_path, {
         "AICHECK_POSTGRES_PASSWORD": "pw",
-        "AICHECK_LLM_VISION_API_KEY": "sk-old-dashscope",
+        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
         "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
         "AICHECK_EMBEDDING_API_KEY": "sk-new-payg",
     })

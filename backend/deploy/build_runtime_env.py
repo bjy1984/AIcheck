@@ -184,9 +184,15 @@ if secrets.get("AICHECK_TOKEN_PLAN_API_KEY"):
     token_plan_key = secrets["AICHECK_TOKEN_PLAN_API_KEY"]
     runtime["AICHECK_LLM_API_BASE"] = TOKEN_PLAN_BASE
     runtime["AICHECK_LLM_API_KEY"] = token_plan_key
-    runtime["AICHECK_LLM_VISION_API_BASE"] = TOKEN_PLAN_BASE
-    runtime["AICHECK_LLM_VISION_API_KEY"] = token_plan_key
-    runtime["AICHECK_LLM_MODEL_VISION"] = "qwen3.7-plus"
+    # 视觉不跟着切：按量端点有 qwen-vl-max（专门的视觉模型，印章读字就是为它配的），
+    # Token Plan 没有，只能退而用 qwen3.7-plus 读图。凭证文件里地址与密钥**两个都齐**
+    # 才认（沿用 vision_override 的老规矩：只配一半会拼出"新地址配旧密钥"）；
+    # 缺任一个才整体退回 Token Plan。
+    if not (secrets.get("AICHECK_LLM_VISION_API_BASE") and secrets.get("AICHECK_LLM_VISION_API_KEY")):
+        runtime["AICHECK_LLM_VISION_API_BASE"] = TOKEN_PLAN_BASE
+        runtime["AICHECK_LLM_VISION_API_KEY"] = token_plan_key
+        runtime["AICHECK_LLM_MODEL_VISION"] = "qwen3.7-plus"
+    # embeddings 只能走按量端点（Token Plan 没有 text-embedding-v4，实测 404）。
     embedding_key = secrets.get("AICHECK_EMBEDDING_API_KEY") or secrets.get("AICHECK_LLM_VISION_API_KEY")
     if embedding_key:
         runtime["AICHECK_EMBEDDING_API_KEY"] = embedding_key
