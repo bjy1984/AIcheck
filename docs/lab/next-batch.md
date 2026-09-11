@@ -34,7 +34,7 @@
 
 ## B. 不等任何人，我現在就能做的
 
-### B1. 開工位模式並重跑真實審查
+### ~~B1. 開工位模式並重跑真實審查~~　【已完成 2026-09-11；見 verification/2026-09-11-workstation-on-first-frozen-run-and-fixture.md】
 
 **為什麼**：生產庫**沒有任何一次運行**有 `documentScopeSnapshot`（工位模式從沒開過，且開了不會給既有運行補快照）。沒有凍結的文件範圍，`export_review_acceptance_fixture.py` 就導不出任何東西——第 8 項驗收因此一步都動不了。
 
