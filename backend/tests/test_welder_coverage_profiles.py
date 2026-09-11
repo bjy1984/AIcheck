@@ -214,3 +214,39 @@ def test_工程范围不能漏到别的工程():
     assert sorted(a) == ["DV-A1", "DV-A2"]
     assert sorted(_documents_by_version(state, "P-B")) == ["DV-B1"]
     assert not set(a) & set(_documents_by_version(state, "P-B"))
+
+
+def test_确定性工具要说清楚缺什么():
+    """2026-09-11 全节点扫描：192 项证据不足里 94 项是一声不吭的 checkCount=0。
+    工具不说缺什么，界面上就只剩「证据不足」三个字，监检没法知道该去补哪份资料。"""
+    from libs.review_orchestrator.deterministic_tools import (
+        check_all_equal,
+        check_date_covers,
+        check_design_license_scope,
+    )
+
+    equal = check_all_equal(
+        {
+            "values": [
+                {"source": "designLicense.holderName", "value": "广东政和工程有限公司"},
+                {"source": "designDocument.titleBlockOrganization", "value": None},
+                {"source": "designDocument.designSealOrganization", "value": ""},
+            ]
+        }
+    )
+    assert equal["result"] == "evidence_insufficient"
+    assert equal["facts"]["reason"] == "fewer_than_two_comparable_values"
+    assert equal["facts"]["missingSources"] == [
+        "designDocument.titleBlockOrganization",
+        "designDocument.designSealOrganization",
+    ]
+
+    scope = check_design_license_scope({"licenseScopes": ["GB1", "GC1"], "requiredPipelineGrades": []})
+    assert scope["facts"]["reason"] == "required_pipeline_grades_missing"
+
+    dates = check_date_covers({"validUntil": "2028-01-17", "periodStart": None, "periodEnd": None})
+    assert dates["facts"]["reason"] == "periodStart_and_periodEnd_missing"
+    # 齐全时照旧判定，不受影响。
+    assert check_date_covers(
+        {"validUntil": "2028-01-17", "periodStart": "2026-01-01", "periodEnd": "2026-12-31"}
+    )["result"] == "passed"

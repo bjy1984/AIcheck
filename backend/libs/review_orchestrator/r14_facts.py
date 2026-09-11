@@ -130,7 +130,15 @@ def _extract_pipeline_characteristics(
             line_no = _value(row, "lineNo", "pipelineNo", "pipeNo", "管线号", "管道编号")
             pressure_class = _value(row, "pressureClass", "pressureRating", "压力等级", "公称压力")
             design_pressure = _value(row, "designPressureMPa", "designPressure", "设计压力MPa", "设计压力")
-            if not any(_present(value) for value in (line_no, pressure_class, design_pressure)):
+            # 没有管线号的行不是管线特性行。原来只要 lineNo / 压力等级 / 设计压力
+            # 任一有值就收，而 MinerU 对施工图这类表经常把表头认错一行——列名成了
+            # 数据值，`设计压力` 这个键底下是别的列。2026-09-11 生产实测：
+            # 地上甲类储罐区2（含泵区）施工图.pdf 因此产出 28 条「管线」，
+            # 管线号、级别、材质全是 null，而 designPressureMPa 是
+            # 2/4/6/8/10/12/14/16 的等差数列——那是尺寸或序号列，不是设计压力。
+            # 这些假管线随后喂给逐管线判定，16MPa 会直接改变管道级别结论。
+            # 没有管线号就无法归属，也就无法支撑逐管线判定，宁可不产出。
+            if not _present(line_no):
                 continue
             key = {"documentVersionId": version_id, "tableId": table.get("tableId") or table.get("id"), "rowIndex": row_index}
             record_id = "R14PIPE-" + stable_payload_hash(key)[7:19].upper()

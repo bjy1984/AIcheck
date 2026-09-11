@@ -154,7 +154,19 @@ def check_all_equal(arguments: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         required_count = 2
     if len(usable) < max(2, required_count):
-        return result("check_all_equal", "evidence_insufficient", facts={"values": usable}, checks=[])
+        # 一致性核对至少要两个值。只拿到一个时说明另一侧的事实没抽出来——
+        # 报「证据不足」而不说少了谁，监检没法知道该去补哪份资料。
+        return result(
+            "check_all_equal",
+            "evidence_insufficient",
+            facts={
+                "values": usable,
+                "reason": "fewer_than_two_comparable_values",
+                "suppliedSources": [str(item.get("source") or "") for item in values],
+                "missingSources": [str(item.get("source") or "") for item in values if item.get("value") in {None, ""}],
+            },
+            checks=[],
+        )
     normalized = [normalize_value(item.get("value"), normalizer) for item in usable]
     passed = len(set(normalized)) == 1
     return result(
@@ -169,7 +181,17 @@ def check_date_covers(arguments: dict[str, Any]) -> dict[str, Any]:
     parsed = {key: parse_date(arguments.get(key)) for key in ("validFrom", "validUntil", "periodStart", "periodEnd")}
     required = ("validUntil", "periodStart", "periodEnd")
     if any(parsed[key] is None for key in required):
-        return result("check_date_covers", "evidence_insufficient", facts=parsed, checks=[])
+        # periodStart/periodEnd 来自项目的施工起止日期——生产里所有项目都是空的
+        # （2026-09-11 实测）。不说缺哪一个，界面上就只有「证据不足」。
+        return result(
+            "check_date_covers",
+            "evidence_insufficient",
+            facts={
+                **{key: value.isoformat() if value else None for key, value in parsed.items()},
+                "reason": "_and_".join(key for key in required if parsed[key] is None) + "_missing",
+            },
+            checks=[],
+        )
     starts_before = parsed["validFrom"] is None or parsed["validFrom"] <= parsed["periodStart"]
     ends_after = parsed["validUntil"] >= parsed["periodEnd"]
     output = result(
@@ -318,10 +340,17 @@ def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
     scopes = {normalize_grade(item) for item in arguments.get("licenseScopes") or [] if item}
     required = {normalize_grade(item) for item in arguments.get("requiredPipelineGrades") or [] if item}
     if not scopes or not required:
+        # 说清楚缺哪一半。不说的话界面上只剩「证据不足」三个字：
+        # 2026-09-11 全节点扫描，192 项证据不足里 94 项是这种一声不吭的 checkCount=0。
+        missing = [name for name, present in (("license_scopes", scopes), ("required_pipeline_grades", required)) if not present]
         return result(
             "check_design_license_scope",
             "evidence_insufficient",
-            facts={"licenseScopes": sorted(scopes), "requiredPipelineGrades": sorted(required)},
+            facts={
+                "licenseScopes": sorted(scopes),
+                "requiredPipelineGrades": sorted(required),
+                "reason": "_and_".join(missing) + "_missing",
+            },
             checks=[],
             rule_version="design-license-scope-cn-v1",
         )

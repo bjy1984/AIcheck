@@ -118,9 +118,11 @@ def build_project_pipelines(state: dict[str, Any], project_id: str, *, review_ru
             pipeline = _pipeline_from_characteristic(item)
             if not pipeline["source"].get("fileName"):
                 pipeline["source"]["fileName"] = versions[version_id].get("fileName")
-            key = pipeline["pipelineId"] or f"{version_id}:{item.get('tableId')}:{item.get('rowIndex')}"
-            if not pipeline["pipelineId"]:
-                pipeline["pipelineId"] = key
+            # 没有管线号就没有管线：原来用「版本:表:行号」合成一个 id，
+            # 结果是把表头认错产生的垃圾行也变成了有身份的「管线」。
+            key = pipeline["pipelineId"]
+            if not key:
+                continue
             candidates.setdefault(key, []).append(pipeline)
             existing = by_line.get(key)
             if existing is None or _completeness(pipeline) > _completeness(existing):
