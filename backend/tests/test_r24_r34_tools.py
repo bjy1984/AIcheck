@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from libs.review_orchestrator.deterministic_tools import (
     check_welder_work_coverage,
+    decode_welder_code,
     decode_welder_qualification,
 )
 from libs.review_tools.r24_r34_tools import (
@@ -33,16 +34,82 @@ def test_r24_sample_code_covers_20_steel_89_by_4_5_gtaw() -> None:
     assert covered["result"] == "passed"
 
 
-def test_r24_after_2026_transition_fails_closed_without_verified_profile() -> None:
+def test_r24_从2026_08_01起按新版覆盖表判定() -> None:
+    """TSG Z6002-2026 自 2026-08-01 施行，2010 版同日废止。
+
+    这里原来钉的是一道过渡闸门：8 月 1 日后一律返回 evidence_insufficient。
+    2026-09-11 生产实测，那道闸门吃掉了 130 项证据不足里的 36 项——判定停用了
+    四十天。现在两版覆盖表并存，按作业日期选版（市监特设发〔2026〕85 号：
+    旧证有效期内继续有效，但覆盖范围按新细则执行）。
+    """
+    arguments = {
+        "qualificationCodes": ["GTAW-FeII-6G-3/57-FefS-02/11/12"],
+        "workItems": [{"weldingMethod": "GTAW", "materialGrade": "20", "position": "6G", "thickness": 4.5, "diameter": 89}],
+    }
+    after = check_welder_work_coverage({**arguments, "reviewDate": "2026-08-01"})
+    assert after["result"] == "passed"
+    assert after["ruleVersion"] == "welder-qualification-tsg-z6002-2026-v1"
+
+    before = check_welder_work_coverage({**arguments, "reviewDate": "2026-07-31"})
+    assert before["result"] == "passed"
+    assert before["ruleVersion"] == "welder-qualification-tsg-z6002-2010-v2"
+
+
+def test_r24_认不出母材牌号是证据不足而不是不合格() -> None:
+    """把「不认识这个牌号」判成 failed，等于指控焊工超范围作业。
+
+    母材类别表（TSG Z6002-2026 表 A-2）在 regulatory_tables.yaml 里
+    `extractedFrom: ocr`、`verifiedBy: null`，表上自己写着「写入判定前须逐格核对」。
+    既然不敢拿它定罪，查不到就必须说查不到。
+    """
     output = check_welder_work_coverage(
         {
             "qualificationCodes": ["GTAW-FeII-6G-3/57-FefS-02/11/12"],
-            "workItems": [{"weldingMethod": "GTAW", "materialGrade": "20", "position": "6G", "thickness": 4.5, "diameter": 89}],
-            "reviewDate": "2026-08-01",
+            "workItems": [{"weldingMethod": "GTAW", "materialGrade": "本表里没有的牌号", "position": "6G", "thickness": 4.5, "diameter": 89}],
+            "reviewDate": "2026-09-11",
         }
     )
     assert output["result"] == "evidence_insufficient"
-    assert output["facts"]["reason"] == "tsg_z6002_2026_effective_profile_not_verified"
+    assert output["facts"]["reason"] == "work_item_coverage_undecidable"
+    assert output["facts"]["undecidableWorkItems"] == [1]
+
+    # 认得出、且确实不覆盖的，照样判不合格：FeⅠ~Ⅲ 两版都不覆盖 FeⅣ（奥氏体）。
+    austenitic = check_welder_work_coverage(
+        {
+            "qualificationCodes": ["GTAW-FeII-6G-3/57-FefS-02/11/12"],
+            "workItems": [{"weldingMethod": "GTAW", "materialGrade": "06Cr19Ni10", "position": "6G", "thickness": 4.5, "diameter": 89}],
+            "reviewDate": "2026-09-11",
+        }
+    )
+    assert austenitic["result"] == "failed"
+
+
+def test_r24_带衬垫代号不再让整张证作废() -> None:
+    """`SMAW-FeⅡ-6G(K)-9/57-Fef3J` 里的 (K) 原来留在位置串里，
+    welding_position_code 把它碾成 "6GK"，覆盖表查不到 → 带衬垫的证一律判不覆盖。
+
+    A4.3.6.1：不带衬垫（单面焊全焊透）覆盖带衬垫，反之不可。
+    所以带 (K) 的证遇到没注明衬垫的焊口，是说不准，不是不覆盖。
+    """
+    decoded = decode_welder_code("SMAW-FeII-6G(K)-9/57-Fef3J")
+    assert decoded["position"] == "6G"
+    assert decoded["backing"] is True
+
+    work = {"weldingMethod": "SMAW", "materialGrade": "20", "position": "6G", "thickness": 9, "diameter": 89}
+    unknown_backing = check_welder_work_coverage(
+        {"qualificationCodes": ["SMAW-FeII-6G(K)-9/57-Fef3J"], "workItems": [work], "reviewDate": "2026-09-11"}
+    )
+    assert unknown_backing["result"] == "evidence_insufficient"
+
+    with_backing = check_welder_work_coverage(
+        {"qualificationCodes": ["SMAW-FeII-6G(K)-9/57-Fef3J"], "workItems": [{**work, "backing": True}], "reviewDate": "2026-09-11"}
+    )
+    assert with_backing["result"] == "passed"
+
+    without_backing = check_welder_work_coverage(
+        {"qualificationCodes": ["SMAW-FeII-6G(K)-9/57-Fef3J"], "workItems": [{**work, "backing": False}], "reviewDate": "2026-09-11"}
+    )
+    assert without_backing["result"] == "failed"
 
 
 def _wps_pqr_arguments() -> dict:

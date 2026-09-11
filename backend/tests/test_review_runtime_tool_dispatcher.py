@@ -192,37 +192,31 @@ def test_r24_welder_qualification_coverage_pilot_tool() -> None:
     assert uncovered["result"] == "failed"
 
 
-def test_r24_welder_2026_transition_requires_verified_rule_profile() -> None:
-    """2026-08-01 起焊工资格进入 TSG Z6002-2026 过渡期。
+def test_r24_焊工判定按作业日期选覆盖表版本() -> None:
+    """TSG Z6002-2026 自 2026-08-01 施行；市监特设发〔2026〕85 号明确
+    有效期内旧证继续有效，但**覆盖范围按新细则执行**——选版看作业日期。
 
-    过渡期内若未核验规则档（ruleProfile2026Verified），不得沿用 2010 版口径下判定，
-    必须退回 evidence_insufficient 交人工确认；核验后才恢复正常判定。
+    这里原来钉的是过渡闸门（未设 ruleProfile2026Verified 就一律证据不足）。
+    2026-09-11 生产实测：那道闸门占了全部证据不足的 28%，节点 24/29 的焊工
+    判定自 8 月 1 日起实际停用。两版覆盖表已并存，闸门撤销。
     """
     arguments = {
         "qualificationCodes": ["GTAW-FeⅡ-6G-3/57-FefS-02/11/12"],
         "reviewDate": "2026-08-01",
     }
 
-    unverified = dispatch_runtime_tool({}, "decode_welder_qualification", dict(arguments))
-    assert unverified["result"] == "evidence_insufficient"
-    assert unverified["facts"]["reason"] == "tsg_z6002_2026_effective_profile_not_verified"
-    assert unverified["ruleVersion"] == "welder-qualification-tsg-z6002-2026-transition-v1"
+    current = dispatch_runtime_tool({}, "decode_welder_qualification", dict(arguments))
+    assert current["result"] == "passed"
+    assert current["ruleVersion"] == "welder-qualification-tsg-z6002-2026-v1"
+    assert current["checks"], "撤掉闸门的意义就在于真的产出核查项"
 
-    verified = dispatch_runtime_tool(
-        {},
-        "decode_welder_qualification",
-        {**arguments, "ruleProfile2026Verified": True},
-    )
-    assert verified["result"] == "passed"
-    assert verified["ruleVersion"] == "welder-qualification-tsg-z6002-2026-transition-v1"
-
-    # 过渡期前仍走 2010 版口径。
     legacy = dispatch_runtime_tool(
         {},
         "decode_welder_qualification",
         {**arguments, "reviewDate": "2026-07-31"},
     )
     assert legacy["result"] == "passed"
+    assert legacy["ruleVersion"] == "welder-qualification-tsg-z6002-2010-v2"
     assert legacy["ruleVersion"] == "welder-qualification-tsg-z6002-2010-v2"
 
 

@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from libs.contracts.responses import business_today
+from libs.review_orchestrator import welder_coverage
 
 RESULT_SCHEMA = "deterministic-tool-result-v1"
 
@@ -347,15 +348,7 @@ def decode_welder_qualification(arguments: dict[str, Any]) -> dict[str, Any]:
     codes = [str(item).strip() for item in arguments.get("qualificationCodes") or [] if str(item).strip()]
     decoded = [decode_welder_code(item) for item in codes]
     valid = [item for item in decoded if item.get("parseStatus") == "parsed"]
-    rule_version, transition_warning = welder_rule_version(arguments)
-    if transition_warning:
-        return result(
-            "decode_welder_qualification",
-            "evidence_insufficient",
-            facts={"qualificationCodes": codes, "decodedItems": decoded, "reason": transition_warning},
-            checks=[],
-            rule_version=rule_version,
-        )
+    rule_version, _ = welder_rule_version(arguments)
     return result(
         "decode_welder_qualification",
         "passed" if codes and len(valid) == len(codes) else "evidence_insufficient",
@@ -366,15 +359,7 @@ def decode_welder_qualification(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def check_welder_work_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
-    rule_version, transition_warning = welder_rule_version(arguments)
-    if transition_warning:
-        return result(
-            "check_welder_work_coverage",
-            "evidence_insufficient",
-            facts={"reason": transition_warning, "reviewDate": arguments.get("reviewDate")},
-            checks=[],
-            rule_version=rule_version,
-        )
+    rule_version, _ = welder_rule_version(arguments)
     certificates = [item for item in arguments.get("certificates") or [] if isinstance(item, dict)]
     codes = [str(code) for code in arguments.get("qualificationCodes") or []]
     decoded = [decode_welder_code(code) for code in codes] if not certificates else []
@@ -418,15 +403,36 @@ def check_welder_work_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
                 check(f"certificate_{index}_original_or_verified_copy", source_verified, source_verified, True),
             ]
         )
+    undecidable_work: list[int] = []
+    coverage_checks: list[dict[str, Any]] = []
     for index, work in enumerate(work_items, 1):
-        matched = [item for item in qualifications if qualification_covers_work(item, work)]
-        work_checks.append(check(f"work_item_{index}_covered", bool(matched), work, [item.get("code") for item in matched]))
-    coverage_passed = all(item["passed"] for item in work_checks[-len(work_items):])
-    status = "failed" if certificate_failed or not coverage_passed else "evidence_insufficient" if certificate_incomplete else "passed"
+        outcomes = [qualification_coverage_outcome(item, work, rule_version=rule_version) for item in qualifications]
+        matched = [item for item, outcome in zip(qualifications, outcomes, strict=True) if outcome == welder_coverage.COVERED]
+        # 一道焊口只要有一张证明确覆盖就算覆盖；一张都不覆盖、却有证「说不准」时，
+        # 说不准——把牌号认不出来当成焊工超范围作业，是在冤枉人。
+        if not matched and welder_coverage.UNDECIDABLE in outcomes:
+            undecidable_work.append(index)
+            continue
+        coverage_checks.append(check(f"work_item_{index}_covered", bool(matched), work, [item.get("code") for item in matched]))
+    work_checks.extend(coverage_checks)
+    coverage_passed = all(item["passed"] for item in coverage_checks)
+    status = (
+        "failed"
+        if certificate_failed or not coverage_passed
+        else "evidence_insufficient"
+        if certificate_incomplete or undecidable_work
+        else "passed"
+    )
     return result(
         "check_welder_work_coverage",
         status,
-        facts={"qualifications": qualifications, "workItems": work_items, "certificates": certificates},
+        facts={
+            "qualifications": qualifications,
+            "workItems": work_items,
+            "certificates": certificates,
+            "undecidableWorkItems": undecidable_work,
+            "reason": "work_item_coverage_undecidable" if undecidable_work and not certificate_failed else None,
+        },
         checks=work_checks,
         rule_version=rule_version,
     )
@@ -685,12 +691,17 @@ def decode_welder_code(code: str) -> dict[str, Any]:
         else Decimal(76),
         None,
     )
+    position_raw = parts[2].upper()
+    # (K) = 带衬垫（A4.2.5）。原来它留在位置串里，welding_position_code 会把
+    # "6G(K)" 碾成 "6GK"，覆盖表查不到 → 带衬垫的证书一律判成不覆盖。
+    backing = "(K)" in position_raw or "（K）" in position_raw
     return {
         "code": code,
         "parseStatus": "parsed",
         "weldingMethod": parts[0].upper(),
         "materialCategory": parts[1].upper(),
-        "position": parts[2].upper(),
+        "position": position_raw.replace("(K)", "").replace("（K）", ""),
+        "backing": backing,
         "thicknessMin": thickness[0],
         "thicknessMax": thickness[1],
         "diameterMin": diameter[0],
@@ -700,56 +711,61 @@ def decode_welder_code(code: str) -> dict[str, Any]:
     }
 
 
-def qualification_covers_work(qualification: dict[str, Any], work: dict[str, Any]) -> bool:
+def qualification_covers_work(qualification: dict[str, Any], work: dict[str, Any], *, rule_version: str = welder_coverage.RULE_VERSION_2026) -> bool:
+    """布尔视图：只有明确覆盖才算覆盖（说不准按不覆盖处理）。调用方要区分三态用下面那个。"""
+    return qualification_coverage_outcome(qualification, work, rule_version=rule_version) == welder_coverage.COVERED
+
+
+def qualification_coverage_outcome(qualification: dict[str, Any], work: dict[str, Any], *, rule_version: str = welder_coverage.RULE_VERSION_2026) -> str:
     qualification_certificate = normalize_value(qualification.get("certificateNo"), "text")
     work_certificate = normalize_value(work.get("welderCertificateNo") or work.get("certificateNo"), "text")
+    # 人证不对号：这张证不是拿来比这道焊口的，不是「超范围」。
     if work_certificate and qualification_certificate and work_certificate != qualification_certificate:
-        return False
+        return welder_coverage.NOT_COVERED
     qualification_name = normalize_value(qualification.get("welderName"), "text")
     work_name = normalize_value(work.get("welderName"), "text")
     if work_name and qualification_name and work_name != qualification_name:
-        return False
+        return welder_coverage.NOT_COVERED
     if welding_method_code(qualification.get("weldingMethod")) != welding_method_code(work.get("weldingMethod")):
-        return False
+        return welder_coverage.NOT_COVERED
+    profile = welder_coverage.profile_for_rule_version(rule_version)
     qualified_material = normalize_roman(str(qualification.get("materialCategory") or "")).upper()
     actual_material = normalize_roman(str(work.get("materialCategory") or material_category_for_grade(work.get("materialGrade")) or "")).upper()
-    material_coverage = {
-        "FEI": {"FEI"},
-        "FEII": {"FEI", "FEII"},
-        "FEIII": {"FEI", "FEII", "FEIII"},
-        "FEIV": {"FEIV"},
-        "FEV": {"FEI", "FEII", "FEIII", "FEV"},
-        "FEVI": {"FEI", "FEII", "FEIII", "FEV", "FEVI"},
-    }
-    if actual_material not in material_coverage.get(qualified_material, {qualified_material}):
-        return False
-    qualified_position = welding_position_code(qualification.get("position"))
-    actual_position = welding_position_code(work.get("position"))
-    covered_positions = {
-        "1G": {"1G"},
-        "2G": {"1G", "2G"},
-        "3G": {"3G"},
-        "4G": {"4G"},
-        "5G": {"1G", "5G"},
-        "6G": {"1G", "2G", "3G", "4G", "5G", "6G"},
-    }.get(qualified_position, {qualified_position})
-    if actual_position not in covered_positions:
-        return False
     thickness = decimal(work.get("thickness"))
     diameter = decimal(work.get("diameter"))
+    outcomes = [
+        welder_coverage.material_covered(qualified_material, actual_material, profile),
+        welder_coverage.position_covered(
+            welding_position_code(qualification.get("position")),
+            welding_position_code(work.get("position")),
+            profile,
+        ),
+        welder_coverage.backing_covered(qualification.get("backing"), work.get("backing")),
+        welder_coverage.filler_covered(
+            normalize_value(qualification.get("fillerMetal"), "text").upper(),
+            normalize_value(work.get("fillerMetal"), "text").upper(),
+            profile,
+        )
+        if work.get("fillerMetal")
+        else welder_coverage.COVERED,
+        welder_coverage.process_factors_covered(
+            {normalize_value(item, "text").upper() for item in qualification.get("processFactors") or []},
+            {normalize_value(item, "text").upper() for item in work.get("processFactors") or []},
+            qualified_material,
+            profile,
+        ),
+    ]
+    # 厚度、外径缺一个就量不了——这是资料没写，不是焊工超范围。
     if thickness is None or diameter is None:
-        return False
-    if not within(thickness, decimal(qualification.get("thicknessMin")), decimal(qualification.get("thicknessMax"))):
-        return False
-    if not within(diameter, decimal(qualification.get("diameterMin")), decimal(qualification.get("diameterMax"))):
-        return False
-    actual_filler = normalize_value(work.get("fillerMetal"), "text")
-    qualified_filler = normalize_value(qualification.get("fillerMetal"), "text")
-    if actual_filler and qualified_filler and actual_filler != qualified_filler:
-        return False
-    actual_factors = {normalize_value(item, "text") for item in work.get("processFactors") or []}
-    qualified_factors = {normalize_value(item, "text") for item in qualification.get("processFactors") or []}
-    return not actual_factors or actual_factors <= qualified_factors
+        outcomes.append(welder_coverage.UNDECIDABLE)
+    else:
+        outcomes.append(
+            welder_coverage.COVERED
+            if within(thickness, decimal(qualification.get("thicknessMin")), decimal(qualification.get("thicknessMax")))
+            and within(diameter, decimal(qualification.get("diameterMin")), decimal(qualification.get("diameterMax")))
+            else welder_coverage.NOT_COVERED
+        )
+    return welder_coverage.combine(outcomes)
 
 
 _ROMAN_CATEGORY_ASCII = {"FeⅠ": "FeI", "FeⅡ": "FeII", "FeⅢ": "FeIII", "FeⅣ": "FeIV"}
@@ -776,7 +792,9 @@ def welding_method_code(value: Any) -> str:
         "钨极氩弧焊": "GTAW", "氩弧焊": "GTAW", "TIG": "GTAW",
         "焊条电弧焊": "SMAW", "手工电弧焊": "SMAW",
         "熔化极气体保护焊": "GMAW", "气体保护焊": "GMAW", "MIG": "GMAW", "MAG": "GMAW",
-        "药芯焊丝电弧焊": "FCAW", "埋弧焊": "SAW", "等离子弧焊": "PAW",
+        # 2026 版把 GMAW（实心）与 FCAW（药芯）拆成两个方法代号，变更方法须重考。
+        "药芯焊丝电弧焊": "FCAW", "药芯焊丝气体保护焊": "FCAW", "药芯焊丝气保焊": "FCAW", "药芯焊": "FCAW",
+        "埋弧焊": "SAW", "等离子弧焊": "PAW",
     }
     return aliases.get(text, re.sub(r"[^A-Z0-9]", "", text))
 
@@ -791,13 +809,20 @@ def welding_position_code(value: Any) -> str:
 
 
 def welder_rule_version(arguments: dict[str, Any]) -> tuple[str, str | None]:
+    """按施焊/审查日期选覆盖表版本。
+
+    TSG Z6002-2026 自 2026-08-01 施行、2010 版同日废止；市监特设发〔2026〕85 号：
+    有效期内的旧证继续有效，但**覆盖范围按新细则执行**——所以选版看的是作业日期，
+    不是证书签发日期。
+
+    2026-09-11 之前这里有一道 `ruleProfile2026Verified` 闸门，8 月 1 日后一律返回
+    证据不足，节点 24/29 的焊工判定因此停用了四十天（生产实测 130 项证据不足里
+    36 项出自这道闸门）。现在 2026 覆盖表已实装（welder_coverage），闸门撤销。
+    """
     review_date = parse_date(arguments.get("reviewDate") or arguments.get("workDate")) or business_today()
     if review_date >= date(2026, 8, 1):
-        version = "welder-qualification-tsg-z6002-2026-transition-v1"
-        if arguments.get("ruleProfile2026Verified") is not True:
-            return version, "tsg_z6002_2026_effective_profile_not_verified"
-        return version, None
-    return "welder-qualification-tsg-z6002-2010-v2", None
+        return welder_coverage.RULE_VERSION_2026, None
+    return welder_coverage.RULE_VERSION_2010, None
 
 
 def within(value: Decimal, minimum: Decimal | None, maximum: Decimal | None) -> bool:
