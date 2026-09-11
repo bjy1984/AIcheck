@@ -34,8 +34,13 @@ def normalize_quote(value: Any) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def page_text(parse_results: list[dict[str, Any]], document_version_id: str, page_no: Any) -> str:
-    """把一页的正文片段接起来，供引用比对。"""
+def raw_page_text(parse_results: list[dict[str, Any]], document_version_id: str, page_no: Any) -> str:
+    """一页的正文原样接起来——**给模型看的**。
+
+    2026-09-11 第一次真实调用六个字段全 null：给模型的正文经过了 normalize_quote()，
+    空白全被吃掉，"20260213951" 和下一行的序号 "2" 黏成 "202602139512"，
+    编号在模型眼里根本不存在。归一化只能用于比对，不能用于呈现。
+    """
     parts = []
     for parse in parse_results:
         if parse.get("documentVersionId") != document_version_id:
@@ -43,7 +48,12 @@ def page_text(parse_results: list[dict[str, Any]], document_version_id: str, pag
         for fragment in parse.get("fragments") or []:
             if isinstance(fragment, dict) and fragment.get("pageNo") == page_no:
                 parts.append(str(fragment.get("text") or ""))
-    return normalize_quote("".join(parts))
+    return "\n".join(part for part in parts if part)
+
+
+def page_text(parse_results: list[dict[str, Any]], document_version_id: str, page_no: Any) -> str:
+    """一页正文的归一化形态，只供引用比对。"""
+    return normalize_quote(raw_page_text(parse_results, document_version_id, page_no))
 
 
 def declared_paths(domain_spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -71,11 +81,27 @@ def build_messages(
     domain_name: str,
     domain_spec: dict[str, Any],
     pages: list[dict[str, Any]],
+    *,
+    object_scope: dict[str, Any] | None = None,
+    labels: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """`pages` 是 [{documentVersionId, pageNo, text}]，正文原样给模型。"""
+    """`pages` 是 [{documentVersionId, pageNo, text}]，正文原样给模型。
+
+    `object_scope`：本次审查对象——objectId 与表格里已经读出的值。真实的核查记录
+    一页列六个元件，不说明是哪一个，"documentNo 是多少"就没有答案，填 null 反倒是
+    诚实的（2026-09-11 第一次真实调用就是这样）。
+    `labels`：路径对应的中文列名（来自表结构签名），英文驼峰名模型对不上正文。
+    """
+    labels = labels or {}
+    # 表格已经读出的值不再拿去问模型：2026-09-11 第二次真实调用，模型花了 1500 个
+    # 推理 token 绕"已知值要不要重填"打转，最后全填 null。已知的直接剔除，
+    # 只问缺的；objectScope 只负责把模型锚定到那一行。
+    known = set((object_scope or {}).get("knownValues") or {})
     wanted = [
-        {"path": path, "shape": meta["kind"], "clause": meta.get("sourceClause")}
+        {"path": path, "shape": meta["kind"], "clause": meta.get("sourceClause"),
+         **({"label": labels[path]} if path in labels else {})}
         for path, meta in declared_paths(domain_spec).items()
+        if path not in known
     ]
     instructions = (
         "你在读一份工程资料的正文，任务是把下列字段从正文里读出来。\n"
@@ -86,10 +112,13 @@ def build_messages(
         "不得改写、不得节略成大意。\n"
         "3. shape 为 boolean 的字段只填 true / false / null。\n"
         "4. 不要下“符合”“不符合”的结论——那不是你的工作，你只提供事实。\n"
+        "5. 若给了 objectScope，只针对那一个对象（那一行／那一份）读取；其他对象的内容一律不算。\n"
         '输出 JSON：{"fields":[{"path":..., "value":..., "documentVersionId":..., '
         '"pageNo":..., "quotedText":...}]}'
     )
     body = {"domain": domain_name, "fields": wanted, "pages": pages}
+    if object_scope:
+        body["objectScope"] = object_scope
     return [
         {"role": "system", "content": instructions},
         {"role": "user", "content": json.dumps(body, ensure_ascii=False)},

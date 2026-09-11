@@ -9,6 +9,7 @@ from libs.review_orchestrator.domain_judgment_agent import (
     build_messages,
     declared_paths,
     parse_response,
+    raw_page_text,
 )
 
 SPEC = {
@@ -187,3 +188,32 @@ def test_the_prompt_never_asks_the_model_for_a_verdict():
 def test_paths_become_the_nested_shape_the_criteria_read():
     row = assign_paths({"certificate.documentNo": "X1", "certificate.applies": True})
     assert row == {"certificate": {"documentNo": "X1", "applies": True}}
+
+
+def test_the_text_shown_to_the_model_keeps_its_whitespace():
+    """第一次真实调用六个字段全 null：给模型的正文被归一化吃掉空白，编号黏成一串。"""
+    text = raw_page_text(PARSE_RESULTS, "DV-1", 1)
+    assert "检查人员已审阅合格证、质量证明书与标记，\n确认材料均为规定等级。" == text
+    # 比对用的归一化形态是另一回事
+    assert " " not in __import__("libs.review_orchestrator.domain_judgment_agent", fromlist=["page_text"]).page_text(PARSE_RESULTS, "DV-1", 1)
+
+
+def test_the_prompt_names_the_object_and_the_column_labels():
+    """一页列六个元件；不说是哪一个，documentNo 就没有答案。"""
+    messages = build_messages(
+        "materialCertificate", SPEC, [{"documentVersionId": "DV-1", "pageNo": 1, "text": "x"}],
+        object_scope={"objectId": "20260213951", "knownValues": {"certificate.documentNo": "20260213951"}},
+        labels={"certificate.documentNo": "产品质量证明书编号"},
+    )
+    assert "只针对那一个对象" in messages[0]["content"]
+    body = json.loads(messages[1]["content"])
+    assert body["objectScope"]["objectId"] == "20260213951"
+    # 表格已读出的 documentNo 不再问模型；其余路径仍在，且带中文列名（若有）
+    paths = {f["path"] for f in body["fields"]}
+    assert "certificate.documentNo" not in paths
+    assert "certificate.certificatesAndMarksReviewed" in paths
+
+
+def test_without_scope_the_prompt_is_unchanged_in_shape():
+    body = json.loads(build_messages("d", SPEC, [])[1]["content"])
+    assert "objectScope" not in body and all("label" not in f for f in body["fields"])

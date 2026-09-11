@@ -20,8 +20,8 @@ from libs.review_orchestrator.domain_judgment_agent import (
     assign_paths,
     build_messages,
     declared_paths,
-    page_text,
     parse_response,
+    raw_page_text,
 )
 
 
@@ -57,7 +57,7 @@ def pages_for(parse_results: list[dict[str, Any]], version_id: str, limit: int) 
     })
     pages = []
     for page_no in numbers[:limit]:
-        text = page_text(parse_results, version_id, page_no)
+        text = raw_page_text(parse_results, version_id, page_no)  # 原样，不归一化
         if text:
             pages.append({"documentVersionId": version_id, "pageNo": page_no, "text": text})
     return pages
@@ -93,7 +93,36 @@ def main() -> int:
         raise SystemExit("解析结果里没有正文片段，agent 无正文可读")
 
     spec = domain_spec(args.pack_id, args.rules, args.domain)
-    messages = build_messages(args.domain, spec, pages)
+    object_scope, labels = None, {}
+    if args.object_id and args.project_id and args.node_id:
+        # 用真实的读表路径拿到该对象的已知值与列名，让模型锚定到那一行。
+        from libs.review_document_scope import freeze_document_scope
+        from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+        from libs.table_schema_mapping import load_signatures
+
+        repository.load_state({"documents", "versions"})
+        run = {"projectId": args.project_id, "tenantId": os.getenv("AICHECK_TENANT_ID", "TENANT-DEFAULT"),
+               "nodeId": args.node_id, "inputDocumentVersionIds": [args.document_version_id],
+               "selectedObjectIds": [args.object_id]}
+        run["documentScopeSnapshot"] = freeze_document_scope(run, repository.repo.state)
+        known = {}
+        for signature in load_signatures(args.pack_id):
+            if signature.get("domain") != args.domain:
+                continue
+            for field in signature.get("fields") or []:
+                labels[str(field["path"])] = str((field.get("columns") or [field["path"]])[0])
+            rows = read_ndt_tables(repository.repo.state, run,
+                                   {signature["businessSchema"]: "domains"}, node_id=args.node_id)["domains"]
+            for row in rows:
+                for field in signature.get("fields") or []:
+                    value = row
+                    for part in str(field["path"]).split("."):
+                        value = value.get(part) if isinstance(value, dict) else None
+                    if value not in (None, ""):
+                        known[str(field["path"])] = value
+        object_scope = {"objectId": args.object_id, "knownValues": known,
+                        "note": "本次审查对象就是 knownValues 描述的那一行／那一份；只从与它有关的内容里读"}
+    messages = build_messages(args.domain, spec, pages, object_scope=object_scope, labels=labels)
     response = qwen_runtime_client().chat_sync(
         messages, model=args.model, temperature=0.0, response_format={"type": "json_object"},
     )
@@ -143,16 +172,28 @@ def main() -> int:
         rows = repository.repo.state.setdefault(COLLECTION, [])
         # 同一个对象重跑要替换上一次，不能并存：judgment_for 命中两条就当来源
         # 含糊、一条都不给，那等于把这次调用的钱白花了。
-        rows[:] = [row for row in rows if row.get("id") != record_id]
-        rows.append({
+        record = {
             "id": record_id,
             "projectId": args.project_id, "nodeId": args.node_id, "domain": args.domain,
             "objectId": args.object_id, "recordVersionId": args.document_version_id,
             "values": outcome["values"], "evidenceRefs": outcome["evidenceRefs"],
             "rejected": outcome["rejected"], "model": response.get("model"),
             "createdAt": server_time(),
-        })
-        repository.flush_state({COLLECTION})
+        }
+        # 只写这一条。flush_state() 会连脏单例一起刷，本脚本只做了部分加载，
+        # 它看到的 admin_config 是过时副本，撞上正在跑的 API 就是
+        # "Concurrent singleton update detected for admin_config"（2026-09-11 实测）。
+        # 模型那一步已经花了钱，落库这一步不能因为一个无关的单例失败。
+        from libs.db.repository import flush_state_records
+
+        # 先把已有的判定加载进来：同一对象重跑时库里已有同一稳定 id 的行，
+        # 内存里没有它就会被当成 INSERT，撞 "Concurrent persistence insert detected"
+        # （2026-09-11 第三次真实调用就这样丢了落库）。加载后同 id 的替换走 UPDATE。
+        repository.load_state({COLLECTION})
+        rows = repository.repo.state.setdefault(COLLECTION, [])
+        rows[:] = [row for row in rows if row.get("id") != record_id]
+        rows.append(record)
+        flush_state_records({COLLECTION: [record]})
         report["persisted"] = True
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
