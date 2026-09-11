@@ -173,7 +173,10 @@ const tagType = (status: string) => {
   padding: 3px 9px;
   font-size: 12px;
   font-weight: 600;
-  color: #d97706;
+
+  /* #d97706 配 #fff5e7 只有 2.95:1。12px 即使加粗也不算 WCAG 的「大字」，
+     仍要 4.5:1。换成 amber-700，约 6.5:1，颜色语义不变。 */
+  color: #b45309;
   background: #fff5e7;
   border-radius: 999px;
   flex: none;

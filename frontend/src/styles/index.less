@@ -349,3 +349,41 @@ body,
     min-height: 44px !important;
   }
 }
+
+/* Element 默认的错误文案是 #f56c6c 配浅红底，实测只有 2.61:1；警告文案 2.75:1。
+   12~16px 正文按 WCAG AA 要 4.5:1——而错误提示恰恰是最需要被读清楚的字，
+   看不清等于没提示。2026-09-10 视觉稽核在真实渲染下量到 25 处，全在这两类组件上。
+
+   既有覆盖只给了 .el-alert__title / .el-alert__description，漏掉 __content，
+   el-message 则完全没覆盖。这里补上，且只改文字颜色——背景与语义色不动，
+   免得影响其他用到 --el-color-error 的地方。 */
+/* 不要用 :where() 包子选择器——它的特指度是 0，写成
+   `.el-alert--error :where(.el-alert__description)` 只有 (0,1,0)，
+   和 Element 自己的 `.el-alert__description` 打平，靠加载顺序决胜负，
+   实测就是输掉、颜色没改成。这里写全类名，拿到 (0,2,0)。 */
+.el-message--error .el-message__content,
+.el-alert--error .el-alert__content,
+.el-alert--error .el-alert__title,
+.el-alert--error .el-alert__description,
+.el-alert--danger .el-alert__content,
+.el-alert--danger .el-alert__title,
+.el-alert--danger .el-alert__description {
+  color: #b42318;
+}
+
+.el-message--warning .el-message__content,
+.el-alert--warning .el-alert__content,
+.el-alert--warning .el-alert__title,
+.el-alert--warning .el-alert__description {
+  color: #92400e;
+}
+
+/* info 也要补：WorkbenchStateBanner 把未知类型都映射成 info，于是
+   「Request failed with status code 500」这种其实是错误的文案会以 info 呈现，
+   Element 的 info 文字在浅灰底上同样只有 2.61:1。 */
+.el-message--info .el-message__content,
+.el-alert--info .el-alert__content,
+.el-alert--info .el-alert__title,
+.el-alert--info .el-alert__description {
+  color: #334155;
+}
