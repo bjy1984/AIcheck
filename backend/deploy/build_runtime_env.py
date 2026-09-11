@@ -82,6 +82,12 @@ runtime = {
     # - 09-03 DeepSeek 欠费 HTTP 402，全部复核失败。
     # 主密钥由下方 update 之后从视觉那把 DashScope 凭证带入（同账号同 key）。
     # 模型名以 DashScope 实际可调为准（09-02/09-03 实测 qwen3.7-plus / qwen3.8-max 均 200）。
+    # 工位模式：新建审查运行时冻结文件范围 / 生效规则 / 工位快照（execution.py
+    # create_review_run_from_ai_run → initialize_run_workstation）。此前只是开发开关，
+    # 生产从没开过，于是 329 次真实运行**没有一次**带 documentScopeSnapshot，
+    # 验收 fixture 一份都导不出（2026-09-10 盘点）。开关不给既有运行补快照，只影响新运行；
+    # /rerun 走 clone_review_run_for_replay，不经这一步，重跑要走 ai-recheck 的新建路径。
+    "AICHECK_WORKSTATIONS_ENABLED": "true",
     "AICHECK_QWEN_CALL_MODE": "official_api",
     "AICHECK_LLM_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "AICHECK_LLM_MODEL_REVIEW": "qwen3.7-plus",

@@ -158,3 +158,9 @@ def test_没有TokenPlan密钥时一切照旧(tmp_path: pathlib.Path):
     assert env["AICHECK_LLM_API_BASE"] == DASHSCOPE
     assert env["AICHECK_LLM_MODEL_VISION"] == "qwen-vl-max"
     assert "AICHECK_LLM_VISION_API_BASE" not in env
+
+
+def test_生产开启工位模式(tmp_path: pathlib.Path):
+    """没有它，新运行不冻结文件范围，验收 fixture 一份都导不出。"""
+    env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-dashscope"})
+    assert env["AICHECK_WORKSTATIONS_ENABLED"] == "true"
