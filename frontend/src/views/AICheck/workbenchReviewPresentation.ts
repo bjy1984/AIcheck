@@ -171,6 +171,37 @@ export const workbenchCertificateVerification = (
   }
 }
 
+export type WorkbenchAiCheckOutcome = {
+  atomicCheckId: string
+  name: string
+  /** passed / failed / evidence_insufficient / not_applicable / human_review_required / execution_error */
+  result: string
+  ruleCode?: string
+}
+
+export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome[] => {
+  const rows = (source as Record<string, unknown> | undefined)?.atomicCheckOutcomes
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map((row) => (row || {}) as Record<string, unknown>)
+    .map((row) => ({
+      atomicCheckId: String(row.atomicCheckId || ''),
+      name: String(row.name || row.atomicCheckId || ''),
+      result: String(row.result || ''),
+      ruleCode: String(row.ruleCode || '') || undefined
+    }))
+    .filter((row) => Boolean(row.atomicCheckId))
+}
+
+export const CHECK_OUTCOME_LABELS: Record<string, string> = {
+  passed: '通过',
+  failed: '不符合',
+  not_applicable: '不适用',
+  evidence_insufficient: '证据不足',
+  human_review_required: '需人工判断',
+  execution_error: '执行故障'
+}
+
 export type WorkbenchAiPresentation = {
   runId: string
   activityAt: string
@@ -184,6 +215,8 @@ export type WorkbenchAiPresentation = {
   certificateVerification?: WorkbenchCertificateVerification
   /** 后端 suggestion.deterministicResult（passed/failed/evidence_insufficient/not_applicable）。 */
   deterministicResult?: string
+  /** 本次执行逐项核查的结果，含通过项。只列问题时「没报问题」和「压根没查」看起来一样。 */
+  checkOutcomes: WorkbenchAiCheckOutcome[]
   /** P8 H4：部分证据分片修复与升级后仍失败时的提示，例如"部分分片未完成 1/9"。 */
   partialCoverageLabel?: string
   errorMessage: string
@@ -347,6 +380,7 @@ export const buildWorkbenchAiPresentation = (
       statusTone: 'gray',
       resultLabel: '等待分析',
       summary: '当前节点尚未形成可展示的 AI 审查结果。',
+      checkOutcomes: [],
       meta: '',
       findings: [],
       errorMessage: '',
@@ -400,6 +434,7 @@ export const buildWorkbenchAiPresentation = (
     deterministicResult:
       String((nodeReview as Record<string, unknown> | undefined)?.deterministicResult || '') ||
       undefined,
+    checkOutcomes: workbenchCheckOutcomes(nodeReview),
     errorMessage: failed
       ? String(run.errorMessage || run.errorCode || '模型结果未通过校验，请重新发起分析。')
       : '',
@@ -663,6 +698,7 @@ export const selectWorkbenchAiPresentation = ({
       (nodeRun as unknown as Record<string, unknown>).certificateVerification
     ),
     deterministicResult: String(nodeRun.suggestion?.deterministicResult || '') || undefined,
+    checkOutcomes: workbenchCheckOutcomes(nodeRun),
     partialCoverageLabel: partialCoverageLabel(nodeRun),
     errorMessage: failed ? failureText : '',
     canRetry: failed ? nodeRun.failure?.retryable !== false : false,

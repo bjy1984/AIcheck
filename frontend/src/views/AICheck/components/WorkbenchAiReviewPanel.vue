@@ -6,7 +6,9 @@ import { ElButton, ElIcon } from 'element-plus'
 import {
   buildWorkbenchAiConclusion,
   canShowWorkbenchAiConclusion,
+  CHECK_OUTCOME_LABELS,
   workbenchFindingDisplay,
+  type WorkbenchAiCheckOutcome,
   type WorkbenchAiFinding,
   type WorkbenchAiFindingGroupKey,
   type WorkbenchAiPresentation
@@ -108,6 +110,51 @@ const decisionLabel = (id: string) => {
   return decision === 'accept' ? '已采纳' : decision === 'reject' ? '已驳回' : ''
 }
 
+/** 先看要处理的，再看通过的：不符合 → 需人工判断 → 证据不足 → 执行故障 → 不适用 → 通过。 */
+const CHECK_OUTCOME_ORDER = [
+  'failed',
+  'human_review_required',
+  'evidence_insufficient',
+  'execution_error',
+  'not_applicable',
+  'passed'
+]
+const CHECK_OUTCOME_TONES: Record<string, 'red' | 'orange' | 'gray' | 'green'> = {
+  failed: 'red',
+  human_review_required: 'orange',
+  evidence_insufficient: 'gray',
+  execution_error: 'red',
+  not_applicable: 'gray',
+  passed: 'green'
+}
+
+const checkOutcomeRank = (outcome: WorkbenchAiCheckOutcome) => {
+  const index = CHECK_OUTCOME_ORDER.indexOf(outcome.result)
+  return index < 0 ? CHECK_OUTCOME_ORDER.length : index
+}
+
+const sortedCheckOutcomes = computed(() =>
+  [...props.presentation.checkOutcomes].sort(
+    (left, right) => checkOutcomeRank(left) - checkOutcomeRank(right)
+  )
+)
+
+/** 「共 N 项：通过 3、证据不足 2」——按上面的顺序报，通过的也报。 */
+const checkOutcomeTally = computed(() => {
+  const counts = new Map<string, number>()
+  props.presentation.checkOutcomes.forEach((item) =>
+    counts.set(item.result, (counts.get(item.result) || 0) + 1)
+  )
+  return CHECK_OUTCOME_ORDER.filter((result) => counts.has(result)).map((result) => ({
+    result,
+    label: CHECK_OUTCOME_LABELS[result] || result,
+    count: counts.get(result) || 0
+  }))
+})
+
+const checkOutcomeLabel = (result: string) => CHECK_OUTCOME_LABELS[result] || result || '未记录'
+const checkOutcomeTone = (result: string) => CHECK_OUTCOME_TONES[result] || 'gray'
+
 const pageLabel = (pages: number[]) => (pages.length ? `第 ${pages.join('、')} 页` : '')
 
 const ruleLabel = (rule: Record<string, unknown>) =>
@@ -208,6 +255,29 @@ const ruleLabel = (rule: Record<string, unknown>) =>
               补充 AI 未发现的问题
             </ElButton>
           </div>
+        </section>
+
+        <!-- 逐项核查：通过的也要看得见，否则「没报问题」和「没查」分不开 -->
+        <section v-if="conclusion" class="ai-check-outcomes" aria-label="逐项核查结果">
+          <div class="ai-check-outcomes-head">
+            <strong>逐项核查</strong>
+            <span v-if="sortedCheckOutcomes.length">共 {{ sortedCheckOutcomes.length }} 项</span>
+            <small v-if="sortedCheckOutcomes.length">
+              {{ checkOutcomeTally.map((item) => `${item.label} ${item.count}`).join('、') }}
+            </small>
+            <small v-else>
+              本次运行没有留下逐项核查记录（一键分析不执行确定性核查，需要逐项结论请发起节点复核）。
+            </small>
+          </div>
+          <ul v-if="sortedCheckOutcomes.length">
+            <li v-for="outcome in sortedCheckOutcomes" :key="outcome.atomicCheckId">
+              <AuditStatusTag :tone="checkOutcomeTone(outcome.result)" round>
+                {{ checkOutcomeLabel(outcome.result) }}
+              </AuditStatusTag>
+              <span>{{ outcome.name }}</span>
+              <small>{{ outcome.atomicCheckId }}</small>
+            </li>
+          </ul>
         </section>
 
         <p class="ai-result-summary">{{ presentation.summary }}</p>
@@ -770,6 +840,61 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-conclusion-supplement {
   margin-left: auto;
+}
+
+.ai-check-outcomes {
+  display: grid;
+  padding: 12px 0 0;
+  margin-top: 14px;
+  border-top: 1px solid #e6edf7;
+  gap: 8px;
+}
+
+.ai-check-outcomes-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.ai-check-outcomes-head strong {
+  font-size: 14px;
+  color: var(--aicheck-text-strong, #172033);
+}
+
+.ai-check-outcomes-head span,
+.ai-check-outcomes-head small {
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-check-outcomes ul {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  gap: 6px;
+}
+
+.ai-check-outcomes li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 13px;
+  line-height: 20px;
+  color: #27364b;
+}
+
+.ai-check-outcomes li > span {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-check-outcomes li > small {
+  color: var(--aicheck-text-subtle, #667085);
+  font-variant-numeric: tabular-nums;
 }
 
 .ai-result-summary {

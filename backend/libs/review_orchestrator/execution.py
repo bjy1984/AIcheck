@@ -1337,6 +1337,9 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["evidenceCoverage"] = repo.clone(review_run.get("evidenceCoverage") or ai_run.get("evidenceCoverage") or {})
             ai_run["failedEvidenceShardIds"] = list(review_run.get("failedEvidenceShardIds") or [])
             deterministic_verdict = str(next(iter(context.get("ruleResults") or []), {}).get("result") or "")
+            # 逐项核查结果（含通过项）也随运行一起带出去：界面只列问题时，
+            # 「没报问题」和「压根没查」在人眼里是一样的。
+            ai_run["atomicCheckOutcomes"] = repo.clone(output_contract.atomic_check_outcomes(context.get("ruleResults") or [], review_run))
             opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=deterministic_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {

@@ -511,3 +511,72 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   )
   assert.equal(partialCoverageLabel({ failedEvidenceShardIds: ['A', 'B'] }), '部分分片未完成 2 片')
 }
+
+// 逐项核查结果要带出来，通过项也要——只列问题时，「没报问题」和「压根没查」看起来一样。
+{
+  const { workbenchCheckOutcomes, CHECK_OUTCOME_LABELS } = await import(
+    './workbenchReviewPresentation'
+  )
+  assert.deepEqual(workbenchCheckOutcomes(undefined), [])
+  assert.deepEqual(workbenchCheckOutcomes({ atomicCheckOutcomes: '不是数组' }), [])
+  assert.deepEqual(
+    workbenchCheckOutcomes({
+      atomicCheckOutcomes: [
+        { atomicCheckId: 'AC-R25-01', name: '焊接（粘接）工艺文件·WPS/PQR审批与对应', result: 'passed' },
+        { atomicCheckId: 'AC-R25-02', result: 'evidence_insufficient', ruleCode: 'r25' },
+        { atomicCheckId: '', name: '没有 id 的不要', result: 'passed' }
+      ]
+    }),
+    [
+      {
+        atomicCheckId: 'AC-R25-01',
+        name: '焊接（粘接）工艺文件·WPS/PQR审批与对应',
+        result: 'passed',
+        ruleCode: undefined
+      },
+      {
+        atomicCheckId: 'AC-R25-02',
+        name: 'AC-R25-02',
+        result: 'evidence_insufficient',
+        ruleCode: 'r25'
+      }
+    ]
+  )
+  assert.equal(CHECK_OUTCOME_LABELS.passed, '通过')
+  assert.equal(CHECK_OUTCOME_LABELS.not_applicable, '不适用')
+}
+
+// 两条取数路径都要带上：一键分析读 nodeReview，节点复核读 run 本身。
+{
+  const { buildWorkbenchAiPresentation, selectWorkbenchAiPresentation } = await import(
+    './workbenchReviewPresentation'
+  )
+  const fromProjectAnalysis = buildWorkbenchAiPresentation({
+    run: { projectAnalysisRunId: 'PARUN-9', status: '已完成', finishedAt: '2026-09-11 10:00:00' },
+    nodeReview: {
+      deterministicResult: 'passed',
+      atomicCheckOutcomes: [{ atomicCheckId: 'AC-R28-01', name: '管道组对·组对实测值', result: 'passed' }]
+    }
+  } as never)
+  assert.deepEqual(
+    fromProjectAnalysis.checkOutcomes.map((item) => [item.atomicCheckId, item.result]),
+    [['AC-R28-01', 'passed']]
+  )
+  assert.deepEqual(buildWorkbenchAiPresentation(null).checkOutcomes, [])
+
+  const fromNodeRun = selectWorkbenchAiPresentation({
+    projectAnalysis: buildWorkbenchAiPresentation(null),
+    nodeRun: {
+      id: 'AIRUN-1',
+      status: '完成',
+      finishedAt: '2026-09-11 11:00:00',
+      atomicCheckOutcomes: [{ atomicCheckId: 'AC-R24-01', name: '焊工持证项目覆盖', result: 'failed' }]
+    } as never,
+    nodeFindings: [],
+    nodeOutputText: ''
+  })
+  assert.deepEqual(
+    fromNodeRun.checkOutcomes.map((item) => [item.atomicCheckId, item.result]),
+    [['AC-R24-01', 'failed']]
+  )
+}

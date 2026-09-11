@@ -112,3 +112,48 @@ def test_complete_prompt_does_not_instruct_model_to_omit_findings():
     assert "最多 8" not in str(prompt_format_requirements(complete=True))
     assert "完整证据引用" in str(prompt_format_requirements(complete=True))
     assert prompt_format_requirements() == PROMPT_FORMAT_REQUIREMENTS
+
+
+def test_逐项核查结果含通过项且按业务包取名():
+    """界面只列问题时，「没报问题」和「压根没查」在监检人员眼里是一样的。
+
+    判定来自本次执行留痕；名称按 atomicCheckId 从业务包取，取不到就退回 id。
+    """
+    from libs.review_orchestrator.output_contract import (
+        atomic_check_outcomes,
+        review_view_with_limitations,
+    )
+
+    records = [
+        {
+            "reviewRunId": "RRUN-X",
+            "ruleCode": "r25",
+            "atomicCheckResults": [
+                {"atomicCheckId": "AC-R25-01", "result": "passed"},
+                {"atomicCheckId": "AC-R25-02", "result": "evidence_insufficient"},
+                {"atomicCheckId": "AC-R25-01", "result": "passed"},
+                {"atomicCheckId": "", "result": "passed"},
+                {"atomicCheckId": "AC-NOT-IN-PACK", "result": "not_applicable"},
+            ],
+        }
+    ]
+    outcomes = atomic_check_outcomes(records, {"businessPackId": "engineering_inspection_v1"})
+    assert [item["atomicCheckId"] for item in outcomes] == ["AC-R25-01", "AC-R25-02", "AC-NOT-IN-PACK"]
+    assert [item["result"] for item in outcomes] == ["passed", "evidence_insufficient", "not_applicable"]
+    assert outcomes[0]["name"] == "焊接（粘接）工艺文件·WPS/PQR审批与对应"
+    assert outcomes[2]["name"] == "AC-NOT-IN-PACK"
+    assert all(item["ruleCode"] == "r25" for item in outcomes)
+
+    view = review_view_with_limitations(
+        {"reviewRunId": "RRUN-X", "businessPackId": "engineering_inspection_v1"},
+        {"rule_check_results": records},
+    )
+    assert [item["atomicCheckId"] for item in view["atomicCheckOutcomes"]] == [
+        "AC-R25-01",
+        "AC-R25-02",
+        "AC-NOT-IN-PACK",
+    ]
+    # 没有留痕就不写这个字段——没记录不等于记录了「零项核查」。
+    assert "atomicCheckOutcomes" not in review_view_with_limitations(
+        {"reviewRunId": "RRUN-Y"}, {"rule_check_results": records}
+    )

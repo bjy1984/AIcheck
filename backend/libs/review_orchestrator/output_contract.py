@@ -148,11 +148,13 @@ def review_view_with_limitations(run: dict[str, Any], state: dict[str, Any]) -> 
     run_id = run.get("reviewRunId") or run.get("id")
     limitations = set()
     approval_checks = []
+    run_records: list[dict[str, Any]] = []
     for record in state.get("rule_check_results", []):
         if not run_id or record.get("reviewRunId") != run_id:
             continue
         if any(record.get(key) not in (None, run.get(key)) for key in ("tenantId", "projectId", "nodeId")):
             continue
+        run_records.append(record)
         for atomic in record.get("atomicCheckResults") or []:
             if not isinstance(atomic, dict):
                 continue
@@ -167,8 +169,61 @@ def review_view_with_limitations(run: dict[str, Any], state: dict[str, Any]) -> 
     # Derive solely from this run's recorded execution, never the current mutable pack.
     if approval_checks:
         view["approvalChecks"] = approval_checks
+    # 逐项核查结果（含通过项）。界面原来只列问题，通过了什么看不见——
+    # 监检人员没法判断「没报问题」是查过了还是压根没查。
+    # 判定来自本次执行留痕；只有名称从业务包按 id 取，取不到就显示 id。
+    # 和 approvalChecks 一样，没有留痕就不写这个字段：没记录不等于记录了空。
+    check_outcomes = atomic_check_outcomes(run_records, run)
+    if check_outcomes:
+        view["atomicCheckOutcomes"] = check_outcomes
     view["automationLimitations"] = [
         {"atomicCheckId": atomic_id, "code": code, "requiresHumanReview": True}
         for atomic_id, code in sorted(limitations)
     ]
     return view
+
+
+def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) -> list[dict[str, Any]]:
+    """本次执行逐项核查的结果，含通过项。
+
+    界面原来只列问题：通过了什么、不适用什么，监检人员看不见，也就分不清
+    「没报问题」是查过了还是压根没查。判定全部来自本次执行留痕，
+    只有显示名按 id 从业务包取，取不到就用 id。
+    """
+    names = _atomic_check_names(str(run.get("businessPackId") or ""))
+    seen: set[str] = set()
+    outcomes: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        for atomic in record.get("atomicCheckResults") or []:
+            if not isinstance(atomic, dict):
+                continue
+            check_id = str(atomic.get("atomicCheckId") or "")
+            if not check_id or check_id in seen:
+                continue
+            seen.add(check_id)
+            outcomes.append(
+                {
+                    "atomicCheckId": check_id,
+                    "name": names.get(check_id) or check_id,
+                    "result": str(atomic.get("result") or ""),
+                    "ruleCode": str(record.get("ruleCode") or ""),
+                }
+            )
+    return outcomes
+
+
+def _atomic_check_names(business_pack_id: str) -> dict[str, str]:
+    """原子核查项的显示名。取不到业务包时退回空表，调用方显示 id。"""
+    try:
+        from libs.business_pack.loader import DEFAULT_BUSINESS_PACK_ID, load_business_pack
+
+        pack = load_business_pack(business_pack_id or DEFAULT_BUSINESS_PACK_ID)
+    except Exception:
+        return {}
+    return {
+        str(check.get("id")): str(check.get("name") or "")
+        for check in pack.get("atomicChecks") or []
+        if isinstance(check, dict) and check.get("id")
+    }
