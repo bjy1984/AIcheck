@@ -48,7 +48,11 @@ const login = async (page, account, path) => {
   await page.getByRole('textbox', { name: '用户名' }).fill(account)
   await page.getByRole('textbox', { name: '密码' }).fill(passwordFor(account))
   await page.getByRole('button', { name: '登录' }).click()
-  await page.waitForURL((url) => url.hash.includes(routePath), { timeout: 20_000 })
+  // 别等「地址里出现目标路由」——有的路由本身就是重定向（/fde/standards-vectorization
+  // 立刻跳到 /fde/business-packs?view=standards），于是这个条件永远不成立，
+  // 20 秒后超时，4 个视窗尺寸下的这条路由就永远量不到。
+  // 真正要等的是「已经离开登录页」。
+  await page.waitForURL((url) => !url.hash.includes('/login'), { timeout: 20_000 })
   await page.waitForLoadState('networkidle').catch(() => {})
   if (routeQuery) {
     const mobileNavigationTrigger = page.getByRole('button', { name: '审核节点', exact: true })
