@@ -475,12 +475,11 @@ const DETERMINISTIC_LABELS: Record<string, string> = {
   not_applicable: '规则不适用'
 }
 
-const clip = (text: string, max: number) => {
-  const compact = String(text || '')
+/** 只压缩空白，不截断：结论卡与汇总行都要能看到完整句子。 */
+const compact = (text: string) =>
+  String(text || '')
     .replace(/\s+/g, ' ')
     .trim()
-  return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact
-}
 
 const isInsufficient = (finding: WorkbenchAiFinding) =>
   finding.groundingStatus === 'insufficient_evidence' ||
@@ -568,13 +567,13 @@ export const buildWorkbenchAiConclusion = ({
   let headline: string
   if (verdict === '需处理') {
     headline = first
-      ? clip(first.title, 40)
-      : clip(`${DETERMINISTIC_LABELS.failed}，请按规则结果处理`, 40)
+      ? compact(first.title)
+      : compact(`${DETERMINISTIC_LABELS.failed}，请按规则结果处理`)
   } else if (verdict === '待确认') {
-    headline = clip(`${counts.confirm} 项待人工确认：${first?.title || ''}`, 40)
+    headline = compact(`${counts.confirm} 项待人工确认：${first?.title || ''}`)
   } else if (verdict === '证据不足') {
     headline = counts.insufficient
-      ? clip(`${counts.insufficient} 条发现证据不足，待核对 ${insufficientClaims.length} 项`, 40)
+      ? compact(`${counts.insufficient} 条发现证据不足，待核对 ${insufficientClaims.length} 项`)
       : deterministic === 'evidence_insufficient'
         ? '确定性核验证据不足，请补充资料后复核'
         : 'AI 未形成任何发现，也无确定性核验结果'
@@ -583,7 +582,7 @@ export const buildWorkbenchAiConclusion = ({
       deterministic === 'not_applicable' ? '规则不适用，AI 未见问题' : '确定性核验通过，AI 未见问题'
   }
   const keyFacts = [...groups.needAction, ...groups.confirm].slice(0, 3).map((finding) => ({
-    text: clip(finding.title || finding.description, 40),
+    text: compact(finding.title || finding.description),
     location: findingLocation(finding)
   }))
   return {

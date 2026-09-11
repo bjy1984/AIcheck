@@ -442,7 +442,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(allDowngraded.insufficientClaims.length, 1)
   assert.equal(allDowngraded.insufficientClaims[0].findingId, 'F1')
   assert.equal(allDowngraded.action, '要求补资料')
-  assert.ok(allDowngraded.headline.length <= 40)
+  assert.equal(allDowngraded.headline, '2 条发现证据不足，待核对 1 项')
 
   // 混合：high 通过守卫 → 需处理；medium → 待确认；降级 → 证据不足；关键事实带证据位置
   const mixed = buildWorkbenchAiConclusion({

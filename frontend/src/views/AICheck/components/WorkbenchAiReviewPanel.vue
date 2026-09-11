@@ -625,8 +625,7 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   padding: 14px 16px;
   margin-top: 14px;
   background: #fff;
-  border: 1px solid #dfe7f2;
-  border-left: 4px solid var(--ai-conclusion-accent);
+  border: 0;
   border-radius: 10px;
   gap: 10px;
 }
@@ -656,6 +655,7 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   font-size: 15px;
   line-height: 22px;
   color: var(--aicheck-text-strong, #172033);
+  overflow-wrap: anywhere;
 }
 
 .ai-conclusion-note {
@@ -726,9 +726,16 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   display: flex;
   gap: 10px;
   align-items: baseline;
+  flex-wrap: wrap;
   font-size: 13px;
   line-height: 20px;
   color: #27364b;
+}
+
+.ai-conclusion-facts li > span {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ai-conclusion-facts li::before {
@@ -738,7 +745,7 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-conclusion-facts small {
   color: var(--aicheck-text-subtle, #667085);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .ai-conclusion-action {
