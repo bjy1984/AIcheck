@@ -4,49 +4,50 @@
 
 ---
 
-## 1. 換一把通義密鑰　【最急，卡住最多東西】
+## 1. 把生產切到 Token Plan　【最急，我這邊已全部驗證】
 
-**現況**：那把 key **沒被改過**——用雜湊比對 2026-08-18 的備份，
-`AICHECK_LLM_VISION_API_KEY` 一字不差（len=116，`817ee02b…`），而現在的
-`AICHECK_LLM_API_KEY` 就是同一把。8 月時主供應商還是 DeepSeek
-（`api.deepseek.com` + deepseek-v4-pro），後來有人把主供應商切成通義、複用了視覺
-那把 key，並把原 DeepSeek key 挪去當回退。切換之後它是**能用的**：
-`model_call_attempts` 顯示 2026-09-09 04:11 qwen3.8-max 成功過 22 次。
-
-**所以變的不在伺服器上，在阿里雲那邊**——同一把 key、同一個 base，現在回
-`invalid_api_key`。（我先前說「`sk-ws-` 不是 DashScope key 的形狀」是猜的，猜錯了。）
-
-**先去控制台查，不要直接新簽**：
-- key 還在且正常 → 查帳號欠費／額度／workspace 狀態
-- key 被刪或停用 → 才需要新簽
-
-**影響比我先前報的大**：`AICHECK_EMBEDDING_API_KEY` 也是同一把，實測向量化同樣
-401——**知識庫切片向量化也停了**，不只審查與分類。
-
-**現在壞掉的**：AI 審查、一鍵分析、文件自動分類。從 **2026-09-09 04:11** 起全停。
-
-**你要做的**：
-
-1. 阿里雲百煉控制台 → API-KEY → 新建，複製那把 `sk-` 開頭的
-2. 改 `/home/dev-bjy/aicheck-runtime.env`。**三個變數現在共用同一把**，要一起換：
-   `AICHECK_LLM_API_KEY`、`AICHECK_LLM_VISION_API_KEY`、`AICHECK_EMBEDDING_API_KEY`
-3. 重啟：`aicheck-api` 和四個 worker（`aicheck-worker-llm`、`-business`、
-   `-cpu-heavy`、`-ocr-remote`）
-
-**怎麼確認好了**（在伺服器上跑，不花錢）：
+**結論更正**：你重新生成的 `sk-sp-…` key **是好的**。之前 401 是因為我把它打到按量計費端點
+（後來又錯打 Coding Plan 端點）。Token Plan 有自己的域名，三種產品的 key 與地址完全隔離：
 
 ```
-docker exec -e PYTHONPATH=/app -w /app aicheck-api \
-  python3 scripts/model_reachability_probe.py
+https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 ```
 
-退出碼 0、印「模型可用」就成了。
+已在伺服器上用臨時容器實測（key 只經環境變數、用完即刪，未寫入任何檔案）：
 
-**我接手**：把 R43 對一份真實的材料質量證明文件跑完整條鏈——OCR → 表結構分類 →
-欄位對映 → agent 讀正文填判斷 → 凍結判據判定 → 導出驗收證據。約半天。
-**這是唯一能證明「這套系統能審真圖紙」的一步。**
+| 項目 | 結果 |
+|---|---|
+| `qwen3.7-plus` / `qwen3.8-max` / `qwen3.6-flash` chat | **OK**，模型名與生產現配完全一致，不用改 |
+| 視覺（64×64 圖，`qwen3.7-plus` / `qwen3.8-max`） | **OK**，正確認出顏色 |
+| `qwen-vl-max` | 404，Token Plan 沒有此模型 → 視覺角色改用 `qwen3.7-plus` |
+| `text-embedding-v4` | **404，Token Plan 沒有 embeddings** |
+| 舊 `sk-ws-` key（按量計費） | 仍 401，帳號層問題未解 |
 
----
+**你要改的（`/home/dev-bjy/aicheck-runtime.env`，我不手改）**：
+
+```
+AICHECK_LLM_API_BASE=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+AICHECK_LLM_API_KEY=<你的 sk-sp- key>
+AICHECK_LLM_VISION_API_BASE=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+AICHECK_LLM_VISION_API_KEY=<同一把 sk-sp- key>
+AICHECK_LLM_MODEL_VISION=qwen3.7-plus
+```
+
+其餘 `AICHECK_LLM_MODEL_*` 一律不動（都在 Token Plan 清單內）。改完重啟 `aicheck-api` 與四個 worker。
+
+**確認**（伺服器上，不花錢；退出碼 0 即成）：
+```
+docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.env \
+  -v /tmp/aicheck-tests-export/backend:/app:ro -w /app -e PYTHONPATH=/app \
+  aicheck-api:local python3 scripts/model_reachability_probe.py
+```
+
+**仍然斷的一條：向量化。** `AICHECK_EMBEDDING_API_KEY` 用的是死掉的 `sk-ws-`，Token Plan 又沒有
+embeddings。知識庫切片向量化要恢復，仍需一把**按量計費**的普通 `sk-` key，寫進
+`AICHECK_EMBEDDING_API_KEY`（`AICHECK_EMBEDDING_API_BASE` 保持 dashscope 不變）。這和帳號層
+為何失效是同一個問題，要在百煉控制台查。
+
+**我接手**：探針一綠，立刻跑 R43 端到端（OCR → 分類 → 對映 → agent 讀正文 → 凍結判據 → 導出驗收證據）。
 
 ## 2. 向工程方索取施工記錄類資料
 

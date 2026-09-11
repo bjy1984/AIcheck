@@ -51,6 +51,11 @@ MODEL_ROLE_ENV = {
 # 地址 host → 供应商显示名。认不出的主机名直接把 host 报出去，不编。
 _PROVIDER_BY_HOST = {
     "dashscope.aliyuncs.com": "Model Studio / DashScope",
+    # Token Plan（套餐制）走独立域名，与按量计费、Coding Plan 三者密钥与地址完全隔离。
+    # 2026-09-10 一把有效的 sk-sp- 密钥被误打到按量计费端点，连错三次才对上：
+    # 记录里报出真实域名，下次一眼就能看出"打的是哪个产品"。
+    "token-plan.cn-beijing.maas.aliyuncs.com": "Model Studio / Token Plan",
+    "coding.dashscope.aliyuncs.com": "Model Studio / Coding Plan",
     "api.deepseek.com": "DeepSeek",
     "api.openai.com": "OpenAI",
 }

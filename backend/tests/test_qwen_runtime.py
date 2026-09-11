@@ -166,3 +166,12 @@ def test_qwen_runtime_explicit_fallback_uses_server_alias(tmp_path, monkeypatch)
 
     assert response["model"] == "review-chat"
     assert server.calls[0]["model"] == "review-chat"
+
+
+def test_subscription_plan_hosts_are_labelled_by_product():
+    """三种产品密钥与地址互不通用；记录里必须能看出实际打的是哪一个。"""
+    from libs.qwen_runtime import provider_label_for
+
+    assert provider_label_for("official_api", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1") == "Model Studio / Token Plan"
+    assert provider_label_for("official_api", "https://coding.dashscope.aliyuncs.com/v1") == "Model Studio / Coding Plan"
+    assert provider_label_for("official_api", "https://dashscope.aliyuncs.com/compatible-mode/v1") == "Model Studio / DashScope"

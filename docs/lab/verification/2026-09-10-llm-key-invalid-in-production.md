@@ -107,3 +107,19 @@ worker 容器。視覺角色目前和主角色共用同一把無效密鑰，換�
 實測跑向生產：退出碼 1，兩個供應商都報 `invalid_key`，並印出
 `密钥=sk-ws-…len=116`（只印前綴與長度，不印密鑰本身）——這個前綴正是看出「放進去
 的根本不是 DashScope 密鑰」的關鍵。
+
+
+## 更正（同日稍晚）：新 key 是好的，我連錯了三個端點
+
+使用者重新生成了一把 `sk-sp-…` key。我依序打了按量計費端點（401 Incorrect API key）、
+Coding Plan 端點（401 invalid access token or token expired），都不通，一度歸因為套餐
+狀態。**錯在我**：`sk-sp-` 是 **Token Plan** 的 key，官方快速開始頁寫的端點是
+`https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`——和 Coding Plan 的
+`coding.dashscope.aliyuncs.com` 是不同域名（搜尋摘要把兩者混為一談，我沒去核對原文）。
+
+打對端點後：chat（qwen3.7-plus / qwen3.8-max / qwen3.6-flash）與視覺全部 OK；
+`qwen-vl-max` 不存在；**embeddings 不存在**。`/models` 在這個端點需要鑑權（無 key 401），
+而 Coding Plan 端點的 `/models` 是公開的——早前那個「有 key 能列模型」不能當鑑權證據，
+幸好當時同時用亂填的 key 驗了，沒把它當成結論。
+
+還沒解的：舊 `sk-ws-`（按量計費）仍 401，embeddings 因此仍斷。
