@@ -76,6 +76,7 @@ def test_a_registered_fact_builder_builds_facts_with_the_network_cut(monkeypatch
     monkeypatch.setattr(socket, "create_connection", refuse)
 
     state, run = state_and_run()
+    run["selectedObjectIds"] = ["20260213951"]  # 真实表两行，不选就是"来源含糊"
     facts = build_r43_business_facts(state, run)["r43"]["materialCertificate"]
     # 断网还能把真实表格的值建出来，才算真的离线。
     assert facts["domains"][0]["certificate"]["documentNo"] == "20260213951"

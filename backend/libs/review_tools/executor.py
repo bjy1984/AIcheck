@@ -186,6 +186,36 @@ def resolve_atomic_arguments(
     return resolved
 
 
+# 走 frozen_domain_checks 的工具 → 事实里的 (命名空间, 键)。工具要的是顶层的
+# projectId / scope / domains / standardRules，事实构建把它们放在 facts[ns][key] 下。
+# 2026-09-10 生产乾跑抓到：这批工具一个都没接线，收到的只有 binding.parameters，
+# 于是不论事实建得多好，一律回 *_scope_missing——判据冻结了、事实建了、工具会判，
+# 唯独中间这根线没接。R11/R35~R40/R45/R64~R67 早有各自的特例，这批当时漏了。
+FROZEN_DOMAIN_INPUTS: dict[str, tuple[str, str]] = {
+    "evaluate_r10_standard_adoption": ("r10", "alternativeStandardAdoption"),
+    "evaluate_r10_compliance_declaration": ("r10", "complianceDeclaration"),
+    "evaluate_r10_comparison_table": ("r10", "comparisonTableCoverage"),
+    "evaluate_r43_material_certificate": ("r43", "materialCertificate"),
+    "evaluate_r44_coating_construction": ("r44", "coatingConstruction"),
+    "evaluate_r46_cathodic_protection": ("r46", "cathodicProtection"),
+    "evaluate_r47_static_grounding": ("r47", "staticGrounding"),
+    "evaluate_r48_weld_layout": ("r48", "weldLayout"),
+    "evaluate_r49_crossing_construction": ("r49", "crossingConstruction"),
+    "evaluate_r50_sleeve_insulation": ("r50", "sleeveInsulation"),
+    "evaluate_r52_prefabrication": ("r52", "prefabrication"),
+    "evaluate_r53_installation_connections": ("r53", "installationConnections"),
+    "evaluate_r53_equipment_connection": ("r53", "equipmentConnection"),
+    "evaluate_r54_compensator": ("r54", "compensator"),
+    "evaluate_r55_supports": ("r55", "supports"),
+    "evaluate_r56_accessory_documents": ("r56", "safetyAccessoryDocuments"),
+    "evaluate_r56_accessory_installation": ("r56", "safetyAccessoryInstallation"),
+    "evaluate_r57_safety_valve_calibration": ("r57", "safetyValveCalibration"),
+    "evaluate_r58_emergency_valve_test": ("r58", "emergencyValveTest"),
+    "evaluate_r63_stress_analysis": ("r63", "stressAnalysis"),
+    "evaluate_r68_blowing_cleaning": ("r68", "blowingCleaning"),
+}
+
+
 def build_tool_arguments(
     tool_name: str,
     binding: dict[str, Any],
@@ -217,6 +247,10 @@ def build_tool_arguments(
                    "evaluate_r67_leak_test_method": ("r67", "leakTestMethod")}
     if tool_name in leak_inputs:
         namespace, fact_key = leak_inputs[tool_name]
+        for key, value in nested_dict(nested_dict(facts, namespace), fact_key).items():
+            arguments.setdefault(key, deepcopy(value))
+    if tool_name in FROZEN_DOMAIN_INPUTS:
+        namespace, fact_key = FROZEN_DOMAIN_INPUTS[tool_name]
         for key, value in nested_dict(nested_dict(facts, namespace), fact_key).items():
             arguments.setdefault(key, deepcopy(value))
     if tool_name == "evaluate_r45_holiday_test":

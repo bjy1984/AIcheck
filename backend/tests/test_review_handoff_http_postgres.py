@@ -79,6 +79,21 @@ def api_process(dsn, log_path):
                     process.wait(timeout=10)
 
 
+
+def _api_log_tails(tmp_path, lines=40):
+    """竞态失败时把两个 uvicorn 进程的日志尾巴带进断言信息：
+    40906 可能来自同一次 flush 里的任何一个对象，不看日志根本不知道是谁冲突。"""
+    out = []
+    for i in range(2):
+        path = tmp_path / f'api-{i}.log'
+        try:
+            tail = path.read_text(encoding='utf-8', errors='replace').splitlines()[-lines:]
+        except FileNotFoundError:
+            tail = ['(no log)']
+        out.append(f'--- api-{i}.log ---\n' + '\n'.join(tail))
+    return '\n'.join(out)
+
+
 def test_two_http_processes_reject_stale_verification_and_refresh_source(isolated_postgres_url, tmp_path):
     url, original, body = verification_fixture()
     before_runs = deepcopy(repo.state['review_runs'])
@@ -113,7 +128,7 @@ def test_two_http_processes_reject_stale_verification_and_refresh_source(isolate
             # 真实调用方遇到 40906 就是重读后重试，所以这里也重试——
             # 把并发窗口当成失败，测的就不是系统保证的东西了。
             winners = [item for item in responses if item['code'] == 0]
-            assert len(winners) <= 1, responses
+            assert len(winners) <= 1, (responses, _api_log_tails(tmp_path))
             for item in responses:
                 if item['code'] == 0:
                     continue
@@ -136,7 +151,7 @@ def test_two_http_processes_reject_stale_verification_and_refresh_source(isolate
                     }, headers={'Idempotency-Key': 'parallel-retry'}).json()
                     # 确实一条都没写进去时，重读后重试必须成功；
                     # 否则就不是并发窗口，而是根本写不进去。
-                    assert retry['code'] == 0, retry
+                    assert retry['code'] == 0, (retry, _api_log_tails(tmp_path))
                     saved = retry['data']
             assert len(saved['verifications']) == 1
             for client in clients:

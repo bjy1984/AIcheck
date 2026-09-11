@@ -23,17 +23,17 @@ https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 | `text-embedding-v4` | **404，Token Plan 沒有 embeddings** |
 | 舊 `sk-ws-` key（按量計費） | 仍 401，帳號層問題未解 |
 
-**你要改的（`/home/dev-bjy/aicheck-runtime.env`，我不手改）**：
+**你要做的只有一行**（`/home/dev-bjy/aicheck-secrets.env`，600 權限的憑證檔）：
 
 ```
-AICHECK_LLM_API_BASE=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-AICHECK_LLM_API_KEY=<你的 sk-sp- key>
-AICHECK_LLM_VISION_API_BASE=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-AICHECK_LLM_VISION_API_KEY=<同一把 sk-sp- key>
-AICHECK_LLM_MODEL_VISION=qwen3.7-plus
+AICHECK_TOKEN_PLAN_API_KEY=<你的 sk-sp- key>
 ```
 
-其餘 `AICHECK_LLM_MODEL_*` 一律不動（都在 Token Plan 清單內）。改完重啟 `aicheck-api` 與四個 worker。
+**不要手改 `runtime.env`**——它是 `deploy_to_server.sh --backend` 每次用 `build_runtime_env.py`
+從憑證檔重新生成的，手改的行下次部署就沒了（這條坑倉庫裡記著 2026-08-14 踩過）。生成器
+已改成：憑證裡有這把 key，文本與視覺角色就整體切到 Token Plan 端點、視覺模型改
+`qwen3.7-plus`、文本模型名不動、embeddings 留在按量端點。你加完那一行告訴我，
+**我來跑 `deploy_to_server.sh --backend`**（按規矩從倉庫根目錄跑）並用探針確認。
 
 **確認**（伺服器上，不花錢；退出碼 0 即成）：
 ```
@@ -47,7 +47,10 @@ embeddings。知識庫切片向量化要恢復，仍需一把**按量計費**的
 `AICHECK_EMBEDDING_API_KEY`（`AICHECK_EMBEDDING_API_BASE` 保持 dashscope 不變）。這和帳號層
 為何失效是同一個問題，要在百煉控制台查。
 
-**我接手**：探針一綠，立刻跑 R43 端到端（OCR → 分類 → 對映 → agent 讀正文 → 凍結判據 → 導出驗收證據）。
+**我接手**：探針一綠，立刻跑 R43 端到端。這條鏈到「agent 填值」之前的每一段，今天已在
+**生產資料上只讀乾跑證明通了**（途中修掉三個真缺口：無對象選取、20 個工具沒接進執行器、
+表格引用沒有原文——見 `verification/2026-09-10-r43-dry-run-three-gaps.md`）。現在
+`documentNo`／`materialGrade` 已通過，剩四個判斷布林等 agent 填，那一步只差你的 env。
 
 ## 2. 向工程方索取施工記錄類資料
 

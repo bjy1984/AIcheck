@@ -162,6 +162,29 @@ if secrets.get("AICHECK_LLM_VISION_API_KEY"):
     runtime["AICHECK_LLM_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
     runtime["AICHECK_EMBEDDING_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
 
+# 百炼 Token Plan（套餐制）。三种密钥/端点完全隔离，混用一律 401：
+#   按量计费 sk-…            → dashscope.aliyuncs.com/compatible-mode/v1
+#   Token Plan sk-sp-…       → token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+#   Coding Plan sk-sp-…      → coding.dashscope.aliyuncs.com/v1
+# 2026-09-10 一把有效的 Token Plan 密钥被误打到按量端点，连错三轮。凭证文件里给了
+# AICHECK_TOKEN_PLAN_API_KEY，文本与视觉角色就整体切到 Token Plan：
+# - 模型名不动：qwen3.7-plus / qwen3.8-max / qwen3.6-flash 在 Token Plan 实测 200；
+# - 视觉改 qwen3.7-plus：Token Plan 没有 qwen-vl-max，而 qwen3.7-plus 实测能读图；
+# - embeddings **不切**：Token Plan 没有 text-embedding-v4（404），仍走按量端点，
+#   密钥取凭证里的 AICHECK_EMBEDDING_API_KEY，没有就沿用视觉那把（按量 sk-）。
+# 放在 update 之后：凭证里旧的 AICHECK_LLM_VISION_API_BASE/_KEY（按量）要被它盖掉。
+TOKEN_PLAN_BASE = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+if secrets.get("AICHECK_TOKEN_PLAN_API_KEY"):
+    token_plan_key = secrets["AICHECK_TOKEN_PLAN_API_KEY"]
+    runtime["AICHECK_LLM_API_BASE"] = TOKEN_PLAN_BASE
+    runtime["AICHECK_LLM_API_KEY"] = token_plan_key
+    runtime["AICHECK_LLM_VISION_API_BASE"] = TOKEN_PLAN_BASE
+    runtime["AICHECK_LLM_VISION_API_KEY"] = token_plan_key
+    runtime["AICHECK_LLM_MODEL_VISION"] = "qwen3.7-plus"
+    embedding_key = secrets.get("AICHECK_EMBEDDING_API_KEY") or secrets.get("AICHECK_LLM_VISION_API_KEY")
+    if embedding_key:
+        runtime["AICHECK_EMBEDDING_API_KEY"] = embedding_key
+
 # LLM 备用供应商：DeepSeek（通义供应商级故障/熔断时降级）。模型名必须显式覆盖，
 # 否则 fallback_provider 用 qwen_runtime.yaml 的通义默认值，DeepSeek 会 400。
 # 地址与密钥两个都配齐才生效（fallback_provider 的规矩），所以放同一个 if 里。

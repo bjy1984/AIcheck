@@ -149,6 +149,20 @@ def test_r35_retains_recorded_table_text_without_reconstructing_it_from_fields()
     assert "conforming" not in ref["quotedText"]
 
 
+def test_r35_quotes_recorded_html_when_markdown_is_absent_but_never_the_fields():
+    """MinerU 的表只有 html，没有 contentMarkdown；html 是引擎记录的原文，可引。"""
+    state, run = fixture()
+    table = state["ocr_parse_results"][0]["tables"][0]
+    table["bbox"] = None
+    table.pop("contentMarkdown", None)
+    table["html"] = "<table><tr><td>原文列</td><td>原文内容</td></tr><tr><td>编号</td><td>QMS-01</td></tr></table>"
+    facts, _ = execute(state, run)
+    ref = facts["r35"]["manual"][0]["evidenceRefs"][0]
+    assert ref["quotedText"] == "原文列 | 原文内容\n编号 | QMS-01"
+    assert "conforming" not in ref["quotedText"]
+    assert "<" not in ref["quotedText"]
+
+
 @pytest.mark.parametrize("page", [0, -1, True, "1"])
 def test_r35_malformed_page_does_not_become_valid_evidence(page):
     state, run = fixture()

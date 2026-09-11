@@ -799,3 +799,50 @@ def test_common_arguments_cannot_override_fixed_rule_parameters():
     with pytest.raises(ValueError, match="fixed_rule_parameter"):
         execute_node_tool_plan(plan, tool_runner=lambda *args: pytest.fail("must not run"),
                                tool_arguments={"shared": {"limit": 99}})
+
+
+
+# ---- frozen-domain 工具的参数接线 ----
+import pytest as _pytest
+
+from libs.review_tools.executor import FROZEN_DOMAIN_INPUTS, build_tool_arguments
+
+
+@_pytest.mark.parametrize("tool_name", sorted(FROZEN_DOMAIN_INPUTS))
+def test_frozen_domain_tools_receive_scope_domains_and_rules(tool_name):
+    """2026-09-10 生产乾跑：这批工具只收到 binding.parameters，一律 *_scope_missing。"""
+    namespace, fact_key = FROZEN_DOMAIN_INPUTS[tool_name]
+    facts = {namespace: {fact_key: {
+        "projectId": "P1",
+        "scope": {"projectId": "P1", "objectType": "x", "objectId": "O1", "recordVersionId": "V1"},
+        "domains": [{"domain": fact_key, "objectId": "O1"}],
+        "standardRules": {"domains": {fact_key: {"checks": []}}},
+        "selectionIssues": [],
+    }}}
+    arguments = build_tool_arguments(
+        tool_name, {"parameters": {"profile": "keep-me"}},
+        facts=facts, explicit={}, document_version_ids=[], evidence_facts=[], evidence_refs=[],
+    )
+    assert arguments["profile"] == "keep-me"
+    assert arguments["projectId"] == "P1"
+    assert arguments["scope"]["objectId"] == "O1"
+    assert arguments["domains"][0]["domain"] == fact_key
+    assert arguments["standardRules"]["domains"][fact_key] == {"checks": []}
+    # 传的是副本：工具改了参数不能反过来改事实
+    arguments["domains"][0]["objectId"] = "changed"
+    assert facts[namespace][fact_key]["domains"][0]["objectId"] == "O1"
+
+
+def test_every_frozen_domain_tool_is_wired_and_names_match_its_fact_builder():
+    """新增一个 frozen-domain 工具而不接线，这里要红——不能再靠生产乾跑发现。"""
+    from libs.review_orchestrator.installation_domain_facts import _NODES as INSTALLATION_NODES
+    from libs.review_orchestrator.r63_r68_facts import _NODES as R63_R68_NODES
+    from libs.review_tools.installation_domain_rules import _SPECS
+
+    expected = {tool: (namespace, fact_key)
+                for (_table, fact_key, tool, namespace) in INSTALLATION_NODES.values()}
+    r63_r68_tools = {63: "evaluate_r63_stress_analysis", 68: "evaluate_r68_blowing_cleaning"}
+    for node, (_table, fact_key, namespace, *_rest) in R63_R68_NODES.items():
+        expected[r63_r68_tools[node]] = (namespace, fact_key)
+    assert set(_SPECS) <= set(FROZEN_DOMAIN_INPUTS), sorted(set(_SPECS) - set(FROZEN_DOMAIN_INPUTS))
+    assert FROZEN_DOMAIN_INPUTS == expected

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 from copy import deepcopy
 from typing import Any
 
@@ -16,10 +17,35 @@ def _table_location(table: dict[str, Any]) -> dict[str, Any]:
                   and all(type(value) in (int, float) and math.isfinite(value) for value in bbox)
                   and bbox[0] >= 0 and bbox[1] >= 0 and bbox[2] > bbox[0] and bbox[3] > bbox[1])
     page = table.get("pageNo")
-    text = table.get("contentMarkdown")
+    text = _recorded_table_text(table)
     return {"pageNo": page if type(page) is int and page > 0 else None,
             "bbox": deepcopy(bbox) if valid_bbox else None,
-            "quotedText": text if isinstance(text, str) and text.strip() else None}
+            "quotedText": text}
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _recorded_table_text(table: dict[str, Any]) -> str | None:
+    """表格的原文引用，只取**记录下来的**文本，绝不从 normalizedRows 拼。
+
+    normalizedRows 是清洗过的字段值，拿它们拼成"引文"就是编造原文——
+    test_r35 那条"不得伪造原文引用"守的正是这个。可引的只有两种：
+    contentMarkdown（老路径），或 OCR 引擎自己给的 html（MinerU 的表没有
+    contentMarkdown，只有 html，单元格与来源片段逐字一致）。html 去掉标签后
+    就是那张表的原文；2026-09-10 前这一路一直是 None，导致判据侧 _refs()
+    把表格行的引用整组丢掉，真实资料永远判成"证据不在所选文件"。
+    """
+    markdown = table.get("contentMarkdown")
+    if isinstance(markdown, str) and markdown.strip():
+        return markdown
+    html = table.get("html")
+    if isinstance(html, str) and html.strip():
+        cells = _TAG_RE.sub(" ", html.replace("</td>", " | ").replace("</tr>", "\n"))
+        text = "\n".join(" ".join(line.split()) for line in cells.splitlines())
+        text = "\n".join(line.strip(" |") for line in text.splitlines() if line.strip(" |"))
+        return text[:2000] if text else None
+    return None
 
 
 _SIGNATURES: list[dict[str, Any]] | None = None
@@ -72,6 +98,12 @@ def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[st
             or run.get("nodeId") != node_id):
         raise ValueError(f"r{node_id}_review_identity_incomplete_or_wrong_node")
     groups: dict[str, list] = {value: [] for value in schemas.values()}
+    # 显式的对象选取。真实的元件核查记录一张表列全部元件，而这些规则一次只审一个
+    # 对象：构建器遇到多列不会替人挑（挑第一行等于替被审方决定审哪个），于是判
+    # "来源含糊"。工位若在 run 上写明 selectedObjectIds，这里就只放行这些对象；
+    # 没写就维持原样。它挂在 run 上，fixture 冻结整个 run，重放自然带着这份选取。
+    selected = run.get("selectedObjectIds")
+    wanted = {str(item) for item in selected if item not in (None, "")} if isinstance(selected, list) else None
     versions = {row["id"]: row for row in state.get("versions", []) if row.get("tenantId") == run.get("tenantId")}
     documents = {row["id"] for row in state.get("documents", [])
                  if row.get("projectId") == run.get("projectId") and row.get("tenantId") == run.get("tenantId")}
@@ -105,6 +137,8 @@ def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[st
                 # actualPath，而表头是中文列名，一个也对不上。
                 payload = _mapped_payload(row, signature, run, version_id) if signature else deepcopy(row)
                 if payload is None:
+                    continue
+                if wanted is not None and str(payload.get("objectId") or "") not in wanted:
                     continue
                 record = {**payload, "documentVersionId": version_id, "evidence": ref, "evidenceRefs": [ref]}
                 groups[schemas[schema]].append(record)

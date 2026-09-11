@@ -7502,11 +7502,7 @@ onBeforeUnmount(() => {
 
 .inspection-headline-rest dt {
   font-size: 12px;
-
-  /* #94a3b8 在白底上只有 2.45:1，12px 正文按 WCAG AA 要 4.5:1。
-     这几个字是「未开始／处理中／需关注／执行失败」——统计口径本身，
-     看不清等于统计没写。换成 slate-500，约 4.8:1。 */
-  color: #64748b;
+  color: #64748b; /* 原 #94a3b8 仅 2.45:1；12px 正文按 WCAG AA 要 4.5:1，这几个字正是统计口径 */
 }
 
 .inspection-headline-rest dd {
