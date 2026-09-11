@@ -62,8 +62,22 @@ sync_backend() {
     docker run --rm --entrypoint sh -v $REMOTE_HOME:/w -w /w/AIcheck \
       -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
       -e GIT_LFS_SKIP_SMUDGE=1 $GIT_IMAGE -c '
+      set -e
+      # 部署目标的树不该有手改：有就说明有人直接在服务器上改过代码，不能悄悄
+      # 重置掉，也不能带着它建镜像——列出来、停下。2026-09-10 就是一份手改让
+      # checkout 失败，而这个内层 sh 没有 set -e，后面的 git clean / git log 成功
+      # 把退出码盖成 0，镜像用旧树建了，部署照样报「完成」。
+      dirty=\$(git status --porcelain)
+      if [ -n \"\$dirty\" ]; then
+        echo \"服务器工作树有手改，拒绝部署：\" >&2; echo \"\$dirty\" >&2; exit 1
+      fi
       # detach 到具体提交：服务器上的树只反映这一次部署，不跟着任何分支漂。
       git checkout --quiet --detach $REVISION
+      # 断言检出真的到了目标：checkout 失败或漂到别处都不能往下走。
+      head=\$(git rev-parse HEAD)
+      if [ \"\$head\" != \"$REVISION\" ]; then
+        echo \"检出后 HEAD=\$head，不是目标 $REVISION\" >&2; exit 1
+      fi
       git clean -qfd backend openapi
       git log --oneline -1
     '
@@ -95,7 +109,14 @@ sync_backend() {
   ssh "$HOST" "
     set -eo pipefail
     cd $REMOTE_HOME/AIcheck/backend
-    docker build -q -f Dockerfile.server --build-arg AICHECK_REVISION=$REVISION -t aicheck-api:local . >/dev/null
+    # 镜像标签用**服务器树实际检出的提交**盖章，不用本机的 \$REVISION 变量：
+    # 用目标变量盖章、再拿目标变量去核对，是同源比对，不是校验——树是旧的时候
+    # 标签照样写着新提交（2026-09-10 实际发生：树在 2e3265b7，标签写 8d6ac06c）。
+    BUILT_REV=\$(docker run --rm -v $REMOTE_HOME:/w -w /w/AIcheck \
+      -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+      $GIT_IMAGE rev-parse HEAD)
+    [ \"\$BUILT_REV\" = \"$REVISION\" ] || { echo \"构建前树在 \$BUILT_REV，不是 $REVISION\" >&2; exit 1; }
+    docker build -q -f Dockerfile.server --build-arg AICHECK_REVISION=\$BUILT_REV -t aicheck-api:local . >/dev/null
     # 运行时 env 生成器以仓库版本为准，覆盖服务器上可能被手改过的副本。
     # 此前它只存在于服务器，部署逻辑有一半没有版本管理。
     cp deploy/build_runtime_env.py /home/dev-bjy/build-runtime-env.py
