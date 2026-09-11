@@ -511,6 +511,13 @@ class InMemoryRepository:
     def reset(self) -> None:
         self._loaded_tenants.discard(configured_tenant_id())
         self.state = runtime_initial_state()
+        # 一个刚丢掉全部 state 的 repo，没有任何增量刷新的立足点：水位线是"内存里
+        # 已经反映到这一刻"的承诺，state 清空之后这个承诺就不成立了。留着它，
+        # 下一次 refresh_collections_incrementally 会按旧水位线做增量，而不是整表
+        # 重载——记录靠 missing_ids 补回来，基线却只覆盖"变化过的行"，其余行
+        # 空着基线，之后任何写入都是 expected=None ≠ actual → 40906。
+        # 生产（持久化）模式下每一次失败请求的复原都走这里（快照 include_state=False）。
+        self._collection_watermarks = {}
         self._persistence_baseline = {}
         self._singleton_baseline = {}
         self._idempotency_baseline = {}

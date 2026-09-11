@@ -165,7 +165,7 @@ def test_two_http_processes_reject_stale_verification_and_refresh_source(isolate
                 'outcome': 'rejected', 'objectMatchConfirmed': False,
                 'note': 'synthetic correction after reread',
             }).json()
-            assert revised['code'] == 0, revised
+            assert revised['code'] == 0, (revised, _api_log_tails(tmp_path))
             assert len(revised['data']['verifications']) == 2
             assert clients[0].get(endpoint).json()['data']['verification']['status'] == 'rejected'
             writer.sync_postgres.execute(

@@ -274,3 +274,15 @@ def test_整表加载后立刻建立探针基线() -> None:
         "整表加载后没建基线——第一次增量刷新会静默地什么都不刷，"
         "worker 于是一直读旧数据"
     )
+
+
+
+def test_reset_drops_incremental_watermarks_so_the_next_refresh_reloads():
+    """失败请求的复原走 reset()：state 没了，增量游标不能还留着。"""
+    from libs.db.repository import InMemoryRepository, configured_tenant_id
+
+    repo = InMemoryRepository(seed=False)
+    repo._collection_watermarks[(configured_tenant_id(), "review_handoffs")] = "2026-09-11 00:00:00"
+    assert repo.has_incremental_watermark("review_handoffs") if hasattr(repo, "has_incremental_watermark") else True
+    repo.reset()
+    assert repo._collection_watermarks == {}
