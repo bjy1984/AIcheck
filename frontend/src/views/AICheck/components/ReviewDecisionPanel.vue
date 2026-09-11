@@ -174,7 +174,14 @@ const evidenceText = (evidence: EvidenceLink) =>
             border
           >
             <span class="review-evidence-label">{{ evidenceLabel(evidence) }}</span>
-            <small>{{ evidenceText(evidence) }}</small>
+            <!-- 引文区不跟着勾选：这段能滚动也能划词复制，点进去不该把证据选中状态翻掉。
+                 原生 label 激活控件不走冒泡，只 stop 挡不住，必须 prevent。 -->
+            <!-- 用 v-text 而不是插值：pre-wrap 下模板缩进会变成可见的首行空白。 -->
+            <small
+              class="review-evidence-quote"
+              @click.stop.prevent
+              v-text="evidenceText(evidence)"
+            ></small>
           </ElCheckbox>
         </ElCheckboxGroup>
         <ElAlert
@@ -322,15 +329,32 @@ const evidenceText = (evidence: EvidenceLink) =>
 }
 
 .review-evidence-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.review-evidence-label {
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
 }
 
 .review-evidence-options small {
+  /* OCR 引文本身是分行的（报告抬头、委托单位、检件规格各占一行），
+     white-space: normal 把换行全折掉，一份射线检测报告糊成一整段。 */
+  padding: 6px 0 6px 10px;
   line-height: 20px;
-  white-space: normal;
+  white-space: pre-wrap;
+  border-left: 2px solid #e6edf7;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-evidence-quote {
+  /* 一条证据最多占十行，再长自己滚——否则一份检测报告能把整个表单顶下去。 */
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .review-evidence-options small,
