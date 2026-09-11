@@ -33,6 +33,7 @@ from typing import Any
 from libs.contracts.responses import business_today
 from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
 from libs.review_input_data import selected_parse_results
+from libs.review_orchestrator.r12_agent import stable_payload_hash
 
 from .deterministic_tools import parse_date as _iso_parse_date
 
@@ -252,7 +253,38 @@ def build_certificate_facts(
         },
     }
     facts[profile["legacyNamespace"]] = _legacy_namespace(profile, certificates)
+    facts["judgment"] = _certificate_judgment(certificates)
     return facts
+
+
+def _certificate_judgment(certificates: list[dict[str, Any]]) -> dict[str, Any]:
+    """把证书事实登记成 grounding 能核的形状（与 material_facts.build_material_judgment 同构）。
+
+    2026-09-11 全节点扫描：证书节点（1/2/3/24/38）的 businessFacts 从没有 judgment，
+    execution.load_ocr_result 于是把 evidenceFacts 建成空列表，validate_evidence_grounding
+    看到 factCount=0，整个原子项一律证据不足——业务工具明明已经 passed 也翻不过来。
+    """
+    claimed: list[dict[str, Any]] = []
+    refs: dict[str, dict[str, Any]] = {}
+    for index, record in enumerate(certificates, 1):
+        evidence = [item for item in record.get("evidence") or [] if isinstance(item, dict) and item.get("evidenceRefId")]
+        for item in evidence:
+            refs.setdefault(str(item["evidenceRefId"]), item)
+        scored = [item["confidence"] for item in evidence if isinstance(item.get("confidence"), (int, float))]
+        unavailable = bool(evidence) and all(item.get("confidenceUnavailable") for item in evidence)
+        claimed.append(
+            {
+                "factId": f"certificate-{index}",
+                "value": record.get("certificateNo") or record.get("holder"),
+                "documentVersionId": record.get("documentVersionId"),
+                "evidenceRefIds": [str(item["evidenceRefId"]) for item in evidence],
+                # 有分取最低的那一处（证据链以最弱一环计）；引擎没给分就如实标「不可用」。
+                "confidence": min(scored) if scored else None,
+                "confidenceUnavailable": unavailable,
+                "conflicted": False,
+            }
+        )
+    return {"claimedFacts": claimed, "evidenceRefs": list(refs.values())}
 
 
 def _legacy_namespace(profile: dict[str, Any], certificates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -381,6 +413,7 @@ def _extract_certificates(
             return welder
     fields = _field_values(parse_result)
     text = _full_text(parse_result)
+    unavailable = _confidence_unavailable(parse_result)
     segments = _person_segments(text) if profile["certificateType"] == "ndt_personnel_certificate" else []
     if len(segments) > 1:
         records = []
@@ -414,13 +447,15 @@ def _extract_certificates(
             if value:
                 record[key] = value
                 record["sources"][key] = "ocr_field"
-                record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw")))
+                record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw"),
+                                                    confidence=hit.get("confidence"), confidence_unavailable=unavailable))
     scope_hits = [hit for hit in _all_fields(fields, FIELD_ALIASES["scope"])]
     for hit in scope_hits:
         for code in _split_scopes(hit["value"]):
             if code not in record["scopes"]:
                 record["scopes"].append(code)
-        record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw")))
+        record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw"),
+                                            confidence=hit.get("confidence"), confidence_unavailable=unavailable))
     if scope_hits:
         record["sources"]["scopes"] = "ocr_field"
     _fill_from_text(record, text, parse_result, version_id, file_name)
@@ -500,8 +535,10 @@ def _fill_from_text(record: dict[str, Any], text: str, parse_result: dict[str, A
             if value:
                 record[key] = value
                 record.setdefault("sources", {})[key] = "ocr_text"
-                page_no, quoted = _locate_text(parse_result, match.group(0))
-                record.setdefault("evidence", []).append(_evidence(version_id, file_name, page_no, None, quoted))
+                page_no, quoted, fragment_confidence = _locate_text(parse_result, match.group(0))
+                record.setdefault("evidence", []).append(_evidence(
+                    version_id, file_name, page_no, None, quoted,
+                    confidence=fragment_confidence, confidence_unavailable=_confidence_unavailable(parse_result)))
                 break
     if not record.get("scopes"):
         codes = [f"{m.group(1).upper()}-{_roman(m.group(2))}" for m in re.finditer(r"\b(RT|UT|MT|PT|ET|TOFD|PAUT|VT|AE)\s*[\(（]?\s*(I{1,3}|Ⅰ|Ⅱ|Ⅲ|1|2|3)\b", text)]
@@ -557,7 +594,10 @@ def _welder_certificates(parse_result: dict[str, Any], version_id: str, file_nam
         obj = fields.get(field_name) if isinstance(fields.get(field_name), dict) else None
         evidence = (obj or {}).get("evidence") if isinstance((obj or {}).get("evidence"), dict) else {}
         if obj and obj.get("value"):
-            record["evidence"].append(_evidence(version_id, file_name, evidence.get("pageNo"), evidence.get("bbox"), obj.get("value")))
+            record["evidence"].append(_evidence(
+                version_id, file_name, evidence.get("pageNo"), evidence.get("bbox"), obj.get("value"),
+                confidence=obj.get("confidence", evidence.get("confidence")),
+                confidence_unavailable=_confidence_unavailable(parse_result)))
     return [record]
 
 
@@ -587,6 +627,8 @@ def _field_values(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
                 "value": str(value).strip(),
                 "pageNo": field.get("pageNo"),
                 "bbox": field.get("bbox"),
+                # 原来这里把 confidence 丢了，证据链到 grounding 时只能是 None。
+                "confidence": field.get("confidence"),
                 "raw": str(value).strip(),
             }
         )
@@ -625,25 +667,60 @@ def _scope_codes_from_text(text: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
-def _locate_text(parse_result: dict[str, Any], needle: str) -> tuple[int | None, str]:
+def _locate_text(parse_result: dict[str, Any], needle: str) -> tuple[int | None, str, Any]:
+    """返回 (页码, 引文, 该片段的 confidence)。找不到片段时 confidence 为 None。"""
     compact = re.sub(r"\s+", "", needle)
     for fragment in parse_result.get("fragments") or []:
         if not isinstance(fragment, dict):
             continue
         body = str(fragment.get("text") or fragment.get("fullText") or "")
         if compact and compact in re.sub(r"\s+", "", body):
-            return fragment.get("pageNo"), needle.strip()
-    return None, needle.strip()
+            return fragment.get("pageNo"), needle.strip(), fragment.get("confidence")
+    return None, needle.strip(), None
 
 
-def _evidence(version_id: str, file_name: str, page_no: Any, bbox: Any, quoted: Any) -> dict[str, Any]:
+def _evidence(
+    version_id: str, file_name: str, page_no: Any, bbox: Any, quoted: Any,
+    *, confidence: Any = None, confidence_unavailable: bool = False,
+) -> dict[str, Any]:
+    """一条可被 grounding 引用的证据。
+
+    evidenceRefId 由位置与引文决定（同一处证据两次抽到得同一个 id），
+    validate_evidence_grounding 靠它把 claimedFact 与 evidenceRef 对上。
+
+    confidence 如实带出：MinerU 的 VLM 通道逐片不给分，适配层写 0.0 并标
+    provider_confidence_unavailable——那是「没分」，不是「零分」。这里把标记一起带上，
+    让下游能按 libs/field_confidence 的三态口径处理，而不是把 0.0 当低置信度一票否决。
+    """
+    quoted_text = str(quoted or "")[:200]
+    normalized_page = int(page_no) if isinstance(page_no, (int, float)) and page_no else page_no
+    evidence_id = "CERTEV-" + stable_payload_hash(
+        {"v": version_id, "p": normalized_page, "b": bbox, "q": quoted_text}
+    )[7:19].upper()
+    score: float | None
+    try:
+        score = float(confidence) if confidence is not None else None
+    except (TypeError, ValueError):
+        score = None
+    if confidence_unavailable:
+        score = None
     return {
+        "id": evidence_id,
+        "evidenceRefId": evidence_id,
         "documentVersionId": version_id,
         "fileName": file_name,
-        "pageNo": int(page_no) if isinstance(page_no, (int, float)) and page_no else page_no,
+        "pageNo": normalized_page,
         "bbox": bbox,
-        "quotedText": str(quoted or "")[:200],
+        "quotedText": quoted_text,
+        "confidence": score,
+        "confidenceUnavailable": bool(confidence_unavailable),
     }
+
+
+def _confidence_unavailable(parse_result: dict[str, Any]) -> bool:
+    """适配层是否声明了「引擎不报置信度」（quality.reasons 里的 provider_confidence_unavailable）。"""
+    quality = parse_result.get("quality") if isinstance(parse_result.get("quality"), dict) else {}
+    return "provider_confidence_unavailable" in (quality.get("reasons") or [])
 
 
 def _warnings(certificates: list[dict[str, Any]], considered: list[dict[str, Any]]) -> list[str]:
@@ -710,6 +787,15 @@ def merge_certificate_facts(
         review_run=review_run,
     )
     for key, value in certificate_facts.items():
+        if key == "judgment":
+            # 节点 24 的焊工 builder 已经产 judgment；证书事实要并进去，不能互相覆盖。
+            existing = merged.get("judgment") if isinstance(merged.get("judgment"), dict) else {}
+            merged["judgment"] = {
+                "claimedFacts": [*(existing.get("claimedFacts") or []), *(value.get("claimedFacts") or [])],
+                "evidenceRefs": [*(existing.get("evidenceRefs") or []), *(value.get("evidenceRefs") or [])],
+                **{k: v for k, v in existing.items() if k not in {"claimedFacts", "evidenceRefs"}},
+            }
+            continue
         if scoped:
             merged[key] = {**merged[key], **value} if isinstance(value, dict) and isinstance(merged.get(key), dict) else value
         elif isinstance(value, dict) and isinstance(merged.get(key), dict):

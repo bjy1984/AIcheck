@@ -105,3 +105,65 @@ designPressureMPa 为 2/4/6/…/16 等差数列的「管线」，喂给逐管线
 | 节点 1 AC-R01-04（读设计文件自述级别） | 证据不足 | 仍证据不足，`required_pipeline_grades_missing`——那条路径读的是 designDocument.pipelineGrades，没动 |
 
 这是这个工程第一个从图纸上长出来的确定性结论。
+
+## 七、证书节点从结构上不可能通过——两道墙，都拆了
+
+图签配对让节点 1/2 的许可范围工具判出 passed 之后，原子项仍是证据不足。追下去是两道墙：
+
+### 墙一：证书事实从没有 judgment
+
+`execution.load_ocr_result` 把 `businessFacts["judgment"]["claimedFacts"]` 当 evidenceFacts。
+焊材类构建器产这个，证书类（节点 1/2/3/24/38）不产。于是 `validate_evidence_grounding`
+永远 factCount=0，锚定门一票否决，业务工具 passed 也翻不过来。
+
+`certificate_facts` 现在产 judgment：每条证书一条 claimedFact（值取证书编号），
+证据带由位置与引文决定的 `evidenceRefId`（同一处两次抽到得同一个 id），
+`_field_values` / `_evidence` / `_locate_text` 把原来一路丢掉的 confidence 传下来。
+`merge_certificate_facts` 对 judgment 做列表拼接，不覆盖节点 24 焊工 builder 已有的。
+
+### 墙二：引擎没给分被当成零分
+
+补上 judgment 之后，grounding 仍判 `fact_1_confidence` 不过——因为 confidence 是 0.0。
+量了全库：
+
+| (sourceEngine, extractionMethod) | 字段数 | 0.0 占 | ≥0.75 占 |
+| --- | ---: | ---: | ---: |
+| `mineru_vlm` / `profile_heuristic` | **376** | **376** | 0 |
+| — / `scan_ocr_import` | 155 | 0 | 76 |
+| `mineru_vlm` / 焊工证工具 | 42 | 0 | 42 |
+| `pp_ocr_v6` | 13 | 0 | 13 |
+
+MinerU 的 VLM 通道逐片不给分，适配层写 0.0 并在 `quality.reasons` 里标
+`provider_confidence_unavailable`（生产 176 份解析结果带这个标）。一整份读对了的许可证
+（TS1844171-2028、广东政和工程有限公司、GB1/GB2、2028-01-17）五个字段全 0.0，
+不是「低置信度」，是「没有分数」。
+
+**这个口径项目早就定过**：`repository.py` 给 `extracted_fields.reviewStatus` 的是三态
+（`libs/field_confidence.field_review_status`，「置信度未知 ≠ 低置信度」，注释原话
+「既不冒充已确认，也不诬告识别质量」）。只是标记没传到 `parse_result.fields[]`，
+grounding 又只做数字比较。
+
+`validate_evidence_grounding` 现在与之对齐：事实带 `confidenceUnavailable` 时，置信度检查
+记作 `unscored` 而不是不过；位置齐、引文在、无冲突 → `human_review_required`
+（reason `provider_confidence_unavailable`）；有分而分低的照旧证据不足。
+
+### 聚合器顺带修的一处
+
+`aggregate_tool_results` 原来把 `human_review_required` 排在 `evidence_insufficient` 前，
+以前只有业务工具会发它，没事；锚定门也发之后，节点 1 实测「比不了 / 缺施工日期 / 缺级别」
+的原子项全被抬成「请人判断」。现在锚定门的结果单列：只在业务工具全部通过时，
+它才有资格把 passed 降成 human_review_required；业务说不清的还是说不清；
+`grounding evidence_insufficient` 一票否决的既有口径不动。
+
+### 效果（生产数据，未部署前挂载验证）
+
+| 原子项 | 业务工具 | 锚定门 | 原子项判定 |
+| --- | --- | --- | --- |
+| AC-R01-02 设计许可范围 | passed（GC1 ⊇ GC2） | 没分 | **human_review_required** |
+| AC-R02-01 安装许可范围 | passed（GB2/GC2 ⊇ GC2） | 没分 | **human_review_required** |
+| AC-R01-05 / AC-R02-04 纯锚定门 | — | 没分 | human_review_required |
+| AC-R01-01 图签单位一致性 | 比不了（设计文件图签单位没抽到） | 没分 | evidence_insufficient |
+| AC-R01-03 / AC-R02-02/03 有效期覆盖 | 缺施工起止日期 | 没分 | evidence_insufficient |
+
+节点 1、2 的总判定从 evidence_insufficient 变成 human_review_required：
+「许可范围覆盖了，请人核对引文」——这是这两个节点第一次给出不是「证据不足」的话。

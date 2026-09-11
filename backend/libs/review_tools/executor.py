@@ -637,12 +637,18 @@ def aggregate_tool_results(outputs: list[dict[str, Any]]) -> str:
     3. 工具执行故障是系统问题，走独立 execution_error 通道，不伪装成业务结论；
     4. human_review_required 独立保留（证据够但需专业判断 ≠ 证据不足）。
     """
-    business_results = [str(item.get("result")) for item in outputs if item.get("result")]
-    grounding_failed = any(
-        str(item.get("toolName")) == "validate_evidence_grounding"
-        and str(item.get("result")) in {"evidence_insufficient", "failed"}
+    grounding_outputs = [item for item in outputs if str(item.get("toolName")) == "validate_evidence_grounding"]
+    # 锚定门的结果单独拿出来：它只回答「证据能不能落地」，不回答业务对不对。
+    # 2026-09-11 之前它只会发 passed / evidence_insufficient；现在引擎没给分时会发
+    # human_review_required。这个状态不能混进 business_results——否则会排在业务工具的
+    # evidence_insufficient 前面，把「比不了 / 缺日期」的原子项抬成「请人判断」。
+    business_results = [
+        str(item.get("result"))
         for item in outputs
-    )
+        if item.get("result") and str(item.get("toolName")) != "validate_evidence_grounding"
+    ]
+    grounding_failed = any(str(item.get("result")) in {"evidence_insufficient", "failed"} for item in grounding_outputs)
+    grounding_unscored = any(str(item.get("result")) == "human_review_required" for item in grounding_outputs)
     execution_failed = any(item.get("status") in {"rejected", "failed", "error"} for item in outputs)
     # 某项检测能力未启用（如印章检测管线全关）时，该维度是「没查」而非「没问题」，
     # 不能让其余工具的 passed 把它盖过去。
@@ -663,7 +669,12 @@ def aggregate_tool_results(outputs: list[dict[str, Any]]) -> str:
     if business_results and not applicable:
         return "not_applicable"
     if applicable and all(item == "passed" for item in applicable):
-        return "passed"
+        # 业务工具全部通过、证据位置也齐，只是引擎没给分——这一项交人核对引文，
+        # 既不冒充通过，也不诬告证据不足。
+        return "human_review_required" if grounding_unscored else "passed"
+    if not business_results and grounding_outputs:
+        # 只有锚定门的原子项（evidence_gate）：门说什么就是什么。
+        return "human_review_required" if grounding_unscored else "passed"
     return "evidence_insufficient"
 
 

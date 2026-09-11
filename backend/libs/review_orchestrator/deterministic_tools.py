@@ -681,6 +681,7 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
     minimum = decimal(arguments.get("minConfidence")) or Decimal("0.75")
     ref_ids = {str(item.get("evidenceRefId") or item.get("id")) for item in refs if item.get("evidenceRefId") or item.get("id")}
     checks = []
+    unscored: list[int] = []
     for index, fact in enumerate(facts, 1):
         fact_refs = {str(item) for item in fact.get("evidenceRefIds") or []}
         confidence = decimal(fact.get("confidence"))
@@ -690,19 +691,43 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
             for item in refs
             if str(item.get("evidenceRefId") or item.get("id")) in fact_refs
         )
+        # 「引擎不报置信度」不等于「置信度低」（口径见 libs/field_confidence.field_review_status）。
+        # MinerU 的 VLM 通道逐片不给分，适配层写 0.0 并标 provider_confidence_unavailable；
+        # 生产 59% 的字段走这条通道。原来这里拿 0.0 去比 0.75，一整份读对了的许可证
+        # 每个事实都判「置信度不够」，证书节点从结构上就不可能通过。
+        # 现在：没分的事实不按低分判掉，也不冒充有分——位置齐、引文在，就交人工判断。
+        confidence_unavailable = bool(fact.get("confidenceUnavailable"))
+        if confidence_unavailable:
+            unscored.append(index)
         checks.extend(
             [
                 check(f"fact_{index}_references_exist", located, sorted(fact_refs), sorted(ref_ids)),
                 check(f"fact_{index}_locator_complete", located and locator_complete, fact_refs, "page+bbox|quotedText"),
-                check(f"fact_{index}_confidence", confidence is not None and confidence >= minimum, confidence, minimum),
+                check(
+                    f"fact_{index}_confidence",
+                    confidence_unavailable or (confidence is not None and confidence >= minimum),
+                    "unscored" if confidence_unavailable else confidence,
+                    minimum,
+                ),
                 check(f"fact_{index}_not_conflicted", not bool(fact.get("conflicted")), fact.get("conflicted"), False),
             ]
         )
-    status = "evidence_insufficient" if not facts or not refs or not all(item["passed"] for item in checks) else "passed"
+    if not facts or not refs or not all(item["passed"] for item in checks):
+        status = "evidence_insufficient"
+    elif unscored:
+        status = "human_review_required"
+    else:
+        status = "passed"
     return result(
         "validate_evidence_grounding",
         status,
-        facts={"factCount": len(facts), "evidenceRefCount": len(refs), "minConfidence": minimum},
+        facts={
+            "factCount": len(facts),
+            "evidenceRefCount": len(refs),
+            "minConfidence": minimum,
+            "unscoredFacts": unscored,
+            **({"reason": "provider_confidence_unavailable"} if status == "human_review_required" else {}),
+        },
         checks=checks,
         output_schema="evidence-gate-result-v1",
     )
