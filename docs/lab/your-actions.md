@@ -42,10 +42,18 @@ docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.e
   aicheck-api:local python3 scripts/model_reachability_probe.py
 ```
 
-**仍然斷的一條：向量化。** `AICHECK_EMBEDDING_API_KEY` 用的是死掉的 `sk-ws-`，Token Plan 又沒有
-embeddings。知識庫切片向量化要恢復，仍需一把**按量計費**的普通 `sk-` key，寫進
-`AICHECK_EMBEDDING_API_KEY`（`AICHECK_EMBEDDING_API_BASE` 保持 dashscope 不變）。這和帳號層
-為何失效是同一個問題，要在百煉控制台查。
+**~~仍然斷的一條：向量化~~** —— 2026-09-11 已解決。你給的第二把 `sk-ws-` 按量計費 key
+實測 chat／embeddings（1024 維）／`qwen-vl-max` 全通，已寫進憑證檔並部署：
+
+| 用途 | 端點 | 密鑰 |
+|---|---|---|
+| 文本（審查／分析／分類） | Token Plan | `sk-sp-` |
+| 視覺（印章讀字，`qwen-vl-max`） | 按量計費 | `sk-ws-` |
+| 向量化（`text-embedding-v4`） | 按量計費 | `sk-ws-` |
+
+生產實測：探針兩路通、向量化 1024 維、`health_watch` ✓ 无异常。
+
+**兩把 key 都已進對話記錄，請輪換**——輪換後只改憑證檔，我重新部署。
 
 **我接手**：探針一綠，立刻跑 R43 端到端。這條鏈到「agent 填值」之前的每一段，今天已在
 **生產資料上只讀乾跑證明通了**（途中修掉三個真缺口：無對象選取、20 個工具沒接進執行器、
