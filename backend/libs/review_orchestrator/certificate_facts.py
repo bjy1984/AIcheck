@@ -279,10 +279,22 @@ def _legacy_namespace(profile: dict[str, Any], certificates: list[dict[str, Any]
 
 
 def _documents_by_version(state: dict[str, Any], project_id: str) -> dict[str, dict[str, Any]]:
+    """本工程文档的 版本号 → 文档。第二个循环补的是非当前版本，**同样要按工程过滤**。
+
+    2026-09-11 全节点扫描实测：三个项目各自调用都返回 316 个版本（全库），交集也是 316。
+    第一个循环按 projectId 过滤了，第二个循环却把全库版本无条件补进来，把过滤抵消掉。
+    `pipeline_facts.build_project_pipelines` 与 `design_facts` 是**全工程扫描**（管道特性表
+    挂在设计节点、不在当前节点输入里），拿到的于是是别的工程的资料；
+    `certificate_facts` 那处被 selected_parse_results 的运行级范围兜住，没漏出去。
+    projectId 为空的文档（生产有 60 份）不属于任何工程，不该出现在每个工程里。
+    """
+    by_id = {
+        str(document.get("id") or ""): document
+        for document in state.get("documents") or []
+        if isinstance(document, dict) and str(document.get("projectId") or "") == str(project_id)
+    }
     mapping: dict[str, dict[str, Any]] = {}
-    for document in state.get("documents") or []:
-        if not isinstance(document, dict) or str(document.get("projectId") or "") != str(project_id):
-            continue
+    for document in by_id.values():
         version_id = str(document.get("currentVersionId") or "")
         if version_id:
             mapping[version_id] = document
@@ -290,17 +302,9 @@ def _documents_by_version(state: dict[str, Any], project_id: str) -> dict[str, d
         if not isinstance(version, dict):
             continue
         version_id = str(version.get("id") or version.get("documentVersionId") or "")
-        if version_id and version_id not in mapping:
-            document = next(
-                (
-                    row
-                    for row in state.get("documents") or []
-                    if isinstance(row, dict) and str(row.get("id") or "") == str(version.get("documentId") or "")
-                ),
-                None,
-            )
-            if document:
-                mapping[version_id] = document
+        document = by_id.get(str(version.get("documentId") or ""))
+        if version_id and document and version_id not in mapping:
+            mapping[version_id] = document
     return mapping
 
 

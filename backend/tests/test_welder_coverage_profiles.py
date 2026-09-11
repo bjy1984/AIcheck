@@ -184,3 +184,33 @@ def test_缺哪边要说出来():
 
     nothing = check_welder_work_coverage({"qualificationCodes": [], "workItems": [], "reviewDate": "2026-09-11"})
     assert nothing["facts"]["reason"] == "welder_qualifications_and_welding_work_records_missing"
+
+
+def test_工程范围不能漏到别的工程():
+    """`_documents_by_version(state, projectId)` 的第二个循环原来把全库版本无条件补进来，
+    把第一个循环的 projectId 过滤抵消掉。
+
+    2026-09-11 全节点扫描实测：三个项目各自调用都返回 316 个版本（全库），交集 316。
+    `pipeline_facts.build_project_pipelines` 与 `design_facts` 是全工程扫描，
+    拿到的于是是别的工程的资料。projectId 为空的文档（生产有 60 份）不属于任何工程。
+    """
+    from libs.review_orchestrator.certificate_facts import _documents_by_version
+
+    state = {
+        "documents": [
+            {"id": "DOC-A", "projectId": "P-A", "currentVersionId": "DV-A2"},
+            {"id": "DOC-B", "projectId": "P-B", "currentVersionId": "DV-B1"},
+            {"id": "DOC-NONE", "projectId": None, "currentVersionId": "DV-N1"},
+        ],
+        "versions": [
+            {"id": "DV-A1", "documentId": "DOC-A"},
+            {"id": "DV-A2", "documentId": "DOC-A"},
+            {"id": "DV-B1", "documentId": "DOC-B"},
+            {"id": "DV-N1", "documentId": "DOC-NONE"},
+        ],
+    }
+    a = _documents_by_version(state, "P-A")
+    # 当前版本与历史版本都要在，别的工程与无归属的都不能在。
+    assert sorted(a) == ["DV-A1", "DV-A2"]
+    assert sorted(_documents_by_version(state, "P-B")) == ["DV-B1"]
+    assert not set(a) & set(_documents_by_version(state, "P-B"))

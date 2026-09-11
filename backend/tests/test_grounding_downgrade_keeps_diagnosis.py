@@ -135,10 +135,15 @@ def test_无据断言的原文一个字都不能带出来():
 
 
 def test_无据断言仍要告诉人去哪看原因():
-    """丢掉原文不等于什么都不说——unsupportedClaims 里有具体是哪几句没依据。"""
+    """丢掉原文不等于什么都不说——要指向那份「哪几句没依据」的清单。
+
+    2026-09-11 用户线上反馈：这句话原来写的是「见本条的 unsupportedClaims」，
+    界面上就真的印着这个英文字段名。指路要指到人看得懂的地方。
+    """
     text = _guard(CLAIM_TITLE, CLAIM_DESCRIPTION)["description"]
-    assert "unsupportedClaims" in text
     assert "已整条丢弃" in text
+    assert "待核对项" in text, "得告诉人去哪看"
+    assert "unsupportedClaims" not in text, "给监检看的文案里不许出现字段名"
 
 
 # ── 两类都要降级 ─────────────────────────────────────────────────────
