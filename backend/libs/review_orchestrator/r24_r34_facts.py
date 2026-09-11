@@ -212,23 +212,139 @@ def _mapped(v: dict[str, Any], kind: str) -> dict[str, Any]:
     return record
 
 
+# 文档类型路由，顺序即优先级。每条是 (kind, 标题标记, 名称标记)：
+# - 标题标记：文档自身标注 + 文件名 + 正文前 600 字里出现即算数，是明确的文件抬头；
+# - 名称标记：只认文档自身标注与文件名。这些词会出现在目录/核查表里（「附件 4、焊接工艺评定」），
+#   在正文里出现只说明这份文件提到过它，不说明它就是它。
+# 2026-09-11 按生产 290 份解析结果逐条核对过，注释里的文件名都是真实样本。
+_KIND_ROUTES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("welder_certificate", ("weldercertificate", "welderroster", "焊工资格证", "焊工证"), ("焊工名册", "焊工清单")),
+    ("pipeline_summary", ("pipelinesummary", "管线汇总表"), ()),
+    ("wps_pqr", ("wpspqr", "weldingprocedurequalification", "焊接工艺评定报告和焊接作业指导书", "pqrwps"), ()),
+    # 「焊接工艺评定」不带「报告」也成立：不锈钢氩弧焊HP022-2024焊接工艺评定.pdf 标题里就没有「报告」。
+    # 但只认文件名/标注——0压力管道安装监检流程指引.docx 的核查表第 9 项、
+    # 贵州化工交工资料.pdf 的目录「附件 4、焊接工艺评定」都会让正文命中，那是清单不是评定报告。
+    ("pqr", ("pqr", "焊接工艺评定报告"), ("焊接工艺评定",)),
+    # 原来这里有个裸 "wps" 标记，会命中评定报告里的「预焊接规程编号 pWPS-2023-01」，
+    # 把 9.1金辉焊接工艺评定20.pdf、焊接工艺评定报告.pdf 这两份 PQR 判成 wps，
+    # 于是节点 25 的 pqrItems、节点 32 的 qualificationReports 恒为 0。
+    ("wps", ("焊接作业指导书", "焊接工艺规程", "焊接工艺卡"), ()),
+    ("welding_consumable_certificate", ("weldingconsumablecertificate", "焊接材料质量证明", "焊材质量证明"), ()),
+    ("consumable_receipt", ("consumablereceipt", "焊材验收"), ()),
+    ("consumable_management", ("consumablemanagement", "焊材库", "焊条烘干", "焊材领用", "焊材回收"), ()),
+    ("pipe_fit_up_record", ("pipefitup", "管道组对", "组对检查"), ()),
+    ("weld_appearance_record", ("weldappearance", "焊缝外观"), ("外观检查记录",)),
+    ("weld_repair_record", ("weldrepair", "焊缝返修", "返修申请"), ()),
+    ("heat_treatment_procedure", ("heattreatmentprocedure", "热处理工艺卡", "热处理工艺文件"), ()),
+    ("temperature_point_layout", ("temperaturepointlayout", "测温点布置图"), ()),
+    ("heat_treatment_instrument", ("heattreatmentinstrument", "热电偶校准", "温控仪校验", "测温记录仪"), ()),
+    ("hardness_report", ("hardnessreport", "硬度检测报告", "硬度测试报告"), ()),
+    ("heat_treatment_record", ("heattreatmentrecord", "热处理报告", "温度时间曲线"), ()),
+    ("welding_record", ("weldingrecord", "焊接施工记录", "施焊记录"), ()),
+    ("design_document", ("designdocument", "设计说明", "设计文件"), ("施工图", "设计图纸", "图纸目录")),
+)
+
+# 需要同时命中全部标记才成立，先于单标记路由判定。
+_COMBINED_KIND_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # 评定报告正文必带预焊接工艺规程（pWPS），这类文件同时是 WPS 与 PQR 的来源，
+    # 判成 wps_pqr 才能同时喂饱 wpsItems 与 pqrItems。
+    ("wps_pqr", ("焊接工艺评定", "预焊接")),
+    ("wps_pqr", ("焊接工艺评定", "pwps")),
+)
+
+# 国家标准/规范正文不是本工程的施工证据。生产有 60 份 materialTypeCode=standard_reference，
+# 老写法按正文关键词把它们判成了 wps / wps_pqr / 焊材质量证明（TSGZ6002-2010《焊接人员考核细则》.pdf、
+# GB 50236-2011、JB∕T 3223-2017、NBT 47018-2017），一旦被挂到节点上就会当成质量证明去核。
+STANDARD_REFERENCE_MATERIAL_CODES = ("standard_reference",)
+
+# 标题区窗口：文件自己的抬头在开头这一段里。老写法拿正文前 4000 字做匹配，
+# 「提到过 X」和「本身就是 X」不分——9.2.焊接工艺卡.pdf 因正文引用
+# 「焊接工艺评定报告编号」被判成评定报告。
+_TITLE_TEXT_CHARS = 600
+
+# 「X编号」是在引用 X，不是在自称 X：焊接工艺卡上写「焊接工艺评定报告编号 HP/P-2023-01」，
+# 是把它依据的评定报告编号填进去。抬头自己带的「报告编号：」不受影响——
+# 那是「焊接工艺评定报告」后面跟「报告编号」，不是紧跟着「编号」。
+_CITATION_SUFFIX = "编号"
+
+
+def _marker_hit(marker: str, hints: str) -> bool:
+    normalized = _norm(marker)
+    if not normalized:
+        return False
+    start = hints.find(normalized)
+    while start >= 0:
+        tail = hints[start + len(normalized):]
+        if not tail.startswith(_CITATION_SUFFIX):
+            return True
+        start = hints.find(normalized, start + 1)
+    return False
+
+
+def _document_text(parse_result: dict[str, Any]) -> str:
+    return " ".join(
+        str(item.get("fieldValue") or item.get("value") or item.get("text") or "")
+        for item in [*(parse_result.get("fields") or []), *(parse_result.get("fragments") or [])]
+        if isinstance(item, dict)
+    )
+
+
+def _material_type_code(state: dict[str, Any], version_id: str) -> str:
+    """文档上人工/流水线标注的物料类型。
+
+    解析结果自己的 materialTypeCode 在生产里恒为 None（2026-09-11 实测 290 份全空），
+    真正有值的是 documents 表上的那份，老写法够不着它。
+    """
+    version = next(
+        (
+            item
+            for item in state.get("versions", [])
+            if isinstance(item, dict)
+            and str(item.get("id") or item.get("versionId") or item.get("documentVersionId") or "") == version_id
+        ),
+        None,
+    )
+    if not version:
+        return ""
+    document = next(
+        (
+            item
+            for item in state.get("documents", [])
+            if isinstance(item, dict) and str(item.get("id") or item.get("documentId") or "") == str(version.get("documentId") or "")
+        ),
+        None,
+    )
+    source = document or version
+    return " ".join(str(source.get(key) or "") for key in ("materialTypeCode", "materialTypeName"))
+
+
 def _document_kind(state: dict[str, Any], parse_result: dict[str, Any]) -> str | None:
     metadata = parse_result.get("metadata") if isinstance(parse_result.get("metadata"), dict) else {}
-    text = " ".join(str(item.get("fieldValue") or item.get("value") or item.get("text") or "") for item in [*(parse_result.get("fields") or []), *(parse_result.get("fragments") or [])] if isinstance(item, dict))
-    hints = _norm(" ".join(str(value or "") for value in (parse_result.get("profileId"), parse_result.get("documentType"), parse_result.get("materialTypeCode"), metadata.get("detectedProfileId"), metadata.get("materialTypeCode"), _file_name(state, str(parse_result.get("documentVersionId") or "")), text[:4000])))
-    routes = (
-        ("welder_certificate", ("weldercertificate", "焊工资格证", "焊工证")), ("pipeline_summary", ("pipelinesummary", "管线汇总表")),
-        ("wps_pqr", ("weldingprocedurequalification", "焊接工艺评定报告和焊接作业指导书", "pqrwps")),
-        ("wps", ("wps", "焊接作业指导书")), ("pqr", ("pqr", "焊接工艺评定报告")), ("welding_consumable_certificate", ("weldingconsumablecertificate", "焊接材料质量证明", "焊材质量证明")),
-        ("consumable_receipt", ("consumablereceipt", "焊材验收")), ("consumable_management", ("consumablemanagement", "焊材库", "焊条烘干", "焊材领用", "焊材回收")),
-        ("pipe_fit_up_record", ("pipefitup", "管道组对", "组对检查")), ("weld_appearance_record", ("weldappearance", "焊缝外观", "外观检查记录")),
-        ("weld_repair_record", ("weldrepair", "焊缝返修", "返修申请")), ("heat_treatment_procedure", ("heattreatmentprocedure", "热处理工艺卡", "热处理工艺文件")),
-        ("temperature_point_layout", ("temperaturepointlayout", "测温点布置图")), ("heat_treatment_instrument", ("heattreatmentinstrument", "热电偶校准", "温控仪校验", "测温记录仪")),
-        ("hardness_report", ("hardnessreport", "硬度检测报告", "硬度测试报告")), ("heat_treatment_record", ("heattreatmentrecord", "热处理报告", "温度时间曲线")),
-        ("welding_record", ("weldingrecord", "焊接施工记录", "施焊记录")), ("design_document", ("designdocument", "设计说明", "设计文件")),
+    version_id = str(parse_result.get("documentVersionId") or "")
+    material_type = _material_type_code(state, version_id)
+    if any(_norm(code) in _norm(material_type) for code in STANDARD_REFERENCE_MATERIAL_CODES):
+        return None
+    declared = " ".join(
+        str(value or "")
+        for value in (
+            parse_result.get("profileId"),
+            parse_result.get("documentType"),
+            parse_result.get("materialTypeCode"),
+            metadata.get("detectedProfileId"),
+            metadata.get("materialTypeCode"),
+            material_type,
+            _file_name(state, version_id),
+        )
     )
-    for kind, markers in routes:
-        if any(_norm(marker) in hints for marker in markers):
+    name_hints = _norm(declared)
+    title_hints = _norm(declared + " " + _document_text(parse_result)[:_TITLE_TEXT_CHARS])
+    for kind, markers in _COMBINED_KIND_ROUTES:
+        if all(_marker_hit(marker, title_hints) for marker in markers):
+            return kind
+    for kind, title_markers, name_markers in _KIND_ROUTES:
+        if any(_marker_hit(marker, title_hints) for marker in title_markers):
+            return kind
+        if any(_marker_hit(marker, name_hints) for marker in name_markers):
             return kind
     return None
 

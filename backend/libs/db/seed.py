@@ -1801,7 +1801,12 @@ CORE_RULE_VERSIONS = [
         "ruleKey": "welder-qualification",
         "version": "Welder-Qualification-B-v2.1",
         "status": "已发布",
-        "nodeIds": [24, 25, 27, 28],
+        # 只管节点 24。原来写 [24, 25, 27, 28]：这条规则的正文、提示词和工具链
+        # 讲的全是焊工持证项目与 TSG Z6002 覆盖关系，节点 25（工艺文件）、
+        # 27（焊材管理）、28（管道组对）与它无关。2026-09-11 实测后果：节点 28
+        # 在库里没有别的已发布候选，复核直接按焊工资格证规则跑，
+        # evaluate_pipe_fit_up 与 build_r28_business_facts 永远够不着。
+        "nodeIds": [24],
         "sourceRuleId": "R24",
         "promptVersion": "prompt-welder-v2.1",
         "outputSchemaVersion": "schema-review-v1.3",

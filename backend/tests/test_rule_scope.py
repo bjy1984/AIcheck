@@ -55,3 +55,26 @@ def test_version_name_lookup_filters_scope_before_selecting(scoped_rules):
     assert matching_rule_target(prior, target_version="v1")["id"] == "P1"
     assert same_rule_scope({}, {"businessPackId": DEFAULT_BUSINESS_PACK_ID})
     assert not same_rule_scope(prior, scoped_rules[0])
+
+
+def test_窄节点规则胜过一口气声明四个节点的老种子(monkeypatch):
+    """并列发布时间下，只声明本节点的规则必须稳定胜出。
+
+    2026-09-11 生产：老种子 RULE-WELDER-202606（焊工资格核验）声明
+    nodeIds [24, 25, 27, 28]，publishedAt 与业务包 R25/R27 完全相同，
+    选谁只由列表顺序决定。两种顺序都要选中节点自己的规则。
+    """
+    specific = {"id": "RULE-ENG-INSP-R25", "nodeIds": [25], "status": "已发布", "publishedAt": "2026-06-26 09:12:00"}
+    bundle = {"id": "RULE-WELDER-202606", "nodeIds": [24, 25, 27, 28], "status": "已发布", "publishedAt": "2026-06-26 09:12:00"}
+    for rows in ([specific, bundle], [bundle, specific]):
+        monkeypatch.setitem(repo.state, "rule_versions", deepcopy(rows))
+        assert current_published_rule_for_node(25)["id"] == "RULE-ENG-INSP-R25"
+        assert current_published_rule_for_node(24)["id"] == "RULE-WELDER-202606"
+
+
+def test_发布时间新的仍然优先于覆盖窄的(monkeypatch):
+    """窄优先只是并列时的决胜项，不能盖过「新发布的规则生效」。"""
+    old_specific = {"id": "OLD-R25", "nodeIds": [25], "status": "已发布", "publishedAt": "2026-06-26 09:12:00"}
+    new_bundle = {"id": "NEW-BUNDLE", "nodeIds": [24, 25], "status": "已发布", "publishedAt": "2026-09-11 10:00:00"}
+    monkeypatch.setitem(repo.state, "rule_versions", [old_specific, new_bundle])
+    assert current_published_rule_for_node(25)["id"] == "NEW-BUNDLE"

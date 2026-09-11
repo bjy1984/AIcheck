@@ -84,3 +84,42 @@ def test_种子没有的错位孤儿记录被下线_对齐的不动():
     assert [row["id"] for row in orphans] == ["RULE-ENG-INSP-R24"]
     assert module.apply_orphan_retirement(orphans) == ["RULE-ENG-INSP-R24"]
     assert orphan["status"] == "已下线" and orphan["retiredStatus"] == "已发布" and orphan["revision"] == 2
+
+
+def test_种子里有库里整条缺失的规则被补写():
+    """2026-09-11 生产：库里根本没有 RULE-ENG-INSP-R28，节点 28（管道组对）
+    于是落到老种子焊工资格证规则上。对齐脚本原来对缺失记录直接 continue。"""
+    module = _load_module()
+    seed = _seed_rows()
+    r28 = next(row for row in seed if row["id"] == "RULE-ENG-INSP-R28")
+    keep = next(row for row in seed if row["id"] == "RULE-ENG-INSP-R29")
+    draft = {"id": "RULE-DRAFT-X", "status": "草稿", "nodeIds": [5], "version": "x"}
+    state = {"rule_versions": [deepcopy(keep), draft]}
+
+    missing = module.plan_missing_rule_versions(state, seed)
+    assert "RULE-ENG-INSP-R28" in [row["id"] for row in missing]
+    assert "RULE-ENG-INSP-R29" not in [row["id"] for row in missing]
+
+    inserted = module.apply_missing_rule_versions(state, missing)
+    assert "RULE-ENG-INSP-R28" in inserted
+    written = next(row for row in state["rule_versions"] if row["id"] == "RULE-ENG-INSP-R28")
+    assert written["nodeIds"] == [28]
+    assert written["version"] == r28["version"]
+    assert written["reconciledAt"] and written["reconciledFromVersion"] is None
+    assert next(row for row in state["rule_versions"] if row["id"] == "RULE-DRAFT-X") is draft
+    assert module.plan_missing_rule_versions(state, seed) == []
+
+
+def test_种子里没有两条已发布规则抢同一个节点():
+    """RULE-WELDER-202606 曾声明 nodeIds [24, 25, 27, 28]，与 R25/R27
+    的 publishedAt 完全相同——选谁只看列表顺序。节点到规则必须是唯一的。"""
+    from collections import defaultdict
+
+    published = defaultdict(list)
+    for row in _seed_rows():
+        if row.get("status") != "已发布":
+            continue
+        for node in row.get("nodeIds") or []:
+            published[int(node)].append(str(row.get("id")))
+    contested = {node: ids for node, ids in published.items() if len(ids) > 1}
+    assert not contested, contested

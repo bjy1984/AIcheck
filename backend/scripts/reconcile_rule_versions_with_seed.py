@@ -18,6 +18,11 @@
   唯一例外是 RULE-ENG-INSP-Rxx 形状、nodeIds 又不等于自己规则号的孤儿记录
   （R24/R40 被核心规则 RULE-WELDER/RULE-NDT 取代后留下的老种子）→ 置为「已下线」，
   否则它们仍是「已发布」，会和真正的规则争同一个节点。
+- 种子里有、库里整条缺失的 → 按种子插入。2026-09-11 实测：生产库根本没有
+  `RULE-ENG-INSP-R28`（管道组对），节点 28 于是落到老种子 `RULE-WELDER-202606`
+  （焊工资格证）上，按焊工持证项目审管道组对。旧版本这里是 `continue`，
+  第一次对齐时静默跳过了这条缺口。规则只会被置为「已下线」、没有删除入口，
+  所以「库里没有」只可能是从未写入，补写不会复活谁手工删掉的记录。
 
 替换前把将被改写的原记录写到 /app/output/ops/rule_versions_backup_<时间>.json，
 出问题可以按 id 回写。
@@ -59,7 +64,7 @@ def plan_rule_version_reconciliation(
         rid = str(seed.get("id") or "")
         current = existing.get(rid)
         if not current:
-            continue
+            continue  # 整条缺失的走 plan_missing_rule_versions，不在这里替换
         diffs = {
             field: {"db": current.get(field), "seed": seed.get(field)}
             for field in COMPARE_FIELDS
@@ -68,6 +73,34 @@ def plan_rule_version_reconciliation(
         if diffs:
             plan.append({"id": rid, "current": current, "seed": seed, "diffs": diffs})
     return plan
+
+
+def plan_missing_rule_versions(
+    state: dict[str, Any], seed_rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """种子里有、库里整条没有的规则版本，按种子原样补写。"""
+    existing = {
+        str(row.get("id") or "")
+        for row in state.get("rule_versions") or []
+        if isinstance(row, dict)
+    }
+    return [seed for seed in seed_rows if str(seed.get("id") or "") not in existing]
+
+
+def apply_missing_rule_versions(
+    state: dict[str, Any], missing: list[dict[str, Any]]
+) -> list[str]:
+    rows = state.setdefault("rule_versions", [])
+    inserted: list[str] = []
+    for seed in missing:
+        record = deepcopy(seed)
+        record["revision"] = int(record.get("revision") or 0) + 1
+        record["updatedAt"] = server_time()
+        record["reconciledAt"] = server_time()
+        record["reconciledFromVersion"] = None
+        rows.append(record)
+        inserted.append(str(record.get("id") or ""))
+    return inserted
 
 
 ORPHAN_ID_PATTERN = re.compile(r"^RULE-ENG-INSP-R0*(\d+)$")
@@ -141,13 +174,16 @@ def main() -> int:
             f"{diffs.get('version', {}).get('db')} -> {diffs.get('version', {}).get('seed')}"
             + (f" | name {diffs['name']['db']} -> {diffs['name']['seed']}" if "name" in diffs else "")
         )
+    missing = plan_missing_rule_versions(repo.state, RULE_VERSIONS)
+    for seed in missing:
+        print(f"  补写缺失记录 {seed.get('id')}: nodeIds {seed.get('nodeIds')} status {seed.get('status')}")
     orphans = plan_orphan_retirement(repo.state, RULE_VERSIONS)
     for row in orphans:
         print(f"  下线孤儿记录 {row.get('id')}: nodeIds {row.get('nodeIds')} status {row.get('status')}")
     if "--apply" not in sys.argv:
         print("（dry-run。加 --apply 才落库）")
         return 0
-    if not plan and not orphans:
+    if not plan and not missing and not orphans:
         print("无需变更")
         return 0
     backup_dir = Path("/app/output/ops")
@@ -160,9 +196,11 @@ def main() -> int:
     )
     print(f"  原记录已备份：{backup}")
     replaced = apply_rule_version_reconciliation(repo.state, plan)
+    inserted = apply_missing_rule_versions(repo.state, missing)
     retired = apply_orphan_retirement(orphans)
     flush_state({"rule_versions"})
     print(f"  已替换 {len(replaced)} 条：{', '.join(replaced)}")
+    print(f"  已补写 {len(inserted)} 条：{', '.join(inserted)}")
     print(f"  已下线孤儿 {len(retired)} 条：{', '.join(retired)}")
     return 0
 
