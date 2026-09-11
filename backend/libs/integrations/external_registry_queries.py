@@ -48,6 +48,21 @@ def configured_cnse_min_confidence() -> float:
     return value
 
 
+def configured_cnse_timeout() -> tuple[float, float]:
+    """(连接, 读取) 秒。2026-09-12 凌晨实测：平台一个 302 就走了 17 秒，5 秒连接超时把
+    每次查询都打成 CnseRequestError。给运维一个不改代码的旋钮；非法值回落到客户端默认。"""
+    from libs.integrations.cnse_client import DEFAULT_TIMEOUT
+
+    try:
+        connect = float(os.getenv("AICHECK_CNSE_TIMEOUT_CONNECT") or DEFAULT_TIMEOUT[0])
+        read = float(os.getenv("AICHECK_CNSE_TIMEOUT_READ") or DEFAULT_TIMEOUT[1])
+    except ValueError:
+        return DEFAULT_TIMEOUT
+    if not (math.isfinite(connect) and math.isfinite(read) and connect > 0 and read > 0):
+        return DEFAULT_TIMEOUT
+    return (connect, read)
+
+
 def configured_std_samr_origin() -> str:
     return str(os.getenv("AICHECK_STD_SAMR_ORIGIN") or STD_SAMR_DEFAULT_ORIGIN).strip()
 
@@ -58,6 +73,7 @@ def query_cnse_organizations(keyword: str) -> dict[str, Any]:
     with CnseApiClient(
         origin=configured_cnse_origin(),
         min_confidence=configured_cnse_min_confidence(),
+        timeout=configured_cnse_timeout(),
     ) as client:
         return dict(client.query(keyword).to_dict())
 
@@ -68,6 +84,7 @@ def query_cnse_organization_license(license_no: str) -> dict[str, Any]:
     with CnseApiClient(
         origin=configured_cnse_origin(),
         min_confidence=configured_cnse_min_confidence(),
+        timeout=configured_cnse_timeout(),
     ) as client:
         return dict(client.query_organization_license(license_no).to_dict())
 
@@ -78,6 +95,7 @@ def query_cnse_persons(id_number: str) -> dict[str, Any]:
     with CnseApiClient(
         origin=configured_cnse_origin(),
         min_confidence=configured_cnse_min_confidence(),
+        timeout=configured_cnse_timeout(),
     ) as client:
         return dict(client.query_person(id_number).to_dict())
 

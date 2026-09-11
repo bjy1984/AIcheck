@@ -173,12 +173,30 @@ export const workbenchCertificateVerification = (
   }
 }
 
+export type WorkbenchAiUnscoredField = {
+  fieldName: string
+  documentVersionId: string
+  documentId: string
+  quotedText: string
+  humanCorrected: boolean
+}
+
+export type WorkbenchAiUnscoredFact = {
+  factId: string
+  label: string
+  value: string
+  documentVersionId: string
+  fields: WorkbenchAiUnscoredField[]
+}
+
 export type WorkbenchAiCheckOutcome = {
   atomicCheckId: string
   name: string
   /** passed / failed / evidence_insufficient / not_applicable / human_review_required / execution_error */
   result: string
   ruleCode?: string
+  /** 引擎没给分、等人核的事实，及其引用的抽取字段；核完落成 fact_corrections 下次就有分。 */
+  unscoredFacts: WorkbenchAiUnscoredFact[]
 }
 
 export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome[] => {
@@ -190,7 +208,26 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
       atomicCheckId: String(row.atomicCheckId || ''),
       name: String(row.name || row.atomicCheckId || ''),
       result: String(row.result || ''),
-      ruleCode: String(row.ruleCode || '') || undefined
+      ruleCode: String(row.ruleCode || '') || undefined,
+      unscoredFacts: (Array.isArray(row.unscoredFacts) ? row.unscoredFacts : [])
+        .map((fact) => (fact || {}) as Record<string, unknown>)
+        .map((fact) => ({
+          factId: String(fact.factId || ''),
+          label: String(fact.label || fact.factId || ''),
+          value: String(fact.value ?? ''),
+          documentVersionId: String(fact.documentVersionId || ''),
+          fields: (Array.isArray(fact.fields) ? fact.fields : [])
+            .map((field) => (field || {}) as Record<string, unknown>)
+            .map((field) => ({
+              fieldName: String(field.fieldName || ''),
+              documentVersionId: String(field.documentVersionId || ''),
+              documentId: String(field.documentId || ''),
+              quotedText: String(field.quotedText || ''),
+              humanCorrected: field.humanCorrected === true
+            }))
+            .filter((field) => Boolean(field.fieldName))
+        }))
+        .filter((fact) => Boolean(fact.factId))
     }))
     .filter((row) => Boolean(row.atomicCheckId))
 }

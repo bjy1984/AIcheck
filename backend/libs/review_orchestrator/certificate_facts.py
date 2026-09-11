@@ -230,6 +230,10 @@ def build_certificate_facts(
         if key not in unique:
             unique[key] = item
     certificates = list(unique.values())
+    # 平台侧：按许可证编号 / 身份证号到公示平台核对，核得上的用登记原文补强 OCR 值。
+    from libs.review_orchestrator.certificate_platform_verify import verify_certificate_records
+
+    certificates = verify_certificate_records(state, profile, certificates, review_run=review_run)
     project = _project_record(state, project_id)
     period = project_certificate_period(project)
     expected_holder = None
@@ -275,8 +279,17 @@ def _certificate_judgment(certificates: list[dict[str, Any]]) -> dict[str, Any]:
         claimed.append(
             {
                 "factId": f"certificate-{index}",
+                "label": f"{record.get('certificateType') or '证书'} {record.get('certificateNo') or ''}".strip(),
                 "value": record.get("certificateNo") or record.get("holder"),
                 "documentVersionId": record.get("documentVersionId"),
+                # 界面「核对无误」要落到具体的抽取字段上：这里列出这条事实引用了哪些字段
+                "fields": [
+                    {"fieldName": item.get("fieldName"), "documentVersionId": item.get("documentVersionId"),
+                     # 界面按 documentId 拉 ocr-fields 再定位 fieldId，这里把 documentId 一并带上
+                     "documentId": record.get("documentId") or None,
+                     "quotedText": item.get("quotedText"), "humanCorrected": bool(item.get("humanCorrected"))}
+                    for item in evidence if item.get("fieldName")
+                ],
                 "evidenceRefIds": [str(item["evidenceRefId"]) for item in evidence],
                 # 有分取最低的那一处（证据链以最弱一环计）；引擎没给分就如实标「不可用」。
                 "confidence": min(scored) if scored else None,
@@ -448,14 +461,16 @@ def _extract_certificates(
                 record[key] = value
                 record["sources"][key] = "ocr_field"
                 record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw"),
-                                                    confidence=hit.get("confidence"), confidence_unavailable=unavailable))
+                                                    confidence=hit.get("confidence"), confidence_unavailable=unavailable,
+                                                    field_name=hit.get("name"), human_corrected=bool(hit.get("humanCorrected"))))
     scope_hits = [hit for hit in _all_fields(fields, FIELD_ALIASES["scope"])]
     for hit in scope_hits:
         for code in _split_scopes(hit["value"]):
             if code not in record["scopes"]:
                 record["scopes"].append(code)
         record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw"),
-                                            confidence=hit.get("confidence"), confidence_unavailable=unavailable))
+                                            confidence=hit.get("confidence"), confidence_unavailable=unavailable,
+                                            field_name=hit.get("name"), human_corrected=bool(hit.get("humanCorrected"))))
     if scope_hits:
         record["sources"]["scopes"] = "ocr_field"
     _fill_from_text(record, text, parse_result, version_id, file_name)
@@ -629,6 +644,7 @@ def _field_values(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
                 "bbox": field.get("bbox"),
                 # 原来这里把 confidence 丢了，证据链到 grounding 时只能是 None。
                 "confidence": field.get("confidence"),
+                "humanCorrected": bool(field.get("humanCorrected")),
                 "raw": str(value).strip(),
             }
         )
@@ -682,6 +698,7 @@ def _locate_text(parse_result: dict[str, Any], needle: str) -> tuple[int | None,
 def _evidence(
     version_id: str, file_name: str, page_no: Any, bbox: Any, quoted: Any,
     *, confidence: Any = None, confidence_unavailable: bool = False,
+    field_name: str | None = None, human_corrected: bool = False,
 ) -> dict[str, Any]:
     """一条可被 grounding 引用的证据。
 
@@ -704,8 +721,13 @@ def _evidence(
         score = None
     if confidence_unavailable:
         score = None
+    if human_corrected:
+        # 人核过的字段：值可信、有分，不再受「引擎不报置信度」影响。
+        score, confidence_unavailable = 1.0, False
     return {
         "id": evidence_id,
+        "fieldName": field_name,
+        "humanCorrected": bool(human_corrected),
         "evidenceRefId": evidence_id,
         "documentVersionId": version_id,
         "fileName": file_name,
@@ -786,6 +808,33 @@ def merge_certificate_facts(
         list(review_run.get("inputDocumentVersionIds") or []),
         review_run=review_run,
     )
+    if node_id == 1:
+        # 节点 1 要拿许可证持证单位和设计文件图签/设计章比一致性（AC-R01-01），
+        # 另一侧的事实在这里补齐；它的证据也并进 judgment，让 grounding 能核。
+        from libs.review_orchestrator.design_org_facts import build_design_org_facts
+
+        design_org = build_design_org_facts(state, review_run)
+        if design_org:
+            certificate_facts.update(design_org)
+            judgment = certificate_facts.setdefault("judgment", {"claimedFacts": [], "evidenceRefs": []})
+            for index, (key, label) in enumerate((("titleBlockOrganization", "图签设计单位"), ("designSealOrganization", "设计章单位")), 1):
+                value = design_org["designDocument"].get(key)
+                if not value:
+                    continue
+                refs = [item for item in design_org["designDocument"]["evidence"] if item.get("quotedText") and value in item.get("quotedText", "")]
+                judgment["claimedFacts"].append(
+                    {
+                        "factId": f"design-org-{index}",
+                        "label": label,
+                        "value": value,
+                        "documentVersionId": (refs[0] if refs else {}).get("documentVersionId"),
+                        "evidenceRefIds": [item["evidenceRefId"] for item in refs],
+                        "confidence": min((item["confidence"] for item in refs if isinstance(item.get("confidence"), (int, float))), default=None),
+                        "confidenceUnavailable": bool(refs) and all(item.get("confidenceUnavailable") for item in refs),
+                        "conflicted": False,
+                    }
+                )
+                judgment["evidenceRefs"].extend(item for item in refs if item["evidenceRefId"] not in {r["evidenceRefId"] for r in judgment["evidenceRefs"]})
     for key, value in certificate_facts.items():
         if key == "judgment":
             # 节点 24 的焊工 builder 已经产 judgment；证书事实要并进去，不能互相覆盖。

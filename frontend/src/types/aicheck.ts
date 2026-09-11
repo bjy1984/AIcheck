@@ -88,6 +88,9 @@ export type Project = {
   contractorOrgName: string
   ndtOrgName: string
   inspectionOrgName: string
+  /** 施工起止（ISO 日期）。证书有效期是否覆盖施工期全靠它；2026-09-11 前没有录入口。 */
+  constructionStart?: string | null
+  plannedConstructionEnd?: string | null
   businessPackId?: string
   businessPackVersion?: string
   domainType?: string

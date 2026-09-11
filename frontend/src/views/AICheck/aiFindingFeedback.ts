@@ -8,10 +8,20 @@
 import { h, ref } from 'vue'
 import { ElInput, ElMessage, ElMessageBox, ElRadio, ElRadioGroup } from 'element-plus'
 
-import { createAiRunFeedbackApi, type AiRunFeedbackPayload } from '@/api/aicheck'
+import {
+  createAiRunFeedbackApi,
+  listDocumentOcrFieldsApi,
+  saveFactCorrectionApi,
+  type AiRunFeedbackPayload
+} from '@/api/aicheck'
 import type { ReviewOpinion } from '@/types/aicheck'
 
-import type { WorkbenchAiFinding } from './workbenchReviewPresentation'
+import type {
+  WorkbenchAiCheckOutcome,
+  WorkbenchAiFinding,
+  WorkbenchAiUnscoredFact,
+  WorkbenchAiUnscoredField
+} from './workbenchReviewPresentation'
 
 export type ReasonOption = { value: string; label: string }
 export type PickedReason = { code: string; label: string; note: string }
@@ -120,6 +130,9 @@ export const useAiFindingFeedback = (ctx: {
   etag: () => string | undefined
   ensureWritable: () => boolean
   reload: () => Promise<unknown>
+  /** 「核对无误」要写 fact_corrections，落在项目+节点上，不在审查运行上。 */
+  projectId?: () => string
+  nodeId?: () => number
 }) => {
   const decisions = ref<Record<string, AiFeedbackDecision>>({})
   const busy = ref(false)
@@ -247,6 +260,58 @@ export const useAiFindingFeedback = (ctx: {
     if (ok) ElMessage.success('已记录补充发现，将进入 AI 纠正样本')
   }
 
+  /**
+   * 逐项核查里的「核对无误」：引擎没给分的字段（MinerU 通道无置信度），人看过引文确认
+   * 抽取值没错，就以原值写一条 fact_corrections——补丁时置信度变 1.0，下次跑同一节点
+   * grounding 就有分，「需人工判断」能变「通过」。不改值，只是把人的确认落成事实。
+   */
+  const handleConfirmFact = async (
+    outcome: WorkbenchAiCheckOutcome,
+    fact: WorkbenchAiUnscoredFact,
+    field: WorkbenchAiUnscoredField
+  ) => {
+    if (!ctx.ensureWritable()) return
+    const projectId = ctx.projectId?.() || ''
+    const nodeId = ctx.nodeId?.() || 0
+    if (!projectId || !nodeId || !field.documentId) {
+      ElMessage.error('缺少项目、节点或文件信息，无法记录核对')
+      return
+    }
+    try {
+      await ElMessageBox.confirm(
+        `确认「${field.fieldName}」的抽取值无误？\n${field.quotedText || fact.value}\n\n确认后该字段按人工核对计分，${outcome.name} 下次复核不再因无置信度落到「需人工判断」。`,
+        '核对无误',
+        { confirmButtonText: '确认无误', cancelButtonText: '取消', type: 'info' }
+      )
+    } catch {
+      return
+    }
+    busy.value = true
+    try {
+      const listed = await listDocumentOcrFieldsApi(projectId, field.documentId)
+      const target = (listed.data || []).find(
+        (item) =>
+          item.documentVersionId === field.documentVersionId && item.fieldName === field.fieldName
+      )
+      if (!target) {
+        ElMessage.error(`没找到抽取字段「${field.fieldName}」，可能已被重新解析，请刷新后再核`)
+        return
+      }
+      await saveFactCorrectionApi(
+        projectId,
+        nodeId,
+        { fieldId: target.id, correctedValue: target.fieldValue, reason: '人工核对无误' },
+        { etag: ctx.etag() }
+      )
+      ElMessage.success(`已记录：「${field.fieldName}」人工核对无误，下次复核生效`)
+      await ctx.reload()
+    } catch {
+      ElMessage.error('核对记录失败，请刷新后重试。')
+    } finally {
+      busy.value = false
+    }
+  }
+
   /** 采纳 / 驳回整次 AI 建议：原来只写审计日志，现在同时写 ai_feedback。 */
   const recordRunDecision = (accepted: boolean, comment: string) =>
     record({
@@ -281,6 +346,7 @@ export const useAiFindingFeedback = (ctx: {
     busy,
     handleFindingDecision,
     handleClaimSupported,
+    handleConfirmFact,
     handleSupplementFinding,
     recordRunDecision,
     askOverrideReason,

@@ -22,6 +22,11 @@ os.environ.setdefault("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true")
 os.environ.setdefault("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", "true")
 os.environ.setdefault("AICHECK_OCR_PROVIDER_MODE", "local")
 os.environ.setdefault("AICHECK_OCR_DEFAULT_PROVIDER", "local")
+# 证书事实链会到全国特种设备公示平台核对编号/身份证（certificate_platform_verify）。
+# 测试套件不许真的打平台：2026-09-12 一条只造了许可证字段的用例在容器里真查到了
+# TS1844171-2028，拿回 1.0 的证据把「引擎没给分」的断言掀翻——测试变成了看网络脸色。
+# 专门测这条链路的用例自行 setenv 打开并打桩查询函数。
+os.environ.setdefault("AICHECK_CERT_PLATFORM_VERIFY", "off")
 
 from libs.security.session import security_sessions
 

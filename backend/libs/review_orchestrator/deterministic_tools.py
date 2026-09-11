@@ -718,7 +718,7 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
         status = "human_review_required"
     else:
         status = "passed"
-    return result(
+    output = result(
         "validate_evidence_grounding",
         status,
         facts={
@@ -731,6 +731,13 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
         checks=checks,
         output_schema="evidence-gate-result-v1",
     )
+    # 没分的事实要能在界面上被人核：把它们（只带标识与字段清单，不带整段证据）回传。
+    if unscored:
+        output["claimedFacts"] = [
+            {key: fact.get(key) for key in ("factId", "label", "value", "documentVersionId", "fields") if key in fact}
+            for fact in facts
+        ]
+    return output
 
 
 def decode_welder_code(code: str) -> dict[str, Any]:

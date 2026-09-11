@@ -209,6 +209,9 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     "name": names.get(check_id) or check_id,
                     "result": str(atomic.get("result") or ""),
                     "ruleCode": str(record.get("ruleCode") or ""),
+                    # 「需人工判断」的原因常是引擎没给分：把没分的事实列出来，
+                    # 界面才有东西让人核，核完落成 fact_corrections 下次就有分。
+                    "unscoredFacts": _unscored_facts(atomic),
                 }
             )
     return outcomes
@@ -227,3 +230,27 @@ def _atomic_check_names(business_pack_id: str) -> dict[str, str]:
         for check in pack.get("atomicChecks") or []
         if isinstance(check, dict) and check.get("id")
     }
+
+
+
+def _unscored_facts(atomic: dict[str, Any]) -> list[dict[str, Any]]:
+    """锚定门标为 unscored 的事实（confidenceUnavailable），附带它们引用的抽取字段。"""
+    output: list[dict[str, Any]] = []
+    for tool in atomic.get("toolResults") or []:
+        if not isinstance(tool, dict) or tool.get("toolName") != "validate_evidence_grounding":
+            continue
+        facts = tool.get("facts") if isinstance(tool.get("facts"), dict) else {}
+        indexes = {int(item) for item in facts.get("unscoredFacts") or [] if str(item).isdigit()}
+        claimed = tool.get("claimedFacts") if isinstance(tool.get("claimedFacts"), list) else []
+        for index, fact in enumerate(claimed, 1):
+            if index in indexes and isinstance(fact, dict):
+                output.append(
+                    {
+                        "factId": fact.get("factId"),
+                        "label": fact.get("label") or fact.get("factId"),
+                        "value": fact.get("value"),
+                        "documentVersionId": fact.get("documentVersionId"),
+                        "fields": [item for item in fact.get("fields") or [] if isinstance(item, dict)],
+                    }
+                )
+    return output

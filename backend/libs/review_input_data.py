@@ -104,6 +104,11 @@ def apply_field_corrections_to_parse_results(
                     field[key] = correction.get("correctedValue")
             field["humanCorrected"] = True
             field["correctionId"] = correction.get("id")
+            # 人核过的值配得上 1.0（与公示平台登记记录、已核验引用同一口径）：
+            # 否则 MinerU 通道的字段改完仍是 0.0/置信度未知，grounding 永远只能「需人工判断」，
+            # 人核一百次系统也不记得。
+            field["confidence"] = 1.0
+            field["confidenceUnavailable"] = False
         clone["humanCorrectedFieldCount"] = sum(
             1 for f in clone.get("fields") or [] if isinstance(f, dict) and f.get("humanCorrected")
         )

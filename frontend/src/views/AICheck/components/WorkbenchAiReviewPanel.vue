@@ -10,6 +10,8 @@ import {
   workbenchFindingDisplay,
   type WorkbenchAiCheckOutcome,
   type WorkbenchAiFinding,
+  type WorkbenchAiUnscoredFact,
+  type WorkbenchAiUnscoredField,
   type WorkbenchAiFindingGroupKey,
   type WorkbenchAiPresentation
 } from '../workbenchReviewPresentation'
@@ -35,6 +37,12 @@ const emit = defineEmits<{
   claimSupported: [finding: WorkbenchAiFinding, claim: string]
   supplementFinding: []
   returnCorrection: [finding: WorkbenchAiFinding]
+  /** 逐项核查里「核对无误」：把引擎没给分的字段落成人工确认，下次跑就有分。 */
+  confirmFact: [
+    outcome: WorkbenchAiCheckOutcome,
+    fact: WorkbenchAiUnscoredFact,
+    field: WorkbenchAiUnscoredField
+  ]
 }>()
 
 /**
@@ -276,6 +284,30 @@ const ruleLabel = (rule: Record<string, unknown>) =>
               </AuditStatusTag>
               <span>{{ outcome.name }}</span>
               <small>{{ outcome.atomicCheckId }}</small>
+              <!-- 引擎没给分的事实：人核一条落一条，核完的字段下次跑就是 1.0 -->
+              <ul v-if="outcome.unscoredFacts.length" class="ai-unscored-facts">
+                <li v-for="fact in outcome.unscoredFacts" :key="fact.factId">
+                  <span class="ai-unscored-fact-label">{{ fact.label }}</span>
+                  <span class="ai-unscored-fact-value">{{ fact.value }}</span>
+                  <template
+                    v-for="field in fact.fields"
+                    :key="`${field.documentVersionId}:${field.fieldName}`"
+                  >
+                    <ElButton
+                      v-if="canAct && !field.humanCorrected"
+                      size="small"
+                      text
+                      bg
+                      :disabled="acting"
+                      :title="field.quotedText"
+                      @click="emit('confirmFact', outcome, fact, field)"
+                    >
+                      核对无误：{{ field.fieldName }}
+                    </ElButton>
+                    <small v-else-if="field.humanCorrected">{{ field.fieldName }} 已人工确认</small>
+                  </template>
+                </li>
+              </ul>
             </li>
           </ul>
         </section>
@@ -894,6 +926,31 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-check-outcomes li > small {
   color: var(--aicheck-text-subtle, #667085);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-unscored-facts {
+  display: grid;
+  flex-basis: 100%;
+  padding: 4px 0 0 22px;
+  margin: 0;
+  list-style: none;
+  gap: 4px;
+}
+
+.ai-unscored-facts li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.ai-unscored-fact-label {
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-unscored-fact-value {
   font-variant-numeric: tabular-nums;
 }
 

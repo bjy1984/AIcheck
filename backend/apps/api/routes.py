@@ -310,6 +310,7 @@ from libs.review_orchestrator.llm_tool_schemas import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.project_dates import apply_construction_dates, construction_dates_from_body
 from libs.rule_scope import same_rule_scope
 from libs.rule_version_helpers import rule_version_sort_key
 from libs.runtime_database_scope import runtime_database_scope
@@ -5192,6 +5193,10 @@ def update_project(
             if field in body and project.get(field) != body[field]:
                 changed.append({"field": field, "before": project.get(field), "after": body[field]})
                 project[field] = body[field]
+        try:  # 施工起止日期：证书有效期覆盖的唯一来源，见 libs/project_dates
+            changed.extend(apply_construction_dates(project, body))
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         if changed:
             repo.touch_project(project_id)
         return ok({"project": versioned_project(project), **repo.mutation_result("更新项目", "Project", project_id, changed=changed)}, request)
@@ -27705,6 +27710,10 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
         requested_type = str(body.get("type") or "").strip()
         if requested_type and requested_type != project_type:
             return fail(errors.VALIDATION_ERROR, request, message="项目类型必须与所选业务类型一致。")
+        try:  # 施工起止日期先校验，别让一个写坏的日期把创建打成 500
+            construction_dates = construction_dates_from_body(body)
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         project_id = str(body.get("code") or f"P-{datetime.now(UTC).year}-{uuid4().hex[:6].upper()}").strip()
         if repo.require_project(project_id):
             return fail(errors.CONFLICT, request, message="项目编号已存在。")
@@ -27747,6 +27756,7 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             "contractorOrgName": normalized["contractorOrgName"],
             "ndtOrgName": normalized["ndtOrgName"],
             "inspectionOrgName": normalized["inspectionOrgName"],
+            **construction_dates,
             "businessPackId": pack["id"],
             "businessPackVersion": pack["version"],
             "domainType": pack["domainType"],

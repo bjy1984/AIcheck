@@ -88,6 +88,10 @@ runtime = {
     # 验收 fixture 一份都导不出（2026-09-10 盘点）。开关不给既有运行补快照，只影响新运行；
     # /rerun 走 clone_review_run_for_replay，不经这一步，重跑要走 ai-recheck 的新建路径。
     "AICHECK_WORKSTATIONS_ENABLED": "true",
+    # 公示平台（CNSE）：2026-09-12 实测一个 302 走 17 秒，默认 5s 连接超时把查询全打成失败。
+    # 连接 20s、读取 60s；验证码图片最大 16MB，读取要留够。
+    "AICHECK_CNSE_TIMEOUT_CONNECT": "20",
+    "AICHECK_CNSE_TIMEOUT_READ": "60",
     "AICHECK_QWEN_CALL_MODE": "official_api",
     "AICHECK_LLM_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "AICHECK_LLM_MODEL_REVIEW": "qwen3.7-plus",

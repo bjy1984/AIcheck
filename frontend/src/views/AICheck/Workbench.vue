@@ -759,6 +759,7 @@ const {
   busy: aiFeedbackBusy,
   handleFindingDecision: handleAiFindingDecision,
   handleClaimSupported: handleAiClaimSupported,
+  handleConfirmFact: handleAiConfirmFact,
   handleSupplementFinding: handleAiSupplementFinding,
   recordRunDecision: recordAiRunDecision,
   askOverrideReason: askAiOverrideReason,
@@ -772,7 +773,9 @@ const {
     ),
   etag: () => currentProject.value?.etag,
   ensureWritable: () => ensureWritableNode(),
-  reload: () => loadNodePackage(activeNodeId.value, { silent: true })
+  reload: () => loadNodePackage(activeNodeId.value, { silent: true }),
+  projectId: () => activeProjectId.value,
+  nodeId: () => activeNodeId.value
 })
 const pendingCorrectionFinding = ref<WorkbenchAiFinding>()
 const inspectionReviewAuditItems = computed(() =>
@@ -5883,6 +5886,7 @@ onBeforeUnmount(() => {
               @open-file="handleOpenFileDetail"
               @finding-decision="handleAiFindingDecision"
               @claim-supported="handleAiClaimSupported"
+              @confirm-fact="handleAiConfirmFact"
               @supplement-finding="handleAiSupplementFinding"
               @return-correction="handleReturnCorrectionFromFinding"
             />

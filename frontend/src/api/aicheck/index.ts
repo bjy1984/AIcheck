@@ -702,6 +702,8 @@ export type AdminProjectCreatePayload = {
   contractorOrgName: string
   ndtOrgName: string
   inspectionOrgName: string
+  constructionStart?: string
+  plannedConstructionEnd?: string
   currentNodeId?: number
   memberUserIds?: Partial<Record<RoleCode, string>>
 }
@@ -3790,6 +3792,42 @@ export const confirmNodeEvidenceLinkApi = (
 ): Promise<IResponse<NodeEvidenceDecisionPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/nodes/${nodeId}/evidence-links/${evidenceLinkId}/confirm`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+/** 某份资料全部版本的 OCR 抽取字段（含 fieldId），「核对无误」要靠它把事实落到具体字段。 */
+export const listDocumentOcrFieldsApi = (
+  projectId: string,
+  documentId: string
+): Promise<IResponse<ExtractedOcrField[]>> => {
+  return request.get({ url: `/api/projects/${projectId}/documents/${documentId}/ocr-fields` })
+}
+
+export type ExtractedOcrField = {
+  id: string
+  documentVersionId: string
+  fieldName: string
+  fieldValue: string
+  pageNo?: number
+  confidence?: number
+  reviewStatus?: string
+  evidenceLinkId?: string
+}
+
+/**
+ * 人工修正/确认一个 OCR 抽取字段（后端 fact_corrections）。
+ * 「核对无误」= 把 correctedValue 设为原值：值不变，但字段从此有分（1.0），下次跑不再「需人工判断」。
+ */
+export const saveFactCorrectionApi = (
+  projectId: string,
+  nodeId: number,
+  payload: { fieldId: string; correctedValue: string; reason?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ correction: Record<string, unknown>; auditLogId?: string }>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/fact-corrections`,
     data: payload,
     headers: mutationHeaders(options)
   })

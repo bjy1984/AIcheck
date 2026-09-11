@@ -127,6 +127,7 @@ STATE_COLLECTIONS = {
     "workflow_inbox": "workflow_inbox",
     "retrieval_traces": "retrieval_traces",
     "rule_check_results": "rule_check_results",
+    "cnse_lookup_cache": "cnse_lookup_cache",
     "ai_feedback": "ai_feedback",
     "access_grants": "access_grants",
     "ai_trace_steps": "ai_trace_steps",
@@ -359,6 +360,7 @@ class InMemoryRepository:
         self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
+        self.state.setdefault("cnse_lookup_cache", [])
         self.state.setdefault("prompt_templates", [])
         self.state.setdefault("report_templates", [])
         self.state.setdefault("cost_budget_change_requests", [])
@@ -567,6 +569,7 @@ class InMemoryRepository:
         self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
+        self.state.setdefault("cnse_lookup_cache", [])
         self.state.setdefault("prompt_templates", [])
         self.state.setdefault("report_templates", [])
         self.state.setdefault("cost_budget_change_requests", [])
@@ -3719,6 +3722,7 @@ class InMemoryRepository:
         loaded.setdefault("agent_executions", [])
         loaded.setdefault("retrieval_traces", [])
         loaded.setdefault("rule_check_results", [])
+        loaded.setdefault("cnse_lookup_cache", [])
         loaded.setdefault("prompt_templates", [])
         loaded.setdefault("report_templates", [])
         loaded.setdefault("cost_budget_change_requests", [])
@@ -6779,6 +6783,7 @@ def load_review_run_state(review_run_id: str) -> None:
             "workflow_inbox",
             "retrieval_traces",
             "rule_check_results",
+            "cnse_lookup_cache",
             "ai_feedback",
             "review_run_clause_snapshots",
             "model_call_attempts",

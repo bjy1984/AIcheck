@@ -167,3 +167,75 @@ grounding 又只做数字比较。
 
 节点 1、2 的总判定从 evidence_insufficient 变成 human_review_required：
 「许可范围覆盖了，请人核对引文」——这是这两个节点第一次给出不是「证据不足」的话。
+
+## 八、部署后的基线，以及计划第 1、2 项
+
+墙一墙二拆掉并部署（8d0e4621）后重扫 P-2026-ECD202：
+
+| | 改前 | 现在 |
+| --- | --- | --- |
+| passed / human_review_required / evidence_insufficient | 1 / 0 / 191 | **0 / 7 / 185** |
+| `checkCount=0` | 94 | 80 |
+| 出非「证据不足」结论的节点 | 24 | **1、2、3、24、38**（全部证书节点） |
+
+passed 从 1 变 0 不是退步：那 1 项是节点 24 的纯锚定门（AC-R24-05），焊工证字段有分（0.78）
+但同一原子项现在按三态口径带着未评分事实一起判，落到 human_review_required。
+
+### 计划第 1 项：施工起止日期（已做）
+
+不是没人填，是 API 不接、界面没口。现在：
+- `libs/project_dates.py`：只收 ISO 日期或空，写坏的拒绝（落一个「2028-1-17」进去按字符串比就错）；
+  起点晚于终点拒绝；创建与更新都走它。routes.py 因此 +10 行，基线随本次提交重冻。
+- 管理台新建向导与编辑对话框各加「施工开始日期 / 计划完工日期」两个日期选择器（ISO 出参）。
+- `check_date_covers` 读的就是这两个键；填上之后 AC-R01-03、AC-R02-02/03 才有得判。
+
+### 计划第 2 项：设计文件的图签单位与设计章单位（已做）
+
+AC-R01-01 比三处：许可证持证单位 / 图签设计单位 / 设计章单位。后两处**全库没有任何地方产出**，
+执行器只读不写。数据其实在手上：施工图首页「项目名称」字段开头就是
+`广东政和工程有限公司GEM-HORSE ENGINEERING CO.,LTD(原…) 资质等级…`，seals[] 第 1/3/4 页都是
+`广东政和工程有限公司`；许可证上的章是「广东省市场监督管理局」（发证机关，按后缀筛掉）。
+
+新增 `design_org_facts.build_design_org_facts`，从节点 1 的 `merge_certificate_facts` 挂入
+（不动有棘轮的 execution.py），两条事实带证据并进 judgment。
+
+生产数据挂载验证：**AC-R01-01 check_all_equal → passed**（三处同名），原子项按三态落到
+human_review_required；evidenceFacts 1 → 3。
+
+## 九、计划第 3 项：公示平台进事实链（已做，平台今晚不通）
+
+`search_cnse_persons` 在 10 个节点的工具清单里、54 次运行零次调用——它只在模型可选的工具表上，
+从没进过事实链。新增 `certificate_platform_verify.verify_certificate_records`，从
+`build_certificate_facts` 去重后接入：
+
+| 证书类型 | 查什么 | 核得上时 |
+| --- | --- | --- |
+| 设计/安装/检测机构许可证（TS1234567-2028） | 按编号直查 → `verification_from_license_record`（与 R12 人工核验记录同形） | 有效期、许可范围用平台登记补/校，挂一条 confidence=1.0 的证据 |
+| 焊工证 / 检测人员证（证件编号=身份证） | 四步取全部证书 licList | 现行焊工项目代号替换 OCR 坏码，有效期取最早到期的现行项目 |
+
+边界：平台失败一律软失败（保留 OCR、记 platformError，从不抛）；同一编号 24 小时只查一次
+（`state["cnse_lookup_cache"]`，错误缓 1 小时）；`AICHECK_CERT_PLATFORM_VERIFY=off` 与
+`run["replay"]` 不碰网；测试套件在 conftest 默认关（一条只造了许可证字段的用例曾在容器里真查到
+TS1844171-2028，拿回 1.0 证据把「引擎没给分」的断言掀翻）。只拿到首条记录（licList 没取到）
+时不改写——李卫伍那次平台排第一的是起重机指挥。
+
+**生产实测（2026-09-12 02:25）**：四次查询全失败——两条许可证 `CnseRequestError`
+（取验证码就超时），两条焊工证一条滑块匹配 0.467<0.50、一条同样超时。从部署容器直接
+`httpx.get("https://cnse.e-cqs.cn/info-pub/pub")` 也是 TLS 握手超时，**不是本次代码的问题，是
+这台服务器今晚到平台的链路**（09-05/06 同一容器查询成功）。软失败按设计工作：事实原样保留，
+节点 1/2/24 的判定与接线前一致。错误缓存 1 小时，复测前要么等，要么清 `cnse_lookup_cache`。
+
+## 十、计划第 4 项：人工核对写回事实（已做）
+
+「需人工判断」是终点还是中转，取决于人核过之后系统记不记得。现在记得：
+
+- 后端：`fact_corrections` 打补丁时字段 `confidence=1.0`、`confidenceUnavailable=False`
+  （`review_input_data`）；证书证据带 `fieldName/humanCorrected`，judgment 的 claimedFacts 带
+  `fields[]`（fieldName/documentVersionId/documentId/quotedText/humanCorrected）；grounding 判
+  unscored 时把 `claimedFacts` 透传，`output_contract.atomic_check_outcomes` 汇成
+  `unscoredFacts`。测试：`tests/test_human_confirmed_facts_score.py`（两条都核过 → grounding 通过）。
+- 前端：逐项核查里每条「引擎没给分」的事实按字段列出「核对无误：<字段名>」，点击 →
+  `ocr-fields` 找到抽取字段 → `fact-corrections` 以原值写一条（reason「人工核对无误」）→ 重载。
+  已确认过的字段显示「已人工确认」。（`WorkbenchAiReviewPanel.vue` + `aiFindingFeedback.handleConfirmFact`）
+- 口径：只落「人看过引文、抽取值没错」这一件事，不改值；改值仍走原来的字段修正入口。
+  下次同节点复核，核过的字段有分，「需人工判断」才能变「通过」。

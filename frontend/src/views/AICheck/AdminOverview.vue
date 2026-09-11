@@ -15,6 +15,7 @@ import {
   ElCheckbox,
   ElCheckboxGroup,
   ElCol,
+  ElDatePicker,
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
@@ -625,6 +626,8 @@ const projectWizardForm = reactive({
   contractorOrgName: '',
   ndtOrgName: '',
   inspectionOrgName: '',
+  constructionStart: '',
+  plannedConstructionEnd: '',
   memberUserIds: {
     inspection: '',
     contractor: '',
@@ -643,6 +646,8 @@ const projectEditForm = reactive({
   contractorOrgName: '',
   ndtOrgName: '',
   inspectionOrgName: '',
+  constructionStart: '',
+  plannedConstructionEnd: '',
   status: '草稿/立项中' as Project['status'],
   etag: ''
 })
@@ -2144,6 +2149,8 @@ const handleCreateProject = async () => {
     contractorOrgName: projectWizardForm.contractorOrgName,
     ndtOrgName: projectWizardForm.ndtOrgName,
     inspectionOrgName: projectWizardForm.inspectionOrgName,
+    constructionStart: projectWizardForm.constructionStart || undefined,
+    plannedConstructionEnd: projectWizardForm.plannedConstructionEnd || undefined,
     memberUserIds: Object.fromEntries(
       projectWizardRoles.value.map((role) => [role, projectWizardForm.memberUserIds[role]])
     )
@@ -2186,6 +2193,8 @@ const openProjectEditDialog = (row: Project) => {
   projectEditForm.contractorOrgName = row.contractorOrgName
   projectEditForm.ndtOrgName = row.ndtOrgName
   projectEditForm.inspectionOrgName = row.inspectionOrgName
+  projectEditForm.constructionStart = row.constructionStart || ''
+  projectEditForm.plannedConstructionEnd = row.plannedConstructionEnd || ''
   projectEditForm.status = row.status
   projectEditForm.etag = row.etag || ''
   projectOperationError.value = ''
@@ -2210,6 +2219,9 @@ const handleSaveProjectEdit = async () => {
         contractorOrgName: projectEditForm.contractorOrgName,
         ndtOrgName: projectEditForm.ndtOrgName,
         inspectionOrgName: projectEditForm.inspectionOrgName,
+        // 空串要发出去：清掉日期也是一次修改，后端按 None 落库
+        constructionStart: projectEditForm.constructionStart,
+        plannedConstructionEnd: projectEditForm.plannedConstructionEnd,
         status: projectEditForm.status
       },
       { etag: projectEditForm.etag }
@@ -5409,6 +5421,28 @@ onMounted(() => {
                   </ElSelect>
                 </ElFormItem>
               </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="施工开始日期">
+                  <ElDatePicker
+                    v-model="projectWizardForm.constructionStart"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="证书有效期覆盖判定的起点"
+                    style="width: 100%"
+                  />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="计划完工日期">
+                  <ElDatePicker
+                    v-model="projectWizardForm.plannedConstructionEnd"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="证书有效期覆盖判定的终点"
+                    style="width: 100%"
+                  />
+                </ElFormItem>
+              </ElCol>
             </ElRow>
           </div>
 
@@ -5531,6 +5565,24 @@ onMounted(() => {
             <ElCol :xs="24" :sm="12">
               <ElFormItem label="监检机构快照">
                 <ElInput v-model="projectEditForm.inspectionOrgName" />
+              </ElFormItem>
+              <ElFormItem label="施工开始日期">
+                <ElDatePicker
+                  v-model="projectEditForm.constructionStart"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="证书有效期覆盖判定的起点"
+                  style="width: 100%"
+                />
+              </ElFormItem>
+              <ElFormItem label="计划完工日期">
+                <ElDatePicker
+                  v-model="projectEditForm.plannedConstructionEnd"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="证书有效期覆盖判定的终点"
+                  style="width: 100%"
+                />
               </ElFormItem>
             </ElCol>
           </ElRow>

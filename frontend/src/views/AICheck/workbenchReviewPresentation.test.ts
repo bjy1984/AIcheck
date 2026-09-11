@@ -536,13 +536,15 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
         atomicCheckId: 'AC-R25-01',
         name: '焊接（粘接）工艺文件·WPS/PQR审批与对应',
         result: 'passed',
-        ruleCode: undefined
+        ruleCode: undefined,
+        unscoredFacts: []
       },
       {
         atomicCheckId: 'AC-R25-02',
         name: 'AC-R25-02',
         result: 'evidence_insufficient',
-        ruleCode: 'r25'
+        ruleCode: 'r25',
+        unscoredFacts: []
       }
     ]
   )
@@ -665,4 +667,53 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   })
   assert.ok(!presentation.summary.includes('unsupportedClaims'), presentation.summary)
   assert.ok(presentation.summary.includes('见本条下方列出的待核对项'))
+}
+
+// 逐项核查要把「引擎没给分」的事实和它引用的字段带出来，界面才有东西让人核。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [outcome] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R01-02',
+        name: '设计许可范围',
+        result: 'human_review_required',
+        unscoredFacts: [
+          {
+            factId: 'certificate-1',
+            label: 'design_license TS1844171-2028',
+            value: 'TS1844171-2028',
+            documentVersionId: 'DV-1',
+            fields: [
+              {
+                fieldName: '许可证编号',
+                documentVersionId: 'DV-1',
+                documentId: 'DOC-1',
+                quotedText: 'TS1844171-2028',
+                humanCorrected: false
+              },
+              {
+                fieldName: '',
+                documentVersionId: 'DV-1',
+                documentId: 'DOC-1',
+                quotedText: '',
+                humanCorrected: false
+              }
+            ]
+          }
+        ]
+      },
+      { atomicCheckId: 'AC-R01-03', name: '有效期', result: 'evidence_insufficient' }
+    ]
+  })
+  assert.equal(outcome.unscoredFacts.length, 1)
+  assert.equal(outcome.unscoredFacts[0].fields.length, 1, '没有 fieldName 的条目不显示按钮')
+  assert.equal(outcome.unscoredFacts[0].fields[0].documentId, 'DOC-1')
+  const [, second] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      { atomicCheckId: 'AC-R01-02', name: 'x', result: 'passed' },
+      { atomicCheckId: 'AC-R01-03', name: 'y', result: 'evidence_insufficient' }
+    ]
+  })
+  assert.deepEqual(second.unscoredFacts, [])
 }
