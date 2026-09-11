@@ -632,3 +632,15 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(friendlyModelAlias(''), '')
   assert.equal(friendlyModelAlias(null), '')
 }
+
+// 后端文案改了，但历史留痕里还存着字段名——展示侧要兜住。
+{
+  const { withoutFieldNames } = await import('./workbenchReviewPresentation')
+  assert.equal(
+    withoutFieldNames(
+      '模型给出的业务结论缺少证据支持。具体是哪些断言没有依据，见本条的 unsupportedClaims；请核对原件。'
+    ),
+    '模型给出的业务结论缺少证据支持。具体是哪些断言没有依据，见本条下方列出的待核对项；请核对原件。'
+  )
+  assert.equal(withoutFieldNames('没有字段名的正常描述'), '没有字段名的正常描述')
+}

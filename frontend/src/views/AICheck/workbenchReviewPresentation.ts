@@ -339,7 +339,7 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
     severity,
     severityLabel: SEVERITY_LABELS[severity] || severity,
     title: String(raw.title || ''),
-    description: String(raw.description || ''),
+    description: withoutFieldNames(String(raw.description || '')),
     confidence: typeof raw.confidence === 'number' ? raw.confidence : undefined,
     evidenceCount: evidenceRefs.length,
     ruleCount: ruleRefs.length,
@@ -510,6 +510,21 @@ const normalizeFindingType = (value: string) =>
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/[\s-]+/g, '_')
     .toLowerCase()
+
+/**
+ * 降级说明里的字段名。后端已改口径（review_grounding._UNSUPPORTED_CLAIM_DESCRIPTION），
+ * 但文案是随发现一起落库的执行留痕：2026-09-11 实测生产里还有 72 条历史记录带着
+ * 「见本条的 unsupportedClaims」。留痕不追溯改写，所以在展示侧兜一层。
+ */
+const LEGACY_FIELD_PHRASES: Array<[RegExp, string]> = [
+  [/见本条的\s*unsupportedClaims/g, '见本条下方列出的待核对项']
+]
+
+export const withoutFieldNames = (text: string) =>
+  LEGACY_FIELD_PHRASES.reduce(
+    (value, [pattern, replacement]) => value.replace(pattern, replacement),
+    text
+  )
 
 export const findingTypeLabel = (value?: string | null) => {
   const raw = String(value || '').trim()
