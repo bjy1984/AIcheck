@@ -644,3 +644,25 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   )
   assert.equal(withoutFieldNames('没有字段名的正常描述'), '没有字段名的正常描述')
 }
+
+// 历史项的摘要也走同一层兜底（节点 29 线上实测：字段名出现在 summary 而不是 description）。
+{
+  const { selectWorkbenchAiPresentation, buildWorkbenchAiPresentation } = await import(
+    './workbenchReviewPresentation'
+  )
+  const presentation = selectWorkbenchAiPresentation({
+    projectAnalysis: buildWorkbenchAiPresentation(null),
+    nodeRun: {
+      id: 'AIRUN-29',
+      status: '完成',
+      finishedAt: '2026-09-03 13:55:11',
+      suggestion: {
+        opinionDraft: '具体是哪些断言没有依据，见本条的 unsupportedClaims；请核对原件。'
+      }
+    } as never,
+    nodeFindings: [],
+    nodeOutputText: ''
+  })
+  assert.ok(!presentation.summary.includes('unsupportedClaims'), presentation.summary)
+  assert.ok(presentation.summary.includes('见本条下方列出的待核对项'))
+}

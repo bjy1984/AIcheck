@@ -770,11 +770,14 @@ export const selectWorkbenchAiPresentation = ({
     statusLabel: failed ? 'AI 结果生成失败' : running ? 'AI 正在分析' : 'AI 已完成，等待人工确认',
     statusTone: failed ? 'red' : running ? 'blue' : 'green',
     resultLabel: failed ? '未产出结论' : String(nodeRun.suggestion?.result || '等待结果'),
-    summary: failed
-      ? failureText
-      : (nodeFindings.length ? String(nodeRun.suggestion?.opinionDraft || '') : nodeOutputText) ||
-        String(nodeRun.suggestion?.opinionDraft || '') ||
-        '当前节点暂无结果说明。',
+    // 摘要同样来自模型落库的文本，历史留痕里带着字段名，展示侧一起兜住。
+    summary: withoutFieldNames(
+      failed
+        ? failureText
+        : (nodeFindings.length ? String(nodeRun.suggestion?.opinionDraft || '') : nodeOutputText) ||
+            String(nodeRun.suggestion?.opinionDraft || '') ||
+            '当前节点暂无结果说明。'
+    ),
     meta: [friendlyModelAlias(nodeRun.model), nodeRun.finishedAt || nodeRun.id]
       .filter(Boolean)
       .join(' · '),
