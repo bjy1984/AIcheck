@@ -522,7 +522,11 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.deepEqual(
     workbenchCheckOutcomes({
       atomicCheckOutcomes: [
-        { atomicCheckId: 'AC-R25-01', name: '焊接（粘接）工艺文件·WPS/PQR审批与对应', result: 'passed' },
+        {
+          atomicCheckId: 'AC-R25-01',
+          name: '焊接（粘接）工艺文件·WPS/PQR审批与对应',
+          result: 'passed'
+        },
         { atomicCheckId: 'AC-R25-02', result: 'evidence_insufficient', ruleCode: 'r25' },
         { atomicCheckId: '', name: '没有 id 的不要', result: 'passed' }
       ]
@@ -555,7 +559,9 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     run: { projectAnalysisRunId: 'PARUN-9', status: '已完成', finishedAt: '2026-09-11 10:00:00' },
     nodeReview: {
       deterministicResult: 'passed',
-      atomicCheckOutcomes: [{ atomicCheckId: 'AC-R28-01', name: '管道组对·组对实测值', result: 'passed' }]
+      atomicCheckOutcomes: [
+        { atomicCheckId: 'AC-R28-01', name: '管道组对·组对实测值', result: 'passed' }
+      ]
     }
   } as never)
   assert.deepEqual(
@@ -570,7 +576,9 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
       id: 'AIRUN-1',
       status: '完成',
       finishedAt: '2026-09-11 11:00:00',
-      atomicCheckOutcomes: [{ atomicCheckId: 'AC-R24-01', name: '焊工持证项目覆盖', result: 'failed' }]
+      atomicCheckOutcomes: [
+        { atomicCheckId: 'AC-R24-01', name: '焊工持证项目覆盖', result: 'failed' }
+      ]
     } as never,
     nodeFindings: [],
     nodeOutputText: ''
