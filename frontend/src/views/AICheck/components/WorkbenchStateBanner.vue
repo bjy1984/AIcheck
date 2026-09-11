@@ -50,8 +50,6 @@ const alertType = computed(() => {
 </template>
 
 <style scoped>
-
-
 @media (width <= 768px) {
   .state-content {
     align-items: flex-start;
@@ -71,10 +69,10 @@ const alertType = computed(() => {
   line-height: 22px;
 }
 
-/* 这段文字继承 Element 的 .el-alert__description 颜色，错误态实测 #f56c6c
-   配 #fef0f0 只有 2.61:1。全局覆盖那几条改到 (0,3,0) 仍然没压住，而这里恰恰是
-   加载失败、无权访问这类最需要被看清的提示。直接按横幅自身的 type 定色：
-   作用域样式必定生效，语义也跟着 type 走，不依赖 Element 的层叠细节。 */
+/* 按横幅自身的 type 定色，而不是靠继承 Element 的 alert 颜色。
+   全局覆盖已在 styles/index.less 修到 (0,4,0) 并实测 5.93:1，这一层不再是
+   兜底；留着是因为颜色应当跟着 type 语义走（error/forbidden/readonly），
+   而不是跟着它恰好映射到哪种 el-alert。两处取值一致。 */
 .state-banner--error .state-content,
 .state-banner--error .state-message {
   color: #b42318;
