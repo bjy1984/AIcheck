@@ -102,6 +102,119 @@ def build_r14_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
     }
 
 
+# 单线图/轴测图图签：标签、值、标签、值横着排，下面接材料表（BOM）。
+# 2026-09-11 生产实测（地上甲类储罐区2（含泵区）施工图.pdf，MINERU-TABLE-39BA985054E4A97E）：
+#
+#     设计压力 | 0.275 | 操作压力 | 0.413 | 管路起点 | LP7103 | 管路等级 | M1E | 压力管道级别 | GC2 | BOM A
+#     设计温度 | 60°C  | 操作温度 | 常温  | 管路终点 | ST7102 | 介质名称 | …   | 损伤比例     | RT10%
+#
+# 表格解析把第一行当成表头，于是「设计压力」这个键底下装的是别的列，按行读出 28 条
+# 假管线。这里按格子读：标签后面那一格就是它的值，整张表只描述**一条**管线。
+_TITLE_BLOCK_LABELS: dict[str, str] = {
+    "管线号": "lineNo", "管道编号": "lineNo", "管线编号": "lineNo",
+    "管路起点": "lineStart", "起点": "lineStart",
+    "管路终点": "lineEnd", "终点": "lineEnd",
+    "压力管道级别": "pipelineGrade", "管道级别": "pipelineGrade", "管道等级": "pipelineGrade",
+    "管路等级": "pipingClass",
+    "设计压力": "designPressureMPa", "操作压力": "operatingPressureMPa",
+    "设计温度": "designTemperatureC", "操作温度": "operatingTemperatureC",
+    "介质名称": "medium", "介质": "medium", "输送介质": "medium",
+    "损伤比例": "ndtRatio", "探伤比例": "ndtRatio", "检测比例": "ndtRatio",
+    "材质": "material", "公称压力": "pressureClass",
+}
+_TITLE_BLOCK_MIN_LABELS = 3
+_NUMBER_PREFIX = re.compile(r"^\s*(-?\d+(?:\.\d+)?)")
+
+
+def _table_cell_rows(table: dict[str, Any]) -> list[list[str]]:
+    """按行、按列排好的格子文本。优先 cells（已经解开 colspan），没有再拆 html。"""
+    cells = [item for item in table.get("cells") or [] if isinstance(item, dict) and item.get("text") not in (None, "")]
+    if cells:
+        rows: dict[int, list[tuple[int, str]]] = {}
+        for item in cells:
+            rows.setdefault(int(item.get("row") or 0), []).append((int(item.get("col") or 0), str(item["text"]).strip()))
+        return [[text for _, text in sorted(rows[index])] for index in sorted(rows)]
+    html = str(table.get("html") or "")
+    output: list[list[str]] = []
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.S):
+        texts = [re.sub(r"<[^>]+>", "", cell).strip() for cell in re.findall(r"<td[^>]*>(.*?)</td>", row_html, flags=re.S)]
+        if any(texts):
+            output.append(texts)
+    return output
+
+
+def _number_prefix(value: Any) -> str | None:
+    """「60°C」「0.275MPa」只留数字；不是数字开头就原样交回去让下游判 None。"""
+    match = _NUMBER_PREFIX.match(str(value or ""))
+    return match.group(1) if match else None
+
+
+def _extract_title_block_pipeline(state: dict[str, Any], parse_result: dict[str, Any], table: dict[str, Any]) -> dict[str, Any] | None:
+    pairs: dict[str, str] = {}
+    labels_seen: set[str] = set()
+    for row in _table_cell_rows(table):
+        # 一行里至少两个已知标签才算图签行。材料表的表头行（…DN | 数量 | 材质 | 说明）
+        # 只有「材质」一个，不收——否则「说明」会被当成材质的值。
+        row_pairs: list[tuple[str, str, str]] = []
+        index = 0
+        while index < len(row) - 1:
+            label = row[index].strip()
+            field = _TITLE_BLOCK_LABELS.get(label)
+            value = row[index + 1].strip()
+            if field and value and value not in _TITLE_BLOCK_LABELS:
+                row_pairs.append((label, field, value))
+                index += 2
+                continue
+            index += 1
+        if len(row_pairs) < 2:
+            continue
+        for label, field, value in row_pairs:
+            labels_seen.add(label)
+            pairs.setdefault(field, value)
+            pairs.setdefault(label, value)
+    if len(labels_seen) < _TITLE_BLOCK_MIN_LABELS:
+        return None
+    line_no = pairs.get("lineNo")
+    if not line_no and pairs.get("lineStart") and pairs.get("lineEnd"):
+        # 图上就是用起止点标识这条线的，不是合成的身份。
+        line_no = f"{pairs['lineStart']}→{pairs['lineEnd']}"
+    if not line_no:
+        return None
+    version_id = str(parse_result.get("documentVersionId") or "")
+    key = {"documentVersionId": version_id, "tableId": table.get("tableId") or table.get("id"), "titleBlock": True}
+    record_id = "R14PIPE-" + stable_payload_hash(key)[7:19].upper()
+    evidence_id = f"R14EV-{record_id.removeprefix('R14PIPE-')}"
+    quoted = "；".join(f"{label}：{pairs[label]}" for label in sorted(labels_seen, key=list(_TITLE_BLOCK_LABELS).index))
+    return {
+        "pipelineCharacteristicId": record_id,
+        "lineNo": line_no,
+        "pipelineId": line_no,
+        "pipelineGrade": pairs.get("pipelineGrade"),
+        "pressureClass": pairs.get("pressureClass"),
+        "designPressureMPa": _number_prefix(pairs.get("designPressureMPa")),
+        "designTemperatureC": _number_prefix(pairs.get("designTemperatureC")),
+        "minimumTestPressureMPa": None,
+        "material": pairs.get("material"),
+        "documentVersionId": version_id,
+        "documentId": parse_result.get("documentId"),
+        "fileName": _file_name(state, version_id),
+        "pageNo": table.get("pageNo") or 1,
+        "tableId": table.get("tableId") or table.get("id"),
+        "rowIndex": 0,
+        "sourceRow": dict(pairs),
+        "sourceLayout": "title_block",
+        "evidence": {
+            "id": evidence_id,
+            "evidenceRefId": evidence_id,
+            "documentVersionId": version_id,
+            "pageNo": table.get("pageNo") or 1,
+            "bbox": table.get("bbox") or table.get("polygon"),
+            "quotedText": quoted[:800],
+            "confidence": _confidence(table),
+        },
+    }
+
+
 def _extract_pipeline_characteristics(
     state: dict[str, Any],
     parse_result: dict[str, Any],
@@ -122,6 +235,11 @@ def _extract_pipeline_characteristics(
         )
         compact = _compact(hints)
         if not any(marker in compact for marker in ("管道特性", "管线特性", "pipingcharacteristic", "pipelinecharacteristic")):
+            continue
+        # 图签先于按行读：图签命中时整张表只描述一条管线，下面的 BOM 行不是管线。
+        title_block = _extract_title_block_pipeline(state, parse_result, table)
+        if title_block:
+            output.append(title_block)
             continue
         rows = table.get("normalizedRows") or table.get("records") or []
         for row_index, row in enumerate(rows if isinstance(rows, list) else [], 1):
