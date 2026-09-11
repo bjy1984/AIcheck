@@ -100,6 +100,12 @@ OCR 出來的表自相矛盾（GB/T 8163 表 6 把 Q390 C 級磷硫讀成 1.70�
 
 ---
 
+### B5. 對象選取接上工位映射　【已完成 2026-09-11】
+
+讀表在沒有顯式 `selectedObjectIds` 時沿用 `conditionObjectMappingSnapshot` 驗證後的
+`subject.objectId`；工作台本來就會送這個，不需要新 UI。見
+`verification/2026-09-11-object-selection-from-frozen-mapping.md`。
+
 ## 建議順序
 
 1. **A1**（給密鑰）—— 唯一能證明整條鏈通的

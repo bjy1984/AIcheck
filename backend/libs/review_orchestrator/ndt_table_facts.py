@@ -93,6 +93,31 @@ def _mapped_payload(row: dict[str, Any], signature: dict[str, Any], run: dict[st
     }
 
 
+def _selected_object_ids(run: dict[str, Any], state: dict[str, Any]) -> set[str] | None:
+    """本次审查只审哪个对象；None 表示没有选取（多行即来源含糊）。
+
+    显式的 run["selectedObjectIds"] 优先。没有时沿用工位已冻结的条件对象映射：
+    工作台发起审查时把"下次审查对象"随请求送出（conditionObjectMapping），工位初始化
+    把它冻成 conditionObjectMappingSnapshot.selection.subject.objectId——这就是产品里
+    "审哪一个"的唯一来源，不另造一份。只认经 effective_condition_mapping 验过的快照：
+    哈希、规则修订、来源指纹任何一项对不上都视为没有选取，被篡改或过期的映射
+    不能悄悄把一张多元件的表收窄到某一行。
+    """
+    selected = run.get("selectedObjectIds")
+    if isinstance(selected, list):
+        return {str(item) for item in selected if item not in (None, "")}
+    if not run.get("conditionObjectMappingSnapshot"):
+        return None
+    from libs.review_condition_mapping import effective_condition_mapping
+
+    try:
+        mapping = effective_condition_mapping(run, state)
+    except ValueError:
+        return None
+    object_id = ((mapping or {}).get("subject") or {}).get("objectId")
+    return {str(object_id)} if object_id not in (None, "") else None
+
+
 def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[str, str], *, node_id: int) -> dict[str, list]:
     if (any(not isinstance(run.get(key), str) or not run[key].strip() for key in ("projectId", "tenantId"))
             or run.get("nodeId") != node_id):
@@ -102,8 +127,7 @@ def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[st
     # 对象：构建器遇到多列不会替人挑（挑第一行等于替被审方决定审哪个），于是判
     # "来源含糊"。工位若在 run 上写明 selectedObjectIds，这里就只放行这些对象；
     # 没写就维持原样。它挂在 run 上，fixture 冻结整个 run，重放自然带着这份选取。
-    selected = run.get("selectedObjectIds")
-    wanted = {str(item) for item in selected if item not in (None, "")} if isinstance(selected, list) else None
+    wanted = _selected_object_ids(run, state)
     versions = {row["id"]: row for row in state.get("versions", []) if row.get("tenantId") == run.get("tenantId")}
     documents = {row["id"] for row in state.get("documents", [])
                  if row.get("projectId") == run.get("projectId") and row.get("tenantId") == run.get("tenantId")}

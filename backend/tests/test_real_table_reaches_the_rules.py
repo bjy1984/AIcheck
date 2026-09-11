@@ -203,3 +203,56 @@ def test_the_reference_quotes_the_recorded_table_text_not_the_fields():
     assert "20260213951" in quote and "<" not in quote
     # 映射后的字段名（certificate.documentNo 之类）不是原文，不该出现在引文里。
     assert "documentNo" not in quote and "materialGrade" not in quote
+
+
+# ---- 对象选取的来源：显式 selectedObjectIds，否则沿用已验证的条件对象映射 ----
+
+def _bogus_snapshot(object_id):
+    """形状对、哈希不对的快照：effective_condition_mapping 必须拒绝它。"""
+    return {"schemaVersion": "review-condition-object-mapping-v1",
+            "selection": {"subject": {"objectType": "material_certificate", "objectId": object_id},
+                          "confirmedSameObject": True, "fields": {}},
+            "ruleSnapshotHash": "x", "sourceSnapshotHash": "y", "snapshotHash": "tampered"}
+
+
+def test_a_validated_condition_mapping_selects_the_object(monkeypatch):
+    """工作台发起审查时送的"下次审查对象"，冻结后就是这里唯一的选取来源。"""
+    from libs.review_orchestrator import ndt_table_facts
+    import libs.review_condition_mapping as mapping
+
+    state, run = state_and_run()
+    run["conditionObjectMappingSnapshot"] = _bogus_snapshot("20260213951")
+    monkeypatch.setattr(mapping, "effective_condition_mapping",
+                        lambda r, s: {"subject": {"objectType": "material_certificate", "objectId": "20260213951"}})
+    facts = build_r43_business_facts(state, run)["r43"]["materialCertificate"]
+    assert facts["scope"]["objectId"] == "20260213951" and len(facts["domains"]) == 1
+
+
+def test_a_tampered_mapping_snapshot_does_not_narrow_the_table():
+    """哈希对不上的快照不能悄悄把六个元件的表收窄到某一行；回到"来源含糊"。"""
+    state, run = state_and_run()
+    run["conditionObjectMappingSnapshot"] = _bogus_snapshot("20260213951")
+    facts = build_r43_business_facts(state, run)["r43"]["materialCertificate"]
+    assert facts["domains"] == [] and "r43_source_object_conflict" in facts["sourceIssues"]
+
+
+def test_explicit_selection_wins_over_the_mapping(monkeypatch):
+    import libs.review_condition_mapping as mapping
+
+    state, run = state_and_run()
+    run["conditionObjectMappingSnapshot"] = _bogus_snapshot("ST202604061300001")
+    monkeypatch.setattr(mapping, "effective_condition_mapping",
+                        lambda r, s: {"subject": {"objectType": "material_certificate", "objectId": "ST202604061300001"}})
+    run["selectedObjectIds"] = ["20260213951"]
+    facts = build_r43_business_facts(state, run)["r43"]["materialCertificate"]
+    assert facts["scope"]["objectId"] == "20260213951"
+
+
+def test_a_mapping_without_a_subject_means_no_selection(monkeypatch):
+    import libs.review_condition_mapping as mapping
+
+    state, run = state_and_run()
+    run["conditionObjectMappingSnapshot"] = _bogus_snapshot("")
+    monkeypatch.setattr(mapping, "effective_condition_mapping", lambda r, s: {"subject": {}})
+    facts = build_r43_business_facts(state, run)["r43"]["materialCertificate"]
+    assert facts["domains"] == [] and "r43_source_object_conflict" in facts["sourceIssues"]
