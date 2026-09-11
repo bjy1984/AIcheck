@@ -1012,3 +1012,27 @@ def test_bindings_and_registration_point_at_the_dedicated_tools():
         binding = next(item for item in bindings if item.get("atomicCheckId") == check_id)
         assert tool_name in binding["tools"]
         assert binding["requiredFacts"] == [fact]
+
+
+# ---- 复合节点：合成登记键 vs 运行真实节点号 ----
+
+def test_composite_nodes_read_tables_with_the_runs_real_node_id():
+    """2026-09-11 线上：节点 56 的复核在加载上下文就死，
+    错误码 r561_review_identity_incomplete_or_wrong_node——拿合成键 561 去问
+    read_ndt_tables，而它断言 run["nodeId"] 必须等于传入值。R10/R53/R56 都中招。"""
+    from libs.review_orchestrator.installation_domain_facts import (
+        COMPOSITE_NODE_IDS,
+        build_r10_business_facts,
+        build_r53_business_facts,
+        build_r56_business_facts,
+    )
+    from libs.review_document_scope import freeze_document_scope
+
+    assert COMPOSITE_NODE_IDS == {101: 10, 102: 10, 103: 10, 530: 53, 561: 56, 562: 56}
+    state = {"documents": [], "versions": [], "ocr_parse_results": []}
+    for node_id, build in ((10, build_r10_business_facts), (53, build_r53_business_facts),
+                           (56, build_r56_business_facts)):
+        run = {"projectId": "P1", "tenantId": "T1", "nodeId": node_id, "inputDocumentVersionIds": []}
+        run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+        facts = build(state, run)  # 不再抛 ValueError
+        assert facts, node_id

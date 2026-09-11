@@ -10,6 +10,15 @@ from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.source_coverage import selected_source_issues
 from libs.review_tools.installation_domain_rules import SCOPE_FIELDS, frozen_installation_rules
 
+# 复合节点：一个业务节点有多个原子项时，登记本用合成键区分（节点 10 → 101/102/103，
+# 53 → 53/530，56 → 561/562）。合成键只是登记本的索引，**不是审查运行的节点号**。
+COMPOSITE_NODE_IDS = {101: 10, 102: 10, 103: 10, 530: 53, 561: 56, 562: 56}
+
+
+def _review_node_id(node_id: int) -> int:
+    return COMPOSITE_NODE_IDS.get(node_id, node_id)
+
+
 _NODES = {
     101: ("r10_standard_adoption_domains", "alternativeStandardAdoption", "evaluate_r10_standard_adoption", "r10"),
     103: ("r10_compliance_declaration_domains", "complianceDeclaration", "evaluate_r10_compliance_declaration", "r10"),
@@ -35,8 +44,14 @@ _NODES = {
 
 def _build(node_id, state, run):
     table_name, fact_key, tool_name, namespace = _NODES[node_id]
-    issues = selected_source_issues(state, run, node_id=node_id)
-    rows = read_ndt_tables(state, run, {table_name: "domains"}, node_id=node_id)["domains"]
+    # 取表要用**运行真正的节点号**：read_ndt_tables 会断言 run["nodeId"] 等于传入值，
+    # 拿合成键去问就是 56 != 561，整次审查在加载上下文这一步就抛
+    # r561_review_identity_incomplete_or_wrong_node（2026-09-11 节点 56 线上实测，
+    # REVIEW_WORKFLOW_FAILED）。此前只有单原子项的节点被真正执行过，合成键那几条
+    # ——R10、R53、R56——一跑就死，而单元测试把 run["nodeId"] 直接设成合成键，测不出来。
+    review_node_id = _review_node_id(node_id)
+    issues = selected_source_issues(state, run, node_id=review_node_id)
+    rows = read_ndt_tables(state, run, {table_name: "domains"}, node_id=review_node_id)["domains"]
     scope = None
     domains = []
     for row in rows:
@@ -50,7 +65,7 @@ def _build(node_id, state, run):
         # agent 读正文得出的判断（若有）并进来；表格里已有的值不被覆盖。
         # 这些判断是此前记进 state 的证据，不是这里现调模型——事实构建保持离线。
         domains.append(merge_judgment(deepcopy(row), judgment_for(
-            state, project_id=run.get("projectId"), node_id=node_id, domain=fact_key,
+            state, project_id=run.get("projectId"), node_id=review_node_id, domain=fact_key,
             object_id=row.get("objectId"), record_version_id=row.get("recordVersionId"),
         )))
     return {namespace: {fact_key: {"projectId": run["projectId"], "scope": deepcopy(scope), "domains": domains,
