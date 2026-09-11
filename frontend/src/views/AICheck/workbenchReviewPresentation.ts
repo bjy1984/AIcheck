@@ -1,6 +1,6 @@
 import type { AiReviewRun, InspectionAuditItem, NodePackagePayload } from '@/types/aicheck'
 
-import { friendlyEvidenceIssue } from './components/auditLabels'
+import { friendlyEvidenceIssue, friendlyModelAlias } from './components/auditLabels'
 
 export const workbenchReviewSectionOrder = ['ai_review', 'human_review'] as const
 
@@ -760,7 +760,9 @@ export const selectWorkbenchAiPresentation = ({
       : (nodeFindings.length ? String(nodeRun.suggestion?.opinionDraft || '') : nodeOutputText) ||
         String(nodeRun.suggestion?.opinionDraft || '') ||
         '当前节点暂无结果说明。',
-    meta: [nodeRun.model, nodeRun.finishedAt || nodeRun.id].filter(Boolean).join(' · '),
+    meta: [friendlyModelAlias(nodeRun.model), nodeRun.finishedAt || nodeRun.id]
+      .filter(Boolean)
+      .join(' · '),
     findings: nodeFindings,
     certificateVerification: workbenchCertificateVerification(
       (nodeRun as unknown as Record<string, unknown>).certificateVerification

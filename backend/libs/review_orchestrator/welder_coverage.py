@@ -199,3 +199,40 @@ def combine(outcomes: list[str]) -> str:
     if UNDECIDABLE in outcomes:
         return UNDECIDABLE
     return COVERED
+
+
+# 表 A-1 焊接方法、表 A-4 位置、表 A-3 填充金属的合法代号。
+# 解码只校形状不校内容时，OCR 把 GTAW 认成 CTAF、SMAW 认成 SHAV、Fef3J 认成 FefBJ，
+# `decode_welder_qualification` 照样报「全部解码成功」——2026-09-11 生产实测，
+# 五个项目的合格项目代号全是这种串，判定却是 passed。假通过比不判更贵。
+KNOWN_WELDING_METHODS = frozenset(
+    {"SMAW", "OFW", "GTAW", "GMAW", "FCAW", "SAW", "ESW", "PAW", "EGW", "FRW", "SW"}
+)
+KNOWN_FILLER_METALS = frozenset(FILLER_COVERAGE_2026)
+KNOWN_POSITIONS = frozenset(
+    {
+        # 板对接 / 板角焊
+        "1G", "2G", "3G", "4G", "1F", "2F", "3F", "4F",
+        # 管对接（X = 向下焊）/ 管角焊 / 管板 / 螺柱
+        "5G", "5GX", "6G", "6GX", "3GX",
+        "2FR", "5F", "2FRG", "2FG", "4FG", "5FG", "6FG",
+        "1S", "2S", "4S",
+    }
+)
+KNOWN_MATERIAL_PREFIXES = ("FE", "CU", "NI", "AL", "TI", "ZR")
+
+
+def unknown_code_segments(decoded: dict[str, Any]) -> list[str]:
+    """返回代号里查不到表的段名。空列表表示六段都认得。"""
+    unknown: list[str] = []
+    if str(decoded.get("weldingMethod") or "") not in KNOWN_WELDING_METHODS:
+        unknown.append("weldingMethod")
+    material = str(decoded.get("materialCategory") or "")
+    if not material.startswith(KNOWN_MATERIAL_PREFIXES):
+        unknown.append("materialCategory")
+    if str(decoded.get("position") or "") not in KNOWN_POSITIONS:
+        unknown.append("position")
+    filler = str(decoded.get("fillerMetal") or "")
+    if filler and filler not in KNOWN_FILLER_METALS:
+        unknown.append("fillerMetal")
+    return unknown

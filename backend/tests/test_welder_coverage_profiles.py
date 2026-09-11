@@ -135,3 +135,52 @@ def test_方法变更一律不覆盖_药芯归FCAW():
     cert = _base_qualification(weldingMethod="GMAW")
     assert _outcome(cert, _base_work(weldingMethod="药芯焊丝气体保护焊"), V2026) == welder_coverage.NOT_COVERED
     assert _outcome(cert, _base_work(weldingMethod="熔化极气体保护焊"), V2026) == welder_coverage.COVERED
+
+
+def test_代号只校形状不够_OCR坏码不能报解码成功():
+    """2026-09-11 生产实测：五个项目的合格项目代号全是 OCR 坏串，
+    `decode_welder_qualification` 却一律 passed。
+
+        CTAF-Fe II-6G-3/57-FetS-02/11/12和SHAV-Fe II-6G(K)-9/57-Fet3J
+        SHAW-FeII-SFC-12/19-FefBJ
+        PTAV-FeIV-50-5/57-FefBJ-02/16/12
+
+    CTAF/PTAV/SHAV 不是表 A-1 里的任何方法，FetS/FefBJ 不是表 A-3 里的任何填充金属，
+    SFC 不是表 A-4 里的任何位置。形状完好、内容全错——假通过比不判更贵。
+    """
+    from libs.review_orchestrator.deterministic_tools import decode_welder_code, decode_welder_qualification
+
+    bad = decode_welder_code("CTAF-Fe II-6G-3/57-FetS-02/11/12")
+    assert bad["parseStatus"] == "unsupported"
+    assert bad["reason"] == "code_segments_not_in_profile"
+    assert bad["unknownSegments"] == ["weldingMethod", "fillerMetal"]
+
+    assert decode_welder_code("SHAW-FeII-SFC-12/19-FefBJ")["unknownSegments"] == [
+        "weldingMethod",
+        "position",
+        "fillerMetal",
+    ]
+
+    # 真代号照旧解得出来，(K) 也不算未知位置。
+    assert decode_welder_code("GTAW-FeII-6G-3/57-FefS-02/11/12")["parseStatus"] == "parsed"
+    assert decode_welder_code("SMAW-FeII-6G(K)-9/57-Fef3J")["parseStatus"] == "parsed"
+
+    output = decode_welder_qualification(
+        {"qualificationCodes": ["CTAF-Fe II-6G-3/57-FetS-02/11/12"], "reviewDate": "2026-09-11"}
+    )
+    assert output["result"] == "evidence_insufficient"
+
+
+def test_缺哪边要说出来():
+    """界面只显示「证据不足」而不说缺什么时，监检人员没法知道该补什么。
+    2026-09-11 归因：130 项证据不足里 85 项就是这样变成无法归因的。"""
+    from libs.review_orchestrator.deterministic_tools import check_welder_work_coverage
+
+    no_records = check_welder_work_coverage(
+        {"qualificationCodes": ["GTAW-FeII-6G-3/57-FefS-02/11/12"], "workItems": [], "reviewDate": "2026-09-11"}
+    )
+    assert no_records["result"] == "evidence_insufficient"
+    assert no_records["facts"]["reason"] == "welding_work_records_missing"
+
+    nothing = check_welder_work_coverage({"qualificationCodes": [], "workItems": [], "reviewDate": "2026-09-11"})
+    assert nothing["facts"]["reason"] == "welder_qualifications_and_welding_work_records_missing"

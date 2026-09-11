@@ -203,6 +203,7 @@ type EvidenceConfirmationRow = {
   confidenceText: string
   evidence?: EvidenceLink
 }
+import { friendlyModelAlias } from './components/auditLabels'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
@@ -786,7 +787,7 @@ const aiRecheckOutputMeta = computed(() => {
   if (!run) return actionLoading.value && aiRecheckOutputVisible.value ? '触发中' : '等待触发'
   const executionLabel = aiRecheckIsLocalFallback.value
     ? '本地降级摘要（未调用模型）'
-    : run.model || 'review-chat'
+    : friendlyModelAlias(run.model) || '审查模型'
   return [run.status, executionLabel, run.finishedAt || run.id].filter(Boolean).join(' · ')
 })
 const nodeEvidenceLinks = computed(() => nodePackage.value?.nodeEvidenceLinks || [])

@@ -286,6 +286,25 @@ export const friendlyEvidenceIssue = (value?: string | null) => {
   return code ? evidenceIssueLabels[code] || '' : ''
 }
 
+/**
+ * 模型角色别名。库里存的是路由键（libs/qwen_runtime.MODEL_ROLE_ALIASES），
+ * 界面上直接印「review-chat」对监检人员没有意义。认不出的别名原样显示——
+ * 那多半是环境里换了模型，原样显示比猜一个中文名诚实。
+ */
+export const modelAliasLabels: Record<string, string> = {
+  'review-chat': '审查模型',
+  'project-review-large': '全工程分析模型',
+  'default-chat': '通用模型',
+  'compare-fast': '快速比对模型',
+  'qwen-vision-review': '视觉审查模型',
+  'document-classifier': '资料分类模型'
+}
+
+export const friendlyModelAlias = (value?: string | null) => {
+  const alias = String(value || '').trim()
+  return alias ? modelAliasLabels[alias] || alias : ''
+}
+
 export const fieldLabelMap: Record<string, string> = {
   agentId: 'AI 员工',
   agentSopCount: 'AI 员工 SOP',

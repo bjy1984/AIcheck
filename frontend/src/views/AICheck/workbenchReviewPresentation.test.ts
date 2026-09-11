@@ -621,3 +621,14 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     '「焊接方法」在已提交资料中未找到'
   )
 }
+
+// 模型角色别名是库里的路由键，界面上不该直接印 review-chat。
+{
+  const { friendlyModelAlias } = await import('./components/auditLabels')
+  assert.equal(friendlyModelAlias('review-chat'), '审查模型')
+  assert.equal(friendlyModelAlias('project-review-large'), '全工程分析模型')
+  // 认不出的别名原样显示：多半是环境里换了模型，原样比猜一个中文名诚实。
+  assert.equal(friendlyModelAlias('some-new-model'), 'some-new-model')
+  assert.equal(friendlyModelAlias(''), '')
+  assert.equal(friendlyModelAlias(null), '')
+}

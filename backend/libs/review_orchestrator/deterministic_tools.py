@@ -376,10 +376,17 @@ def check_welder_work_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
     qualifications = [item for item in decoded if item.get("parseStatus", "parsed") == "parsed"]
     work_items = [item for item in arguments.get("workItems") or [] if isinstance(item, dict)]
     if not qualifications or not work_items:
+        # 说清楚缺哪边。原来这里不给 reason，界面上只剩「证据不足」三个字，
+        # 2026-09-11 归因时 130 项里有 85 项就是这么变成无法归因的。
+        missing = []
+        if not qualifications:
+            missing.append("welder_qualifications")
+        if not work_items:
+            missing.append("welding_work_records")
         return result(
             "check_welder_work_coverage",
             "evidence_insufficient",
-            facts={"qualifications": qualifications, "workItems": work_items},
+            facts={"qualifications": qualifications, "workItems": work_items, "reason": "_and_".join(missing) + "_missing"},
             checks=[],
             rule_version=rule_version,
         )
@@ -695,7 +702,7 @@ def decode_welder_code(code: str) -> dict[str, Any]:
     # (K) = 带衬垫（A4.2.5）。原来它留在位置串里，welding_position_code 会把
     # "6G(K)" 碾成 "6GK"，覆盖表查不到 → 带衬垫的证书一律判成不覆盖。
     backing = "(K)" in position_raw or "（K）" in position_raw
-    return {
+    decoded = {
         "code": code,
         "parseStatus": "parsed",
         "weldingMethod": parts[0].upper(),
@@ -709,6 +716,13 @@ def decode_welder_code(code: str) -> dict[str, Any]:
         "fillerMetal": parts[4].upper() if len(parts) > 4 else None,
         "processFactors": [factor.upper() for item in parts[5:] for factor in item.split("/") if factor],
     }
+    # 光看形状不够：OCR 会把 GTAW 读成 CTAF、Fef3J 读成 FefBJ，形状完好、内容全错。
+    unknown = welder_coverage.unknown_code_segments(decoded)
+    if unknown:
+        decoded["parseStatus"] = "unsupported"
+        decoded["reason"] = "code_segments_not_in_profile"
+        decoded["unknownSegments"] = unknown
+    return decoded
 
 
 def qualification_covers_work(qualification: dict[str, Any], work: dict[str, Any], *, rule_version: str = welder_coverage.RULE_VERSION_2026) -> bool:
