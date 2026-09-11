@@ -240,6 +240,52 @@ export const ruleCodeLabels: Record<string, string> = {
   WELDER_CERT_001: '焊工资格证必须上传'
 }
 
+/**
+ * 证据与结构校验的失败码。这些码会以「待核对」的形式直接出现在结论里，
+ * 2026-09-11 生产计数：EVIDENCE_REFS_MISSING 230 次、EVIDENCE_FILE_OUTSIDE_NODE 53 次、
+ * EVIDENCE_QUOTE_NOT_VERBATIM 12 次——监检人员看到的就是这一串英文大写。
+ * 取值来自 libs/project_analysis/validation.py 与 libs/review_grounding.py。
+ */
+export const evidenceIssueLabels: Record<string, string> = {
+  EVIDENCE_FILE_OUTSIDE_NODE: '引用的文件不属于本节点',
+  EVIDENCE_FILE_NOT_IN_CORPUS: '引用的文件不在本次资料范围内',
+  EVIDENCE_METADATA_MISSING: '证据缺少页码或位置信息',
+  EVIDENCE_QUOTE_NOT_VERBATIM: '引用原文与资料不一致',
+  EVIDENCE_REFS_MISSING: '这条结论没有给出证据出处',
+  EVIDENCE_REF_INVALID: '证据引用格式不合法',
+  EVIDENCE_REF_INVALID_TYPE: '证据引用格式不合法',
+  EVIDENCE_REF_LINK_NOT_FOUND: '证据链接已失效',
+  EVIDENCE_REF_CROSS_DOCUMENT: '证据跨到了另一份文件',
+  EVIDENCE_REF_PAGE_INVALID: '证据页码不合法',
+  EVIDENCE_REF_BBOX_INVALID: '证据位置框不合法',
+  EVIDENCE_REF_POSITION_INVALID: '证据位置不合法',
+  FINDING_TYPE_MISSING: '发现缺少类型',
+  FINDING_SEVERITY_INVALID: '发现的严重度取值不合法',
+  FINDING_TITLE_MISSING: '发现缺少标题',
+  FINDING_DESCRIPTION_MISSING: '发现缺少说明',
+  RULE_REF_SOURCE_INVALID: '规则出处不合法',
+  RULE_REF_NOT_VERBATIM: '规则原文与标准不一致',
+  RULE_REF_INVALID_TYPE: '规则引用格式不合法',
+  PURE_LLM_REVIEW_NO_OCR_EVIDENCE: '本次复核没有可引用的 OCR 证据',
+  UNSUPPORTED_CLAIM: '结论没有证据支持',
+  UNSUPPORTED_LLM_CLAIM: '模型结论没有证据支持',
+  INSUFFICIENT_OCR_EVIDENCE: 'OCR 证据不足以支撑自动结论',
+  LOW_CONFIDENCE_OCR_EVIDENCE: 'OCR 证据置信度低',
+  OCR_GROUNDING_DOCUMENT_VERSION_MISSING: '缺少文件版本，无法定位证据',
+  OCR_GROUNDING_TEXT_MISSING: '没有可用的 OCR 文字',
+  OCR_GROUNDING_EVIDENCE_LINK_MISSING: '没有按文件划定的证据链接',
+  OCR_GROUNDING_LOW_CONFIDENCE: 'OCR 识别置信度低',
+  OCR_GROUNDING_POSITION_MISSING: 'OCR 结果缺少位置信息',
+  OCR_GROUNDING_TABLE_CONTENT_MISSING: '表格内容未识别出来',
+  OCR_GROUNDING_SEAL_TEXT_RISK: '印章文字识别存疑',
+  OCR_GROUNDING_QUALITY_FLAGS: 'OCR 质量存在告警'
+}
+
+export const friendlyEvidenceIssue = (value?: string | null) => {
+  const code = String(value || '').trim()
+  return code ? evidenceIssueLabels[code] || '' : ''
+}
+
 export const fieldLabelMap: Record<string, string> = {
   agentId: 'AI 员工',
   agentSopCount: 'AI 员工 SOP',

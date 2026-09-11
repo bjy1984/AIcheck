@@ -1,5 +1,7 @@
 import type { AiReviewRun, InspectionAuditItem, NodePackagePayload } from '@/types/aicheck'
 
+import { friendlyEvidenceIssue } from './components/auditLabels'
+
 export const workbenchReviewSectionOrder = ['ai_review', 'human_review'] as const
 
 export const inspectionReviewDirectoryItems = (items: InspectionAuditItem[]) => {
@@ -333,7 +335,7 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
   const findingType = String(raw.findingType || '')
   return {
     id: String(raw.id || `finding-${index + 1}`),
-    typeLabel: FINDING_TYPE_LABELS[findingType] || findingType || '审查发现',
+    typeLabel: findingTypeLabel(findingType),
     severity,
     severityLabel: SEVERITY_LABELS[severity] || severity,
     title: String(raw.title || ''),
@@ -445,14 +447,75 @@ export const buildWorkbenchAiPresentation = (
 
 // ── P9 R1：结论卡与三组发现（契约见《优化计划-焊接节点》12.3，词表全文唯一） ──────────
 
+/**
+ * findingType 是模型自由填的字符串，不是枚举。2026-09-11 生产统计出 50 多种写法，
+ * 同一个意思有 missing_evidence / evidence_missing / MissingEvidence / 证据缺失 四副面孔。
+ * 所以：先归一化（驼峰转下划线、小写）再查表；中文原样放行；
+ * 查不到的英文 token 退回「审查发现」——界面上印 material_coverage 对监检人员没有任何意义。
+ */
 const FINDING_TYPE_LABELS: Record<string, string> = {
-  missing_evidence: '缺少证据',
+  ai_review_suggestion: 'AI 复核建议',
+  certificate_validity: '证书有效期',
+  data_conflict: '数据冲突',
+  data_quality_issue: '数据质量问题',
+  design_reference: '设计依据',
+  design_requirement: '设计要求',
+  design_requirement_reference: '设计要求依据',
+  document_completeness: '资料完整性',
+  document_exist: '资料已提供',
   evidence_conflict: '证据冲突',
-  qualification_mismatch: '资质不匹配',
+  evidence_gap: '证据缺口',
+  evidence_inconsistency: '证据前后不一致',
+  evidence_insufficient: '证据不足',
+  evidence_missing: '缺少证据',
+  evidence_quality: '证据质量',
+  evidence_quality_issue: '证据质量问题',
   expired_certificate: '证书过期',
-  scope_mismatch: '范围不覆盖',
+  field_low_confidence: '字段识别置信度低',
+  informational: '提示',
+  information_note: '提示',
   inconsistency: '前后不一致',
-  ai_review_suggestion: 'AI 复核建议'
+  insufficient_evidence: '证据不足',
+  license_scope: '许可范围',
+  low_confidence_ocr: 'OCR 置信度低',
+  material_coverage: '母材覆盖范围',
+  merged_findings: '归并的发现',
+  missing_certificate: '缺少证书',
+  missing_document: '缺少资料',
+  missing_evidence: '缺少证据',
+  missing_required_document: '缺少必需资料',
+  missing_required_evidence: '缺少必需证据',
+  missing_required_material: '缺少必需材料',
+  missing_required_record: '缺少必需记录',
+  name_mismatch: '名称不一致',
+  not_applicable: '不适用',
+  observation: '观察项',
+  partial_evidence: '证据不完整',
+  qualification_mismatch: '资质不匹配',
+  rule_passed: '核查通过',
+  scope_mismatch: '范围不覆盖',
+  seal_text_needs_review: '印章文字需复核',
+  seal_verification_issue: '印章核验存疑',
+  standard_version: '标准版本',
+  standard_version_mismatch: '标准版本不一致',
+  unverified_seal: '印章未核验',
+  validity_concern: '有效性存疑'
+}
+
+const HAS_CJK = /[\u4e00-\u9fff]/
+
+/** MissingEvidence → missing_evidence；EVIDENCE_REFS_MISSING → evidence_refs_missing。 */
+const normalizeFindingType = (value: string) =>
+  value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase()
+
+export const findingTypeLabel = (value?: string | null) => {
+  const raw = String(value || '').trim()
+  if (!raw) return '审查发现'
+  if (HAS_CJK.test(raw)) return raw
+  return FINDING_TYPE_LABELS[normalizeFindingType(raw)] || '审查发现'
 }
 
 const SUGGESTED_ACTION_LABELS: Record<string, string> = {
@@ -479,6 +542,11 @@ export const rawUnsupportedClaims = (value: unknown): Array<{ claim: string; rea
 
 /** unsupportedClaims 里的 {claim, reason} → 监检能读的一句"待核对"。 */
 export const describeUnsupportedClaim = (item: { claim: string; reason: string }) => {
+  // claim 多数时候是资料里的一句话（「持证项目」「TS3832083-2026」），但校验层
+  // 也会把失败码塞进来：生产里 EVIDENCE_REFS_MISSING 出现 230 次、
+  // EVIDENCE_FILE_OUTSIDE_NODE 53 次，界面上就直接印英文大写。
+  const coded = friendlyEvidenceIssue(item.claim)
+  if (coded) return coded
   const render = CLAIM_REASON_TEXT[item.reason]
   if (render) return render(item.claim)
   return item.claim === 'positive_business_conclusion'

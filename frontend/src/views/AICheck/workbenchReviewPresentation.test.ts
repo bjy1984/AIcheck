@@ -89,7 +89,7 @@ assert.equal(completed.resultLabel, '部分证据支持')
 assert.equal(completed.findings.length, 1)
 assert.deepEqual(completed.findings[0], {
   id: 'FND-1',
-  typeLabel: 'license_scope',
+  typeLabel: '许可范围',
   severity: 'high',
   severityLabel: '高',
   title: '许可范围需要人工确认',
@@ -578,5 +578,38 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.deepEqual(
     fromNodeRun.checkOutcomes.map((item) => [item.atomicCheckId, item.result]),
     [['AC-R24-01', 'failed']]
+  )
+}
+
+// 界面上不许出现 material_coverage、EVIDENCE_FILE_OUTSIDE_NODE 这种生码。
+{
+  const { findingTypeLabel, describeUnsupportedClaim } = await import(
+    './workbenchReviewPresentation'
+  )
+  // findingType 是模型自由填的：同一个意思生产里有四副面孔。
+  assert.equal(findingTypeLabel('missing_evidence'), '缺少证据')
+  assert.equal(findingTypeLabel('evidence_missing'), '缺少证据')
+  assert.equal(findingTypeLabel('MissingEvidence'), '缺少证据')
+  assert.equal(findingTypeLabel('证据缺失'), '证据缺失')
+  assert.equal(findingTypeLabel('material_coverage'), '母材覆盖范围')
+  assert.equal(findingTypeLabel('standard-version-mismatch'), '标准版本不一致')
+  // 认不出来的英文 token 退回中文通称，不把原码甩到界面上。
+  assert.equal(findingTypeLabel('some_type_nobody_declared'), '审查发现')
+  assert.equal(findingTypeLabel(''), '审查发现')
+  assert.equal(findingTypeLabel(null), '审查发现')
+
+  assert.equal(
+    describeUnsupportedClaim({ claim: 'EVIDENCE_FILE_OUTSIDE_NODE', reason: '' }),
+    '引用的文件不属于本节点'
+  )
+  assert.equal(
+    describeUnsupportedClaim({ claim: 'EVIDENCE_REFS_MISSING', reason: '' }),
+    '这条结论没有给出证据出处'
+  )
+  // 真正的资料原文照旧带出来，不能被当成码吃掉。
+  assert.equal(describeUnsupportedClaim({ claim: '持证项目', reason: '' }), '「持证项目」待核对')
+  assert.equal(
+    describeUnsupportedClaim({ claim: '焊接方法', reason: 'not_present_in_supplied_evidence' }),
+    '「焊接方法」在已提交资料中未找到'
   )
 }
