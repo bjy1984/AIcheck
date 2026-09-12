@@ -217,6 +217,49 @@ const unscoredByFactId = computed(() => {
 })
 
 const nodeUnscoredCount = computed(() => nodeFacts.value.filter((fact) => !fact.scored).length)
+
+/**
+ * 事实按类型归组、每组默认只展开三条。
+ *
+ * 2026-09-13 用户实测节点 26：56 条 `r26-designRequirements-N`，引文是 OCR 把 BOM
+ * 表头读坏后的 `{"BOM A_12": "无缝钢管", "0.275": "0.8M"}`——监检看不懂，也没有一条
+ * 是他要核的东西。同类事实堆在一起只需要说清「有多少条、长什么样」，要逐条看再展开。
+ */
+const FACT_PREVIEW = 3
+const expandedFactGroups = ref<Set<string>>(new Set())
+
+const factGroups = computed(() => {
+  const groups = new Map<string, WorkbenchAiGroundedFact[]>()
+  nodeFacts.value.forEach((fact) => {
+    // 「焊工证 姜军」归到「焊工证」；没有类型名的用 factId 前缀兜底。
+    const key = fact.label.split(' ')[0] || fact.factId.replace(/-\d+$/, '')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)?.push(fact)
+  })
+  return [...groups.entries()].map(([label, facts]) => ({
+    label,
+    facts,
+    // 平台核过、没给分、有值的排前面：要人看的排在前三条里
+    visible: expandedFactGroups.value.has(label)
+      ? facts
+      : [...facts]
+          .sort(
+            (left, right) =>
+              Number(right.platformVerified) - Number(left.platformVerified) ||
+              Number(!right.scored) - Number(!left.scored) ||
+              Number(Boolean(right.value)) - Number(Boolean(left.value))
+          )
+          .slice(0, FACT_PREVIEW),
+    hidden: expandedFactGroups.value.has(label) ? 0 : Math.max(0, facts.length - FACT_PREVIEW)
+  }))
+})
+
+const toggleFactGroup = (label: string) => {
+  const next = new Set(expandedFactGroups.value)
+  if (next.has(label)) next.delete(label)
+  else next.add(label)
+  expandedFactGroups.value = next
+}
 const confirmable = (fact: WorkbenchAiGroundedFact) => unscoredByFactId.value.get(fact.factId)?.fact
 const confirmableOutcome = (fact: WorkbenchAiGroundedFact) =>
   unscoredByFactId.value.get(fact.factId)?.outcome
@@ -409,98 +452,117 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                 其中 {{ nodeUnscoredCount }} 条引擎未给分，核对无误后下次复核即可计分
               </small>
             </div>
-            <ul class="ai-outcome-facts">
-              <li
-                v-for="fact in nodeFacts"
-                :key="fact.factId"
-                :class="{ 'is-platform-verified': fact.platformVerified }"
-              >
-                <div class="ai-outcome-fact-head">
-                  <span class="ai-unscored-fact-label">{{ fact.label }}</span>
-                  <span class="ai-unscored-fact-value">{{ fact.value }}</span>
-                  <!-- 平台核到的那几条要一眼看出来：登记原文比 OCR 可信 -->
-                  <small
-                    v-if="fact.platformVerified"
-                    class="ai-fact-platform"
-                    title="公示平台按证件号查到并与本条一致，有效期与合格项目以登记为准"
-                  >
-                    平台已核验
-                  </small>
-                  <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
-                  <template v-if="!fact.scored && confirmable(fact)">
-                    <template
-                      v-for="field in confirmable(fact)!.fields"
-                      :key="`${field.documentVersionId}:${field.fieldName}`"
+            <template v-for="group in factGroups" :key="group.label">
+              <div v-if="factGroups.length > 1" class="ai-fact-group-head">
+                <strong>{{ group.label }}</strong>
+                <span>{{ group.facts.length }} 条</span>
+              </div>
+              <ul class="ai-outcome-facts">
+                <li
+                  v-for="fact in group.visible"
+                  :key="fact.factId"
+                  :class="{ 'is-platform-verified': fact.platformVerified }"
+                >
+                  <div class="ai-outcome-fact-head">
+                    <span class="ai-unscored-fact-label">{{ fact.label }}</span>
+                    <span class="ai-unscored-fact-value">{{ fact.value }}</span>
+                    <!-- 平台核到的那几条要一眼看出来：登记原文比 OCR 可信 -->
+                    <small
+                      v-if="fact.platformVerified"
+                      class="ai-fact-platform"
+                      title="公示平台按证件号查到并与本条一致，有效期与合格项目以登记为准"
                     >
-                      <small v-if="field.humanCorrected" class="ai-fact-confirmed">
-                        {{ field.fieldName }} 已人工确认
-                      </small>
-                      <small
-                        v-else-if="factConfirmed(fact, field.fieldName)"
-                        class="ai-fact-confirmed"
-                      >
-                        {{ field.fieldName }} 已记录，下次复核生效
-                      </small>
-                      <ElButton
-                        v-else-if="canAct"
-                        size="small"
-                        text
-                        bg
-                        :disabled="acting"
-                        :title="field.quotedText"
-                        @click="
-                          emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, field)
-                        "
-                      >
-                        核对无误：{{ field.fieldName }}
-                      </ElButton>
-                    </template>
-                    <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
-                    <template
-                      v-if="!confirmable(fact)!.fields.length && confirmable(fact)!.factPath"
-                    >
-                      <small v-if="factConfirmed(fact)" class="ai-fact-confirmed">
-                        已记录，下次复核生效
-                      </small>
-                      <ElButton
-                        v-else-if="canAct"
-                        size="small"
-                        text
-                        bg
-                        :disabled="acting"
-                        @click="
-                          emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, null)
-                        "
-                      >
-                        核对无误
-                      </ElButton>
-                    </template>
-                  </template>
-                </div>
-                <ul class="ai-outcome-quotes">
-                  <li v-for="item in fact.evidence" :key="item.evidenceRefId">
-                    <q :title="item.quotedText">{{ item.quotedText }}</q>
-                    <small v-if="item.source === 'cnse_platform'">公示平台登记</small>
-                    <!-- 点文件名打开原件：核对引文得看得到原图，不能只给一行字 -->
-                    <button
-                      v-else-if="item.documentId"
-                      type="button"
-                      class="ai-quote-source"
-                      :title="`打开 ${item.fileName || '原件'}`"
-                      @click="emit('openFile', item.documentId)"
-                    >
-                      {{ item.fileName || '打开原件'
-                      }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
-                    </button>
-                    <small v-else>
-                      {{ item.fileName
-                      }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                      平台已核验
                     </small>
-                    <small v-if="item.humanCorrected">已人工确认</small>
-                  </li>
-                </ul>
-              </li>
-            </ul>
+                    <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
+                    <template v-if="!fact.scored && confirmable(fact)">
+                      <template
+                        v-for="field in confirmable(fact)!.fields"
+                        :key="`${field.documentVersionId}:${field.fieldName}`"
+                      >
+                        <small v-if="field.humanCorrected" class="ai-fact-confirmed">
+                          {{ field.fieldName }} 已人工确认
+                        </small>
+                        <small
+                          v-else-if="factConfirmed(fact, field.fieldName)"
+                          class="ai-fact-confirmed"
+                        >
+                          {{ field.fieldName }} 已记录，下次复核生效
+                        </small>
+                        <ElButton
+                          v-else-if="canAct"
+                          size="small"
+                          text
+                          bg
+                          :disabled="acting"
+                          :title="field.quotedText"
+                          @click="
+                            emit(
+                              'confirmFact',
+                              confirmableOutcome(fact)!,
+                              confirmable(fact)!,
+                              field
+                            )
+                          "
+                        >
+                          核对无误：{{ field.fieldName }}
+                        </ElButton>
+                      </template>
+                      <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
+                      <template
+                        v-if="!confirmable(fact)!.fields.length && confirmable(fact)!.factPath"
+                      >
+                        <small v-if="factConfirmed(fact)" class="ai-fact-confirmed">
+                          已记录，下次复核生效
+                        </small>
+                        <ElButton
+                          v-else-if="canAct"
+                          size="small"
+                          text
+                          bg
+                          :disabled="acting"
+                          @click="
+                            emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, null)
+                          "
+                        >
+                          核对无误
+                        </ElButton>
+                      </template>
+                    </template>
+                  </div>
+                  <ul class="ai-outcome-quotes">
+                    <li v-for="item in fact.evidence" :key="item.evidenceRefId">
+                      <q :title="item.quotedText">{{ item.quotedText }}</q>
+                      <small v-if="item.source === 'cnse_platform'">公示平台登记</small>
+                      <!-- 点文件名打开原件：核对引文得看得到原图，不能只给一行字 -->
+                      <button
+                        v-else-if="item.documentId"
+                        type="button"
+                        class="ai-quote-source"
+                        :title="`打开 ${item.fileName || '原件'}`"
+                        @click="emit('openFile', item.documentId)"
+                      >
+                        {{ item.fileName || '打开原件'
+                        }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                      </button>
+                      <small v-else>
+                        {{ item.fileName
+                        }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                      </small>
+                      <small v-if="item.humanCorrected">已人工确认</small>
+                    </li>
+                  </ul>
+                </li>
+                <li v-if="group.hidden" class="ai-fact-more">
+                  <button type="button" @click="toggleFactGroup(group.label)">
+                    还有 {{ group.hidden }} 条同类记录，展开
+                  </button>
+                </li>
+                <li v-else-if="group.facts.length > FACT_PREVIEW" class="ai-fact-more">
+                  <button type="button" @click="toggleFactGroup(group.label)">收起</button>
+                </li>
+              </ul>
+            </template>
           </div>
         </section>
 
@@ -1207,6 +1269,32 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-fact-unscored {
   color: #b54708;
+}
+
+.ai-fact-group-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-fact-group-head strong {
+  color: #27364b;
+}
+
+.ai-fact-more button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--el-color-primary, #2f6bff);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ai-fact-more button:hover {
+  text-decoration: underline;
 }
 
 .ai-fact-platform {
