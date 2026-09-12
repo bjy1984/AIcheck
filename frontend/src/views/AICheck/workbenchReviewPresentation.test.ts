@@ -438,7 +438,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   })
   assert.equal(allDowngraded.verdict, '证据不足')
   assert.equal(allDowngraded.tone, 'gray')
-  assert.deepEqual(allDowngraded.counts, { needAction: 0, confirm: 0, insufficient: 2 })
+  assert.deepEqual(allDowngraded.counts, { needAction: 0, confirm: 0, insufficient: 2, passed: 0 })
   assert.equal(allDowngraded.insufficientClaims.length, 1)
   assert.equal(allDowngraded.insufficientClaims[0].findingId, 'F1')
   assert.equal(allDowngraded.action, '要求补资料')
@@ -537,14 +537,20 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
         name: '焊接（粘接）工艺文件·WPS/PQR审批与对应',
         result: 'passed',
         ruleCode: undefined,
-        unscoredFacts: []
+        unscoredFacts: [],
+        checks: [],
+        reason: '',
+        facts: []
       },
       {
         atomicCheckId: 'AC-R25-02',
         name: 'AC-R25-02',
         result: 'evidence_insufficient',
         ruleCode: 'r25',
-        unscoredFacts: []
+        unscoredFacts: [],
+        checks: [],
+        reason: '',
+        facts: []
       }
     ]
   )
@@ -718,4 +724,153 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     ]
   })
   assert.deepEqual(second.unscoredFacts, [])
+}
+
+// 通过/不通过/需人工都要列出依据与证据：检查码、原因码翻成人话，引文带文件与页码。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const { friendlyCheckCode, friendlyCheckReason } = await import('./components/auditLabels')
+  const [passed, insufficient] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R01-03',
+        name: '有效期',
+        result: 'passed',
+        checks: [
+          {
+            tool: 'check_certificate_validity',
+            code: 'TS1844171-2028:not_expired_on_reference_date',
+            passed: true,
+            actual: '2028-01-17',
+            expected: '2026-09-12'
+          },
+          {
+            tool: 'check_certificate_validity',
+            code: 'TS1844171-2028:scope_covers_required',
+            passed: false,
+            actual: ['', 'GB1', 'GC1'],
+            expected: ['GC2']
+          }
+        ],
+        reason: '',
+        facts: [
+          {
+            factId: 'certificate-1',
+            label: 'design_license TS1844171-2028',
+            value: 'TS1844171-2028',
+            scored: true,
+            evidence: [
+              {
+                evidenceRefId: 'CERTEV-1',
+                documentVersionId: 'DV-1',
+                fileName: '设计资质.png',
+                pageNo: 1,
+                quotedText: 'TS1844171-2028',
+                source: 'ocr_field',
+                confidence: 0,
+                confidenceUnavailable: true,
+                humanCorrected: false
+              },
+              {
+                evidenceRefId: 'CERTEV-2',
+                documentVersionId: 'DV-1',
+                fileName: '',
+                pageNo: 0,
+                quotedText: '平台登记单位：广东政和工程有限公司',
+                source: 'cnse_platform',
+                confidence: 1,
+                confidenceUnavailable: false,
+                humanCorrected: false
+              },
+              {
+                evidenceRefId: 'CERTEV-3',
+                documentVersionId: 'DV-1',
+                fileName: '',
+                pageNo: null,
+                quotedText: '',
+                source: ''
+              }
+            ]
+          }
+        ]
+      },
+      {
+        atomicCheckId: 'AC-R01-04',
+        name: '范围',
+        result: 'evidence_insufficient',
+        reason: 'required_pipeline_grades_missing'
+      }
+    ]
+  })
+  assert.equal(passed.checks.length, 2)
+  assert.equal(passed.checks[0].label, 'TS1844171-2028：证书在参考日未过期')
+  assert.equal(passed.checks[1].actual, 'GB1、GC1', '空串去掉，数组用顿号')
+  assert.equal(passed.checks[1].expected, 'GC2')
+  assert.equal(passed.reason, '')
+  assert.equal(passed.facts[0].evidence.length, 2, '没有引文也没有文件名的证据不显示')
+  assert.equal(passed.facts[0].evidence[1].source, 'cnse_platform')
+  assert.equal(insufficient.reason, '未抽到管道级别（GC1/GC2…）')
+  assert.deepEqual(insufficient.checks, [])
+  assert.deepEqual(insufficient.facts, [])
+  assert.equal(friendlyCheckReason('checkCount=0'), '规则跑了，但节点没有可检的资料')
+  assert.equal(friendlyCheckReason('foo_bar_missing'), '缺少 foo_bar', '认不出的码按后缀兜底')
+  assert.equal(friendlyCheckCode('scope_covers_GC2'), '许可范围覆盖 GC2')
+  assert.equal(friendlyCheckCode('fact_2_confidence'), '事实 2：置信度达标')
+  assert.equal(friendlyCheckCode('all_values_equal'), '三处单位名一致')
+}
+
+// 符合项要单独成「通过」组并计数：2026-09-12 用户在一键分析节点上看不到任何通过项，
+// 因为 document_exist 这类发现被按严重度塞进了「待确认」。
+{
+  const { buildWorkbenchAiConclusion, workbenchFindingGroup, isPassedFinding } = await import(
+    './workbenchReviewPresentation'
+  )
+  const base = {
+    id: 'F-1',
+    title: '',
+    description: '',
+    severity: 'medium',
+    severityTone: 'orange',
+    severityTag: '',
+    typeLabel: '',
+    evidenceRefs: [],
+    ruleRefs: [],
+    unsupportedClaims: [],
+    groundingStatus: 'supported'
+  }
+  const passed = {
+    ...base,
+    id: 'F-P',
+    title: '设计文件已提供',
+    findingType: 'document_exist'
+  } as never
+  const passedCjk = { ...base, id: 'F-C', title: '资质符合', findingType: '符合要求' } as never
+  const issue = {
+    ...base,
+    id: 'F-I',
+    title: '缺少方案',
+    findingType: 'missing_evidence',
+    severity: 'high'
+  } as never
+  const weak = {
+    ...base,
+    id: 'F-W',
+    title: '已提供',
+    findingType: 'document_exist',
+    groundingStatus: 'insufficient_evidence'
+  } as never
+  assert.equal(isPassedFinding(passed), true)
+  assert.equal(workbenchFindingGroup(passed), 'passed')
+  assert.equal(workbenchFindingGroup(passedCjk), 'passed')
+  assert.equal(workbenchFindingGroup(issue), 'needAction')
+  assert.equal(workbenchFindingGroup(weak), 'insufficient', '证据不足的「符合」不算通过')
+  const onlyPassed = buildWorkbenchAiConclusion({ findings: [passed, passedCjk] })
+  assert.equal(onlyPassed.verdict, '未见问题')
+  assert.equal(onlyPassed.counts.passed, 2)
+  assert.equal(onlyPassed.headline, '2 项核查通过：设计文件已提供')
+  assert.equal(onlyPassed.keyFacts[0].text, '设计文件已提供', '只有通过项时关键事实列通过项')
+  const mixed = buildWorkbenchAiConclusion({ findings: [passed, issue] })
+  assert.equal(mixed.verdict, '需处理')
+  assert.deepEqual(mixed.counts, { needAction: 1, confirm: 0, insufficient: 0, passed: 1 })
+  assert.equal(mixed.keyFacts[0].text, '缺少方案', '有问题时关键事实先列问题')
 }

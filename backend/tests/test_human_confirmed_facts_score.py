@@ -89,3 +89,36 @@ def test_逐项核查结果带出没分的事实和它引用的字段():
     assert unscored[0]["value"] == "TS1844171-2028"
     assert {item["fieldName"] for item in unscored[0]["fields"]} == {"许可证编号", "有效期至"}
     assert all(item["documentVersionId"] == "DV-1" for item in unscored[0]["fields"])
+
+
+def test_通过项也列出判定依据与证据原文():
+    """监检要看见「为什么通过」：业务工具逐条检查 + 事实引用的引文（文件·页·引文）。"""
+    state = _state(corrected=True)
+    state["fact_corrections"].append({
+        "id": "FCOR-2", "status": "active", "projectId": "P-1", "nodeId": 1, "fieldId": "FIELD-DV-1-2",
+        "fieldName": "有效期至", "documentVersionId": "DV-1", "correctedValue": "2028年1月17日",
+    })
+    facts = build_certificate_facts(state, "P-1", 1, ["DV-1"], review_run=_run())
+    grounding = validate_evidence_grounding({"facts": facts["judgment"]["claimedFacts"], "evidenceRefs": facts["judgment"]["evidenceRefs"], "minConfidence": 0.75})
+    assert grounding["result"] == "passed"
+    # 通过也回传事实与证据——原来只在没分时回传。
+    assert grounding["claimedFacts"][0]["scored"] is True
+    quotes = {item["quotedText"] for item in grounding["claimedFacts"][0]["evidence"]}
+    assert "TS1844171-2028" in quotes and all(item["fileName"] == "设计资质.png" and item["pageNo"] == 1 for item in grounding["claimedFacts"][0]["evidence"])
+    business = {"toolName": "check_certificate_validity", "result": "passed", "facts": {},
+                "checks": [{"code": "TS1844171-2028:not_expired_on_reference_date", "passed": True, "actual": "2028-01-17", "expected": "2026-09-12"}]}
+    outcomes = atomic_check_outcomes(
+        [{"reviewRunId": "R", "ruleCode": "r01", "atomicCheckResults": [
+            {"atomicCheckId": "AC-R01-03", "result": "passed", "toolResults": [business, grounding]},
+            {"atomicCheckId": "AC-R01-04", "result": "evidence_insufficient", "toolResults": [
+                {"toolName": "check_design_license_scope", "result": "evidence_insufficient", "facts": {"reason": "required_pipeline_grades_missing"}, "checks": []}, grounding]},
+        ]}],
+        {"businessPackId": "engineering_inspection_v1"},
+    )
+    passed, insufficient = outcomes
+    assert passed["checks"] == [{"tool": "check_certificate_validity", "code": "TS1844171-2028:not_expired_on_reference_date", "passed": True,
+                                 "actual": "2028-01-17", "expected": "2026-09-12", "missing": False}]
+    assert passed["reason"] == "" and passed["unscoredFacts"] == []
+    assert passed["facts"][0]["label"] == "design_license TS1844171-2028" and passed["facts"][0]["scored"] is True
+    assert {item["quotedText"] for item in passed["facts"][0]["evidence"]} >= {"TS1844171-2028"}
+    assert insufficient["reason"] == "required_pipeline_grades_missing" and insufficient["checks"] == []

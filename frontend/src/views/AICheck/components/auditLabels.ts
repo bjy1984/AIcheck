@@ -281,6 +281,92 @@ export const evidenceIssueLabels: Record<string, string> = {
   OCR_GROUNDING_QUALITY_FLAGS: 'OCR 质量存在告警'
 }
 
+/**
+ * 确定性工具报的「为什么不是通过」。取值来自 libs/review_orchestrator/deterministic_tools.py
+ * 各工具 facts.reason 与 aggregate_tool_results；2026-09-12 七项目扫描按出现次数排。
+ * 认不出的码按 `_missing` / `_not_configured` 后缀兜底成中文，再不行原样显示。
+ */
+export const checkReasonLabels: Record<string, string> = {
+  'checkCount=0': '规则跑了，但节点没有可检的资料',
+  provider_confidence_unavailable: '抽取引擎没给置信度，需人工核对引文',
+  requiredFields_not_configured: '规则未配置必填字段清单',
+  sampling_parameters_missing: '缺少抽检比例 / 抽样参数',
+  R19_SEMANTIC_JUDGMENT_MISSING: '需要语义判断，确定性工具不判',
+  validUntil_and_periodStart_and_periodEnd_missing: '缺少证书有效期与施工起止日期',
+  periodStart_and_periodEnd_missing: '项目未填施工起止日期',
+  validUntil_missing: '未抽到证书有效期',
+  r15_design_items_missing: '未抽到设计文件条目',
+  required_signature_roles_missing: '缺少必要签字角色',
+  pwht_weld_items_missing: '未抽到热处理焊口记录',
+  welder_qualifications_and_welding_work_records_missing: '缺少焊工资格与施焊记录',
+  welder_qualifications_missing: '未抽到焊工资格项目',
+  welding_work_records_missing: '缺少施焊记录',
+  required_document_types_missing: '缺少必需的资料类型',
+  condition_missing: '缺少判定条件',
+  required_pipeline_grades_missing: '未抽到管道级别（GC1/GC2…）',
+  fewer_than_two_comparable_values: '可比的值不足两处',
+  no_certificates: '未抽到证书',
+  pipe_fit_up_records_missing: '缺少管道组对记录',
+  welding_records_missing: '缺少焊接记录',
+  repair_occurrence_or_records_missing: '缺少返修发生记录',
+  license_list_not_attempted: '公示平台未取到证书清单',
+  tsg_z6002_2026_effective_profile_not_verified: 'TSG Z6002-2026 生效口径未核',
+  unrecognized_code_shape: '项目代号格式无法识别',
+  coverage_code_not_in_profile: '项目代号不在覆盖表里'
+}
+
+const REASON_SUFFIX_LABELS: Array<[RegExp, (stem: string) => string]> = [
+  [/^(.+)_and_(.+)_missing$/, (stem) => `缺少 ${stem.replace(/_and_/g, '、')}`],
+  [/^(.+)_missing$/, (stem) => `缺少 ${stem}`],
+  [/^(.+)_not_configured$/, (stem) => `未配置 ${stem}`],
+  [/^(.+)_not_verified$/, (stem) => `${stem} 未核验`]
+]
+
+export const friendlyCheckReason = (value?: string | null) => {
+  const code = String(value || '').trim()
+  if (!code) return ''
+  if (checkReasonLabels[code]) return checkReasonLabels[code]
+  for (const [pattern, render] of REASON_SUFFIX_LABELS) {
+    const match = code.match(pattern)
+    if (match) return render(friendlyFieldLabel(match[1]) || match[1])
+  }
+  return code
+}
+
+/**
+ * 逐条检查码 → 人话。码是工具里 check(code, …) 写死的；带证书编号前缀的
+ * （`TS1844171-2028:scope_covers_required`）先剥前缀。
+ */
+export const checkCodeLabels: Record<string, string> = {
+  all_values_equal: '三处单位名一致',
+  not_expired_on_reference_date: '证书在参考日未过期',
+  scope_covers_required: '许可范围覆盖所需级别',
+  valid_from_before_period_start: '生效日早于开工',
+  valid_until_after_period_end: '有效期晚于完工',
+  report_standard_present: '报告写明执行标准',
+  report_result_accepted: '报告结论合格',
+  references_exist: '证据引用存在',
+  locator_complete: '证据定位完整（页码+位置或引文）',
+  confidence: '置信度达标',
+  not_conflicted: '证据无冲突'
+}
+
+export const friendlyCheckCode = (value?: string | null) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const [, prefix, code] = raw.match(/^(.*?):([^:]+)$/) || [null, '', raw]
+  const scope = code.match(/^scope_covers_(.+)$/)
+  const base =
+    checkCodeLabels[code] ||
+    (scope ? `许可范围覆盖 ${scope[1]}` : '') ||
+    code.replace(/^fact_\d+_/, (m) => `事实${m.replace(/\D/g, '')}·`)
+  const factMatch = code.match(/^fact_(\d+)_(.+)$/)
+  const label = factMatch
+    ? `事实 ${factMatch[1]}：${checkCodeLabels[factMatch[2]] || factMatch[2]}`
+    : base
+  return prefix ? `${prefix}：${label}` : label
+}
+
 export const friendlyEvidenceIssue = (value?: string | null) => {
   const code = String(value || '').trim()
   return code ? evidenceIssueLabels[code] || '' : ''

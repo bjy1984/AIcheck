@@ -1,6 +1,11 @@
 import type { AiReviewRun, InspectionAuditItem, NodePackagePayload } from '@/types/aicheck'
 
-import { friendlyEvidenceIssue, friendlyModelAlias } from './components/auditLabels'
+import {
+  friendlyCheckCode,
+  friendlyCheckReason,
+  friendlyEvidenceIssue,
+  friendlyModelAlias
+} from './components/auditLabels'
 
 export const workbenchReviewSectionOrder = ['ai_review', 'human_review'] as const
 
@@ -191,6 +196,40 @@ export type WorkbenchAiUnscoredFact = {
   fields: WorkbenchAiUnscoredField[]
 }
 
+/** 业务工具留下的一条检查：通过否、期望、实际。 */
+export type WorkbenchAiCheckItem = {
+  tool: string
+  code: string
+  label: string
+  passed: boolean
+  expected: string
+  actual: string
+  missing: boolean
+}
+
+/** 一条事实引用的证据原文。 */
+export type WorkbenchAiFactEvidence = {
+  evidenceRefId: string
+  documentVersionId: string
+  fileName: string
+  pageNo: number | null
+  quotedText: string
+  /** cnse_platform：公示平台登记原文；其余为 OCR 抽取。 */
+  source: string
+  confidence: number | null
+  confidenceUnavailable: boolean
+  humanCorrected: boolean
+}
+
+/** 锚定门核过的一条事实，通过项也带。 */
+export type WorkbenchAiGroundedFact = {
+  factId: string
+  label: string
+  value: string
+  scored: boolean
+  evidence: WorkbenchAiFactEvidence[]
+}
+
 export type WorkbenchAiCheckOutcome = {
   atomicCheckId: string
   name: string
@@ -199,6 +238,12 @@ export type WorkbenchAiCheckOutcome = {
   ruleCode?: string
   /** 引擎没给分、等人核的事实，及其引用的抽取字段；核完落成 fact_corrections 下次就有分。 */
   unscoredFacts: WorkbenchAiUnscoredFact[]
+  /** 判定依据：业务工具的逐条检查（通过项也有）。 */
+  checks: WorkbenchAiCheckItem[]
+  /** 为什么不是通过（已翻译）；通过项为空。 */
+  reason: string
+  /** 事实与证据原文，按事实分组。 */
+  facts: WorkbenchAiGroundedFact[]
 }
 
 export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome[] => {
@@ -230,9 +275,54 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
             }))
             .filter((field) => Boolean(field.fieldName))
         }))
+        .filter((fact) => Boolean(fact.factId)),
+      checks: (Array.isArray(row.checks) ? row.checks : [])
+        .map((item) => (item || {}) as Record<string, unknown>)
+        .filter((item) => Boolean(item.code))
+        .map((item) => ({
+          tool: String(item.tool || ''),
+          code: String(item.code),
+          label: friendlyCheckCode(String(item.code)),
+          passed: item.passed === true,
+          expected: checkValueText(item.expected),
+          actual: checkValueText(item.actual),
+          missing: item.missing === true
+        })),
+      reason: friendlyCheckReason(String(row.reason || '')),
+      facts: (Array.isArray(row.facts) ? row.facts : [])
+        .map((fact) => (fact || {}) as Record<string, unknown>)
         .filter((fact) => Boolean(fact.factId))
+        .map((fact) => ({
+          factId: String(fact.factId),
+          label: String(fact.label || fact.factId),
+          value: String(fact.value ?? ''),
+          scored: fact.scored !== false,
+          evidence: (Array.isArray(fact.evidence) ? fact.evidence : [])
+            .map((item) => (item || {}) as Record<string, unknown>)
+            .map((item) => ({
+              evidenceRefId: String(item.evidenceRefId || ''),
+              documentVersionId: String(item.documentVersionId || ''),
+              fileName: String(item.fileName || ''),
+              pageNo: typeof item.pageNo === 'number' ? item.pageNo : null,
+              quotedText: String(item.quotedText || ''),
+              source: String(item.source || ''),
+              confidence: typeof item.confidence === 'number' ? item.confidence : null,
+              confidenceUnavailable: item.confidenceUnavailable === true,
+              humanCorrected: item.humanCorrected === true
+            }))
+            .filter((item) => item.quotedText || item.fileName)
+        }))
     }))
     .filter((row) => Boolean(row.atomicCheckId))
+}
+
+/** 期望/实际值成人话：数组去空、逗号连；对象不展开（界面上没意义）。 */
+const checkValueText = (value: unknown): string => {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value)) return value.map(checkValueText).filter(Boolean).join('、')
+  if (typeof value === 'object') return ''
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  return String(value)
 }
 
 export const CHECK_OUTCOME_LABELS: Record<string, string> = {
@@ -611,7 +701,7 @@ export const describeUnsupportedClaim = (item: { claim: string; reason: string }
 
 export type WorkbenchAiVerdict = '需处理' | '待确认' | '证据不足' | '未见问题'
 export type WorkbenchAiAction = '发联络单' | '要求补资料' | '现场核对原件' | '平台核验' | '人工确认'
-export type WorkbenchAiFindingGroupKey = 'needAction' | 'confirm' | 'insufficient'
+export type WorkbenchAiFindingGroupKey = 'needAction' | 'confirm' | 'insufficient' | 'passed'
 
 export type WorkbenchAiConclusion = {
   verdict: WorkbenchAiVerdict
@@ -644,9 +734,44 @@ const isInsufficient = (finding: WorkbenchAiFinding) =>
   (finding.unsupportedClaims?.length ?? 0) > 0 ||
   finding.title.startsWith('证据不足，需人工确认')
 
-/** 状态映射表 12.3：通过守卫且 critical/high → 需处理；其余通过守卫 → 待确认；降级 → 证据不足。 */
+/**
+ * 模型写的「符合项」类型。2026-09-12 生产统计：document_exist 17、requirement_exist 3、
+ * rule_passed / compliant 若干——它们是「查到了、符合」，原来按严重度落进「待确认」，
+ * 监检看不见任何通过项（用户 2026-09-12 反馈）。类型是模型自由填的，所以既认英文也认中文。
+ */
+const PASSED_FINDING_TYPES = new Set([
+  'document_exist',
+  'documents_exist',
+  'requirement_exist',
+  'requirement_met',
+  'requirement_satisfied',
+  'rule_passed',
+  'check_passed',
+  'passed',
+  'compliant',
+  'compliance',
+  'supported',
+  'evidence_supported',
+  'verified',
+  '符合',
+  '符合要求',
+  '满足要求',
+  '已提供',
+  '资料已提供',
+  '核查通过',
+  '通过'
+])
+
+export const isPassedFinding = (finding: WorkbenchAiFinding) => {
+  const raw = String(finding.findingType || '').trim()
+  if (!raw) return false
+  return PASSED_FINDING_TYPES.has(HAS_CJK.test(raw) ? raw : normalizeFindingType(raw))
+}
+
+/** 状态映射表 12.3：通过守卫且 critical/high → 需处理；其余通过守卫 → 待确认；降级 → 证据不足；符合项 → 通过。 */
 export const workbenchFindingGroup = (finding: WorkbenchAiFinding): WorkbenchAiFindingGroupKey => {
   if (isInsufficient(finding)) return 'insufficient'
+  if (isPassedFinding(finding)) return 'passed'
   if (finding.severity === 'critical' || finding.severity === 'high') return 'needAction'
   return 'confirm'
 }
@@ -693,7 +818,12 @@ export const buildWorkbenchAiConclusion = ({
   deterministicResult?: string | null
 }): WorkbenchAiConclusion => {
   const deterministic = String(deterministicResult || '').toLowerCase()
-  const groups: WorkbenchAiConclusion['groups'] = { needAction: [], confirm: [], insufficient: [] }
+  const groups: WorkbenchAiConclusion['groups'] = {
+    needAction: [],
+    confirm: [],
+    insufficient: [],
+    passed: []
+  }
   findings.forEach((finding) => groups[workbenchFindingGroup(finding)].push(finding))
   const seen = new Map<string, { text: string; claim: string; findingId: string }>()
   groups.insufficient.forEach((finding) => {
@@ -712,13 +842,15 @@ export const buildWorkbenchAiConclusion = ({
   const counts = {
     needAction: groups.needAction.length,
     confirm: groups.confirm.length,
-    insufficient: groups.insufficient.length
+    insufficient: groups.insufficient.length,
+    passed: groups.passed.length
   }
   let verdict: WorkbenchAiVerdict
   if (deterministic === 'failed' || counts.needAction) verdict = '需处理'
   else if (counts.confirm) verdict = '待确认'
   else if (counts.insufficient || deterministic === 'evidence_insufficient') verdict = '证据不足'
   else if (deterministic === 'passed' || deterministic === 'not_applicable') verdict = '未见问题'
+  else if (counts.passed) verdict = '未见问题'
   else verdict = '证据不足'
 
   const first = groups.needAction[0] || groups.confirm[0]
@@ -735,11 +867,18 @@ export const buildWorkbenchAiConclusion = ({
       : deterministic === 'evidence_insufficient'
         ? '确定性核验证据不足，请补充资料后复核'
         : 'AI 未形成任何发现，也无确定性核验结果'
+  } else if (counts.passed && deterministic !== 'passed' && deterministic !== 'not_applicable') {
+    headline = compact(`${counts.passed} 项核查通过：${groups.passed[0]?.title || ''}`)
   } else {
     headline =
       deterministic === 'not_applicable' ? '规则不适用，AI 未见问题' : '确定性核验通过，AI 未见问题'
   }
-  const keyFacts = [...groups.needAction, ...groups.confirm].slice(0, 3).map((finding) => ({
+  // 关键事实：问题优先；只有通过项时列通过项，卡片才不至于一片空白。
+  const keySource =
+    groups.needAction.length || groups.confirm.length
+      ? [...groups.needAction, ...groups.confirm]
+      : groups.passed
+  const keyFacts = keySource.slice(0, 3).map((finding) => ({
     text: compact(finding.title || finding.description),
     location: findingLocation(finding)
   }))

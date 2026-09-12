@@ -214,9 +214,76 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     # 只挂在「需人工判断」上：grounding 的结果对同一节点的每个原子项都一样，
                     # 挂满五项就是同两条事实列五遍；而人工确认只在这一种结论上能改判。
                     "unscoredFacts": _unscored_facts(atomic) if str(atomic.get("result") or "") == "human_review_required" else [],
+                    # 通过/不通过/需人工都要看得见依据：业务工具的逐条检查、不足原因、
+                    # 以及事实引用的证据原文（文件·页·引文·来源）。
+                    "checks": _business_checks(atomic),
+                    "reason": _outcome_reason(atomic),
+                    "facts": _grounded_facts(atomic),
                 }
             )
     return outcomes
+
+
+_EVIDENCE_TOOLS = frozenset({"validate_evidence_grounding", "extract_document_fields", "extract_table_records", "locate_evidence_fragment"})
+
+
+def _business_checks(atomic: dict[str, Any]) -> list[dict[str, Any]]:
+    """业务工具（不含取证/锚定工具）留下的逐条检查：code / 通过否 / 期望 / 实际。"""
+    output: list[dict[str, Any]] = []
+    for tool in atomic.get("toolResults") or []:
+        if not isinstance(tool, dict) or tool.get("toolName") in _EVIDENCE_TOOLS:
+            continue
+        for item in tool.get("checks") or []:
+            if not isinstance(item, dict) or not item.get("code"):
+                continue
+            output.append(
+                {
+                    "tool": str(tool.get("toolName") or ""),
+                    "code": str(item.get("code")),
+                    "passed": item.get("passed") is True,
+                    "expected": item.get("expected"),
+                    "actual": item.get("actual"),
+                    "missing": item.get("missing") is True,
+                }
+            )
+    return output
+
+
+def _outcome_reason(atomic: dict[str, Any]) -> str:
+    """这一项为什么不是通过：先看业务工具报的不足原因，再看锚定门的原因。"""
+    grounding_reason = ""
+    for tool in atomic.get("toolResults") or []:
+        if not isinstance(tool, dict):
+            continue
+        facts = tool.get("facts") if isinstance(tool.get("facts"), dict) else {}
+        reason = str(facts.get("reason") or "")
+        if not reason:
+            continue
+        if tool.get("toolName") == "validate_evidence_grounding":
+            grounding_reason = reason
+        elif tool.get("result") in {"evidence_insufficient", "failed", "human_review_required"}:
+            return reason
+    return grounding_reason
+
+
+def _grounded_facts(atomic: dict[str, Any]) -> list[dict[str, Any]]:
+    """锚定门核过的每条事实及其证据原文——通过项也列，监检要能看见依据。"""
+    for tool in atomic.get("toolResults") or []:
+        if not isinstance(tool, dict) or tool.get("toolName") != "validate_evidence_grounding":
+            continue
+        claimed = tool.get("claimedFacts") if isinstance(tool.get("claimedFacts"), list) else []
+        return [
+            {
+                "factId": fact.get("factId"),
+                "label": fact.get("label") or fact.get("factId"),
+                "value": fact.get("value"),
+                "scored": fact.get("scored") is not False,
+                "evidence": [item for item in fact.get("evidence") or [] if isinstance(item, dict)],
+            }
+            for fact in claimed
+            if isinstance(fact, dict)
+        ]
+    return []
 
 
 def _atomic_check_names(business_pack_id: str) -> dict[str, str]:

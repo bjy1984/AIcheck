@@ -61,11 +61,12 @@ const conclusion = computed(() =>
 
 const GROUP_META: Record<
   WorkbenchAiFindingGroupKey,
-  { title: string; hint: string; tone: 'red' | 'orange' | 'gray' }
+  { title: string; hint: string; tone: 'red' | 'orange' | 'gray' | 'green' }
 > = {
   needAction: { title: '需处理', hint: '通过证据核对，严重度高', tone: 'red' },
   confirm: { title: '待确认', hint: '通过证据核对，需人工判断', tone: 'orange' },
-  insufficient: { title: '证据不足', hint: '模型结论未获证据支持，已折叠', tone: 'gray' }
+  insufficient: { title: '证据不足', hint: '模型结论未获证据支持，已折叠', tone: 'gray' },
+  passed: { title: '通过', hint: '查到了、符合要求；证据在下方，仍需人工确认', tone: 'green' }
 }
 
 const displayGroup = (key: WorkbenchAiFindingGroupKey) =>
@@ -87,6 +88,13 @@ const displayGroup = (key: WorkbenchAiFindingGroupKey) =>
 const needActionFindings = computed(() => displayGroup('needAction'))
 const confirmFindings = computed(() => displayGroup('confirm'))
 const insufficientFindings = computed(() => displayGroup('insufficient'))
+const passedFindings = computed(() => displayGroup('passed'))
+const groupFindings = (key: 'needAction' | 'confirm' | 'passed') =>
+  key === 'needAction'
+    ? needActionFindings.value
+    : key === 'confirm'
+      ? confirmFindings.value
+      : passedFindings.value
 
 /** 只有当前面板还没形成结论卡（旧路径：自由文本解析）时，才退回平铺列表。 */
 const flatFindings = computed(() =>
@@ -241,6 +249,10 @@ const ruleLabel = (rule: Record<string, unknown>) =>
               <dt>证据不足</dt>
               <dd>{{ conclusion.counts.insufficient }}</dd>
             </div>
+            <div class="is-green">
+              <dt>通过</dt>
+              <dd>{{ conclusion.counts.passed }}</dd>
+            </div>
           </dl>
           <ul v-if="conclusion.keyFacts.length" class="ai-conclusion-facts">
             <li v-for="(fact, index) in conclusion.keyFacts" :key="index">
@@ -285,6 +297,53 @@ const ruleLabel = (rule: Record<string, unknown>) =>
               </AuditStatusTag>
               <span>{{ outcome.name }}</span>
               <small>{{ outcome.atomicCheckId }}</small>
+              <!-- 依据与证据：通过/不通过/需人工都列，监检才能核对而不是只看一个标签 -->
+              <div
+                v-if="outcome.reason || outcome.checks.length || outcome.facts.length"
+                class="ai-outcome-basis"
+              >
+                <p v-if="outcome.reason" class="ai-outcome-reason">
+                  <span>原因</span>{{ outcome.reason }}
+                </p>
+                <ul v-if="outcome.checks.length" class="ai-outcome-checks" aria-label="判定依据">
+                  <li v-for="check in outcome.checks" :key="`${check.tool}:${check.code}`">
+                    <i
+                      :class="['ai-check-mark', check.passed ? 'is-pass' : 'is-fail']"
+                      aria-hidden="true"
+                    >
+                      {{ check.passed ? '✓' : check.missing ? '－' : '✗' }}
+                    </i>
+                    <span class="ai-check-label">{{ check.label }}</span>
+                    <small v-if="check.actual || check.expected">
+                      <template v-if="check.actual">实际 {{ check.actual }}</template>
+                      <template v-if="check.actual && check.expected"> · </template>
+                      <template v-if="check.expected">要求 {{ check.expected }}</template>
+                    </small>
+                  </li>
+                </ul>
+                <ul v-if="outcome.facts.length" class="ai-outcome-facts" aria-label="证据">
+                  <li v-for="fact in outcome.facts" :key="fact.factId">
+                    <div class="ai-outcome-fact-head">
+                      <span class="ai-unscored-fact-label">{{ fact.label }}</span>
+                      <span class="ai-unscored-fact-value">{{ fact.value }}</span>
+                      <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
+                    </div>
+                    <ul class="ai-outcome-quotes">
+                      <li v-for="item in fact.evidence" :key="item.evidenceRefId">
+                        <q>{{ item.quotedText }}</q>
+                        <small>
+                          <template v-if="item.source === 'cnse_platform'">公示平台登记</template>
+                          <template v-else>
+                            {{ item.fileName
+                            }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                          </template>
+                          <template v-if="item.humanCorrected"> · 已人工确认</template>
+                        </small>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
               <!-- 引擎没给分的事实：人核一条落一条，核完的字段下次跑就是 1.0 -->
               <ul v-if="outcome.unscoredFacts.length" class="ai-unscored-facts">
                 <li v-for="fact in outcome.unscoredFacts" :key="fact.factId">
@@ -330,27 +389,23 @@ const ruleLabel = (rule: Record<string, unknown>) =>
           :verification="presentation.certificateVerification"
         />
 
-        <!-- 三组发现：需处理 → 待确认 → 证据不足（折叠） -->
+        <!-- 四组发现：需处理 → 待确认 → 通过 → 证据不足（折叠）。通过的也列全证据，监检才核得了 -->
         <template v-if="conclusion && presentation.findings.length">
           <div
-            v-for="groupKey in ['needAction', 'confirm'] as const"
+            v-for="groupKey in ['needAction', 'confirm', 'passed'] as const"
             :key="groupKey"
-            v-show="(groupKey === 'needAction' ? needActionFindings : confirmFindings).length"
+            v-show="groupFindings(groupKey).length"
             class="ai-result-findings"
           >
             <div class="ai-result-findings-head">
               <AuditStatusTag :tone="GROUP_META[groupKey].tone" round>
                 {{ GROUP_META[groupKey].title }}
               </AuditStatusTag>
-              <span>
-                {{ (groupKey === 'needAction' ? needActionFindings : confirmFindings).length }} 条
-              </span>
+              <span>{{ groupFindings(groupKey).length }} 条</span>
               <small>{{ GROUP_META[groupKey].hint }}</small>
             </div>
             <article
-              v-for="(finding, findingIndex) in groupKey === 'needAction'
-                ? needActionFindings
-                : confirmFindings"
+              v-for="(finding, findingIndex) in groupFindings(groupKey)"
               :key="finding.id"
               :class="['ai-finding', `is-${finding.severityTone}`]"
             >
@@ -824,6 +879,10 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   color: var(--aicheck-warning, #b45309);
 }
 
+.ai-conclusion-counts > .is-green dd {
+  color: #1a7f4b;
+}
+
 .ai-conclusion-counts > .is-gray dd {
   color: var(--aicheck-text-subtle, #667085);
 }
@@ -939,6 +998,96 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 .ai-check-outcomes li > small {
   color: var(--aicheck-text-subtle, #667085);
   font-variant-numeric: tabular-nums;
+}
+
+.ai-outcome-basis {
+  display: grid;
+  flex-basis: 100%;
+  padding: 2px 0 0 22px;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ai-outcome-reason {
+  margin: 0;
+  color: #27364b;
+}
+
+.ai-outcome-reason > span {
+  margin-right: 6px;
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-outcome-checks,
+.ai-outcome-facts,
+.ai-outcome-quotes {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  gap: 2px;
+}
+
+.ai-outcome-checks li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ai-check-mark {
+  width: 14px;
+  font-style: normal;
+  font-weight: 600;
+  text-align: center;
+}
+
+.ai-check-mark.is-pass {
+  color: #1a7f4b;
+}
+
+.ai-check-mark.is-fail {
+  color: #b42318;
+}
+
+.ai-outcome-checks small,
+.ai-outcome-quotes small {
+  color: var(--aicheck-text-subtle, #667085);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-outcome-fact-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.ai-fact-unscored {
+  color: #b54708;
+}
+
+.ai-outcome-quotes {
+  padding-left: 12px;
+  border-left: 2px solid #e6edf7;
+}
+
+.ai-outcome-quotes li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ai-outcome-quotes q {
+  quotes: '「' '」';
+  overflow-wrap: anywhere;
+  color: #27364b;
 }
 
 .ai-unscored-facts {

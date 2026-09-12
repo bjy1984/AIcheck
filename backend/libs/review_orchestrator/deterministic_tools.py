@@ -731,12 +731,32 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
         checks=checks,
         output_schema="evidence-gate-result-v1",
     )
-    # 没分的事实要能在界面上被人核：把它们（只带标识与字段清单，不带整段证据）回传。
-    if unscored:
-        output["claimedFacts"] = [
-            {key: fact.get(key) for key in ("factId", "label", "value", "documentVersionId", "fields") if key in fact}
-            for fact in facts
-        ]
+    # 每条事实连同它引用的证据回传：界面要把通过/不通过/需人工的依据都列出来，
+    # 不只是没分的那几条。证据只带定位与引文（文件、页、引文、来源、分数），不带整段 OCR。
+    refs_by_id = {str(item.get("evidenceRefId") or item.get("id")): item for item in refs}
+    output["claimedFacts"] = [
+        {
+            **{key: fact.get(key) for key in ("factId", "label", "value", "documentVersionId", "factPath", "fields") if key in fact},
+            "scored": index not in unscored,
+            "evidence": [
+                {
+                    "evidenceRefId": ref_id,
+                    "documentVersionId": ref.get("documentVersionId"),
+                    "fileName": ref.get("fileName"),
+                    "pageNo": ref.get("pageNo"),
+                    "quotedText": ref.get("quotedText"),
+                    "source": ref.get("source"),
+                    "confidence": ref.get("confidence"),
+                    "confidenceUnavailable": bool(ref.get("confidenceUnavailable")),
+                    "humanCorrected": bool(ref.get("humanCorrected")),
+                }
+                for ref_id in (str(item) for item in fact.get("evidenceRefIds") or [])
+                for ref in (refs_by_id.get(ref_id),)
+                if ref is not None
+            ],
+        }
+        for index, fact in enumerate(facts, 1)
+    ]
     return output
 
 
