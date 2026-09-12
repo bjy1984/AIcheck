@@ -1483,7 +1483,14 @@ const nodeRequirementRows = computed<NodeRequirementDisplayRow[]>(() => {
   return requirements.map((requirement, index) => ({
     id: requirement.id || `${requirement.nodeId}-${index}`,
     rowNo: index + 1,
-    name: requirement.name,
+    // 后端返回的是 fileContent / materialTypeName（审查点配置里的资料名），没有 name 字段。
+    // 原来直接取 name，整列都是空的——那张表锁在「资料提交」项下没人看见，所以一直没暴露。
+    name:
+      requirement.name ||
+      requirement.fileContent ||
+      requirement.materialTypeName ||
+      requirement.materialTypeCode ||
+      '未命名资料',
     requiredType: requirement.requiredType,
     materialType: requirement.materialTypeCode
       ? overviewFileMaterialTypeLabels[requirement.materialTypeCode] || requirement.materialTypeCode
