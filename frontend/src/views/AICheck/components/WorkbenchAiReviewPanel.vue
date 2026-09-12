@@ -38,6 +38,8 @@ const emit = defineEmits<{
   claimSupported: [finding: WorkbenchAiFinding, claim: string]
   supplementFinding: []
   returnCorrection: [finding: WorkbenchAiFinding]
+  /** 逐项核查为空时的出口：一键分析不跑确定性核查，得让人在这里直接发起节点复核。 */
+  startNodeReview: []
   /** 逐项核查里「核对无误」：把引擎没给分的字段落成人工确认，下次跑就有分。 */
   confirmFact: [
     outcome: WorkbenchAiCheckOutcome,
@@ -326,8 +328,19 @@ const ruleLabel = (rule: Record<string, unknown>) =>
               {{ checkOutcomeTally.map((item) => `${item.label} ${item.count}`).join('、') }}
             </small>
             <small v-else>
-              本次运行没有留下逐项核查记录（一键分析不执行确定性核查，需要逐项结论请发起节点复核）。
+              本次运行没有留下逐项核查记录：一键分析只让模型通读资料，不执行确定性核查。
             </small>
+            <ElButton
+              v-if="!sortedCheckOutcomes.length && canAct"
+              size="small"
+              type="primary"
+              text
+              bg
+              :disabled="acting"
+              @click="emit('startNodeReview')"
+            >
+              发起节点复核
+            </ElButton>
           </div>
           <ul v-if="sortedCheckOutcomes.length">
             <li v-for="outcome in sortedCheckOutcomes" :key="outcome.atomicCheckId">

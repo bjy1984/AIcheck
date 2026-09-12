@@ -233,6 +233,7 @@ import ReportArchivePanel from './components/ReportArchivePanel.vue'
 import ReportDetailDrawer from './components/ReportDetailDrawer.vue'
 import ReviewDecisionPanel from './components/ReviewDecisionPanel.vue'
 import WorkbenchAiReviewPanel from './components/WorkbenchAiReviewPanel.vue'
+import WorkbenchNodeMaterialsCard from './components/WorkbenchNodeMaterialsCard.vue'
 import { useWorkbenchReviewActions } from './useWorkbenchReviewActions'
 import { AI_RESULT_TO_OPINION, useAiFindingFeedback } from './aiFindingFeedback'
 import RoleContextPanel from './components/RoleContextPanel.vue'
@@ -4204,6 +4205,14 @@ const { batchRecheckLoading, batchRecheckResult, handleAiRecheckBatch } = useBat
   onFinished: () => loadProjectBundle()
 })
 
+/** 资料明细在「资料提交」审计项下；节点页目录只留了 AI/人工两项，这里直接切过去。 */
+const openNodeMaterialsDetail = () => {
+  activeInspectionAuditItem.value = 'submission'
+  nextTick(() => {
+    document.getElementById('inspection-node-requirements')?.scrollIntoView({ block: 'start' })
+  })
+}
+
 const handleAiRecheck = async () => {
   if (!ensureWritableNode()) return
   if (aiRecheckDisabledReason.value) {
@@ -5872,6 +5881,18 @@ onBeforeUnmount(() => {
               @file-delete="handleDeleteProjectFile"
             />
 
+            <WorkbenchNodeMaterialsCard
+              v-if="
+                role === 'inspection' &&
+                activeWorkbenchSection === 'node' &&
+                !inspectionNodeUnselected
+              "
+              :rows="nodeRequirementRows"
+              :satisfied-count="evidenceReadiness?.satisfiedCount"
+              :missing-count="evidenceReadiness?.missingCount"
+              @open-materials="openNodeMaterialsDetail"
+            />
+
             <WorkbenchAiReviewPanel
               v-if="
                 role === 'inspection' &&
@@ -5887,6 +5908,7 @@ onBeforeUnmount(() => {
               @finding-decision="handleAiFindingDecision"
               @claim-supported="handleAiClaimSupported"
               @confirm-fact="handleAiConfirmFact"
+              @start-node-review="handleAiRecheck"
               @supplement-finding="handleAiSupplementFinding"
               @return-correction="handleReturnCorrectionFromFinding"
             />
