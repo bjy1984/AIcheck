@@ -101,7 +101,10 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     if node == "r34":
         facts["hardnessReports"] = _group_hardness_reports(facts["hardnessReports"])
     if node == "r24":
-        facts["certificates"] = _merge_welder_certificates(facts["certificates"])
+        # 原地改：evidence_groups 里存的是这个列表对象本身（judgment 就是从它建的），
+        # 重新赋值只会换掉 facts 里的引用，judgment 仍然拿的是没合并的那份
+        # ——2026-09-12 部署后实测：界面上「焊工证 李卫伍」还是三条。
+        facts["certificates"][:] = _merge_welder_certificates(facts["certificates"])
         _overlay_platform_welder_codes(state, review_run, facts["certificates"])
         facts["qualificationCodes"] = list(dict.fromkeys(str(code) for cert in facts["certificates"] for code in cert.get("qualificationCodes") or []))
         facts["workDate"] = review_run.get("workDate") or review_run.get("reviewDate")
@@ -117,7 +120,7 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     elif node == "r27":
         facts["controlRequirements"] = review_run.get("weldingConsumableControlRequirements") or {}
     elif node == "r29":
-        facts["certificates"] = _merge_welder_certificates(facts["certificates"])
+        facts["certificates"][:] = _merge_welder_certificates(facts["certificates"])
         _overlay_platform_welder_codes(state, review_run, facts["certificates"])
         facts["qualificationCodes"] = list(dict.fromkeys(str(code) for cert in facts["certificates"] for code in cert.get("qualificationCodes") or []))
         facts["workDate"] = review_run.get("workDate") or review_run.get("reviewDate")

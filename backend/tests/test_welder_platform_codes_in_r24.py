@@ -91,8 +91,12 @@ def test_一个焊工一条证_空模板行不成事实():
             {"姓名": "姜军", "证书编号": "511621198504208836", "发证机关(章)": "批准日期"},
         ],
     }]
-    facts = build_r24_business_facts(state, {**_run(), "replay": True})["r24"]
+    built = build_r24_business_facts(state, {**_run(), "replay": True})
+    facts = built["r24"]
     assert len(facts["certificates"]) == 1, "同一个证件号只应有一条证"
+    # judgment 是从同一个列表对象建的：合并必须原地改，否则界面上还是每行一条。
+    cert_facts = [f for f in built["judgment"]["claimedFacts"] if f["factId"].startswith("r24-certificates")]
+    assert len(cert_facts) == 1, "事实列表也只能有一条"
     cert = facts["certificates"][0]
     assert "自 年 月至 年 月" not in str(cert.get("validUntil") or ""), "占位有效期不能当成抽到了"
     quote = cert["evidence"]["quotedText"]
