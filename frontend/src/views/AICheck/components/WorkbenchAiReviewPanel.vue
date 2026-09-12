@@ -10,6 +10,7 @@ import {
   workbenchFindingDisplay,
   type WorkbenchAiCheckOutcome,
   type WorkbenchAiFinding,
+  type WorkbenchAiGroundedFact,
   type WorkbenchAiUnscoredFact,
   type WorkbenchAiUnscoredField,
   type WorkbenchAiFindingGroupKey,
@@ -169,6 +170,39 @@ const checkOutcomeTally = computed(() => {
   }))
 })
 
+/**
+ * 同一次锚定门的事实对本节点每个原子项都一样，逐项渲染就是同一组引文抄五遍
+ * （2026-09-12 线上实测：节点 1 五项 × 6 条引文 = 26 行重复）。按 factId 去重列一次。
+ */
+const nodeFacts = computed(() => {
+  const seen = new Map<string, WorkbenchAiGroundedFact>()
+  props.presentation.checkOutcomes.forEach((outcome) =>
+    outcome.facts.forEach((fact) => {
+      if (!seen.has(fact.factId)) seen.set(fact.factId, fact)
+    })
+  )
+  return [...seen.values()]
+})
+
+/** 没给分、且能人工确认的事实（按 factId 找回它的字段与 factPath）。 */
+const unscoredByFactId = computed(() => {
+  const seen = new Map<
+    string,
+    { fact: WorkbenchAiUnscoredFact; outcome: WorkbenchAiCheckOutcome }
+  >()
+  props.presentation.checkOutcomes.forEach((outcome) =>
+    outcome.unscoredFacts.forEach((fact) => {
+      if (!seen.has(fact.factId)) seen.set(fact.factId, { fact, outcome })
+    })
+  )
+  return seen
+})
+
+const nodeUnscoredCount = computed(() => nodeFacts.value.filter((fact) => !fact.scored).length)
+const confirmable = (fact: WorkbenchAiGroundedFact) => unscoredByFactId.value.get(fact.factId)?.fact
+const confirmableOutcome = (fact: WorkbenchAiGroundedFact) =>
+  unscoredByFactId.value.get(fact.factId)?.outcome
+
 const checkOutcomeLabel = (result: string) => CHECK_OUTCOME_LABELS[result] || result || '未记录'
 const checkOutcomeTone = (result: string) => CHECK_OUTCOME_TONES[result] || 'gray'
 
@@ -321,66 +355,79 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                     </small>
                   </li>
                 </ul>
-                <ul v-if="outcome.facts.length" class="ai-outcome-facts" aria-label="证据">
-                  <li v-for="fact in outcome.facts" :key="fact.factId">
-                    <div class="ai-outcome-fact-head">
-                      <span class="ai-unscored-fact-label">{{ fact.label }}</span>
-                      <span class="ai-unscored-fact-value">{{ fact.value }}</span>
-                      <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
-                    </div>
-                    <ul class="ai-outcome-quotes">
-                      <li v-for="item in fact.evidence" :key="item.evidenceRefId">
-                        <q>{{ item.quotedText }}</q>
-                        <small>
-                          <template v-if="item.source === 'cnse_platform'">公示平台登记</template>
-                          <template v-else>
-                            {{ item.fileName
-                            }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
-                          </template>
-                          <template v-if="item.humanCorrected"> · 已人工确认</template>
-                        </small>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
               </div>
-              <!-- 引擎没给分的事实：人核一条落一条，核完的字段下次跑就是 1.0 -->
-              <ul v-if="outcome.unscoredFacts.length" class="ai-unscored-facts">
-                <li v-for="fact in outcome.unscoredFacts" :key="fact.factId">
+            </li>
+          </ul>
+          <!-- 事实与证据按节点列一次：同一次锚定的结果对每个原子项都一样，逐项重复就是同一组引文抄五遍 -->
+          <div v-if="nodeFacts.length" class="ai-outcome-facts-block">
+            <div class="ai-check-outcomes-head">
+              <strong>事实与证据</strong>
+              <span>共 {{ nodeFacts.length }} 条</span>
+              <small v-if="nodeUnscoredCount">
+                其中 {{ nodeUnscoredCount }} 条引擎未给分，核对无误后下次复核即可计分
+              </small>
+            </div>
+            <ul class="ai-outcome-facts">
+              <li v-for="fact in nodeFacts" :key="fact.factId">
+                <div class="ai-outcome-fact-head">
                   <span class="ai-unscored-fact-label">{{ fact.label }}</span>
                   <span class="ai-unscored-fact-value">{{ fact.value }}</span>
-                  <template
-                    v-for="field in fact.fields"
-                    :key="`${field.documentVersionId}:${field.fieldName}`"
-                  >
+                  <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
+                  <template v-if="!fact.scored && confirmable(fact)">
+                    <template
+                      v-for="field in confirmable(fact)!.fields"
+                      :key="`${field.documentVersionId}:${field.fieldName}`"
+                    >
+                      <ElButton
+                        v-if="canAct && !field.humanCorrected"
+                        size="small"
+                        text
+                        bg
+                        :disabled="acting"
+                        :title="field.quotedText"
+                        @click="
+                          emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, field)
+                        "
+                      >
+                        核对无误：{{ field.fieldName }}
+                      </ElButton>
+                      <small v-else-if="field.humanCorrected">
+                        {{ field.fieldName }} 已人工确认
+                      </small>
+                    </template>
+                    <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
                     <ElButton
-                      v-if="canAct && !field.humanCorrected"
+                      v-if="
+                        canAct && !confirmable(fact)!.fields.length && confirmable(fact)!.factPath
+                      "
                       size="small"
                       text
                       bg
                       :disabled="acting"
-                      :title="field.quotedText"
-                      @click="emit('confirmFact', outcome, fact, field)"
+                      @click="
+                        emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, null)
+                      "
                     >
-                      核对无误：{{ field.fieldName }}
+                      核对无误
                     </ElButton>
-                    <small v-else-if="field.humanCorrected">{{ field.fieldName }} 已人工确认</small>
                   </template>
-                  <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
-                  <ElButton
-                    v-if="canAct && !fact.fields.length && fact.factPath"
-                    size="small"
-                    text
-                    bg
-                    :disabled="acting"
-                    @click="emit('confirmFact', outcome, fact, null)"
-                  >
-                    核对无误
-                  </ElButton>
-                </li>
-              </ul>
-            </li>
-          </ul>
+                </div>
+                <ul class="ai-outcome-quotes">
+                  <li v-for="item in fact.evidence" :key="item.evidenceRefId">
+                    <q :title="item.quotedText">{{ item.quotedText }}</q>
+                    <small>
+                      <template v-if="item.source === 'cnse_platform'">公示平台登记</template>
+                      <template v-else>
+                        {{ item.fileName
+                        }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                      </template>
+                      <template v-if="item.humanCorrected"> · 已人工确认</template>
+                    </small>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </div>
         </section>
 
         <p class="ai-result-summary">{{ presentation.summary }}</p>
@@ -1090,21 +1137,23 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   color: #27364b;
 }
 
-.ai-unscored-facts {
+.ai-outcome-facts-block {
   display: grid;
-  flex-basis: 100%;
-  padding: 4px 0 0 22px;
-  margin: 0;
-  list-style: none;
-  gap: 4px;
+  padding-top: 10px;
+  margin-top: 6px;
+  border-top: 1px dashed #e6edf7;
+  gap: 6px;
 }
 
-.ai-unscored-facts li {
-  display: flex;
+.ai-outcome-facts-block .ai-outcome-facts {
   gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 12px;
+}
+
+.ai-outcome-facts-block .ai-outcome-quotes q {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .ai-unscored-fact-label {
