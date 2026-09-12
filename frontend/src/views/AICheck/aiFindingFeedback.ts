@@ -123,7 +123,7 @@ export const pickReason = async (options: {
   return { code: picked.value, label: picked.label, note: note.value.trim() }
 }
 
-export type AiFeedbackDecision = 'accept' | 'reject' | 'supported'
+export type AiFeedbackDecision = 'accept' | 'reject' | 'supported' | 'confirmed'
 
 export const useAiFindingFeedback = (ctx: {
   runId: () => string
@@ -265,6 +265,12 @@ export const useAiFindingFeedback = (ctx: {
    * 抽取值没错，就以原值写一条 fact_corrections——补丁时置信度变 1.0，下次跑同一节点
    * grounding 就有分，「需人工判断」能变「通过」。不改值，只是把人的确认落成事实。
    */
+  /** 本地已确认标记的键；与面板 factDecisionKey 同一口径。 */
+  const factDecisionKey = (
+    fact: WorkbenchAiUnscoredFact,
+    field: WorkbenchAiUnscoredField | null
+  ) => (field ? `fact::${fact.factId}::${field.fieldName}` : `fact::${fact.factId}`)
+
   const handleConfirmFact = async (
     outcome: WorkbenchAiCheckOutcome,
     fact: WorkbenchAiUnscoredFact,
@@ -311,6 +317,9 @@ export const useAiFindingFeedback = (ctx: {
         }
       }
       await saveFactCorrectionApi(projectId, nodeId, payload, { etag: ctx.etag() })
+      // 本次运行的留痕不会因为这条确认而改写（它下次复核才计分），所以在本地标一下，
+      // 否则点完界面毫无变化，人会以为没生效、反复点。
+      decisions.value = { ...decisions.value, [factDecisionKey(fact, field)]: 'confirmed' }
       ElMessage.success(`已记录：「${label}」人工核对无误，下次复核生效`)
       await ctx.reload()
     } catch {

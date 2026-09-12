@@ -27,7 +27,7 @@ const props = withDefaults(
     canAct?: boolean
     acting?: boolean
     /** 本次会话里已记录的发现级反馈，键为 findingId 或 `${findingId}::${claim}`。 */
-    decisions?: Record<string, 'accept' | 'reject' | 'supported'>
+    decisions?: Record<string, 'accept' | 'reject' | 'supported' | 'confirmed'>
   }>(),
   { canAct: false, acting: false, decisions: () => ({}) }
 )
@@ -122,6 +122,11 @@ const toggle = (bucket: 'finding' | 'model', id: string) => {
   else next.add(id)
   target.value = next
 }
+
+/** 与 aiFindingFeedback.factDecisionKey 同一口径：本次会话里点过「核对无误」的事实。 */
+const factConfirmed = (fact: WorkbenchAiGroundedFact, fieldName?: string) =>
+  props.decisions[fieldName ? `fact::${fact.factId}::${fieldName}` : `fact::${fact.factId}`] ===
+  'confirmed'
 
 const decisionLabel = (id: string) => {
   const decision = props.decisions[id]
@@ -378,8 +383,17 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                       v-for="field in confirmable(fact)!.fields"
                       :key="`${field.documentVersionId}:${field.fieldName}`"
                     >
+                      <small v-if="field.humanCorrected" class="ai-fact-confirmed">
+                        {{ field.fieldName }} 已人工确认
+                      </small>
+                      <small
+                        v-else-if="factConfirmed(fact, field.fieldName)"
+                        class="ai-fact-confirmed"
+                      >
+                        {{ field.fieldName }} 已记录，下次复核生效
+                      </small>
                       <ElButton
-                        v-if="canAct && !field.humanCorrected"
+                        v-else-if="canAct"
                         size="small"
                         text
                         bg
@@ -391,25 +405,27 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                       >
                         核对无误：{{ field.fieldName }}
                       </ElButton>
-                      <small v-else-if="field.humanCorrected">
-                        {{ field.fieldName }} 已人工确认
-                      </small>
                     </template>
                     <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
-                    <ElButton
-                      v-if="
-                        canAct && !confirmable(fact)!.fields.length && confirmable(fact)!.factPath
-                      "
-                      size="small"
-                      text
-                      bg
-                      :disabled="acting"
-                      @click="
-                        emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, null)
-                      "
+                    <template
+                      v-if="!confirmable(fact)!.fields.length && confirmable(fact)!.factPath"
                     >
-                      核对无误
-                    </ElButton>
+                      <small v-if="factConfirmed(fact)" class="ai-fact-confirmed">
+                        已记录，下次复核生效
+                      </small>
+                      <ElButton
+                        v-else-if="canAct"
+                        size="small"
+                        text
+                        bg
+                        :disabled="acting"
+                        @click="
+                          emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, null)
+                        "
+                      >
+                        核对无误
+                      </ElButton>
+                    </template>
                   </template>
                 </div>
                 <ul class="ai-outcome-quotes">
@@ -1115,6 +1131,16 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-fact-unscored {
   color: #b54708;
+}
+
+.ai-fact-confirmed {
+  color: #1a7f4b;
+}
+
+/* 期望/实际换行时靠右，别贴到行首去 */
+.ai-outcome-checks li small {
+  margin-left: auto;
+  text-align: right;
 }
 
 .ai-outcome-quotes {
