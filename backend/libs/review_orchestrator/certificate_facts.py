@@ -281,6 +281,8 @@ def _certificate_judgment(certificates: list[dict[str, Any]]) -> dict[str, Any]:
                 "factId": f"certificate-{index}",
                 "label": f"{record.get('certificateType') or '证书'} {record.get('certificateNo') or ''}".strip(),
                 "value": record.get("certificateNo") or record.get("holder"),
+                # 去重键：同一张证可能同时由 r24 焊工 builder 和证书链各产一条事实。
+                "certificateNo": record.get("certificateNo"),
                 "documentVersionId": record.get("documentVersionId"),
                 # 界面「核对无误」要落到具体的抽取字段上：这里列出这条事实引用了哪些字段
                 "fields": [
@@ -787,6 +789,30 @@ CERTIFICATE_VERIFICATION_REQUIREMENT = (
 )
 
 
+def _dedupe_claimed_facts(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """同一张证只留一条事实。
+
+    节点 24 有两条链在产证书事实：r24 的焊工 builder 和这里的证书链。2026-09-13
+    线上实测：合并之后界面上「焊工证 姜军」和「welder_certificate 511621198504208836」
+    是同一张证的两条，监检看不出它们是一回事。按证号（没有就按取值）去重，
+    先到的留下——r24 那条带中文标签和平台核验，排在前面。
+    """
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        # 只按证号去重。按 value 去重会误伤：节点 1 的「图签设计单位」与「设计章单位」
+        # 值本来就相同（就是要比它们一致），去掉一条 check_all_equal 就只剩两处可比。
+        key = str(fact.get("certificateNo") or "").strip().upper()
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        output.append(fact)
+    return output
+
+
 def merge_certificate_facts(
     state: dict[str, Any], review_run: dict[str, Any], business_facts: Any
 ) -> dict[str, Any]:
@@ -854,7 +880,9 @@ def merge_certificate_facts(
             # 节点 24 的焊工 builder 已经产 judgment；证书事实要并进去，不能互相覆盖。
             existing = merged.get("judgment") if isinstance(merged.get("judgment"), dict) else {}
             merged["judgment"] = {
-                "claimedFacts": [*(existing.get("claimedFacts") or []), *(value.get("claimedFacts") or [])],
+                "claimedFacts": _dedupe_claimed_facts(
+                    [*(existing.get("claimedFacts") or []), *(value.get("claimedFacts") or [])]
+                ),
                 "evidenceRefs": [*(existing.get("evidenceRefs") or []), *(value.get("evidenceRefs") or [])],
                 **{k: v for k, v in existing.items() if k not in {"claimedFacts", "evidenceRefs"}},
             }

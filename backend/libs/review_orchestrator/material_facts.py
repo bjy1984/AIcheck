@@ -160,6 +160,8 @@ def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]
                 {
                     "factId": f"{fact_type}-{index}",
                     "label": _fact_label(fact_type, record),
+                    # 去重键：焊工证同时被 r24 builder 和证书链产出，界面上就是同一张证两条。
+                    "certificateNo": record.get("welderCertificateNo") or record.get("certificateNo") or record.get("documentNo"),
                     "value": next(
                         (record.get(key) for key in (*value_keys, *_FALLBACK_VALUE_KEYS) if _present(record.get(key))),
                         None,

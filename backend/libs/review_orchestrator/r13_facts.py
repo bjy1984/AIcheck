@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
@@ -289,18 +288,39 @@ def is_placeholder(value: Any) -> bool:
     return bool(_PLACEHOLDER.fullmatch(re.sub(r"\d", "", text)))
 
 
-def _row_quote(row: dict[str, Any]) -> str:
-    """表格行 → 「键：值 · 键：值」。
+# OCR 把表头读坏之后的列名：`BOM A_12`、`0.275`、`LP7103`、`Unnamed: 3`……
+# 这些列名对监检没有任何意义（2026-09-13 用户实测节点 26：56 条事实全是这种）。
+# 判据：列名里没有中文，且不是已知的业务英文列。
+_KNOWN_ASCII_COLUMNS = frozenset({"dn", "pn", "nps", "sch", "id", "od", "no", "qty", "wps", "pqr"})
+_HAS_CJK = re.compile(r"[\u4e00-\u9fff]")
 
-    原来这里是 json.dumps(row)，界面上就是一串 `{"有效期": "自 2024 年11 月…"}`
-    （2026-09-12 用户实测截图）。引文是给人读的，不是给机器解析的。
+
+def _meaningful_column(key: str) -> bool:
+    name = str(key).strip()
+    if not name or name in {"bbox", "polygon", "confidence", "pageNo"}:
+        return False
+    if _HAS_CJK.search(name):
+        return True
+    return name.lower().replace(" ", "") in _KNOWN_ASCII_COLUMNS
+
+
+def _row_quote(row: dict[str, Any]) -> str:
+    """表格行 → 「键：值 · 键：值」，只保留看得懂的列。
+
+    原来这里是 json.dumps(row)，界面上就是一串
+    `{"BOM A_12": "无缝钢管", "0.275": "0.8M"}`（2026-09-13 用户实测截图）。
+    引文是给人读的：读不懂的列名不如不写，真要看原样就点开原件。
     """
     parts = [
         f"{key}：{str(value).strip()}"
         for key, value in row.items()
-        if key not in {"bbox", "polygon", "confidence", "pageNo"} and not is_placeholder(value)
+        if _meaningful_column(key) and not is_placeholder(value)
     ]
-    return " · ".join(parts)[:800] or json.dumps(row, ensure_ascii=False, default=str)[:200]
+    if parts:
+        return " · ".join(parts)[:800]
+    # 整行都是认不出的列：给值本身，别把一串坏列名糊到界面上。
+    values = [str(value).strip() for value in row.values() if not is_placeholder(value)]
+    return " / ".join(values)[:200]
 
 
 def _record_evidence(

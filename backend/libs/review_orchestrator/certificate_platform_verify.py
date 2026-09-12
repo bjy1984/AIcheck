@@ -53,6 +53,10 @@ def platform_verify_enabled() -> bool:
     return str(os.getenv("AICHECK_CERT_PLATFORM_VERIFY") or "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _norm_name(value: str) -> str:
+    return re.sub(r"[\s·．.、,，]", "", value).strip()
+
+
 def _now() -> datetime:
     return datetime.strptime(server_time(), "%Y-%m-%d %H:%M:%S")
 
@@ -170,6 +174,16 @@ def _verify_person(state: dict[str, Any], record: dict[str, Any], *, reference_d
         # 不能据此改写 OCR 的项目代号，也不能判「无焊工证」。
         return {**record, "platformVerification": {**base, "outcome": "unable_to_verify",
                                                    "platformError": f"license_list_{lookup.get('status') or 'not_attempted'}"}}
+    # 人要对得上：证件号是 OCR 读出来的，读错一位就查到别人。2026-09-13 线上实测：
+    # 「焊工证 李卫伍」挂上的平台证据是「持证人：赵相军」，系统还标成已核验——
+    # 那等于把另一个人的合格项目安到这名焊工头上。名字不一致就不覆盖、不标已核验。
+    registry_name = _norm_name(str((result.get("person") or {}).get("ryxm") or ""))
+    claimed_name = _norm_name(str(record.get("holder") or ""))
+    if registry_name and claimed_name and registry_name != claimed_name:
+        return {**record, "platformVerification": {**base, "outcome": "verified_mismatch",
+                                                   "registryHolder": (result.get("person") or {}).get("ryxm"),
+                                                   "claimedHolder": record.get("holder"),
+                                                   "comment": "平台按该证件号登记的持证人与资料上的姓名不一致，不能据此认定；请人工核对证件号与本人。"}}
     welder = [item for item in licenses if _is_welder_license(item)] if record.get("certificateType") == "welder_certificate" else licenses
     current = [item for item in welder if _license_is_current(item, reference_date)]
     if not current:

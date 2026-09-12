@@ -172,3 +172,25 @@ def test_开关关闭与回放都不碰网(monkeypatch):
 def test_不像编号的证书不查():
     assert cpv._ORG_LICENSE_NO.match("TS1844171-2028") and not cpv._ORG_LICENSE_NO.match("粤TS-001")
     assert cpv._ID_NUMBER.match("511621198504208836") and not cpv._ID_NUMBER.match("HG-2026-0830")
+
+
+def test_证件号查到的是别人时不覆盖也不标已核验(monkeypatch):
+    """2026-09-13 线上实测：「焊工证 李卫伍」挂上的平台证据是「持证人：赵相军」。
+
+    证件号是 OCR 读出来的，读错一位就查到别人；照抄回来等于把另一个人的合格项目
+    安到这名焊工头上，比查不到危险得多。
+    """
+    monkeypatch.setattr("libs.integrations.external_registry_queries.query_cnse_persons", lambda sfzh: {
+        "idNumber": sfzh,
+        "person": {"ryxm": "赵相军"},
+        "licenses": [{"zslb": "特种设备作业人员证", "czxm": "GTAW-FeIV-6G-3/55-FefS-02/10/12", "yxrqz": "2029-01-01", "validFlag": "1"}],
+        "licenseLookup": {"status": "completed"},
+    })
+    state = _welder_state()
+    state["ocr_parse_results"][0]["fields"][0]["fieldValue"] = "李卫伍"
+    cert = build_certificate_facts(state, "P-1", 24, ["DV-W"])["certificateFacts"]["certificates"][0]
+    verification = cert["platformVerification"]
+    assert verification["outcome"] == "verified_mismatch"
+    assert verification["registryHolder"] == "赵相军" and verification["claimedHolder"] == "李卫伍"
+    assert not any("GTAW-FEIV-6G" in str(code).upper() for code in cert.get("qualificationCodes") or []), "不许把别人的项目覆盖过来"
+    assert all(item.get("source") != "cnse_platform" for item in cert.get("evidence") or []), "不许标成平台已核验"
