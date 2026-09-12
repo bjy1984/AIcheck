@@ -234,6 +234,7 @@ import ReportDetailDrawer from './components/ReportDetailDrawer.vue'
 import ReviewDecisionPanel from './components/ReviewDecisionPanel.vue'
 import WorkbenchAiReviewPanel from './components/WorkbenchAiReviewPanel.vue'
 import WorkbenchNodeMaterialsCard from './components/WorkbenchNodeMaterialsCard.vue'
+import WorkbenchNodeStatusStrip from './components/WorkbenchNodeStatusStrip.vue'
 import { useWorkbenchReviewActions } from './useWorkbenchReviewActions'
 import { AI_RESULT_TO_OPINION, useAiFindingFeedback } from './aiFindingFeedback'
 import RoleContextPanel from './components/RoleContextPanel.vue'
@@ -3610,7 +3611,10 @@ const handleOpenBindDialog = (documentId?: string) => {
 
 const handleInspectionWorkspaceViewChange = async (view: InspectionWorkspaceView) => {
   activeInspectionWorkspaceView.value = view
-  activeWorkbenchSection.value = view === 'ai' ? 'node' : 'overview'
+  // 切到完整工作台不该把手上的节点丢掉：原来一律回项目总览，正在看第 23 节点的人
+  // 点一下就被弹回首页，还得从左树重新找回来。选着节点就留在节点上。
+  const keepNode = Boolean(activeNodeId.value)
+  activeWorkbenchSection.value = view === 'ai' || keepNode ? 'node' : 'overview'
   await updateInspectionRoute(
     activeWorkbenchSection.value === 'overview'
       ? { overview: true }
@@ -5886,6 +5890,17 @@ onBeforeUnmount(() => {
               @file-submit-batch="handleSubmitProjectFilesBatch"
               @file-retry-upload="handleRetryProjectFileUpload"
               @file-delete="handleDeleteProjectFile"
+            />
+
+            <WorkbenchNodeStatusStrip
+              v-if="
+                role === 'inspection' &&
+                activeWorkbenchSection === 'node' &&
+                !inspectionNodeUnselected
+              "
+              :items="inspectionAuditItems"
+              :active="activeInspectionAuditItem"
+              @select="activeInspectionAuditItem = $event"
             />
 
             <WorkbenchNodeMaterialsCard

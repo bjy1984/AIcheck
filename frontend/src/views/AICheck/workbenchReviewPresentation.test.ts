@@ -195,7 +195,9 @@ const failedDirectoryItems = inspectionReviewDirectoryItemsWithAiStatus(auditIte
 assert.deepEqual(
   failedDirectoryItems.map((item) => [item.key, item.status, item.statusLabel]),
   [
-    ['ai_review', 'failed', 'AI 执行已中断'],
+    // 一键分析不跑确定性核查：目录里照搬「AI 已完成/已中断」会和审计项自己的
+    // not_started 打架，所以标明来源。
+    ['ai_review', 'failed', 'AI 执行已中断（来自一键分析）'],
     ['human_review', 'not_started', '未开始']
   ]
 )

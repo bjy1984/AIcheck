@@ -66,6 +66,23 @@ const selectedEvidenceIds = computed({
   set: (value: string[]) => emit('update:selectedEvidenceIds', value)
 })
 const confirmedEvidenceLinks = computed(() => props.confirmedEvidenceLinks || [])
+
+/**
+ * 同一份资料常被多个审查点各挂一条链接（节点 23 实测两条指向同一个 doc），
+ * 逐条渲染就是同一段 300 字 OCR 表格连打两遍。选项一条都不能合并——勾选的是链接 id，
+ * 合并会让「选中一条」变成「选中两条」——所以只把重复的引文折起来。
+ */
+const firstQuoteIds = computed(() => {
+  const seen = new Set<string>()
+  const ids = new Set<string>()
+  for (const link of confirmedEvidenceLinks.value) {
+    const key = [link.documentVersionId || link.fileName, link.pageNo, evidenceText(link)].join('|')
+    if (seen.has(key)) continue
+    seen.add(key)
+    ids.add(link.id)
+  }
+  return ids
+})
 const canSaveReview = computed(() => canSave.value && !props.saveDisabledReason)
 const evidenceLabel = (evidence: EvidenceLink) =>
   [evidence.fieldName, evidence.fileName, evidence.pageNo ? `第 ${evidence.pageNo} 页` : '']
@@ -178,10 +195,14 @@ const evidenceText = (evidence: EvidenceLink) =>
                  原生 label 激活控件不走冒泡，只 stop 挡不住，必须 prevent。 -->
             <!-- 用 v-text 而不是插值：pre-wrap 下模板缩进会变成可见的首行空白。 -->
             <small
+              v-if="firstQuoteIds.has(evidence.id)"
               class="review-evidence-quote"
               @click.stop.prevent
               v-text="evidenceText(evidence)"
             ></small>
+            <small v-else class="review-evidence-quote is-repeat"
+              >引文同上（同一份资料的另一处引用）</small
+            >
           </ElCheckbox>
         </ElCheckboxGroup>
         <ElAlert

@@ -377,10 +377,13 @@ export const inspectionReviewDirectoryItemsWithAiStatus = (
       red: 'failed',
       gray: 'not_started'
     }
+    // 一键分析不是节点复核：它不跑确定性核查。目录里照搬「AI 已完成」会和审计项自己的
+    // not_started 打架，看着像状态坏了。状态跟着一键分析走（那确实是本节点最新的 AI 结果），
+    // 但把来源写进标签，让人知道逐项核查还没跑过。
     return {
       ...item,
       status: statusByTone[presentation.statusTone],
-      statusLabel: presentation.statusLabel,
+      statusLabel: `${presentation.statusLabel}（来自一键分析）`,
       metric: presentation.resultLabel,
       summary: presentation.errorMessage || presentation.summary,
       issueCount: presentation.statusTone === 'red' ? 1 : item.issueCount

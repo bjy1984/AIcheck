@@ -130,6 +130,17 @@ const factConfirmed = (fact: WorkbenchAiGroundedFact, fieldName?: string) =>
   props.decisions[fieldName ? `fact::${fact.factId}::${fieldName}` : `fact::${fact.factId}`] ===
   'confirmed'
 
+/**
+ * 模型自评的置信度直接印成「置信度 50%」会被当成校准过的概率读——它不是，
+ * 它既不代表证据强弱也不代表正确率。折成三档，并在 title 里说清它是什么。
+ */
+const modelCertainty = (percent?: number) => {
+  if (typeof percent !== 'number' || Number.isNaN(percent)) return ''
+  if (percent >= 80) return '较高'
+  if (percent >= 50) return '一般'
+  return '较低'
+}
+
 const decisionLabel = (id: string) => {
   const decision = props.decisions[id]
   return decision === 'accept' ? '已采纳' : decision === 'reject' ? '已驳回' : ''
@@ -209,6 +220,13 @@ const nodeUnscoredCount = computed(() => nodeFacts.value.filter((fact) => !fact.
 const confirmable = (fact: WorkbenchAiGroundedFact) => unscoredByFactId.value.get(fact.factId)?.fact
 const confirmableOutcome = (fact: WorkbenchAiGroundedFact) =>
   unscoredByFactId.value.get(fact.factId)?.outcome
+
+/** 没跑确定性核查、模型也没写符合项时显示「—」：0 会被读成「查过了，一条都没通过」。 */
+const passedCountHint = computed(() =>
+  sortedCheckOutcomes.value.length
+    ? '本次逐项核查判定为通过的项数'
+    : '本次只做了模型通读，未执行确定性核查——发起节点复核才有逐项通过/不通过'
+)
 
 const checkOutcomeLabel = (result: string) => CHECK_OUTCOME_LABELS[result] || result || '未记录'
 const checkOutcomeTone = (result: string) => CHECK_OUTCOME_TONES[result] || 'gray'
@@ -292,7 +310,13 @@ const ruleLabel = (rule: Record<string, unknown>) =>
             </div>
             <div class="is-green">
               <dt>通过</dt>
-              <dd>{{ conclusion.counts.passed }}</dd>
+              <dd :title="passedCountHint">
+                {{
+                  conclusion.counts.passed || sortedCheckOutcomes.length
+                    ? conclusion.counts.passed
+                    : '—'
+                }}
+              </dd>
             </div>
           </dl>
           <ul v-if="conclusion.keyFacts.length" class="ai-conclusion-facts">
@@ -494,8 +518,12 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                 <span v-if="decisionLabel(finding.id)" class="ai-finding-decision">
                   {{ decisionLabel(finding.id) }}
                 </span>
-                <span v-if="finding.confidencePercent !== undefined" class="ai-finding-confidence">
-                  置信度 {{ finding.confidencePercent }}%
+                <span
+                  v-if="modelCertainty(finding.confidencePercent)"
+                  class="ai-finding-confidence"
+                  title="模型对自己这条结论的把握，不是校准过的概率，也不代表证据强弱"
+                >
+                  模型把握{{ modelCertainty(finding.confidencePercent) }}
                 </span>
               </div>
               <div class="ai-finding-chips">
