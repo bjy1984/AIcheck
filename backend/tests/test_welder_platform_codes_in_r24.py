@@ -76,3 +76,25 @@ def test_焊工事实在界面上有中文标签():
     # 标签优先给人名——监检看的是「哪个焊工」，不是一串身份证号。
     assert fact["label"] == "焊工证 姜军"
     assert fact["value"] == "511621198504208836"
+
+
+def test_一个焊工一条证_空模板行不成事实():
+    """OCR 把两名焊工的资料拆成 15 行、其中 10 行只有「自 年 月至 年 月」这种空模板，
+    界面上就成了「事实与证据 共 17 条」的噪声，核验也被迫对 15 张「证」逐一判有效期。"""
+    state = _state()
+    parse = state["ocr_parse_results"][0]
+    parse["tables"] = [{
+        "pageNo": 1,
+        "rows": [
+            {"姓名": "姜军", "证书编号": "511621198504208836", "项目代号": "CTAF-Fe II-6G-3/57-FetS-02/11/12", "有效期": "自2025年10月至2029年09月"},
+            {"姓名": "姜军", "证书编号": "511621198504208836", "有效期": "自 年 月至 年 月"},
+            {"姓名": "姜军", "证书编号": "511621198504208836", "发证机关(章)": "批准日期"},
+        ],
+    }]
+    facts = build_r24_business_facts(state, {**_run(), "replay": True})["r24"]
+    assert len(facts["certificates"]) == 1, "同一个证件号只应有一条证"
+    cert = facts["certificates"][0]
+    assert "自 年 月至 年 月" not in str(cert.get("validUntil") or ""), "占位有效期不能当成抽到了"
+    quote = cert["evidence"]["quotedText"]
+    assert not quote.startswith("{"), "引文要给人读，不是 json.dumps"
+    assert cert["evidence"]["fileName"] == "10.姜军焊工证.pdf" and cert["evidence"]["documentId"] == "DOC-W"

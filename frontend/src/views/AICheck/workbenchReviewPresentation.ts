@@ -260,6 +260,8 @@ export type WorkbenchAiCheckItem = {
 export type WorkbenchAiFactEvidence = {
   evidenceRefId: string
   documentVersionId: string
+  /** 有它才能点开原文件定位到这一页。 */
+  documentId: string
   fileName: string
   pageNo: number | null
   quotedText: string
@@ -276,6 +278,8 @@ export type WorkbenchAiGroundedFact = {
   label: string
   value: string
   scored: boolean
+  /** 公示平台核到并一致：这条事实是登记原文，不是 OCR 读出来的。 */
+  platformVerified: boolean
   evidence: WorkbenchAiFactEvidence[]
 }
 
@@ -346,11 +350,13 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
           label: String(fact.label || fact.factId),
           value: String(fact.value ?? ''),
           scored: fact.scored !== false,
+          platformVerified: fact.platformVerified === true,
           evidence: (Array.isArray(fact.evidence) ? fact.evidence : [])
             .map((item) => (item || {}) as Record<string, unknown>)
             .map((item) => ({
               evidenceRefId: String(item.evidenceRefId || ''),
               documentVersionId: String(item.documentVersionId || ''),
+              documentId: String(item.documentId || ''),
               fileName: String(item.fileName || ''),
               pageNo: typeof item.pageNo === 'number' ? item.pageNo : null,
               quotedText: String(item.quotedText || ''),

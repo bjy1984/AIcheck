@@ -926,3 +926,50 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(friendlyMaterialType('pqr'), '焊接工艺评定报告 PQR')
   assert.equal(friendlyMaterialType('未知代号'), '未知代号', '认不出的代号原样显示，不猜')
 }
+
+// 平台核到的证书要在事实列表里高亮：登记原文比 OCR 可信，监检得一眼分得出来。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [outcome] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R24-05',
+        name: '证据追溯',
+        result: 'passed',
+        facts: [
+          {
+            factId: 'r24-certificates-1',
+            label: '焊工证 姜军',
+            value: '511621198504208836',
+            scored: true,
+            platformVerified: true,
+            evidence: [
+              {
+                evidenceRefId: 'E1',
+                documentId: 'DOC-W',
+                fileName: '10.姜军焊工证.pdf',
+                pageNo: 1,
+                quotedText: '项目代号：CTAF-…'
+              },
+              {
+                evidenceRefId: 'E2',
+                source: 'cnse_platform',
+                quotedText: '现行项目：GTAW-FEII-6G-3/57-FEFS-02/11/12'
+              }
+            ]
+          },
+          {
+            factId: 'r24-certificates-2',
+            label: '焊工证 李卫伍',
+            value: '410521198609180550',
+            scored: true,
+            evidence: []
+          }
+        ]
+      }
+    ]
+  })
+  assert.equal(outcome.facts[0].platformVerified, true)
+  assert.equal(outcome.facts[0].evidence[0].documentId, 'DOC-W', '要能点开原件')
+  assert.equal(outcome.facts[1].platformVerified, false, '没核到的不许标成已核验')
+}

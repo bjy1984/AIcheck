@@ -84,8 +84,13 @@ const tone = (item: InspectionAuditItem) => TONES[item.status] || 'gray'
 </template>
 
 <style scoped>
+/* 同 WorkbenchNodeMaterialsCard：父组件的 .card-body 是 scoped 的，子组件吃不到。 */
 .node-status-strip {
   margin-bottom: 14px;
+}
+
+.node-status-strip .card-body {
+  padding: 12px 16px;
 }
 
 .node-status-list {

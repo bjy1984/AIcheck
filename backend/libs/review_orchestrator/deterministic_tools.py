@@ -739,12 +739,13 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
     refs_by_id = {str(item.get("evidenceRefId") or item.get("id")): item for item in refs}
     output["claimedFacts"] = [
         {
-            **{key: fact.get(key) for key in ("factId", "label", "value", "documentVersionId", "factPath", "fields") if key in fact},
+            **{key: fact.get(key) for key in ("factId", "label", "value", "documentVersionId", "factPath", "fields", "platformVerified") if key in fact},
             "scored": index not in unscored,
             "evidence": [
                 {
                     "evidenceRefId": ref_id,
                     "documentVersionId": ref.get("documentVersionId"),
+                    "documentId": ref.get("documentId"),
                     "fileName": ref.get("fileName"),
                     "pageNo": ref.get("pageNo"),
                     "quotedText": ref.get("quotedText"),

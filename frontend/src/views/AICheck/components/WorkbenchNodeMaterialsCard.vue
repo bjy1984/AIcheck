@@ -143,8 +143,42 @@ const headlineTone = computed(() =>
 </template>
 
 <style scoped>
+/*
+ * Workbench.vue 的 .card-head / .card-body 是 scoped 的：子组件只有根节点吃得到 .card，
+ * 内部的 head/body 一点样式都没有——所以标题右边的标签掉到下一行、正文贴着边框
+ * （2026-09-12 用户截图指出）。这里按同一套尺寸自己定义，别指望父组件的作用域。
+ */
 .node-materials-card {
   margin-bottom: 14px;
+}
+
+.node-materials-card .card-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line-soft, #eef1f6);
+  background: var(--panel-soft, #fbfcfe);
+}
+
+.node-materials-card .card-head h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--aicheck-text-strong, #172033);
+}
+
+.node-materials-card .card-head .sub {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.node-materials-card .card-body {
+  padding: 10px 16px 14px;
 }
 
 .node-materials-list {
@@ -152,14 +186,17 @@ const headlineTone = computed(() =>
   padding: 0;
   margin: 0;
   list-style: none;
-  gap: 2px;
+  gap: 4px;
 }
 
+/* 状态列定宽，名称、责任方、附件名各自对齐同一条竖线——原来是 flex 自由排，
+   每行标签宽度不同，名称就参差不齐。 */
 .node-materials-list li {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 4px 12px;
   align-items: baseline;
-  padding: 5px 8px;
+  padding: 6px 8px;
   border-radius: 6px;
   font-size: 13px;
   line-height: 20px;
@@ -175,7 +212,6 @@ const headlineTone = computed(() =>
 }
 
 .node-materials-name {
-  flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -185,13 +221,14 @@ const headlineTone = computed(() =>
 }
 
 .node-materials-meta {
-  flex: 0 0 auto;
+  justify-self: end;
   color: var(--aicheck-text-subtle, #667085);
+  white-space: nowrap;
 }
 
+/* 附件名另起一行，但对齐到名称那一列，不要贴回左边框 */
 .node-materials-files {
-  flex: 1 1 100%;
-  padding-left: 62px;
+  grid-column: 2 / -1;
   color: var(--aicheck-text-subtle, #667085);
   overflow-wrap: anywhere;
 }
@@ -207,7 +244,8 @@ const headlineTone = computed(() =>
 }
 
 .node-materials-action {
-  flex: 0 0 auto;
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .node-materials-more {

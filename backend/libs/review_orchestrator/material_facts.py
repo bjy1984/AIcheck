@@ -142,14 +142,20 @@ def _fact_label(fact_type: str, record: dict[str, Any]) -> str:
     return base
 
 
+def _record_evidence_refs(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """一条记录的全部证据：OCR 那条 + 公示平台登记那条（有才有）。"""
+    return [item for item in (record.get("evidence"), record.get("platformEvidence")) if isinstance(item, dict)]
+
+
 def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]], tuple[str, ...]]]) -> dict[str, Any]:
     all_records = [record for _, records, _ in records_by_type for record in records]
-    evidence_refs = _unique_evidence_refs([record.get("evidence") for record in all_records])
+    evidence_refs = _unique_evidence_refs([ref for record in all_records for ref in _record_evidence_refs(record)])
     claimed_facts: list[dict[str, Any]] = []
     for fact_type, records, value_keys in records_by_type:
         for index, record in enumerate(records, 1):
-            evidence = record.get("evidence") if isinstance(record.get("evidence"), dict) else {}
-            evidence_id = evidence.get("evidenceRefId") or evidence.get("id")
+            refs = _record_evidence_refs(record)
+            evidence = refs[0] if refs else {}
+            evidence_ids = [ref.get("evidenceRefId") or ref.get("id") for ref in refs]
             claimed_facts.append(
                 {
                     "factId": f"{fact_type}-{index}",
@@ -159,7 +165,9 @@ def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]
                         None,
                     ),
                     "documentVersionId": record.get("documentVersionId"),
-                    "evidenceRefIds": [evidence_id] if evidence_id else [],
+                    "evidenceRefIds": [item for item in evidence_ids if item],
+                    # 平台核到的证书要能在界面上高亮出来。
+                    "platformVerified": any(ref.get("source") == "cnse_platform" for ref in refs),
                     "confidence": evidence.get("confidence") or record.get("ocrConfidence"),
                     "conflicted": bool(record.get("conflicted")),
                 }

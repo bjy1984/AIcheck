@@ -16,6 +16,7 @@ from libs.review_orchestrator.r13_facts import (
     _normalized_business_row,
     _record_evidence,
     _value,
+    is_placeholder,
 )
 
 NODE_CONFIG: dict[str, dict[str, tuple[str, ...]]] = {
@@ -100,6 +101,7 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     if node == "r34":
         facts["hardnessReports"] = _group_hardness_reports(facts["hardnessReports"])
     if node == "r24":
+        facts["certificates"] = _merge_welder_certificates(facts["certificates"])
         _overlay_platform_welder_codes(state, review_run, facts["certificates"])
         facts["qualificationCodes"] = list(dict.fromkeys(str(code) for cert in facts["certificates"] for code in cert.get("qualificationCodes") or []))
         facts["workDate"] = review_run.get("workDate") or review_run.get("reviewDate")
@@ -115,6 +117,7 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     elif node == "r27":
         facts["controlRequirements"] = review_run.get("weldingConsumableControlRequirements") or {}
     elif node == "r29":
+        facts["certificates"] = _merge_welder_certificates(facts["certificates"])
         _overlay_platform_welder_codes(state, review_run, facts["certificates"])
         facts["qualificationCodes"] = list(dict.fromkeys(str(code) for cert in facts["certificates"] for code in cert.get("qualificationCodes") or []))
         facts["workDate"] = review_run.get("workDate") or review_run.get("reviewDate")
@@ -128,6 +131,36 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
         facts["reviewDate"] = review_run.get("reviewDate")
     judgment = build_material_judgment(evidence_groups)
     return {node: facts, **judgment}
+
+
+def _merge_welder_certificates(certificates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """一个焊工一条证，不是一行一条证。
+
+    2026-09-12 线上实测节点 24：两名焊工的资料被 OCR 拆成 15 行，每行都成了一条「证书」，
+    其中 10 行只有空模板（`有效期: 自 年 月至 年 月`）。界面上「事实与证据 共 17 条」
+    全是这种噪声，check_certificate_validity 也被迫对 15 张「证」逐一判有效期。
+    按证件号（没有就按姓名）合并：合格项目取并集，有效期取第一条不是占位的。
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    for cert in certificates:
+        key = str(cert.get("welderCertificateNo") or cert.get("welderName") or cert.get("recordId"))
+        existing = merged.get(key)
+        if existing is None:
+            item = dict(cert)
+            for field in ("validFrom", "validUntil"):
+                if is_placeholder(item.get(field)):
+                    item.pop(field, None)
+            merged[key] = item
+            continue
+        codes = [*(existing.get("qualificationCodes") or []), *(cert.get("qualificationCodes") or [])]
+        existing["qualificationCodes"] = list(dict.fromkeys(code for code in codes if code))
+        for field in ("validFrom", "validUntil", "weldingMethod", "materialCategory", "position"):
+            if not existing.get(field) and not is_placeholder(cert.get(field)):
+                existing[field] = cert.get(field)
+        # 证据留有内容的那条：空模板行的引文对人没用。
+        if not (existing.get("evidence") or {}).get("quotedText") and (cert.get("evidence") or {}).get("quotedText"):
+            existing["evidence"] = cert["evidence"]
+    return list(merged.values())
 
 
 def _overlay_platform_welder_codes(
@@ -175,6 +208,11 @@ def _overlay_platform_welder_codes(
             cert.setdefault("sources", {})["qualificationCodes"] = "cnse_platform"
         if item.get("validUntil"):
             cert["validUntil"] = item["validUntil"]
+        # 平台那条登记原文也要作为证据挂上：界面据此把「平台已核验」的证书高亮，
+        # 监检才分得出哪几条是登记原文、哪几条只是 OCR 读出来的。
+        platform_evidence = [ref for ref in item.get("evidence") or [] if isinstance(ref, dict) and ref.get("source") == "cnse_platform"]
+        if platform_evidence:
+            cert["platformEvidence"] = platform_evidence[-1]
 
 
 def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namespace: str, kind: str) -> list[dict[str, Any]]:
@@ -187,6 +225,9 @@ def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namesp
         record_id = f"{namespace}-" + stable_payload_hash({"documentVersionId": common["documentVersionId"], "kind": kind, "row": index})[7:19].upper()
         evidence = _record_evidence(evidence_items, common["documentVersionId"], f"{namespace}EV-{record_id[-12:]}", _value(values, "documentNo", "recordNo", "weldNo", "证书编号", "记录编号") or kind, row=row if row else None, fallback_page=common.get("pageNo") or 1)
         record = _mapped(values, kind)
+        # 证据要带文件名与 documentId：界面上「第 1 页」不说是哪份文件，点也点不开。
+        evidence.setdefault("fileName", common.get("fileName"))
+        evidence.setdefault("documentId", common.get("documentId"))
         record.update({"recordId": record_id, "recordKind": kind, "documentVersionId": common["documentVersionId"], "documentId": common.get("documentId"), "fileName": common.get("fileName"), "pageNo": evidence.get("pageNo"), "ocrConfidence": evidence.get("confidence"), "evidence": evidence})
         output.append({key: value for key, value in record.items() if value is not None})
     return output

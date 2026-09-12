@@ -38,6 +38,7 @@ from typing import Any
 
 from libs.contracts.responses import server_time
 from libs.integrations.cnse_client import CnseApiError
+from libs.review_orchestrator.r12_agent import stable_payload_hash
 
 CACHE_KEY = "cnse_lookup_cache"
 CACHE_TTL = timedelta(hours=24)
@@ -70,7 +71,16 @@ def _cached_lookup(state: dict[str, Any], kind: str, key: str, query) -> dict[st
         ttl = timedelta(hours=1) if entry.get("error") else CACHE_TTL
         if now - queried_at <= ttl:
             return entry
-    entry: dict[str, Any] = {"kind": kind, "key": key, "queriedAt": server_time()}
+    # 必须有稳定 id：这个集合按列表存，没有 id 的条目落库时拿**列表下标**当主键
+    # （repository.persistence_object_id 的兜底）。缓存每次重写都会让下标错位，
+    # api 与 worker 两个进程各写各的，启动时的全量 flush 就撞
+    # ConcurrentPersistenceError——2026-09-12 部署实测：新容器起不来，蓝绿没切过去。
+    entry: dict[str, Any] = {
+        "id": "CNSE-" + stable_payload_hash({"kind": kind, "key": key})[7:19].upper(),
+        "kind": kind,
+        "key": key,
+        "queriedAt": server_time(),
+    }
     try:
         entry["result"] = query(key)
     except CnseApiError as exc:

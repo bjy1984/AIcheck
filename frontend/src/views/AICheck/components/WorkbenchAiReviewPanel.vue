@@ -410,10 +410,22 @@ const ruleLabel = (rule: Record<string, unknown>) =>
               </small>
             </div>
             <ul class="ai-outcome-facts">
-              <li v-for="fact in nodeFacts" :key="fact.factId">
+              <li
+                v-for="fact in nodeFacts"
+                :key="fact.factId"
+                :class="{ 'is-platform-verified': fact.platformVerified }"
+              >
                 <div class="ai-outcome-fact-head">
                   <span class="ai-unscored-fact-label">{{ fact.label }}</span>
                   <span class="ai-unscored-fact-value">{{ fact.value }}</span>
+                  <!-- 平台核到的那几条要一眼看出来：登记原文比 OCR 可信 -->
+                  <small
+                    v-if="fact.platformVerified"
+                    class="ai-fact-platform"
+                    title="公示平台按证件号查到并与本条一致，有效期与合格项目以登记为准"
+                  >
+                    平台已核验
+                  </small>
                   <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
                   <template v-if="!fact.scored && confirmable(fact)">
                     <template
@@ -468,14 +480,23 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                 <ul class="ai-outcome-quotes">
                   <li v-for="item in fact.evidence" :key="item.evidenceRefId">
                     <q :title="item.quotedText">{{ item.quotedText }}</q>
-                    <small>
-                      <template v-if="item.source === 'cnse_platform'">公示平台登记</template>
-                      <template v-else>
-                        {{ item.fileName
-                        }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
-                      </template>
-                      <template v-if="item.humanCorrected"> · 已人工确认</template>
+                    <small v-if="item.source === 'cnse_platform'">公示平台登记</small>
+                    <!-- 点文件名打开原件：核对引文得看得到原图，不能只给一行字 -->
+                    <button
+                      v-else-if="item.documentId"
+                      type="button"
+                      class="ai-quote-source"
+                      :title="`打开 ${item.fileName || '原件'}`"
+                      @click="emit('openFile', item.documentId)"
+                    >
+                      {{ item.fileName || '打开原件'
+                      }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                    </button>
+                    <small v-else>
+                      {{ item.fileName
+                      }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
                     </small>
+                    <small v-if="item.humanCorrected">已人工确认</small>
                   </li>
                 </ul>
               </li>
@@ -1125,6 +1146,20 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-outcome-checks,
 .ai-outcome-facts,
+.ai-quote-source {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--el-color-primary, #2f6bff);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ai-quote-source:hover {
+  text-decoration: underline;
+}
+
 .ai-outcome-quotes {
   display: grid;
   padding: 0;
@@ -1172,6 +1207,20 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-fact-unscored {
   color: #b54708;
+}
+
+.ai-fact-platform {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e8f5ee;
+  color: #1a7f4b;
+}
+
+.ai-outcome-facts > li.is-platform-verified {
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 6px;
+  background: #f4fbf7;
 }
 
 .ai-fact-confirmed {

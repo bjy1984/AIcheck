@@ -117,6 +117,11 @@ def test_同一编号24小时只查一次_错误也缓存(monkeypatch):
     build_certificate_facts(state, "P-1", 1, ["DV-LIC"])
     assert calls == ["TS1844171-2028"], "第二次应命中 state['cnse_lookup_cache']"
     assert state["cnse_lookup_cache"][0]["kind"] == "org_license"
+    # 必须有稳定 id：没有 id 的条目落库按列表下标当主键，列表一重排就与另一个进程撞
+    # ConcurrentPersistenceError（2026-09-12 部署实测：API 容器起不来）。
+    assert state["cnse_lookup_cache"][0]["id"].startswith("CNSE-")
+    build_certificate_facts(state, "P-1", 1, ["DV-LIC"])
+    assert [item["id"] for item in state["cnse_lookup_cache"]] == [state["cnse_lookup_cache"][0]["id"]], "同一键重查只留一条，id 不变"
 
 
 def test_焊工证按身份证取全部证书_现行项目替换OCR坏码(monkeypatch):

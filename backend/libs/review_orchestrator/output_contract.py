@@ -278,6 +278,7 @@ def _grounded_facts(atomic: dict[str, Any]) -> list[dict[str, Any]]:
                 "label": fact.get("label") or fact.get("factId"),
                 "value": fact.get("value"),
                 "scored": fact.get("scored") is not False,
+                "platformVerified": fact.get("platformVerified") is True,
                 "evidence": [item for item in fact.get("evidence") or [] if isinstance(item, dict)],
             }
             for fact in claimed

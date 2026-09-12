@@ -217,7 +217,7 @@ def _common_document_fields(
     text = "\n".join(_item_text(item) for item in items if _item_text(item))
     common: dict[str, Any] = {
         "documentVersionId": version_id,
-        "documentId": parse_result.get("documentId"),
+        "documentId": parse_result.get("documentId") or document_id_for_version(state, version_id),
         "fileName": _file_name(state, version_id),
         "pageNo": _first_page(items),
         **field_values,
@@ -277,6 +277,32 @@ def _business_rows(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
     return output
 
 
+# OCR 表格里的空模板行：「自 年 月至 年 月」「年 月 日」「批准日期」这类占位，
+# 去掉数字与年月日之后什么都不剩，当成没抽到，别让它变成一条事实。
+_PLACEHOLDER = re.compile(r"^[\s年月日自至（）()：:、,\-—/]*$")
+
+
+def is_placeholder(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    return bool(_PLACEHOLDER.fullmatch(re.sub(r"\d", "", text)))
+
+
+def _row_quote(row: dict[str, Any]) -> str:
+    """表格行 → 「键：值 · 键：值」。
+
+    原来这里是 json.dumps(row)，界面上就是一串 `{"有效期": "自 2024 年11 月…"}`
+    （2026-09-12 用户实测截图）。引文是给人读的，不是给机器解析的。
+    """
+    parts = [
+        f"{key}：{str(value).strip()}"
+        for key, value in row.items()
+        if key not in {"bbox", "polygon", "confidence", "pageNo"} and not is_placeholder(value)
+    ]
+    return " · ".join(parts)[:800] or json.dumps(row, ensure_ascii=False, default=str)[:200]
+
+
 def _record_evidence(
     items: list[dict[str, Any]],
     version_id: str,
@@ -293,7 +319,7 @@ def _record_evidence(
         reverse=True,
     )
     primary = ranked[0] if ranked else {}
-    quoted_text = json.dumps(row, ensure_ascii=False, default=str)[:800] if row else _item_text(primary)
+    quoted_text = _row_quote(row) if row else _item_text(primary)
     return {
         "id": evidence_id,
         "evidenceRefId": evidence_id,
@@ -382,6 +408,21 @@ def _first_page(items: list[dict[str, Any]]) -> int:
         except (TypeError, ValueError):
             continue
     return 1
+
+
+def document_id_for_version(state: dict[str, Any], version_id: str) -> str | None:
+    """版本 id → 文件 id。
+
+    parse_result 里没有 documentId（只有 documentVersionId），所以事实证据一直缺文件身份，
+    界面上只能显示「第 1 页」，点不开也不知道是哪份文件（2026-09-12 用户实测反馈）。
+    """
+    for item in state.get("versions", []) or []:
+        if not isinstance(item, dict):
+            continue
+        ids = {str(item.get(key) or "") for key in ("id", "versionId", "documentVersionId")}
+        if version_id in ids and item.get("documentId"):
+            return str(item["documentId"])
+    return None
 
 
 def _file_name(state: dict[str, Any], version_id: str) -> str | None:
