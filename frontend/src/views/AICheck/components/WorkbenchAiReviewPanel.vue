@@ -228,9 +228,34 @@ const nodeUnscoredCount = computed(() => nodeFacts.value.filter((fact) => !fact.
 const FACT_PREVIEW = 3
 const expandedFactGroups = ref<Set<string>>(new Set())
 
+/**
+ * 认不出业务标识的事实不逐条列。
+ *
+ * 2026-09-13 线上实测节点 26：56 条事实全叫「设计要求」，没有编号、没有牌号，引文是
+ * OCR 把管道特性表读坏后的表头配对（`操作压力：操作温度`）。这种行监检核不了，
+ * 列 56 条只是把真正要看的东西挤下去；如实说有多少条、让他点开原件看。
+ */
+const identifiedFacts = computed(() =>
+  nodeFacts.value.filter((fact) => fact.value || fact.platformVerified || !fact.scored)
+)
+const unidentifiedFacts = computed(() =>
+  nodeFacts.value.filter((fact) => !(fact.value || fact.platformVerified || !fact.scored))
+)
+const unidentifiedFiles = computed(() => {
+  const seen = new Map<string, string>()
+  unidentifiedFacts.value.forEach((fact) =>
+    fact.evidence.forEach((item) => {
+      if (item.documentId && item.fileName && !seen.has(item.documentId)) {
+        seen.set(item.documentId, item.fileName)
+      }
+    })
+  )
+  return [...seen.entries()].map(([documentId, fileName]) => ({ documentId, fileName }))
+})
+
 const factGroups = computed(() => {
   const groups = new Map<string, WorkbenchAiGroundedFact[]>()
-  nodeFacts.value.forEach((fact) => {
+  identifiedFacts.value.forEach((fact) => {
     // 「焊工证 姜军」归到「焊工证」；没有类型名的用 factId 前缀兜底。
     const key = fact.label.split(' ')[0] || fact.factId.replace(/-\d+$/, '')
     if (!groups.has(key)) groups.set(key, [])
@@ -447,7 +472,7 @@ const ruleLabel = (rule: Record<string, unknown>) =>
           <div v-if="nodeFacts.length" class="ai-outcome-facts-block">
             <div class="ai-check-outcomes-head">
               <strong>事实与证据</strong>
-              <span>共 {{ nodeFacts.length }} 条</span>
+              <span>共 {{ identifiedFacts.length }} 条</span>
               <small v-if="nodeUnscoredCount">
                 其中 {{ nodeUnscoredCount }} 条引擎未给分，核对无误后下次复核即可计分
               </small>
@@ -563,6 +588,17 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                 </li>
               </ul>
             </template>
+            <!-- 认不出业务标识的：如实说有多少条，指到原件，不逐条铺 -->
+            <p v-if="unidentifiedFacts.length" class="ai-fact-unidentified">
+              另有
+              {{ unidentifiedFacts.length }}
+              条表格记录未能识别出可核字段（编号、牌号、焊口号等），未逐条列出。
+              <template v-for="file in unidentifiedFiles" :key="file.documentId">
+                <button type="button" @click="emit('openFile', file.documentId)">
+                  查看 {{ file.fileName }}
+                </button>
+              </template>
+            </p>
           </div>
         </section>
 
@@ -1269,6 +1305,26 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-fact-unscored {
   color: #b54708;
+}
+
+.ai-fact-unidentified {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-fact-unidentified button {
+  padding: 0 0 0 6px;
+  border: none;
+  background: none;
+  color: var(--el-color-primary, #2f6bff);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ai-fact-unidentified button:hover {
+  text-decoration: underline;
 }
 
 .ai-fact-group-head {

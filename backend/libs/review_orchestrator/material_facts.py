@@ -124,10 +124,13 @@ FACT_TYPE_LABELS: dict[str, str] = {
 }
 
 # 事实的「值」按这个顺序找第一个有内容的字段；调用方给的 value_keys 优先。
+# 不含 fileName：拿文件名兜底会让每一条读坏的表格行都「看起来有值」
+# （2026-09-13 线上实测节点 26：56 条事实的值全是「地上甲类储罐区2（含泵区）施工图.pdf」）。
+# 取不到业务标识就让它空着——界面据此把这些行归成「未能识别出可核字段」，不逐条列。
 _FALLBACK_VALUE_KEYS = (
     "holderName", "welderName", "personName", "certificateNo", "documentNo", "recordNo",
     "weldNo", "jointNo", "pipelineNo", "materialGrade", "designation", "batchNo", "reportNo",
-    "procedureNo", "wpsNo", "pqrNo", "fileName",
+    "procedureNo", "wpsNo", "pqrNo",
 )
 
 

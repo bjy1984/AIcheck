@@ -973,3 +973,45 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(outcome.facts[0].evidence[0].documentId, 'DOC-W', '要能点开原件')
   assert.equal(outcome.facts[1].platformVerified, false, '没核到的不许标成已核验')
 }
+
+// 认不出业务标识的表格行不该逐条列：节点 26 实测 56 条「设计要求」，值是文件名、
+// 引文是 OCR 读坏的表头配对，监检核不了，列出来只会把要看的挤下去。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [outcome] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R26-03',
+        name: '证据追溯',
+        result: 'passed',
+        facts: [
+          {
+            factId: 'r26-designRequirements-1',
+            label: '设计要求',
+            value: '',
+            scored: true,
+            evidence: [
+              {
+                evidenceRefId: 'E1',
+                documentId: 'DOC-DWG',
+                fileName: '施工图.pdf',
+                pageNo: 2,
+                quotedText: '操作压力：操作温度'
+              }
+            ]
+          },
+          {
+            factId: 'r26-qualityCertificates-1',
+            label: '焊材质量证明书 HG-2026-0830',
+            value: 'HG-2026-0830',
+            scored: true,
+            evidence: []
+          }
+        ]
+      }
+    ]
+  })
+  // 映射层原样带出来，由面板决定列不列——这里钉住「值为空」这个判据本身。
+  assert.equal(outcome.facts[0].value, '', '认不出标识的事实值必须是空的，不能拿文件名充数')
+  assert.equal(outcome.facts[1].value, 'HG-2026-0830')
+}
