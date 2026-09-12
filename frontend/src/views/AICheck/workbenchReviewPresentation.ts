@@ -139,8 +139,56 @@ export type WorkbenchCertificateVerification = {
     validUntil: string
     scopes: string[]
     result: string
+    /** 公示平台（CNSE）查询结果：查到并一致 / 查不到 / 没查成（平台故障、限流、超时）。 */
+    platform: {
+      outcome: string
+      label: string
+      tone: 'green' | 'orange' | 'gray' | 'red'
+      detail: string
+      queriedAt: string
+    } | null
   }>
   warnings: string[]
+}
+
+/** 平台查询结果 → 人话。outcome 取值见 certificate_platform_verify。 */
+const PLATFORM_OUTCOMES: Record<
+  string,
+  { label: string; tone: 'green' | 'orange' | 'gray' | 'red' }
+> = {
+  verified_match: { label: '平台已核验一致', tone: 'green' },
+  verified_mismatch: { label: '与平台登记不一致', tone: 'red' },
+  not_found: { label: '平台查无此证', tone: 'orange' },
+  unable_to_verify: { label: '平台未能核验', tone: 'gray' }
+}
+
+/** 平台故障码 → 人话；这些是链路问题，不是证书问题，别让人以为证有问题。 */
+const PLATFORM_ERRORS: Record<string, string> = {
+  CnseRequestError: '平台请求失败（验证码接口超时或限流）',
+  CnseProtocolError: '平台返回格式异常',
+  CnseCaptchaError: '平台滑块校验未通过',
+  license_list_failed: '平台没返回完整证书清单',
+  license_list_not_attempted: '未向平台取证书清单'
+}
+
+const platformView = (raw: unknown) => {
+  if (!raw || typeof raw !== 'object') return null
+  const block = raw as Record<string, unknown>
+  const outcome = String(block.outcome || '')
+  if (!outcome) return null
+  const meta = PLATFORM_OUTCOMES[outcome] || { label: outcome, tone: 'gray' as const }
+  const error = String(block.platformError || '')
+  const detail =
+    (error && (PLATFORM_ERRORS[error] || error)) ||
+    String(block.comment || '') ||
+    (outcome === 'verified_match' ? '有效期与合格项目以平台登记为准' : '')
+  return {
+    outcome,
+    label: meta.label,
+    tone: meta.tone,
+    detail,
+    queriedAt: String(block.queriedAt || '')
+  }
 }
 
 /** 服务端 certificateVerification 块 → 展示模型；不是对象或没有证书条目时返回 undefined。 */
@@ -172,7 +220,8 @@ export const workbenchCertificateVerification = (
         validFrom: text(item.validFrom),
         validUntil: text(item.validUntil),
         scopes: Array.isArray(item.scopes) ? item.scopes.map(text) : [],
-        result: text(item.result)
+        result: text(item.result),
+        platform: platformView(item.platformVerification)
       })),
     warnings: Array.isArray(block.warnings) ? block.warnings.map(text) : []
   }

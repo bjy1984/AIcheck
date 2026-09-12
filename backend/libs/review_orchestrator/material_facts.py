@@ -95,6 +95,53 @@ def extract_material_ndt_reports(state: dict[str, Any], parse_result: dict[str, 
     return _extract_records(state, parse_result, namespace="R18NR", record_kind="material_ndt")
 
 
+# 事实类型 → 人话。factId 形如 `r24-certificates-1`，界面上原样印出来没人看得懂
+# （2026-09-12 线上实测：节点 24 的「事实与证据」列了 17 条 `r24-certificates-N`，
+# 值是 None，引文是一段 JSON）。这里给标签，值按更宽的一组键回退。
+FACT_TYPE_LABELS: dict[str, str] = {
+    "certificates": "焊工证",
+    "workItems": "施焊记录",
+    "workRecords": "施焊记录",
+    "weldingRecords": "焊接记录",
+    "wpsItems": "焊接工艺规程 WPS",
+    "pqrItems": "工艺评定报告 PQR",
+    "qualityCertificates": "焊材质量证明书",
+    "designRequirements": "设计要求",
+    "physicalItems": "焊材实物记录",
+    "managementRecords": "焊材管理记录",
+    "fitUpRecords": "管道组对记录",
+    "appearanceRecords": "外观检查记录",
+    "repairRecords": "返修记录",
+    "procedureCards": "热处理工艺卡",
+    "qualificationReports": "热处理评定报告",
+    "weldItems": "焊口",
+    "instrumentRecords": "测温仪表记录",
+    "temperaturePointLayouts": "测温点布置",
+    "heatTreatmentReports": "热处理报告",
+    "hardnessReports": "硬度检测报告",
+    "materials": "材料",
+    "certificateItems": "证书条目",
+}
+
+# 事实的「值」按这个顺序找第一个有内容的字段；调用方给的 value_keys 优先。
+_FALLBACK_VALUE_KEYS = (
+    "holderName", "welderName", "personName", "certificateNo", "documentNo", "recordNo",
+    "weldNo", "jointNo", "pipelineNo", "materialGrade", "designation", "batchNo", "reportNo",
+    "procedureNo", "wpsNo", "pqrNo", "fileName",
+)
+
+
+def _fact_label(fact_type: str, record: dict[str, Any]) -> str:
+    """`r24-certificates` → 「焊工证」；能取到持证人/编号就带上，取不到只给类型名。"""
+    target = fact_type.split("-")[-1]
+    base = FACT_TYPE_LABELS.get(target, target)
+    for key in ("holderName", "welderName", "personName", "certificateNo", "documentNo", "recordNo", "weldNo"):
+        value = record.get(key)
+        if _present(value):
+            return f"{base} {value}"
+    return base
+
+
 def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]], tuple[str, ...]]]) -> dict[str, Any]:
     all_records = [record for _, records, _ in records_by_type for record in records]
     evidence_refs = _unique_evidence_refs([record.get("evidence") for record in all_records])
@@ -106,7 +153,11 @@ def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]
             claimed_facts.append(
                 {
                     "factId": f"{fact_type}-{index}",
-                    "value": next((record.get(key) for key in value_keys if _present(record.get(key))), None),
+                    "label": _fact_label(fact_type, record),
+                    "value": next(
+                        (record.get(key) for key in (*value_keys, *_FALLBACK_VALUE_KEYS) if _present(record.get(key))),
+                        None,
+                    ),
                     "documentVersionId": record.get("documentVersionId"),
                     "evidenceRefIds": [evidence_id] if evidence_id else [],
                     "confidence": evidence.get("confidence") or record.get("ocrConfidence"),

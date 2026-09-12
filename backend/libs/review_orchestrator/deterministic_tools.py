@@ -297,6 +297,9 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                 "scopes": list(cert.get("scopes") or []),
                 "result": status,
                 "checks": cert_checks,
+                # 公示平台查了没有、查到没有——原来只留在事实里，界面上完全看不到
+                # （2026-09-12 用户实测反馈）。核验卡要显示它，所以带出来。
+                "platformVerification": cert.get("platformVerification"),
                 "evidenceRefs": list(cert.get("evidence") or []),
             }
         )

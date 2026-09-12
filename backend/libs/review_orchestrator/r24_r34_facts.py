@@ -100,6 +100,7 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     if node == "r34":
         facts["hardnessReports"] = _group_hardness_reports(facts["hardnessReports"])
     if node == "r24":
+        _overlay_platform_welder_codes(state, review_run, facts["certificates"])
         facts["qualificationCodes"] = list(dict.fromkeys(str(code) for cert in facts["certificates"] for code in cert.get("qualificationCodes") or []))
         facts["workDate"] = review_run.get("workDate") or review_run.get("reviewDate")
         facts["reviewDate"] = review_run.get("reviewDate")
@@ -114,6 +115,7 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     elif node == "r27":
         facts["controlRequirements"] = review_run.get("weldingConsumableControlRequirements") or {}
     elif node == "r29":
+        _overlay_platform_welder_codes(state, review_run, facts["certificates"])
         facts["qualificationCodes"] = list(dict.fromkeys(str(code) for cert in facts["certificates"] for code in cert.get("qualificationCodes") or []))
         facts["workDate"] = review_run.get("workDate") or review_run.get("reviewDate")
     elif node == "r30":
@@ -126,6 +128,53 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
         facts["reviewDate"] = review_run.get("reviewDate")
     judgment = build_material_judgment(evidence_groups)
     return {node: facts, **judgment}
+
+
+def _overlay_platform_welder_codes(
+    state: dict[str, Any], review_run: dict[str, Any], certificates: list[dict[str, Any]]
+) -> None:
+    """把公示平台登记的合格项目代号覆盖到焊工证事实上（就地改）。
+
+    2026-09-12 线上实测节点 24：OCR 把项目代号认坏成 `CTAF-Fe II-6G-…` / `SHAW-…` /
+    `PTAV-…`，解码器全部拒掉，`all_codes_decoded` 实际 0/要求 4，AC-R24-01..04 一律
+    证据不足。平台按身份证返回的是登记原文（姜军那条当天核到 verified_match，
+    `GTAW-FEII-6G-3/57-FEFS-02/11/12` 等），但它只进了 certificate_facts 那条链，
+    r24/r29 的焊工事实是另一个 builder 自己从 OCR 建的，拿不到。这里补上。
+
+    平台不通、查不到、或身份证号不像身份证时原样保留 OCR 值——不冒充、不判无证。
+    """
+    from libs.review_orchestrator.certificate_platform_verify import verify_certificate_records
+
+    if not certificates:
+        return
+    records = [
+        {
+            "certificateNo": cert.get("welderCertificateNo") or cert.get("documentNo") or "",
+            "certificateType": "welder_certificate",
+            "holder": cert.get("welderName"),
+            "documentVersionId": cert.get("documentVersionId"),
+            "fileName": cert.get("fileName"),
+            "qualificationCodes": list(cert.get("qualificationCodes") or []),
+            "validUntil": cert.get("validUntil"),
+        }
+        for cert in certificates
+    ]
+    verified = verify_certificate_records(
+        state, {"certificateType": "welder_certificate"}, records, review_run=review_run
+    )
+    for cert, item in zip(certificates, verified):
+        verification = item.get("platformVerification")
+        if not verification:
+            continue
+        cert["platformVerification"] = verification
+        if verification.get("outcome") != "verified_match":
+            continue
+        codes = [str(code) for code in item.get("qualificationCodes") or [] if code]
+        if codes:
+            cert["qualificationCodes"] = codes
+            cert.setdefault("sources", {})["qualificationCodes"] = "cnse_platform"
+        if item.get("validUntil"):
+            cert["validUntil"] = item["validUntil"]
 
 
 def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namespace: str, kind: str) -> list[dict[str, Any]]:

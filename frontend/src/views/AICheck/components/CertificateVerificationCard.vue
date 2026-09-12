@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AuditStatusTag from './AuditStatusTag.vue'
+import { friendlyMaterialType } from './auditLabels'
 import type { WorkbenchCertificateVerification } from '../workbenchReviewPresentation'
 
 // 证照/资格证的确定性核验结论。它不是模型说的，是服务端按有效期、持证主体、
@@ -18,6 +19,10 @@ const labelOf = (result: string) =>
         ? '证据不足'
         : result || '未核验'
 
+// welder_certificate / design_license 这类代号不能直接印给监检看。
+const certificateTypeLabel = computed(() =>
+  friendlyMaterialType(props.verification.certificateType)
+)
 const overallTone = computed(() => toneOf(props.verification.result))
 const overallLabel = computed(() => labelOf(props.verification.result))
 const periodText = computed(() => {
@@ -44,7 +49,9 @@ const warningText = (code: string) => {
     <div class="cert-verification-head">
       <div>
         <strong>证照核验</strong>
-        <small>{{ verification.certificateType || '' }} · {{ periodText }}</small>
+        <small
+          >{{ certificateTypeLabel }}{{ certificateTypeLabel ? ' · ' : '' }}{{ periodText }}</small
+        >
       </div>
       <AuditStatusTag :tone="overallTone" round>{{ overallLabel }}</AuditStatusTag>
     </div>
@@ -55,6 +62,7 @@ const warningText = (code: string) => {
           <th>证书编号</th>
           <th>有效期至</th>
           <th>范围 / 项目</th>
+          <th>公示平台</th>
           <th>结论</th>
         </tr>
       </thead>
@@ -64,6 +72,17 @@ const warningText = (code: string) => {
           <td>{{ cert.certificateNo || '-' }}</td>
           <td>{{ cert.validUntil || '未识别' }}</td>
           <td>{{ (cert.scopes || []).join('、') || '-' }}</td>
+          <td>
+            <template v-if="cert.platform">
+              <AuditStatusTag :tone="cert.platform.tone" round>
+                {{ cert.platform.label }}
+              </AuditStatusTag>
+              <small v-if="cert.platform.detail" class="cert-platform-detail">
+                {{ cert.platform.detail }}
+              </small>
+            </template>
+            <small v-else class="cert-platform-detail">未查平台</small>
+          </td>
           <td
             ><AuditStatusTag :tone="toneOf(cert.result)" round>{{
               labelOf(cert.result)
@@ -96,6 +115,13 @@ const warningText = (code: string) => {
   display: block;
   color: var(--el-text-color-secondary);
   margin-top: 2px;
+}
+.cert-platform-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 16px;
 }
 .cert-verification-table {
   width: 100%;

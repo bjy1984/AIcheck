@@ -5,7 +5,14 @@
  * 2026-09-12 线上实测：节点包返回 258KB（5 条资料要求、命中状态、责任方、要核的字段、
  * 已确认证据数），节点页只渲染出 2.2KB 文本——「审查所需资料」表被锁在 `submission`
  * 审计项下，而节点页的目录只保留 ai_review / human_review 两项，那张表永远打不开。
- * 监检人员想知道「还缺什么」只能去问 AI 对话框。这张卡把它摆回台面上。
+ *
+ * 第一版挂上去之后用户当场指出还是不好用，这一版按这几条重做：
+ * - 数字不许自相矛盾：5 项里 4 项未找到，标题却写「还缺 2」（那个 2 来自 readiness 的
+ *   必传口径，行列表却是全部要求）。现在所有计数都从同一份行数据算。
+ * - 可选资料没交不是缺陷：原来和必传缺失一样标红，监检看见一片红反而分不出轻重。
+ * - 每行别占两行：「未找到」后面再红一行「未挂接资料」是同义反复。
+ * - 缺的要能立刻动手：每行给「去挂接」。
+ * - 顺序按要处理的程度排，不是按后端返回顺序（原来可选的排在必传前面）。
  */
 import { computed } from 'vue'
 
@@ -20,47 +27,82 @@ type MaterialRow = {
   status: string
 }
 
-const props = withDefaults(
-  defineProps<{
-    rows: MaterialRow[]
-    /** 已确认证据的必传项数；取自 evidenceReadiness，缺失时按行状态兜底。 */
-    satisfiedCount?: number
-    missingCount?: number
-  }>(),
-  { satisfiedCount: undefined, missingCount: undefined }
-)
-
+const props = defineProps<{ rows: MaterialRow[] }>()
 const emit = defineEmits<{ openMaterials: [] }>()
 
-/** 未找到 → 待确认 → 已确认：先看要处理的。 */
-const STATUS_ORDER = ['未找到', '未命中', '待确认', '已驳回', '已确认']
-const STATUS_TONES: Record<string, 'red' | 'orange' | 'green' | 'gray'> = {
-  未找到: 'red',
-  未命中: 'red',
-  待确认: 'orange',
-  已驳回: 'orange',
-  已确认: 'green'
+const isOptional = (row: MaterialRow) => row.requiredType === '可选'
+const isDone = (row: MaterialRow) => row.status === '已确认'
+/** 待确认＝挂上了但没人确认；未找到＝压根没挂。 */
+const isPending = (row: MaterialRow) => row.status === '待确认' || row.status === '已驳回'
+
+/** 必传缺失挡结论，条件必传缺失要判断，可选没交只是没交——三档不能一样红。 */
+const severity = (row: MaterialRow): 'blocking' | 'attention' | 'optional' | 'done' => {
+  if (isDone(row)) return 'done'
+  if (isOptional(row)) return 'optional'
+  return row.requiredType === '必传' ? 'blocking' : 'attention'
 }
+const RANK: Record<string, number> = { blocking: 0, attention: 1, optional: 3, done: 2 }
 
 const sortedRows = computed(() =>
   [...props.rows].sort((left, right) => {
-    const rank = (row: MaterialRow) => {
-      const index = STATUS_ORDER.indexOf(row.status)
-      return index < 0 ? STATUS_ORDER.length : index
-    }
-    return rank(left) - rank(right)
+    const bySeverity = RANK[severity(left)] - RANK[severity(right)]
+    if (bySeverity) return bySeverity
+    // 同一档里先列没挂的，再列挂了待确认的
+    return Number(isPending(left)) - Number(isPending(right))
   })
 )
 
-const confirmed = computed(
-  () => props.satisfiedCount ?? props.rows.filter((row) => row.status === '已确认').length
+const statusText = (row: MaterialRow) => {
+  if (isDone(row)) return '已确认'
+  if (isPending(row)) return '待确认'
+  return isOptional(row) ? '未提供' : '缺'
+}
+const statusTone = (row: MaterialRow) => {
+  const level = severity(row)
+  if (level === 'done') return 'green'
+  if (isPending(row)) return 'orange'
+  return level === 'blocking' ? 'red' : level === 'attention' ? 'orange' : 'gray'
+}
+
+/** 所有计数都从同一份行数据算，标题和列表不可能对不上。 */
+const stats = computed(() => {
+  const required = props.rows.filter((row) => !isOptional(row))
+  const done = required.filter(isDone)
+  const blocking = props.rows.filter((row) => severity(row) === 'blocking')
+  const attention = props.rows.filter((row) => severity(row) === 'attention' && !isPending(row))
+  const pending = props.rows.filter((row) => !isDone(row) && isPending(row))
+  const optional = props.rows.filter((row) => isOptional(row) && !isDone(row))
+  return {
+    requiredTotal: required.length,
+    requiredDone: done.length,
+    blocking: blocking.length,
+    attention: attention.length,
+    pending: pending.length,
+    optional: optional.length
+  }
+})
+
+const summaryText = computed(() => {
+  const { requiredDone, requiredTotal, pending, optional } = stats.value
+  return [
+    `必传 ${requiredDone}/${requiredTotal} 已确认`,
+    pending ? `待确认 ${pending}` : '',
+    optional ? `可选未提供 ${optional}` : ''
+  ]
+    .filter(Boolean)
+    .join(' · ')
+})
+
+const headline = computed(() => {
+  const { blocking, attention, pending } = stats.value
+  if (blocking) return `缺 ${blocking} 份必传资料`
+  if (pending) return `${pending} 份待确认`
+  if (attention) return `缺 ${attention} 份条件必传资料`
+  return '必传资料齐备'
+})
+const headlineTone = computed(() =>
+  stats.value.blocking ? 'red' : stats.value.pending || stats.value.attention ? 'orange' : 'green'
 )
-const missing = computed(
-  () => props.missingCount ?? props.rows.filter((row) => row.status !== '已确认').length
-)
-const statusTone = (status: string) => STATUS_TONES[status] || 'gray'
-/** 必传缺失是硬阻断，条件必传缺失只是提示——别让它们看起来一样严重。 */
-const isBlocking = (row: MaterialRow) => row.requiredType === '必传' && row.status !== '已确认'
 </script>
 
 <template>
@@ -68,26 +110,29 @@ const isBlocking = (row: MaterialRow) => row.requiredType === '必传' && row.st
     <div class="card-head">
       <div>
         <h2>本节点所需资料</h2>
-        <div class="sub">
-          共 {{ rows.length }} 项 · 已确认 {{ confirmed }} · 还缺 {{ missing }}
-        </div>
+        <div class="sub">{{ summaryText }}</div>
       </div>
-      <AuditStatusTag :tone="missing ? 'orange' : 'green'" round>
-        {{ missing ? `缺 ${missing} 项` : '资料齐备' }}
-      </AuditStatusTag>
+      <AuditStatusTag :tone="headlineTone" round>{{ headline }}</AuditStatusTag>
     </div>
     <div class="card-body">
       <ul class="node-materials-list">
-        <li v-for="row in sortedRows" :key="row.id" :class="{ 'is-blocking': isBlocking(row) }">
-          <AuditStatusTag :tone="statusTone(row.status)" round>{{ row.status }}</AuditStatusTag>
+        <li v-for="row in sortedRows" :key="row.id" :class="`is-${severity(row)}`">
+          <AuditStatusTag :tone="statusTone(row)" round>{{ statusText(row) }}</AuditStatusTag>
           <span class="node-materials-name">{{ row.name }}</span>
-          <small class="node-materials-meta">
-            {{ row.requiredType }} · {{ row.responsibleParty }}
-          </small>
+          <small class="node-materials-meta"
+            >{{ row.requiredType }} · {{ row.responsibleParty }}</small
+          >
           <small v-if="row.matchedFileNames.length" class="node-materials-files">
             {{ row.matchedFileNames.join('、') }}
           </small>
-          <small v-else class="node-materials-files is-empty">未挂接资料</small>
+          <button
+            v-else-if="!isOptional(row)"
+            type="button"
+            class="node-materials-action"
+            @click="emit('openMaterials')"
+          >
+            去挂接
+          </button>
         </li>
       </ul>
       <button type="button" class="node-materials-more" @click="emit('openMaterials')">
@@ -107,53 +152,52 @@ const isBlocking = (row: MaterialRow) => row.requiredType === '必传' && row.st
   padding: 0;
   margin: 0;
   list-style: none;
-  gap: 6px;
+  gap: 2px;
 }
 
 .node-materials-list li {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  flex-wrap: wrap;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #f0f3f9;
+  padding: 5px 8px;
+  border-radius: 6px;
   font-size: 13px;
   line-height: 20px;
   color: #27364b;
 }
 
-.node-materials-list li:last-child {
-  padding-bottom: 0;
-  border-bottom: none;
+.node-materials-list li.is-blocking {
+  background: #fff6f5;
+}
+
+.node-materials-list li.is-optional {
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.node-materials-name {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .node-materials-list li.is-blocking .node-materials-name {
   font-weight: 600;
 }
 
-.node-materials-name {
-  flex: 1 1 220px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.node-materials-meta,
-.node-materials-files {
+.node-materials-meta {
+  flex: 0 0 auto;
   color: var(--aicheck-text-subtle, #667085);
 }
 
 .node-materials-files {
-  flex-basis: 100%;
-  padding-left: 4px;
+  flex: 1 1 100%;
+  padding-left: 62px;
+  color: var(--aicheck-text-subtle, #667085);
+  overflow-wrap: anywhere;
 }
 
-.node-materials-files.is-empty {
-  color: #b42318;
-}
-
+.node-materials-action,
 .node-materials-more {
-  justify-self: start;
-  margin-top: 10px;
   padding: 0;
   border: none;
   background: none;
@@ -162,6 +206,16 @@ const isBlocking = (row: MaterialRow) => row.requiredType === '必传' && row.st
   font-size: 13px;
 }
 
+.node-materials-action {
+  flex: 0 0 auto;
+}
+
+.node-materials-more {
+  justify-self: start;
+  margin-top: 10px;
+}
+
+.node-materials-action:hover,
 .node-materials-more:hover {
   text-decoration: underline;
 }

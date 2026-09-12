@@ -203,7 +203,7 @@ type EvidenceConfirmationRow = {
   confidenceText: string
   evidence?: EvidenceLink
 }
-import { friendlyModelAlias } from './components/auditLabels'
+import { friendlyModelAlias, materialTypeLabels } from './components/auditLabels'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
@@ -1228,58 +1228,7 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
     }
   ]
 })
-const overviewFileMaterialTypeLabels: Record<string, string> = {
-  generic_review_material: '审查资料',
-  design_license: '设计单位许可证',
-  construction_license: '施工单位安装许可证',
-  manufacturing_license: '制造单位许可证',
-  ndt_org_certificate: '无损检测机构核准证',
-  ndt_person_certificate: '无损检测人员资格证和执业注册证',
-  design_document: '设计文件',
-  drawing_review_record: '施工图审查手续',
-  calculation_report: '强度计算书或应力分析报告',
-  design_change_document: '设计变更和书面批准文件',
-  construction_organization_design: '施工组织设计',
-  construction_schedule: '施工计划工期文件',
-  quality_certificate: '产品质量证明书',
-  manufacturing_supervision_certificate: '制造监督检验证书',
-  type_test_report: '型式试验证书或型式试验报告',
-  factory_inspection_report: '出厂检验报告',
-  overseas_material_certificate: '境外制造或境外牌号材料证明文件',
-  acceptance_witness_record: '到货验收见证资料',
-  material_retest_report: '材料复验报告',
-  material_mark_transfer_record: '材料标志移植记录',
-  material_substitution_approval: '材料代用批准文件',
-  technical_review_approval: '技术评审和批准手续',
-  valve_test_report: '阀门施工资料和耐压试验报告',
-  welder_certificate: '焊工资格证',
-  welder_roster: '焊工名册',
-  wps_pqr: '焊接工艺评定报告和焊接作业指导书',
-  welding_material_certificate: '焊接材料质量证明文件',
-  welding_material_management_record: '焊材验收保管发放回收记录',
-  welding_record: '焊接记录和焊缝标识资料',
-  weld_repair_record: '焊缝返修记录',
-  heat_treatment_procedure: '焊后热处理工艺文件',
-  heat_treatment_record: '热处理记录、曲线和硬度检测报告',
-  instrument_calibration_certificate: '仪表检定或校准证书',
-  ndt_plan: '无损检测方案',
-  ndt_procedure: '无损检测工艺文件',
-  ndt_report: '无损检测报告',
-  radiographic_film: '射线检测底片',
-  anticorrosion_insulation_material_certificate: '防腐及保温材料质量证明文件',
-  anticorrosion_insulation_record: '防腐补口补伤和保温施工记录',
-  cathodic_protection_record: '阴极保护和杂散电流排流装置资料',
-  grounding_test_record: '静电接地施工和测试记录',
-  installation_record: '管道安装和现场制作记录',
-  safety_accessory_record: '安全附件安装、校验或性能测试资料',
-  pressure_test_plan: '耐压试验方案',
-  pressure_test_report: '耐压试验记录或报告',
-  leakage_test_report: '泄漏试验记录或报告',
-  purge_cleaning_record: '吹扫清洗方案和记录',
-  field_photo: '现场照片、底片或实物核验证据',
-  quality_system_document: '质量保证体系文件和实施记录',
-  external_query_screenshot: '外部查询截图'
-}
+const overviewFileMaterialTypeLabels = materialTypeLabels
 const getOverviewFileMaterialCategory = (file: {
   materialCategory?: string | null
   materialTypeCode?: string | null
@@ -5910,8 +5859,6 @@ onBeforeUnmount(() => {
                 !inspectionNodeUnselected
               "
               :rows="nodeRequirementRows"
-              :satisfied-count="evidenceReadiness?.satisfiedCount"
-              :missing-count="evidenceReadiness?.missingCount"
               @open-materials="openNodeMaterialsDetail"
             />
 

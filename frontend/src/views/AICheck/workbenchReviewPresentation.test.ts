@@ -876,3 +876,53 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.deepEqual(mixed.counts, { needAction: 1, confirm: 0, insufficient: 0, passed: 1 })
   assert.equal(mixed.keyFacts[0].text, '缺少方案', '有问题时关键事实先列问题')
 }
+
+// 公示平台查询结果要显示出来：查到、查不到、没查成，是三件不同的事
+// （2026-09-12 用户实测：界面上完全看不到调用证件 API 成功与否）。
+{
+  const { workbenchCertificateVerification } = await import('./workbenchReviewPresentation')
+  const { friendlyMaterialType } = await import('./components/auditLabels')
+  const view = workbenchCertificateVerification({
+    result: 'evidence_insufficient',
+    certificateType: 'welder_certificate',
+    period: {},
+    certificates: [
+      {
+        label: 'A',
+        certificateNo: '511621198504208836',
+        result: 'passed',
+        platformVerification: {
+          outcome: 'verified_match',
+          queriedAt: '2026-09-12 04:25:37',
+          source: 'cnse_platform'
+        }
+      },
+      {
+        label: 'B',
+        certificateNo: '410521198609180550',
+        result: 'evidence_insufficient',
+        platformVerification: {
+          outcome: 'unable_to_verify',
+          platformError: 'CnseRequestError',
+          queriedAt: '2026-09-12 04:42:05'
+        }
+      },
+      { label: 'C', certificateNo: 'TS1', result: 'passed' }
+    ],
+    warnings: []
+  })
+  const [matched, failed, unqueried] = view!.certificates
+  assert.equal(matched.platform?.label, '平台已核验一致')
+  assert.equal(matched.platform?.tone, 'green')
+  assert.equal(matched.platform?.queriedAt, '2026-09-12 04:25:37')
+  assert.equal(failed.platform?.label, '平台未能核验')
+  assert.equal(
+    failed.platform?.detail,
+    '平台请求失败（验证码接口超时或限流）',
+    '链路问题不能读成证书有问题'
+  )
+  assert.equal(unqueried.platform, null, '没查过就是没查过，不编一个结果')
+  assert.equal(friendlyMaterialType('welder_certificate'), '焊工资格证')
+  assert.equal(friendlyMaterialType('pqr'), '焊接工艺评定报告 PQR')
+  assert.equal(friendlyMaterialType('未知代号'), '未知代号', '认不出的代号原样显示，不猜')
+}
