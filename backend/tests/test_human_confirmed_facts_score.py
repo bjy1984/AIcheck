@@ -78,9 +78,12 @@ def test_逐项核查结果带出没分的事实和它引用的字段():
     outcomes = atomic_check_outcomes(
         [{"reviewRunId": "R", "ruleCode": "r01", "atomicCheckResults": [
             {"atomicCheckId": "AC-R01-02", "result": "human_review_required", "toolResults": [grounding]},
+            # 同一次 grounding 会挂在这个节点的每个原子项上；只有「需人工判断」那条列得出来。
+            {"atomicCheckId": "AC-R01-03", "result": "failed", "toolResults": [grounding]},
         ]}],
         {"businessPackId": "engineering_inspection_v1"},
     )
+    assert outcomes[1]["unscoredFacts"] == []
     unscored = outcomes[0]["unscoredFacts"]
     assert len(unscored) == 1
     assert unscored[0]["value"] == "TS1844171-2028"

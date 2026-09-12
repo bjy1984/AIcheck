@@ -3823,7 +3823,14 @@ export type ExtractedOcrField = {
 export const saveFactCorrectionApi = (
   projectId: string,
   nodeId: number,
-  payload: { fieldId: string; correctedValue: string; reason?: string },
+  payload: {
+    fieldId?: string
+    /** 没有抽取字段可指时（例如设计章）用点分隔的业务事实路径。 */
+    factPath?: string
+    documentVersionId?: string
+    correctedValue: string
+    reason?: string
+  },
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ correction: Record<string, unknown>; auditLogId?: string }>> => {
   return request.post({

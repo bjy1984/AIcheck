@@ -684,6 +684,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
             label: 'design_license TS1844171-2028',
             value: 'TS1844171-2028',
             documentVersionId: 'DV-1',
+            factPath: 'designDocument.designSealOrganization',
             fields: [
               {
                 fieldName: '许可证编号',
@@ -709,6 +710,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(outcome.unscoredFacts.length, 1)
   assert.equal(outcome.unscoredFacts[0].fields.length, 1, '没有 fieldName 的条目不显示按钮')
   assert.equal(outcome.unscoredFacts[0].fields[0].documentId, 'DOC-1')
+  assert.equal(outcome.unscoredFacts[0].factPath, 'designDocument.designSealOrganization')
   const [, second] = workbenchCheckOutcomes({
     atomicCheckOutcomes: [
       { atomicCheckId: 'AC-R01-02', name: 'x', result: 'passed' },

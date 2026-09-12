@@ -819,22 +819,36 @@ def merge_certificate_facts(
             judgment = certificate_facts.setdefault("judgment", {"claimedFacts": [], "evidenceRefs": []})
             for index, (key, label) in enumerate((("titleBlockOrganization", "图签设计单位"), ("designSealOrganization", "设计章单位")), 1):
                 value = design_org["designDocument"].get(key)
-                if not value:
+                source = design_org["designDocument"].get("sources", {}).get(key)
+                if not value or not source:
                     continue
-                refs = [item for item in design_org["designDocument"]["evidence"] if item.get("quotedText") and value in item.get("quotedText", "")]
+                evidence = source["evidence"]
                 judgment["claimedFacts"].append(
                     {
                         "factId": f"design-org-{index}",
                         "label": label,
                         "value": value,
-                        "documentVersionId": (refs[0] if refs else {}).get("documentVersionId"),
-                        "evidenceRefIds": [item["evidenceRefId"] for item in refs],
-                        "confidence": min((item["confidence"] for item in refs if isinstance(item.get("confidence"), (int, float))), default=None),
-                        "confidenceUnavailable": bool(refs) and all(item.get("confidenceUnavailable") for item in refs),
+                        "documentVersionId": evidence.get("documentVersionId"),
+                        # 没有字段可指的事实（设计章）按 factPath 确认；界面据此给按钮。
+                        "factPath": source.get("factPath"),
+                        "evidenceRefIds": [evidence["evidenceRefId"]],
+                        "confidence": evidence.get("confidence"),
+                        "confidenceUnavailable": bool(evidence.get("confidenceUnavailable")),
                         "conflicted": False,
+                        # 界面「核对无误」按字段回写；印章没有 fieldName，这里就没有可核的条目。
+                        "fields": [
+                            {
+                                "fieldName": evidence["fieldName"],
+                                "documentVersionId": evidence.get("documentVersionId"),
+                                "documentId": source["documentId"],
+                                "quotedText": evidence.get("quotedText"),
+                                "humanCorrected": bool(evidence.get("humanCorrected")),
+                            }
+                        ] if evidence.get("fieldName") else [],
                     }
                 )
-                judgment["evidenceRefs"].extend(item for item in refs if item["evidenceRefId"] not in {r["evidenceRefId"] for r in judgment["evidenceRefs"]})
+                if evidence["evidenceRefId"] not in {r["evidenceRefId"] for r in judgment["evidenceRefs"]}:
+                    judgment["evidenceRefs"].append(evidence)
     for key, value in certificate_facts.items():
         if key == "judgment":
             # 节点 24 的焊工 builder 已经产 judgment；证书事实要并进去，不能互相覆盖。

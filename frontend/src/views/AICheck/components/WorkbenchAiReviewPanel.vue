@@ -41,7 +41,8 @@ const emit = defineEmits<{
   confirmFact: [
     outcome: WorkbenchAiCheckOutcome,
     fact: WorkbenchAiUnscoredFact,
-    field: WorkbenchAiUnscoredField
+    /** null：这条事实没有抽取字段（例如设计章），按 fact.factPath 确认。 */
+    field: WorkbenchAiUnscoredField | null
   ]
 }>()
 
@@ -306,6 +307,17 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                     </ElButton>
                     <small v-else-if="field.humanCorrected">{{ field.fieldName }} 已人工确认</small>
                   </template>
+                  <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
+                  <ElButton
+                    v-if="canAct && !fact.fields.length && fact.factPath"
+                    size="small"
+                    text
+                    bg
+                    :disabled="acting"
+                    @click="emit('confirmFact', outcome, fact, null)"
+                  >
+                    核对无误
+                  </ElButton>
                 </li>
               </ul>
             </li>

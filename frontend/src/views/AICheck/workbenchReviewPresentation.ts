@@ -186,6 +186,8 @@ export type WorkbenchAiUnscoredFact = {
   label: string
   value: string
   documentVersionId: string
+  /** 没有抽取字段时的确认路径（如 designDocument.designSealOrganization）。 */
+  factPath: string
   fields: WorkbenchAiUnscoredField[]
 }
 
@@ -216,6 +218,7 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
           label: String(fact.label || fact.factId || ''),
           value: String(fact.value ?? ''),
           documentVersionId: String(fact.documentVersionId || ''),
+          factPath: String(fact.factPath || ''),
           fields: (Array.isArray(fact.fields) ? fact.fields : [])
             .map((field) => (field || {}) as Record<string, unknown>)
             .map((field) => ({

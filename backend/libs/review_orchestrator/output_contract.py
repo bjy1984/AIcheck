@@ -211,7 +211,9 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     "ruleCode": str(record.get("ruleCode") or ""),
                     # 「需人工判断」的原因常是引擎没给分：把没分的事实列出来，
                     # 界面才有东西让人核，核完落成 fact_corrections 下次就有分。
-                    "unscoredFacts": _unscored_facts(atomic),
+                    # 只挂在「需人工判断」上：grounding 的结果对同一节点的每个原子项都一样，
+                    # 挂满五项就是同两条事实列五遍；而人工确认只在这一种结论上能改判。
+                    "unscoredFacts": _unscored_facts(atomic) if str(atomic.get("result") or "") == "human_review_required" else [],
                 }
             )
     return outcomes
@@ -250,6 +252,8 @@ def _unscored_facts(atomic: dict[str, Any]) -> list[dict[str, Any]]:
                         "label": fact.get("label") or fact.get("factId"),
                         "value": fact.get("value"),
                         "documentVersionId": fact.get("documentVersionId"),
+                        # 印章一类没有抽取字段的事实：界面按 factPath 让人确认。
+                        "factPath": fact.get("factPath") or "",
                         "fields": [item for item in fact.get("fields") or [] if isinstance(item, dict)],
                     }
                 )

@@ -103,8 +103,31 @@ def test_节点1合并后check_all_equal拿到三个值():
     # 两条设计文件事实也进了 judgment，grounding 核得到。
     labels = {item.get("label") for item in merged["judgment"]["claimedFacts"]}
     assert {"图签设计单位", "设计章单位"} <= labels
+    by_label = {item.get("label"): item for item in merged["judgment"]["claimedFacts"] if item.get("label")}
+    # 图签来自「项目名称」字段 → 界面能让人核对无误；印章不是字段 → 没有可核条目。
+    title_fields = by_label["图签设计单位"]["fields"]
+    assert [(item["fieldName"], item["documentId"]) for item in title_fields] == [("项目名称", "DOC-DWG")]
+    assert title_fields[0]["humanCorrected"] is False and title_fields[0]["quotedText"].startswith("广东政和工程有限公司")
+    assert by_label["设计章单位"]["fields"] == []
     assert all(item["confidenceUnavailable"] for item in merged["judgment"]["claimedFacts"] if item.get("label"))
 
 
 def test_节点2不产设计单位事实():
     assert "designDocument" not in merge_certificate_facts(_state(), {**_run(), "nodeId": 2}, {})
+
+
+def test_设计章按事实路径确认后有分():
+    """印章不是抽取字段，只能按 factPath 确认；确认后证据 1.0，节点 1 才出得去「需人工判断」。"""
+    state = _state()
+    state["fact_corrections"] = [{
+        "id": "FCOR-SEAL", "status": "active", "projectId": "P-1", "nodeId": 1,
+        "factPath": "designDocument.designSealOrganization", "documentVersionId": "DV-DWG",
+        "correctedValue": "广东政和工程有限公司", "reason": "人工核对无误",
+    }]
+    merged = merge_certificate_facts(state, _run(), {})
+    by_label = {item.get("label"): item for item in merged["judgment"]["claimedFacts"] if item.get("label")}
+    seal = by_label["设计章单位"]
+    assert seal["confidence"] == 1.0 and seal["confidenceUnavailable"] is False
+    assert seal["factPath"] == "designDocument.designSealOrganization"
+    # 图签那条没确认，仍旧没分——一次确认只算一处。
+    assert by_label["图签设计单位"]["confidenceUnavailable"] is True

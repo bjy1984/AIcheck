@@ -268,18 +268,19 @@ export const useAiFindingFeedback = (ctx: {
   const handleConfirmFact = async (
     outcome: WorkbenchAiCheckOutcome,
     fact: WorkbenchAiUnscoredFact,
-    field: WorkbenchAiUnscoredField
+    field: WorkbenchAiUnscoredField | null
   ) => {
     if (!ctx.ensureWritable()) return
     const projectId = ctx.projectId?.() || ''
     const nodeId = ctx.nodeId?.() || 0
-    if (!projectId || !nodeId || !field.documentId) {
+    const label = field ? field.fieldName : fact.label
+    if (!projectId || !nodeId || (field ? !field.documentId : !fact.factPath)) {
       ElMessage.error('缺少项目、节点或文件信息，无法记录核对')
       return
     }
     try {
       await ElMessageBox.confirm(
-        `确认「${field.fieldName}」的抽取值无误？\n${field.quotedText || fact.value}\n\n确认后该字段按人工核对计分，${outcome.name} 下次复核不再因无置信度落到「需人工判断」。`,
+        `确认「${label}」的抽取值无误？\n${field?.quotedText || fact.value}\n\n确认后按人工核对计分，${outcome.name} 下次复核不再因无置信度落到「需人工判断」。`,
         '核对无误',
         { confirmButtonText: '确认无误', cancelButtonText: '取消', type: 'info' }
       )
@@ -288,22 +289,29 @@ export const useAiFindingFeedback = (ctx: {
     }
     busy.value = true
     try {
-      const listed = await listDocumentOcrFieldsApi(projectId, field.documentId)
-      const target = (listed.data || []).find(
-        (item) =>
-          item.documentVersionId === field.documentVersionId && item.fieldName === field.fieldName
-      )
-      if (!target) {
-        ElMessage.error(`没找到抽取字段「${field.fieldName}」，可能已被重新解析，请刷新后再核`)
-        return
+      // 有抽取字段的按 fieldId 确认（值原样回写）；印章一类没有字段，按事实路径确认。
+      let payload: Parameters<typeof saveFactCorrectionApi>[2]
+      if (field) {
+        const listed = await listDocumentOcrFieldsApi(projectId, field.documentId)
+        const target = (listed.data || []).find(
+          (item) =>
+            item.documentVersionId === field.documentVersionId && item.fieldName === field.fieldName
+        )
+        if (!target) {
+          ElMessage.error(`没找到抽取字段「${field.fieldName}」，可能已被重新解析，请刷新后再核`)
+          return
+        }
+        payload = { fieldId: target.id, correctedValue: target.fieldValue, reason: '人工核对无误' }
+      } else {
+        payload = {
+          factPath: fact.factPath,
+          documentVersionId: fact.documentVersionId,
+          correctedValue: fact.value,
+          reason: '人工核对无误'
+        }
       }
-      await saveFactCorrectionApi(
-        projectId,
-        nodeId,
-        { fieldId: target.id, correctedValue: target.fieldValue, reason: '人工核对无误' },
-        { etag: ctx.etag() }
-      )
-      ElMessage.success(`已记录：「${field.fieldName}」人工核对无误，下次复核生效`)
+      await saveFactCorrectionApi(projectId, nodeId, payload, { etag: ctx.etag() })
+      ElMessage.success(`已记录：「${label}」人工核对无误，下次复核生效`)
       await ctx.reload()
     } catch {
       ElMessage.error('核对记录失败，请刷新后重试。')
