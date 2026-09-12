@@ -242,15 +242,16 @@ const unidentifiedFacts = computed(() =>
   nodeFacts.value.filter((fact) => !(fact.value || fact.platformVerified || !fact.scored))
 )
 const unidentifiedFiles = computed(() => {
+  // 按文件名去重：同一份资料的多个版本 documentId 不同，按 id 去重会把同一个文件名列两遍。
   const seen = new Map<string, string>()
   unidentifiedFacts.value.forEach((fact) =>
     fact.evidence.forEach((item) => {
-      if (item.documentId && item.fileName && !seen.has(item.documentId)) {
-        seen.set(item.documentId, item.fileName)
+      if (item.documentId && item.fileName && !seen.has(item.fileName)) {
+        seen.set(item.fileName, item.documentId)
       }
     })
   )
-  return [...seen.entries()].map(([documentId, fileName]) => ({ documentId, fileName }))
+  return [...seen.entries()].map(([fileName, documentId]) => ({ documentId, fileName }))
 })
 
 const factGroups = computed(() => {
@@ -472,7 +473,8 @@ const ruleLabel = (rule: Record<string, unknown>) =>
           <div v-if="nodeFacts.length" class="ai-outcome-facts-block">
             <div class="ai-check-outcomes-head">
               <strong>事实与证据</strong>
-              <span>共 {{ identifiedFacts.length }} 条</span>
+              <span v-if="identifiedFacts.length">共 {{ identifiedFacts.length }} 条</span>
+              <span v-else>未识别出可核事实</span>
               <small v-if="nodeUnscoredCount">
                 其中 {{ nodeUnscoredCount }} 条引擎未给分，核对无误后下次复核即可计分
               </small>
