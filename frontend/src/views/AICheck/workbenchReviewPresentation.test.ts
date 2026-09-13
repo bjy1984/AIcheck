@@ -815,7 +815,11 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.deepEqual(insufficient.checks, [])
   assert.deepEqual(insufficient.facts, [])
   assert.equal(friendlyCheckReason('checkCount=0'), '规则跑了，但节点没有可检的资料')
-  assert.equal(friendlyCheckReason('foo_bar_missing'), '缺少 foo_bar', '认不出的码按后缀兜底')
+  assert.equal(
+    friendlyCheckReason('foo_bar_missing'),
+    '缺少foo_bar',
+    '认不出的词原样保留，只套后缀框架'
+  )
   assert.equal(friendlyCheckCode('scope_covers_GC2'), '许可范围覆盖 GC2')
   assert.equal(friendlyCheckCode('fact_2_confidence'), '事实 2：置信度达标')
   assert.equal(friendlyCheckCode('all_values_equal'), '三处单位名一致')
@@ -1014,4 +1018,39 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   // 映射层原样带出来，由面板决定列不列——这里钉住「值为空」这个判据本身。
   assert.equal(outcome.facts[0].value, '', '认不出标识的事实值必须是空的，不能拿文件名充数')
   assert.equal(outcome.facts[1].value, 'HG-2026-0830')
+}
+
+// 原因码是词根拼的（全库 295 个还会长）：按词翻译 + 后缀组框，认不出的词原样保留。
+{
+  const { friendlyCheckReason } = await import('./components/auditLabels')
+  assert.equal(
+    friendlyCheckReason('consumable_certificate_or_design_requirement_missing'),
+    '缺少焊材质量证明书或设计要求'
+  )
+  assert.equal(
+    friendlyCheckReason('wps_pqr_or_actual_work_missing'),
+    '缺少焊接工艺规程与评定报告或实际施焊记录'
+  )
+  // 显式表里已有更贴切的说法时以它为准（这条在 checkReasonLabels 里）
+  assert.equal(friendlyCheckReason('pwht_weld_items_missing'), '未抽到热处理焊口记录')
+  assert.equal(friendlyCheckReason('hardness_report_missing'), '缺少硬度报告')
+  assert.equal(friendlyCheckReason('temperature_point_layout_missing'), '缺少温度测点布置')
+  assert.equal(friendlyCheckReason('r15_design_items_missing'), '未抽到设计文件条目', '显式表里有 r15 这条')
+  assert.equal(friendlyCheckReason('r18_design_items_missing'), '缺少设计条目', '没进显式表的规则前缀要剥掉再翻')
+  assert.equal(
+    friendlyCheckReason('product_standard_limit_profile_missing'),
+    '缺少产品标准限值档案'
+  )
+  assert.equal(
+    friendlyCheckReason('bonding_standard_rule_profile_not_verified'),
+    '粘接标准规则档案未核验'
+  )
+  assert.equal(friendlyCheckReason('pwht_applicability_unresolved'), '焊后热处理适用性未定')
+  assert.equal(
+    friendlyCheckReason('material_substitution_occurrence_unknown'),
+    '材料代用发生情况情况不明'
+  )
+  assert.equal(friendlyCheckReason('events_hash_mismatch'), '事件哈希不一致')
+  assert.equal(friendlyCheckReason('work_item_coverage_undecidable'), '施焊记录覆盖情况无法判定')
+  assert.equal(friendlyCheckReason('checkCount=0'), '规则跑了，但节点没有可检的资料', '显式表优先')
 }
