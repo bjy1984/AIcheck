@@ -25,6 +25,11 @@ for root in [pathlib.Path(a) for a in sys.argv[1:]]:
     for p in root.rglob("*.py"):
         t = p.read_text(errors="ignore")
         out["checks"] |= set(re.findall(r'check\(\s*"([a-zA-Z0-9_]+)"', t))
+        # f-string 拼的检查码（check(f"{label}:holder_matches_registry", ...)）整类漏过
+        out["checks"] |= set(re.findall(r'check\(\s*f"[^"]*\}:([a-zA-Z0-9_]+)"', t))
+        # 带序号的检查码按运行时形状造样例：component_{index}_batch_traceable -> component_1_batch_traceable
+        for m in re.findall(r'check\(\s*f"([a-zA-Z0-9_]+)_\{index\}_?([a-zA-Z0-9_]*)"', t):
+            out["checks"].add(m[0] + "_1" + ("_" + m[1] if m[1] else ""))
         out["findingTypes"] |= set(re.findall(r'"findingType":\s*"([a-zA-Z0-9_]+)"', t))
         out["materialTypes"] |= set(re.findall(r'materialTypeCode["\s:=]+"([a-z0-9_]+)"', t))
     for p in root.rglob("*.yaml"):

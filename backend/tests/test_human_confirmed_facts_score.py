@@ -119,6 +119,7 @@ def test_通过项也列出判定依据与证据原文():
     assert passed["checks"] == [{"tool": "check_certificate_validity", "code": "TS1844171-2028:not_expired_on_reference_date", "passed": True,
                                  "actual": "2028-01-17", "expected": "2026-09-12", "missing": False}]
     assert passed["reason"] == "" and passed["unscoredFacts"] == []
-    assert passed["facts"][0]["label"] == "design_license TS1844171-2028" and passed["facts"][0]["scored"] is True
+    # 标签用中文证书名，不再是 design_license 这种代号（2026-09-13 线上巡检）
+    assert passed["facts"][0]["label"] == "设计单位许可证 TS1844171-2028" and passed["facts"][0]["scored"] is True
     assert {item["quotedText"] for item in passed["facts"][0]["evidence"]} >= {"TS1844171-2028"}
     assert insufficient["reason"] == "required_pipeline_grades_missing" and insufficient["checks"] == []

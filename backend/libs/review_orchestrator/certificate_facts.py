@@ -279,7 +279,7 @@ def _certificate_judgment(certificates: list[dict[str, Any]]) -> dict[str, Any]:
         claimed.append(
             {
                 "factId": f"certificate-{index}",
-                "label": f"{record.get('certificateType') or '证书'} {record.get('certificateNo') or ''}".strip(),
+                "label": f"{CERTIFICATE_TYPE_NAMES.get(str(record.get('certificateType') or ''), '证书')} {record.get('certificateNo') or ''}".strip(),
                 "value": record.get("certificateNo") or record.get("holder"),
                 # 去重键：同一张证可能同时由 r24 焊工 builder 和证书链各产一条事实。
                 "certificateNo": record.get("certificateNo"),
@@ -787,6 +787,20 @@ CERTIFICATE_VERIFICATION_REQUIREMENT = (
     "do not put field names or enum values such as certificateVerification, result or "
     "evidence_insufficient into title/description."
 )
+
+
+#: 证书类型代号 → 证书名。事实标签直接印代号，界面上就是「design_license TS1844171-2028」
+#: （2026-09-13 线上巡检抓到）。
+CERTIFICATE_TYPE_NAMES = {
+    "design_license": "设计单位许可证",
+    "installation_license": "安装单位许可证",
+    "ndt_agency_approval": "无损检测机构核准证",
+    "ndt_personnel_certificate": "无损检测人员资格证",
+    "welder_certificate": "焊工资格证",
+    "quality_certificate": "产品质量证明书",
+    "type_test_report": "型式试验证书",
+    "manufacturing_license": "制造许可证",
+}
 
 
 def _dedupe_claimed_facts(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:

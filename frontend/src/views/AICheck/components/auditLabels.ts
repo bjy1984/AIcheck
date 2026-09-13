@@ -341,6 +341,65 @@ export const checkReasonLabels: Record<string, string> = {
  * 词典覆盖 190 个业务词，认不出的词**原样保留**——宁可露出英文，也不硬翻出一个错意思。
  */
 const REASON_WORDS: Record<string, string> = {
+  accuracy: '精度',
+  actual: '实际',
+  allowed: '允许',
+  and: '与',
+  approved: '已批准',
+  as: '按',
+  at: '',
+  available: '可用',
+  before: '前',
+  built: '建',
+  calibration: '校准',
+  colorant: '着色剂',
+  controlled: '受控',
+  covers: '覆盖',
+  dial: '表盘',
+  exception: '例外',
+  exemption: '免做',
+  foreign: '境外',
+  form: '格式',
+  from: '起',
+  frozen: '已固化',
+  gate: '闸阀',
+  has: '有',
+  hold: '保压',
+  identified: '已识别',
+  increasing: '递增',
+  increment: '增量',
+  known: '已知',
+  large: '大',
+  least: '少',
+  limits: '限值',
+  matches: '一致',
+  method: '方法',
+  minimum: '下限',
+  minutes: '分钟',
+  most: '多',
+  new: '新',
+  nonconformance: '不符合项',
+  not: '非',
+  on: '于',
+  or: '或',
+  org: '单位',
+  overseas: '境外',
+  percent: '百分比',
+  person: '人员',
+  range: '范围',
+  ratio: '比',
+  recorded: '已记录',
+  resolved: '已确定',
+  role: '角色',
+  route: '路径',
+  safe: '安全',
+  sample: '试样',
+  technical: '技术',
+  traceable: '可追溯',
+  transferred: '已移植',
+  unique: '唯一',
+  until: '至',
+  valid: '有效',
   test: '试验',
   checked: '核对',
   got: '得到',
@@ -773,6 +832,14 @@ export const friendlyCheckReason = (value?: string | null) => {
  * （`TS1844171-2028:scope_covers_required`）先剥前缀。
  */
 export const checkCodeLabels: Record<string, string> = {
+  r14_applicability_known: 'R14 适用性已判明',
+  hold_at_least_3_minutes: '保压不少于 3 分钟',
+  increment_at_most_10_percent: '每级增量不超过 10%',
+  holder_matches_project: '持证单位与项目单位一致',
+  holder_matches_registry: '持证人与平台登记一致',
+  holder_present: '识别到持证主体',
+  valid_until_present: '识别到有效期',
+  scope_present: '识别到许可范围',
   all_approval_codes_decoded: '全部审批代号可解析',
   all_codes_decoded: '全部项目代号可解析',
   all_special_material_types_sampled: '特殊材料全部抽检到',
@@ -830,10 +897,64 @@ export const checkCodeLabels: Record<string, string> = {
   not_conflicted: '证据无冲突'
 }
 
+/** 带序号的检查码主体：`component_3_batch_traceable` 里的 component。 */
+const CHECK_SUBJECTS: Record<string, string> = {
+  acceptance: '验收',
+  agency: '机构',
+  appearance: '外观',
+  certificate: '证书',
+  comparison: '比对',
+  component: '元件',
+  consumable: '焊材',
+  document: '文件',
+  fact: '事实',
+  film: '底片',
+  fit_up: '组对',
+  gas_step: '气压级',
+  gauge: '压力表',
+  grade: '级别',
+  instrument: '仪表',
+  item: '项',
+  lot: '批',
+  method: '方法',
+  nonconformance: '不符合项',
+  parseable: '可解析项',
+  plan: '方案',
+  registry: '登记',
+  repair: '返修',
+  report: '报告',
+  required: '必需项',
+  scope: '范围',
+  scope_covers: '范围覆盖',
+  signature: '签字',
+  substitution: '代用',
+  transfer: '移植',
+  uploaded: '已上传项',
+  valve: '阀门',
+  weld: '焊缝',
+  welding_record: '焊接记录',
+  work: '施焊',
+  work_item: '施焊项'
+}
+
+/** `component_3_batch_traceable` → 「元件 3：批号可追溯」。认不出的部分原样保留。 */
+const indexedCheckLabel = (code: string): string => {
+  const match = code.match(/^([a-z][a-z0-9_]*?)_(\d+)(?:_([a-z0-9_]+))?$/)
+  if (!match) return ''
+  const [, subject, index, rest] = match
+  const subjectLabel = CHECK_SUBJECTS[subject] || REASON_WORDS[subject]
+  if (!subjectLabel) return ''
+  if (!rest) return `${subjectLabel} ${index}`
+  const restLabel = checkCodeLabels[rest] || translateStem(rest)
+  return `${subjectLabel} ${index}：${restLabel === rest ? rest : restLabel}`
+}
+
 export const friendlyCheckCode = (value?: string | null) => {
   const raw = String(value || '').trim()
   if (!raw) return ''
   const [, prefix, code] = raw.match(/^(.*?):([^:]+)$/) || [null, '', raw]
+  const indexed = indexedCheckLabel(code)
+  if (indexed) return prefix ? `${prefix}：${indexed}` : indexed
   const scope = code.match(/^scope_covers_(.+)$/)
   const base =
     checkCodeLabels[code] ||

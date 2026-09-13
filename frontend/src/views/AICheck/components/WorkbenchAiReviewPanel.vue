@@ -29,8 +29,10 @@ const props = withDefaults(
     acting?: boolean
     /** 本次会话里已记录的发现级反馈，键为 findingId 或 `${findingId}::${claim}`。 */
     decisions?: Record<string, 'accept' | 'reject' | 'supported' | 'confirmed'>
+    /** 最新一次复核失败、下面显示的是上一次成功结果时的说明。 */
+    staleNotice?: string
   }>(),
-  { canAct: false, acting: false, decisions: () => ({}) }
+  { canAct: false, acting: false, decisions: () => ({}), staleNotice: '' }
 )
 
 const emit = defineEmits<{
@@ -395,6 +397,8 @@ const ruleLabel = (rule: Record<string, unknown>) => {
     </div>
 
     <div class="card-body ai-panel-body">
+      <!-- 基础设施抖动不该让人丢掉上一次的结论；但也不能假装最新那次没失败 -->
+      <p v-if="staleNotice" class="ai-stale-notice" role="status">{{ staleNotice }}</p>
       <div v-if="presentation.errorMessage" class="ai-status-banner" role="alert">
         <div class="ai-status-banner__icon" aria-hidden="true">
           <ElIcon><CircleCloseFilled /></ElIcon>
@@ -1519,6 +1523,16 @@ const ruleLabel = (rule: Record<string, unknown>) => {
   line-height: 19px;
   color: #27364b;
   overflow-wrap: anywhere;
+}
+
+.ai-stale-notice {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #fff8ec;
+  color: #b54708;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .ai-fact-same-count {

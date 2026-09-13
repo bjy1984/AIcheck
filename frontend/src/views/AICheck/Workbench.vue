@@ -626,7 +626,35 @@ const getAiMetadataText = (metadata: Record<string, unknown> | undefined, keys: 
   }
   return ''
 }
-const aiRecheckDisplayRun = computed(() => aiRecheckRunOverride.value || latestAiRun.value)
+/**
+ * 最新一次复核失败时，回退显示上一次成功的结果。
+ *
+ * 2026-09-13 线上巡检：基础设施抖动（磁盘满导致 27 个运行被判孤儿）之后，节点 26/29/32/38
+ * 的页面只剩一句「执行失败」——上一次跑出来的逐项核查、事实与证据、条款全被挤没了。
+ * 监检要的是「这个节点现在已知什么」，不是「最后一次尝试崩了」；失败本身用横幅说清楚。
+ */
+const lastUsableAiRun = computed(() => {
+  const runs = nodePackage.value?.aiRuns || []
+  return runs.find((run) => !selectAiReviewDisplay(run).failed)
+})
+const failedNewerAiRun = computed(() => {
+  const latest = latestAiRun.value
+  if (!latest || !selectAiReviewDisplay(latest).failed) return undefined
+  return lastUsableAiRun.value ? latest : undefined
+})
+const aiRecheckDisplayRun = computed(
+  () =>
+    aiRecheckRunOverride.value ||
+    (failedNewerAiRun.value ? lastUsableAiRun.value : latestAiRun.value)
+)
+/** 「下面这份不是最新一次」的说明；没有回退时为空。 */
+const staleAiNotice = computed(() => {
+  const failed = failedNewerAiRun.value
+  if (!failed) return ''
+  const when = String(failed.finishedAt || failed.updatedAt || failed.createdAt || '')
+  return `最近一次复核执行失败${when ? `（${when}）` : ''}，下面显示的是上一次成功的结果。`
+})
+
 const aiRecheckDisplay = computed(() =>
   selectAiReviewDisplay(
     aiRecheckDisplayRun.value,
@@ -5875,6 +5903,7 @@ onBeforeUnmount(() => {
               :can-act="hasAction('ai:recheck')"
               :acting="aiFeedbackBusy || actionLoading"
               :decisions="aiFindingDecisions"
+              :stale-notice="staleAiNotice"
               @open-file="handleOpenFileDetail"
               @finding-decision="handleAiFindingDecision"
               @claim-supported="handleAiClaimSupported"
