@@ -3,6 +3,7 @@ import type { AiReviewRun, InspectionAuditItem, NodePackagePayload } from '@/typ
 import {
   friendlyCheckCode,
   friendlyCheckReason,
+  friendlyEnumValue,
   friendlyEvidenceIssue,
   friendlyModelAlias
 } from './components/auditLabels'
@@ -394,7 +395,8 @@ const checkValueText = (value: unknown): string => {
   if (Array.isArray(value)) return value.map(checkValueText).filter(Boolean).join('、')
   if (typeof value === 'object') return ''
   if (typeof value === 'boolean') return value ? '是' : '否'
-  return String(value)
+  // 期望值/实际值里也有 snake_case 枚举，一并翻
+  return friendlyEnumValue(String(value))
 }
 
 export const CHECK_OUTCOME_LABELS: Record<string, string> = {

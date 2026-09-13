@@ -16,7 +16,7 @@ import {
   type WorkbenchAiFindingGroupKey,
   type WorkbenchAiPresentation
 } from '../workbenchReviewPresentation'
-import { friendlyRuleCode } from './auditLabels'
+import { friendlyMaterialType, friendlyRuleCode } from './auditLabels'
 import AuditStatusTag from './AuditStatusTag.vue'
 import CertificateVerificationCard from './CertificateVerificationCard.vue'
 
@@ -267,7 +267,12 @@ const FACT_TYPE_NAMES: Record<string, string> = {
 }
 
 const factDisplayLabel = (fact: WorkbenchAiGroundedFact) => {
-  if (fact.label && fact.label !== fact.factId) return fact.label
+  if (fact.label && fact.label !== fact.factId) {
+    // 老留痕的标签开头是证书类型代号（`design_license TS1844171-2028`），翻掉再显示
+    const [head, ...rest] = fact.label.split(' ')
+    const named = friendlyMaterialType(head)
+    return named && named !== head ? [named, ...rest].join(' ') : fact.label
+  }
   const type = fact.factId.replace(/^r\d+-/, '').replace(/-\d+$/, '')
   return FACT_TYPE_NAMES[type] || type || fact.factId
 }

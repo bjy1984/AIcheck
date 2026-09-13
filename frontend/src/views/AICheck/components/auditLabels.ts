@@ -721,6 +721,8 @@ const REASON_FRAMES: Array<[string, (stem: string) => string]> = [
 
 /** 词典拼不出正确说法的整段词根，在这里直译。 */
 const REASON_STEMS: Record<string, string> = {
+  original_with_manufacturer_quality_seal: '原件带制造单位质量章',
+  copy_with_dealer_and_handler_seals: '复印件带经销商与经手人签章',
   actual_material_usage: '实际材料用量',
   actual_or_qualified_thickness: '实际厚度或已评定厚度',
   boolean_field_got_non_boolean: '布尔字段收到了非布尔值',
@@ -789,6 +791,23 @@ const REASON_STEMS: Record<string, string> = {
   latest_reinspection_evaluated: '已按最近一次复检判定',
   formal_review_waiting_human_review: '正式审查等待人工结论',
   formal_review_failed_restored_previous_status: '正式审查未通过，已恢复原状态'
+}
+
+/**
+ * 检查项的期望值/实际值里也会出现 snake_case 枚举
+ * （`original_with_manufacturer_quality_seal_or_copy_with_dealer_and_handler_seals`，
+ * 2026-09-13 线上巡检在节点 16 抓到）。按词典翻，翻不动就原样。
+ */
+export const friendlyEnumValue = (value?: string | null) => {
+  const text = String(value || '').trim()
+  if (!text || !/^[a-z][a-z0-9_]{5,}$/.test(text)) return text
+  if (REASON_STEMS[text]) return REASON_STEMS[text]
+  const parts = text.split(/_or_|_and_/)
+  const joiners = [...text.matchAll(/_or_|_and_/g)].map((m) => (m[0] === '_or_' ? '，或' : '，且'))
+  const translated = parts.map((part) => REASON_STEMS[part] || translateStem(part))
+  if (translated.some((part, index) => part === parts[index] && !REASON_STEMS[parts[index]]))
+    return text
+  return translated.reduce((acc, part, index) => acc + (index ? joiners[index - 1] : '') + part, '')
 }
 
 const translateStem = (stem: string): string => {
