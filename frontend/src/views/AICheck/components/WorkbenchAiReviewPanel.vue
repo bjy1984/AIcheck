@@ -1165,11 +1165,18 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   border-color: #f2d2cf;
 }
 
+/* 四格一行：原来是三列，加了「通过」之后第四格掉到下一行，读起来像两组数。 */
 .ai-conclusion-counts {
   display: grid;
   margin: 0;
   gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .ai-conclusion-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .ai-conclusion-counts > div {

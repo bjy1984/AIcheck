@@ -55,42 +55,45 @@ const warningText = (code: string) => {
       </div>
       <AuditStatusTag :tone="overallTone" round>{{ overallLabel }}</AuditStatusTag>
     </div>
-    <table v-if="verification.certificates.length" class="cert-verification-table">
-      <thead>
-        <tr>
-          <th>持证主体</th>
-          <th>证书编号</th>
-          <th>有效期至</th>
-          <th>范围 / 项目</th>
-          <th>公示平台</th>
-          <th>结论</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="cert in verification.certificates" :key="cert.certificateNo || cert.label">
-          <td>{{ cert.holder || '-' }}</td>
-          <td>{{ cert.certificateNo || '-' }}</td>
-          <td>{{ cert.validUntil || '未识别' }}</td>
-          <td>{{ (cert.scopes || []).join('、') || '-' }}</td>
-          <td>
-            <template v-if="cert.platform">
-              <AuditStatusTag :tone="cert.platform.tone" round>
-                {{ cert.platform.label }}
-              </AuditStatusTag>
-              <small v-if="cert.platform.detail" class="cert-platform-detail">
-                {{ cert.platform.detail }}
-              </small>
-            </template>
-            <small v-else class="cert-platform-detail">未查平台</small>
-          </td>
-          <td
-            ><AuditStatusTag :tone="toneOf(cert.result)" round>{{
-              labelOf(cert.result)
-            }}</AuditStatusTag></td
-          >
-        </tr>
-      </tbody>
-    </table>
+    <div v-if="verification.certificates.length" class="cert-verification-table-wrap">
+      <table class="cert-verification-table">
+        <thead>
+          <tr>
+            <th>持证主体 / 证书编号</th>
+            <th>有效期至</th>
+            <th>范围 / 项目</th>
+            <th>公示平台</th>
+            <th>结论</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="cert in verification.certificates" :key="cert.certificateNo || cert.label">
+            <td class="cert-holder-cell">
+              <strong>{{ cert.holder || '-' }}</strong>
+              <small>{{ cert.certificateNo || '证书编号未识别' }}</small>
+            </td>
+            <td class="cert-nowrap">{{ cert.validUntil || '未识别' }}</td>
+            <td>{{ (cert.scopes || []).join('、') || '-' }}</td>
+            <td>
+              <template v-if="cert.platform">
+                <AuditStatusTag :tone="cert.platform.tone" round>
+                  {{ cert.platform.label }}
+                </AuditStatusTag>
+                <small v-if="cert.platform.detail" class="cert-platform-detail">
+                  {{ cert.platform.detail }}
+                </small>
+              </template>
+              <small v-else class="cert-platform-detail">未查平台</small>
+            </td>
+            <td
+              ><AuditStatusTag :tone="toneOf(cert.result)" round>{{
+                labelOf(cert.result)
+              }}</AuditStatusTag></td
+            >
+          </tr>
+        </tbody>
+      </table>
+    </div>
     <ul v-if="verification.warnings.length" class="cert-verification-warnings">
       <li v-for="code in verification.warnings" :key="code">{{ warningText(code) }}</li>
     </ul>
@@ -123,11 +126,32 @@ const warningText = (code: string) => {
   font-size: 12px;
   line-height: 16px;
 }
+/* 表格别被挤到竖排：给最小宽度，窄屏时整表横向滚动，而不是把「李卫伍」拆成三行。 */
+.cert-verification-table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+}
 .cert-verification-table {
   width: 100%;
-  margin-top: 10px;
+  min-width: 560px;
   border-collapse: collapse;
   font-size: 13px;
+}
+.cert-holder-cell {
+  white-space: nowrap;
+}
+.cert-holder-cell strong {
+  display: block;
+  color: var(--el-text-color-primary);
+}
+.cert-holder-cell small {
+  display: block;
+  margin-top: 2px;
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.cert-nowrap {
+  white-space: nowrap;
 }
 .cert-verification-table th,
 .cert-verification-table td {
