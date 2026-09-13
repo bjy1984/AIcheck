@@ -216,3 +216,30 @@ def test_人证不符不许判核验通过(monkeypatch):
     cert = result["facts"]["certificates"][0]
     assert cert["result"] == "evidence_insufficient"
     assert any(c["code"].endswith("holder_matches_registry") and not c["passed"] for c in cert["checks"])
+
+
+def test_单位证书的登记名要显示出来():
+    """2026-09-13 线上审计：P-2026-ECD202 节点 3 的 TS7310417-2026。
+
+    单位证书走 r12_registry，登记名字段是 `registryOrganizationName`；
+    `check_certificate_validity` 原来只读 `registryHolder`，界面上「与平台登记一致」
+    这条的实际值就是空的——监检看到的是「平台查不到」，实际是「平台登记的是另一家单位」。
+    """
+    from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+
+    result = check_certificate_validity({
+        "certificateType": "ndt_org_certificate",
+        "referenceDate": "2026-09-13",
+        "certificates": [{
+            "certificateNo": "TS7310417-2026", "holder": "某某检测有限公司", "validUntil": "2026-12-10",
+            "platformVerification": {
+                "outcome": "verified_mismatch",
+                "registryOrganizationName": "另一家检测有限公司",
+            },
+        }],
+    })
+    cert = result["facts"]["certificates"][0]
+    registry_check = next(c for c in cert["checks"] if c["code"].endswith("holder_matches_registry"))
+    assert registry_check["passed"] is False
+    assert registry_check["actual"] == "另一家检测有限公司", "登记单位名不能是空的"
+    assert registry_check["expected"] == "某某检测有限公司"

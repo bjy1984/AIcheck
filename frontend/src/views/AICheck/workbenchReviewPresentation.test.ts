@@ -1108,6 +1108,47 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(finding.clauseRefs[0].section, '第三章 考核程序与要求')
   assert.equal(finding.clauseRefs[0].superseded?.supersededBy, 'TSG Z6002-2026')
   assert.equal(finding.clauseRefs[0].superseded?.effectiveFrom, '2026-08-01')
+  assert.equal(finding.clauseRefs[0].sourceKind, 'standard')
+}
+
+// 引用依据里混着本工程上传的资料：2026-09-13 线上审计，P-2026-ECD202 的 296 条引用里
+// 74 条是施工图/施工方案/业务规则说明。全印成「标准条款」等于告诉监检那是规范要求。
+{
+  const { nodeRunFindingViews } = await import('./workbenchReviewPresentation')
+  const [finding] = nodeRunFindingViews({
+    findings: [
+      {
+        id: 'F-2',
+        title: '引用依据分档',
+        description: 'x',
+        severity: 'low',
+        clauseRefs: [
+          {
+            clauseId: 'C-DOC',
+            standard: '地上甲类储罐区2（含泵区）施工图.pdf',
+            text: '本工程按 GC2 级设计',
+            sourceKind: 'document'
+          },
+          {
+            clauseId: 'C-UNREG',
+            standard: '特种设备无损检测人员考核规则',
+            text: '应当考核合格',
+            sourceKind: 'unregistered_standard'
+          },
+          // 老留痕没有 sourceKind：有标准号按标准，没有按「版本未登记」，不默认成标准条款
+          { clauseId: 'C-LEGACY', standard: '某规范', text: '旧留痕' }
+        ]
+      }
+    ]
+  } as never)
+  const kinds = Object.fromEntries(
+    finding.clauseRefs.map((clause) => [clause.clauseId, clause.sourceKind])
+  )
+  assert.deepEqual(kinds, {
+    'C-DOC': 'document',
+    'C-UNREG': 'unregistered_standard',
+    'C-LEGACY': 'unregistered_standard'
+  })
 }
 
 // 节点复核的发现落在 findingDrafts 上，不是 findings：读错键就一路退回解析自由文本，

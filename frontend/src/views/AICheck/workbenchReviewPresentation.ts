@@ -25,6 +25,12 @@ export type WorkbenchAiClauseRef = {
   standard: string
   /** 标准号，例如 TSG Z6002—2010。 */
   standardCode: string
+  /**
+   * 这条引用是什么：登记过版本的标准条款、本工程上传的资料原文，还是版本没登记的标准。
+   * 检索包里三样都有，一律印成「标准条款」会让监检把施工方案当规范要求
+   * （2026-09-13 线上审计：296 条引用里 127 条没有标准号）。
+   */
+  sourceKind: 'standard' | 'document' | 'unregistered_standard'
   section: string
   clauseNo: string
   text: string
@@ -557,6 +563,12 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
         clauseId: String(item.clauseId),
         standard: String(item.standard || ''),
         standardCode: String(item.standardCode || ''),
+        sourceKind:
+          item.sourceKind === 'document' || item.sourceKind === 'unregistered_standard'
+            ? item.sourceKind
+            : item.standardCode
+              ? 'standard'
+              : 'unregistered_standard',
         section: String(item.section || ''),
         clauseNo: String(item.clauseNo || ''),
         text: String(item.text || ''),

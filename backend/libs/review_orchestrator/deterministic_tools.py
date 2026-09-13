@@ -286,8 +286,13 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
         verification = cert.get("platformVerification") if isinstance(cert.get("platformVerification"), dict) else {}
         if verification.get("outcome") == "verified_mismatch":
             status = "evidence_insufficient"
+            # 单位证书走的是 r12_registry，登记名字段叫 registryOrganizationName；
+            # 只读 registryHolder 的话，界面上「与平台登记一致」这条的实际值是空的
+            # ——看起来像「平台查不到」，其实是「平台登记的是另一家单位」
+            # （2026-09-13 线上审计：P-2026-ECD202 节点 3 的 TS7310417-2026）。
+            registry_holder = verification.get("registryHolder") or verification.get("registryOrganizationName")
             cert_checks.append(
-                check(f"{label}:holder_matches_registry", False, verification.get("registryHolder"), cert.get("holder"))
+                check(f"{label}:holder_matches_registry", False, registry_holder, cert.get("holder"))
             )
         for field in ("certificateNo", "issuer"):
             if not cert.get(field):

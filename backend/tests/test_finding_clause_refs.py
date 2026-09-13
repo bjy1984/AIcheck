@@ -55,3 +55,41 @@ def test_现行版本不提示换版():
     assert superseded_edition("TSG Z6002—2010", on="2026-08-01")["supersededBy"] == "TSG Z6002-2026"
     assert superseded_edition("NB/T 47014-2023") is None, "本身就是现行版，不该标"
     assert superseded_edition("GB 50235—2010") is None, "没核实过的不登记，也就不提示"
+
+
+PROJECT_FILE_CLAUSE = {
+    "clauseId": "CHK-DOC",
+    "clauseNo": "p3-c1",
+    "title": "地上甲类储罐区2（含泵区）施工图.pdf / 管道布置",
+    "text": "本工程管道按 GC2 级设计",
+    "pageNo": 3,
+    "fileId": "FILE-PROJECT",
+}
+
+UNREGISTERED_CLAUSE = {
+    "clauseId": "CHK-UNREG",
+    "clauseNo": "p5-c2",
+    "title": "特种设备无损检测人员考核规则 / 第二章",
+    "text": "无损检测人员应当按照本规则考核合格",
+    "pageNo": 5,
+    "fileId": "FILE-UNREG",
+}
+
+
+def test_工程资料原文不冒充标准条款():
+    """2026-09-13 线上审计：P-2026-ECD202 的 296 条引用里 127 条没有标准号。
+
+    引得最多的是「地上甲类储罐区2（含泵区）施工图.pdf」（40 次）——那是本工程的资料，
+    不是规范要求。界面上一栏叫「引用的标准条款」，把它印进去等于告诉监检
+    「规范这么规定的」。分三档标出来：标准条款 / 资料原文 / 标准但版本没登记。
+    """
+    drafts = [{"kbRefs": [{"clauseIds": ["CHK-1", "CHK-DOC", "CHK-UNREG"]}]}]
+    attach_clause_details(
+        {
+            "knowledge_clauses": [CLAUSE, PROJECT_FILE_CLAUSE, UNREGISTERED_CLAUSE],
+            "standard_document_versions": [STD_DOC],
+        },
+        drafts,
+    )
+    kinds = {ref["clauseId"]: ref["sourceKind"] for ref in drafts[0]["clauseRefs"]}
+    assert kinds == {"CHK-1": "standard", "CHK-DOC": "document", "CHK-UNREG": "unregistered_standard"}

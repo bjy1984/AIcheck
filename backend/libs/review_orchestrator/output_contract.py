@@ -142,6 +142,24 @@ def _superseded(reference: Any) -> dict[str, Any] | None:
         return None
 
 
+#: 检索包里混着工程资料，标题就是原文件名。只按后缀判断，不猜内容。
+_DOCUMENT_TITLE_SUFFIXES = (".pdf", ".doc", ".docx", ".md", ".txt", ".xls", ".xlsx", ".ppt", ".pptx", ".png", ".jpg", ".jpeg")
+
+
+def _clause_source_kind(code: str, standard: str) -> str:
+    """这条引用是标准条款、工程资料原文，还是版本没登记的标准。
+
+    `standard_document_versions` 里登记过（因而有标准号）的才敢叫标准条款；
+    标题带文件后缀的是本工程上传的资料；剩下的是标准名对得上、但版本没登记——
+    照样可以引，只是界面上要说清「版本未登记」，不能让人以为引的是现行版。
+    """
+    if code:
+        return "standard"
+    if standard.strip().lower().endswith(_DOCUMENT_TITLE_SUFFIXES):
+        return "document"
+    return "unregistered_standard"
+
+
 def attach_clause_details(state: dict[str, Any], drafts: list[dict[str, Any]]) -> None:
     """把 kbRefs 里的 clauseId 解析成条款详情，就地写进 finding 的 `clauseRefs`。
 
@@ -195,6 +213,12 @@ def attach_clause_details(state: dict[str, Any], drafts: list[dict[str, Any]]) -
                         "clauseId": str(clause_id),
                         "standard": standard.strip(),
                         "standardCode": code,
+                        # 界面这一栏原来一律叫「引用的标准条款」，但检索包里既有标准，也有本工程
+                        # 上传的施工图、施工方案、业务规则说明（2026-09-13 线上审计：
+                        # P-2026-ECD202 的 296 条引用里 127 条没有标准号，最多的一条是
+                        # 「地上甲类储罐区2（含泵区）施工图.pdf」引了 40 次）。
+                        # 把资料原文当标准条款印出去，监检会以为那是规范要求。
+                        "sourceKind": _clause_source_kind(code, standard),
                         "section": section.strip(),
                         # 引的是不是过期版本：条款原文一显示出来，监检就会照着核，
                         # 引旧版比不显示更糟（节点 24/29 引的 TSG Z6002-2010 已被 2026 版取代）。

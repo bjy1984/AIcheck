@@ -56,6 +56,18 @@ const emit = defineEmits<{
  * 结论卡只在"已完成"的运行上推导：分析中/失败时没有可靠的发现集合，
  * 推导出的"未见问题"会误导——那时只显示状态横幅。
  */
+/**
+ * 引用依据分三档标出来（后端 clauseRefs.sourceKind）：
+ * 登记过版本的标准、本工程上传的资料原文、标准名对得上但版本没登记。
+ * 2026-09-13 线上审计：P-2026-ECD202 的 296 条引用里 127 条没有标准号，
+ * 引得最多的是「地上甲类储罐区2（含泵区）施工图.pdf」——那不是规范要求。
+ */
+const CLAUSE_KIND_LABELS: Record<string, string> = {
+  standard: '标准条款',
+  document: '资料原文',
+  unregistered_standard: '标准·版本未登记'
+}
+
 const conclusion = computed(() =>
   !canShowWorkbenchAiConclusion(props.presentation)
     ? undefined
@@ -787,15 +799,15 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                   </ul>
                 </div>
               </div>
-              <!-- 引用的标准条款：标准名 + 章节 + 条款号 + 原文，监检能直接对着查 -->
-              <ul
-                v-if="finding.clauseRefs.length"
-                class="ai-clause-list"
-                aria-label="引用的标准条款"
-              >
+              <!-- 引用依据：标准名 + 章节 + 条款号 + 原文，监检能直接对着查。
+                   标准条款和本工程资料原文分开标——混在一起会让人把施工方案当规范要求。 -->
+              <ul v-if="finding.clauseRefs.length" class="ai-clause-list" aria-label="引用依据">
                 <li v-for="clause in finding.clauseRefs" :key="clause.clauseId">
                   <div class="ai-clause-head">
-                    <strong>{{ clause.standardCode || clause.standard || '标准条款' }}</strong>
+                    <em :class="`ai-clause-kind is-${clause.sourceKind}`">{{
+                      CLAUSE_KIND_LABELS[clause.sourceKind]
+                    }}</em>
+                    <strong>{{ clause.standardCode || clause.standard || '条款' }}</strong>
                     <span v-if="clause.standardCode && clause.standard">{{ clause.standard }}</span>
                     <span v-if="clause.section">{{ clause.section }}</span>
                     <small v-if="clause.clauseNo">{{ clause.clauseNo }}</small>
@@ -1496,6 +1508,28 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 .ai-clause-list li {
   padding-left: 10px;
   border-left: 3px solid #d8e3f8;
+}
+
+.ai-clause-kind {
+  padding: 0 6px;
+  border-radius: 3px;
+  background: #eef2f8;
+  color: #5a6b85;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* 资料原文不是规范要求，用中性偏暖的底色和标准条款区分开 */
+.ai-clause-kind.is-document {
+  background: #fdf3e7;
+  color: #96601f;
+}
+
+.ai-clause-kind.is-unregistered_standard {
+  background: #f3eefc;
+  color: #6b4fa8;
 }
 
 .ai-clause-head {
