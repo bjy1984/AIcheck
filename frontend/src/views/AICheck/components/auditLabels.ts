@@ -308,6 +308,17 @@ export const checkReasonLabels: Record<string, string> = {
   // 这条以 r24_ 开头但不是规则前缀，剥前缀会把它拆坏，直接给整条。
   r24_or_r25_linked_result_missing: '缺少节点 24 或 25 的关联结果',
   'checkCount=0': '规则跑了，但节点没有可检的资料',
+  // 证照核验失败时报的是「哪条检查没过」（deterministic_tools._CERTIFICATE_FAILURE_REASONS）。
+  // 2026-09-13 之前这个工具不报原因，界面上就显示同一项里别的工具报的数据缺口。
+  certificate_holder_registry_mismatch: '证件号在平台登记的持证人与资料上的不是同一个',
+  certificate_holder_project_mismatch: '持证单位与本工程的责任单位不一致',
+  certificate_scope_not_covered: '许可范围不覆盖本工程要求的管道级别',
+  certificate_expires_before_period_end: '证书有效期早于施工结束日期',
+  certificate_issued_after_period_start: '证书生效日期晚于施工开始日期',
+  certificate_expired_on_reference_date: '证书已过期',
+  certificate_valid_until_missing: '证书没有有效期至',
+  certificate_holder_missing: '证书没有持证主体',
+  certificate_scope_missing: '证书没有许可范围',
   provider_confidence_unavailable: '抽取引擎没给置信度，需人工核对引文',
   requiredFields_not_configured: '规则未配置必填字段清单',
   sampling_parameters_missing: '缺少抽检比例 / 抽样参数',

@@ -243,3 +243,50 @@ def test_单位证书的登记名要显示出来():
     assert registry_check["passed"] is False
     assert registry_check["actual"] == "另一家检测有限公司", "登记单位名不能是空的"
     assert registry_check["expected"] == "某某检测有限公司"
+
+
+def test_证照判不合格时要说清是哪条没过():
+    """2026-09-13 线上审计：P-2026-ECD202 节点 1 的设计单位许可证只覆盖 GB1/GB2/GC1，
+    工程要 GC2，整项判 failed——界面上写的原因却是「缺少施工起止日期」。
+
+    原因是 `check_certificate_validity` 从不报 facts.reason，`_outcome_reason` 只认
+    带 reason 的工具，同一原子项里报数据缺口的工具就抢先了。资质不覆盖是实质不合格，
+    缺日期是资料没填齐，监检第一眼读到的不能是后者。
+    """
+    from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+    from libs.review_orchestrator.output_contract import _outcome_reason
+
+    result = check_certificate_validity({
+        "certificateType": "design_license",
+        "referenceDate": "2026-09-13",
+        "requiredScopes": ["GC2"],
+        "certificates": [{
+            "certificateNo": "TS1844171-2028", "holder": "广东政和工程有限公司",
+            "validUntil": "2028-01-17", "scopes": ["GB1", "GB2", "GC1"],
+        }],
+    })
+    assert result["result"] == "failed"
+    assert result["facts"]["reason"] == "certificate_scope_not_covered"
+
+    # 同一原子项里另一个工具报了数据缺口：实质不合格要赢
+    atomic = {
+        "toolResults": [
+            {"toolName": "check_date_covers", "result": "evidence_insufficient",
+             "facts": {"reason": "periodStart_and_periodEnd_missing"}},
+            result,
+        ]
+    }
+    assert _outcome_reason(atomic) == "certificate_scope_not_covered"
+
+
+def test_证照只是缺资料时不报成不合格原因():
+    """反过来也要成立：没有失败的检查就不编一个不合格原因出来。"""
+    from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+
+    result = check_certificate_validity({
+        "certificateType": "design_license",
+        "referenceDate": "2026-09-13",
+        "certificates": [{"certificateNo": "TS-X", "holder": "某公司", "validUntil": "2030-01-01"}],
+    })
+    assert result["result"] == "passed"
+    assert "reason" not in result["facts"]

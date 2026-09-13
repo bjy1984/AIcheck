@@ -357,8 +357,16 @@ def _business_checks(atomic: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _outcome_reason(atomic: dict[str, Any]) -> str:
-    """这一项为什么不是通过：先看业务工具报的不足原因，再看锚定门的原因。"""
+    """这一项为什么不是通过。
+
+    优先级：判定不合格（failed）> 证据不够（evidence_insufficient / 需人工）> 锚定门。
+    2026-09-13 线上审计：节点 1 的设计单位许可证只覆盖 GB1/GB2/GC1、工程要 GC2，
+    整项判 failed，界面上写的原因却是「缺少施工起止日期」——那只是同一项里另一个
+    工具报的数据缺口，按工具顺序抢先了。资质不覆盖是实质不合格，缺日期是资料没填齐，
+    两者混在一起，监检第一眼读到的就是错的那句。
+    """
     grounding_reason = ""
+    insufficient_reason = ""
     for tool in atomic.get("toolResults") or []:
         if not isinstance(tool, dict):
             continue
@@ -368,9 +376,11 @@ def _outcome_reason(atomic: dict[str, Any]) -> str:
             continue
         if tool.get("toolName") == "validate_evidence_grounding":
             grounding_reason = reason
-        elif tool.get("result") in {"evidence_insufficient", "failed", "human_review_required"}:
+        elif tool.get("result") == "failed":
             return reason
-    return grounding_reason
+        elif tool.get("result") in {"evidence_insufficient", "human_review_required"}:
+            insufficient_reason = insufficient_reason or reason
+    return insufficient_reason or grounding_reason
 
 
 def _grounded_facts(atomic: dict[str, Any]) -> list[dict[str, Any]]:

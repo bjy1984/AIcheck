@@ -213,6 +213,30 @@ def check_date_covers(arguments: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+#: 证照核验失败时，按这个优先级把「哪条检查没过」翻成原子项的不通过原因。
+#: 2026-09-13 线上审计：节点 1 的设计单位许可证只覆盖 GB1/GB2/GC1、工程要 GC2，
+#: 判了 failed——但界面上那一项的原因写的是「缺少施工起止日期」。原因来自
+#: `_outcome_reason`，它只认带 facts.reason 的工具，而本工具从来不报 reason，
+#: 于是排在前面的日期工具赢了。监检第一眼读到的是错的那句。
+_CERTIFICATE_FAILURE_REASONS: tuple[tuple[str, str], ...] = (
+    ("holder_matches_registry", "certificate_holder_registry_mismatch"),
+    ("holder_matches_project", "certificate_holder_project_mismatch"),
+    ("scope_covers_required", "certificate_scope_not_covered"),
+    ("valid_until_covers_period_end", "certificate_expires_before_period_end"),
+    ("valid_from_covers_period_start", "certificate_issued_after_period_start"),
+    ("not_expired_on_reference_date", "certificate_expired_on_reference_date"),
+    ("valid_until_present", "certificate_valid_until_missing"),
+    ("holder_present", "certificate_holder_missing"),
+    ("scope_present", "certificate_scope_missing"),
+)
+
+
+def _certificate_failure_reason(checks: list[dict[str, Any]]) -> str:
+    """没过的那条检查是什么，就报什么原因；一条都没挂就不报。"""
+    failed = {str(item.get("code") or "").rsplit(":", 1)[-1] for item in checks if item.get("passed") is False}
+    return next((reason for suffix, reason in _CERTIFICATE_FAILURE_REASONS if suffix in failed), "")
+
+
 def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
     """证照/资格证有效性的确定性核验。
 
@@ -332,6 +356,8 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
         facts={
             "certificateType": arguments.get("certificateType"),
             "certificateCount": len(certificates),
+            # 原子项的「为什么不是通过」要说中的是这一条，不是别的工具顺手报的那句。
+            **({"reason": _certificate_failure_reason(checks)} if _certificate_failure_reason(checks) else {}),
             "periodStart": period_start.isoformat() if period_start else None,
             "periodEnd": period_end.isoformat() if period_end else None,
             "referenceDate": reference.isoformat(),
