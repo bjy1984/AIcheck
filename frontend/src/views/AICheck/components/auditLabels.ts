@@ -237,8 +237,26 @@ export const ruleCodeLabels: Record<string, string> = {
   SEAL_REQUIRED_001: '资料必须有有效签章',
   SEAL_TEXT_LOW_CONFIDENCE: '印章文字置信度低',
   TABLE_STRUCTURE_LOW_CONFIDENCE: '表格结构置信度低',
-  WELDER_CERT_001: '焊工资格证必须上传'
+  WELDER_CERT_001: '焊工资格证必须上传',
+  // 规则键（rule_versions.ruleKey），会以「规则依据」的形式印在发现卡上
+  // （2026-09-13 用户实测：`welder-qualification` 原样露出来）。
+  'welder-qualification': '焊工资格（TSG Z6002）',
+  'ndt-report': '无损检测记录与报告',
+  // 其它业务包（合规审计、设备检验）的规则键
+  'control-evidence-consistency': '控制措施与证据一致性',
+  'maintenance-completeness': '维护保养记录完整性',
+  'policy-completeness': '制度文件完整性',
+  'safety-device-evidence': '安全附件证据',
+  AI_RUN_REVIEW_CONTEXT: '审查上下文校验',
+  PIPE_LIST_FIELD_CONFIDENCE: '管道特性表字段置信度',
+  SEAL_REQUIRED_AND_READABLE: '印章须存在且可辨认'
 }
+
+/**
+ * 69 条监检项规则的键是 `engineering-inspection-rNN`：NN 就是监检项目表的序号，
+ * 逐条列 69 行没意义（序号本身就是监检认的东西），按规律翻。
+ */
+const NODE_RULE_KEY = /^engineering-inspection-r(\d{1,2})$/
 
 /**
  * 证据与结构校验的失败码。这些码会以「待核对」的形式直接出现在结论里，
@@ -904,7 +922,10 @@ export const friendlyTechTerm = (value?: string | null) => {
 
 export const friendlyRuleCode = (value?: string | null, options: { keepCode?: boolean } = {}) => {
   if (!value) return '未返回'
-  const label = ruleCodeLabels[value] || techTermLabels[value] || statusLabelMap[value]
+  const node = String(value).match(NODE_RULE_KEY)
+  const label = node
+    ? `监检第 ${Number(node[1])} 项`
+    : ruleCodeLabels[value] || techTermLabels[value] || statusLabelMap[value]
   if (!label) return value
   return options.keepCode === true ? `${label}（${value}）` : label
 }
@@ -928,6 +949,32 @@ export const friendlyToken = (value?: string | null, options: { keepCode?: boole
  * 原来这张表埋在 Workbench.vue 里只给一处用，现在挪出来共用。
  */
 export const materialTypeLabels: Record<string, string> = {
+  approval_record: '批准记录',
+  audit_report: '审核报告',
+  calibration_certificate: '校准证书',
+  control_matrix: '控制矩阵',
+  data_access_log: '数据访问日志',
+  defect_rectification: '缺陷整改记录',
+  device_inspection_report: '设备检验报告',
+  device_register: '设备台账',
+  drawing_material_list: '图纸材料表',
+  enterprise_material_standard: '企业材料标准',
+  foreign_component_inspection_record: '境外元件检验记录',
+  foreign_manufactured_component_list: '境外制造元件清单',
+  incident_log: '事件记录',
+  last_inspection_report: '上次检验报告',
+  maintenance_record: '维护保养记录',
+  material_ndt_report: '材料无损检测报告',
+  new_material_data: '新材料数据',
+  org_chart: '组织机构图',
+  policy_document: '制度文件',
+  process_record: '过程记录',
+  remediation_plan: '整改方案',
+  risk_register: '风险台账',
+  safety_device_record: '安全附件记录',
+  sampling_witness_record: '抽样见证记录',
+  third_party_contract: '第三方合同',
+  training_record: '培训记录',
   standard_reference: '标准规范正文',
   unclassified_material: '未分类资料',
   installation_license: '安装单位许可证',

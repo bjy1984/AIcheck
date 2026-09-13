@@ -194,3 +194,25 @@ def test_证件号查到的是别人时不覆盖也不标已核验(monkeypatch):
     assert verification["registryHolder"] == "赵相军" and verification["claimedHolder"] == "李卫伍"
     assert not any("GTAW-FEIV-6G" in str(code).upper() for code in cert.get("qualificationCodes") or []), "不许把别人的项目覆盖过来"
     assert all(item.get("source") != "cnse_platform" for item in cert.get("evidence") or []), "不许标成平台已核验"
+
+
+def test_人证不符不许判核验通过(monkeypatch):
+    """2026-09-13 用户截图：公示平台那列红着「与平台登记不一致」，结论列却绿着「核验通过」。
+
+    `check_certificate_validity` 只看有效期与许可范围，人证不符没进它的判定——
+    这是判定问题，不是显示问题。
+    """
+    from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+
+    result = check_certificate_validity({
+        "certificateType": "welder_certificate",
+        "referenceDate": "2026-09-13",
+        "certificates": [{
+            "certificateNo": "410521198609180550", "holder": "李卫伍", "validUntil": "2028-11-30",
+            "platformVerification": {"outcome": "verified_mismatch", "registryHolder": "赵相军"},
+        }],
+    })
+    assert result["result"] == "evidence_insufficient"
+    cert = result["facts"]["certificates"][0]
+    assert cert["result"] == "evidence_insufficient"
+    assert any(c["code"].endswith("holder_matches_registry") and not c["passed"] for c in cert["checks"])

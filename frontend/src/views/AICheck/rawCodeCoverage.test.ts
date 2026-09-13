@@ -20,30 +20,40 @@ import { findingTypeLabel } from './workbenchReviewPresentation'
 
 const EXTRACT = String.raw`
 import re, pathlib, json, sys
-root = pathlib.Path(sys.argv[1])
-out = {"checks": set(), "findingTypes": set(), "materialTypes": set()}
-for p in root.rglob("*.py"):
-    t = p.read_text(errors="ignore")
-    out["checks"] |= set(re.findall(r'check\(\s*"([a-zA-Z0-9_]+)"', t))
-    out["findingTypes"] |= set(re.findall(r'"findingType":\s*"([a-zA-Z0-9_]+)"', t))
-    out["materialTypes"] |= set(re.findall(r'materialTypeCode["\s:=]+"([a-z0-9_]+)"', t))
-for p in root.rglob("*.yaml"):
-    t = p.read_text(errors="ignore")
-    out["materialTypes"] |= set(re.findall(r'materialTypeCode:\s*([a-z0-9_]+)', t))
+out = {"checks": set(), "findingTypes": set(), "materialTypes": set(), "ruleKeys": set()}
+for root in [pathlib.Path(a) for a in sys.argv[1:]]:
+    for p in root.rglob("*.py"):
+        t = p.read_text(errors="ignore")
+        out["checks"] |= set(re.findall(r'check\(\s*"([a-zA-Z0-9_]+)"', t))
+        out["findingTypes"] |= set(re.findall(r'"findingType":\s*"([a-zA-Z0-9_]+)"', t))
+        out["materialTypes"] |= set(re.findall(r'materialTypeCode["\s:=]+"([a-z0-9_]+)"', t))
+    for p in root.rglob("*.yaml"):
+        t = p.read_text(errors="ignore")
+        out["materialTypes"] |= set(re.findall(r'materialTypeCode:\s*([a-z0-9_]+)', t))
+        out["ruleKeys"] |= set(re.findall(r'ruleKey:\s*"?([a-z0-9][a-z0-9-]{4,})', t))
 print(json.dumps({k: sorted(v) for k, v in out.items()}))
 `
 const data = JSON.parse(
   execFileSync(
     'python3',
-    ['-c', EXTRACT, new URL('../../../../backend/libs', import.meta.url).pathname],
+    [
+      '-c',
+      EXTRACT,
+      new URL('../../../../backend/libs', import.meta.url).pathname,
+      new URL('../../../../backend/business_packs', import.meta.url).pathname
+    ],
     {
       encoding: 'utf8'
     }
   )
 )
-const rawish = (text: string) => /[a-z]{3,}_[a-z]/.test(text)
+// 连字符也算生码：`welder-qualification` 就是被只认下划线的正则漏掉的（2026-09-13）。
+const rawish = (text: string) => /[a-z]{3,}[_-][a-z]/.test(text)
 
-assert.ok(data.checks.length > 30, `应当扫到几十个检查码，实际 ${data.checks.length} 个——抽取正则可能失效了`)
+assert.ok(
+  data.checks.length > 30,
+  `应当扫到几十个检查码，实际 ${data.checks.length} 个——抽取正则可能失效了`
+)
 assert.deepEqual(
   data.checks.filter((code: string) => rawish(friendlyCheckCode(code))),
   [],
@@ -59,7 +69,12 @@ assert.deepEqual(
   [],
   '这些资料类型代号还没翻译，请补 auditLabels.materialTypeLabels'
 )
+assert.ok(data.ruleKeys.length > 50, `应当扫到几十个规则键，实际 ${data.ruleKeys.length} 个`)
+assert.deepEqual(
+  data.ruleKeys.filter((code: string) => rawish(friendlyRuleCode(code))),
+  [],
+  '这些规则键还没翻译，请补 auditLabels.ruleCodeLabels'
+)
 void friendlyEvidenceIssue
 void friendlyFieldLabel
-void friendlyRuleCode
 void friendlyTechTerm

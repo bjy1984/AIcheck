@@ -16,6 +16,7 @@ import {
   type WorkbenchAiFindingGroupKey,
   type WorkbenchAiPresentation
 } from '../workbenchReviewPresentation'
+import { friendlyRuleCode } from './auditLabels'
 import AuditStatusTag from './AuditStatusTag.vue'
 import CertificateVerificationCard from './CertificateVerificationCard.vue'
 
@@ -369,8 +370,13 @@ const checkOutcomeTone = (result: string) => CHECK_OUTCOME_TONES[result] || 'gra
 
 const pageLabel = (pages: number[]) => (pages.length ? `第 ${pages.join('、')} 页` : '')
 
-const ruleLabel = (rule: Record<string, unknown>) =>
-  String(rule.text || rule.ruleCode || rule.source || '规则依据')
+/** 规则依据：有原文就印原文，否则把规则键翻成人话（`welder-qualification` → 焊工资格）。 */
+const ruleLabel = (rule: Record<string, unknown>) => {
+  const text = String(rule.text || '').trim()
+  if (text) return text
+  const code = String(rule.ruleCode || rule.source || '')
+  return code ? friendlyRuleCode(code) : '规则依据'
+}
 </script>
 
 <template>
@@ -559,7 +565,13 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                 >
                   <div class="ai-outcome-fact-head">
                     <span class="ai-unscored-fact-label">{{ factDisplayLabel(fact) }}</span>
-                    <span class="ai-unscored-fact-value">{{ fact.value }}</span>
+                    <!-- 标签里已经含了这个值就别再印一遍（「焊工证 李卫伍 李卫伍」） -->
+                    <span
+                      v-if="fact.value && !factDisplayLabel(fact).includes(fact.value)"
+                      class="ai-unscored-fact-value"
+                    >
+                      {{ fact.value }}
+                    </span>
                     <small v-if="sameFactCount(fact) > 1" class="ai-fact-same-count">
                       另有 {{ sameFactCount(fact) - 1 }} 条同样内容
                     </small>

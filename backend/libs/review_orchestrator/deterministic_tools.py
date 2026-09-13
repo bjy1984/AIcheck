@@ -280,6 +280,15 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                 cert_checks.append(check(f"{label}:scope_covers_required", not missing, sorted(scopes), sorted(required_scopes)))
                 if missing:
                     status = "failed"
+        # 人证不符不能判「核验通过」：check_certificate_validity 只看有效期与范围，
+        # 平台按证件号查到的是另一个人时它照样给通过——界面上就出现「与平台登记不一致」
+        # 配「核验通过」的自相矛盾（2026-09-13 用户截图）。这是判定问题，不是显示问题。
+        verification = cert.get("platformVerification") if isinstance(cert.get("platformVerification"), dict) else {}
+        if verification.get("outcome") == "verified_mismatch":
+            status = "evidence_insufficient"
+            cert_checks.append(
+                check(f"{label}:holder_matches_registry", False, verification.get("registryHolder"), cert.get("holder"))
+            )
         for field in ("certificateNo", "issuer"):
             if not cert.get(field):
                 warnings.append(f"{field}_missing:{label}")
