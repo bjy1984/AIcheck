@@ -1147,3 +1147,21 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   } as never)
   assert.equal(fromFindings[0].title, '旧接口')
 }
+
+// 代号不只出现在「码」的位置，检查项的期望值也会是 snake_case 枚举
+// （2026-09-13 线上巡检节点 16）。`_and_` 不能把整词切开。
+{
+  const { friendlyEnumValue } = await import('./components/auditLabels')
+  assert.equal(
+    friendlyEnumValue(
+      'original_with_manufacturer_quality_seal_or_copy_with_dealer_and_handler_seals'
+    ),
+    '原件带制造单位质量章，或复印件带经销商与经手人签章'
+  )
+  assert.equal(friendlyEnumValue('GC2'), 'GC2', '不是 snake_case 的原样返回')
+  assert.equal(
+    friendlyEnumValue('some_unknown_thing_here'),
+    'some_unknown_thing_here',
+    '翻不动就原样'
+  )
+}

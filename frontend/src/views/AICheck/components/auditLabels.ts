@@ -802,12 +802,22 @@ export const friendlyEnumValue = (value?: string | null) => {
   const text = String(value || '').trim()
   if (!text || !/^[a-z][a-z0-9_]{5,}$/.test(text)) return text
   if (REASON_STEMS[text]) return REASON_STEMS[text]
-  const parts = text.split(/_or_|_and_/)
-  const joiners = [...text.matchAll(/_or_|_and_/g)].map((m) => (m[0] === '_or_' ? '，或' : '，且'))
-  const translated = parts.map((part) => REASON_STEMS[part] || translateStem(part))
-  if (translated.some((part, index) => part === parts[index] && !REASON_STEMS[parts[index]]))
+  // 先只按 `_or_` 切，每段先整段查表——否则 `_and_` 会把
+  // 「copy_with_dealer_and_handler_seals」这种整词也切开（2026-09-13 实测）。
+  const parts = text.split('_or_')
+  const translated = parts.map((part) => {
+    if (REASON_STEMS[part]) return REASON_STEMS[part]
+    const pieces = part.split('_and_')
+    const inner = pieces.map((piece) => REASON_STEMS[piece] || translateStem(piece))
+    if (inner.some((piece, index) => piece === pieces[index] && !REASON_STEMS[pieces[index]])) {
+      return part
+    }
+    return inner.join('且')
+  })
+  if (translated.some((part, index) => part === parts[index] && !REASON_STEMS[parts[index]])) {
     return text
-  return translated.reduce((acc, part, index) => acc + (index ? joiners[index - 1] : '') + part, '')
+  }
+  return translated.join('，或')
 }
 
 const translateStem = (stem: string): string => {
