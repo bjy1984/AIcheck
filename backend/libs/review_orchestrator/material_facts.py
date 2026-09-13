@@ -134,11 +134,18 @@ _FALLBACK_VALUE_KEYS = (
 )
 
 
-def _fact_label(fact_type: str, record: dict[str, Any]) -> str:
-    """`r24-certificates` → 「焊工证」；能取到持证人/编号就带上，取不到只给类型名。"""
+def _fact_label(fact_type: str, record: dict[str, Any], *, skip: set[str] | None = None) -> str:
+    """`r24-certificates` → 「焊工证」；能取到持证人/编号就带上，取不到只给类型名。
+
+    `skip` 是文档级常量字段：拿它当后缀会让一张表的每一行都叫同一个名字
+    （见 `_document_level_keys`）。
+    """
     target = fact_type.split("-")[-1]
     base = FACT_TYPE_LABELS.get(target, target)
+    skip = skip or set()
     for key in ("holderName", "welderName", "personName", "certificateNo", "documentNo", "recordNo", "weldNo"):
+        if key in skip:
+            continue
         value = record.get(key)
         if _present(value):
             return f"{base} {value}"
@@ -150,11 +157,35 @@ def _record_evidence_refs(record: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in (record.get("evidence"), record.get("platformEvidence")) if isinstance(item, dict)]
 
 
+def _document_level_keys(records: list[dict[str, Any]], keys: tuple[str, ...]) -> set[str]:
+    """在同一类记录里处处相同的字段，是文档级常量，不能当作某一行的身份。
+
+    2026-09-13 用户截图：焊接工艺评定 PDF 的力学性能表被拆成 19 行事实，
+    每一行的标签和取值都是「焊接工艺规程 WPS 焊接工艺评定任务书」——
+    因为 `_extract_records` 把文档级字段并进了每一行（`{**document_values, **row}`），
+    行本身没抽到业务字段时，文档标题就顶上来当了这一行的身份。
+    界面于是显示「1 条 · 另有 18 条同样内容」，看起来像 19 张 WPS，其实是一张表的 19 行。
+
+    判据是数据本身：一个字段在**每一条记录上都有值且值全都一样**，它就区分不了行。
+    少于三条不判——两条恰好相同太常见（同一批的两个试样），误伤比漏判贵。
+    """
+    if len(records) < 3:
+        return set()
+    constant: set[str] = set()
+    for key in keys:
+        present = [record.get(key) for record in records if _present(record.get(key))]
+        if len(present) == len(records) and len({str(value) for value in present}) == 1:
+            constant.add(key)
+    return constant
+
+
 def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]], tuple[str, ...]]]) -> dict[str, Any]:
     all_records = [record for _, records, _ in records_by_type for record in records]
     evidence_refs = _unique_evidence_refs([ref for record in all_records for ref in _record_evidence_refs(record)])
     claimed_facts: list[dict[str, Any]] = []
     for fact_type, records, value_keys in records_by_type:
+        # 文档级常量顶替行身份，会把一张表的 N 行显示成 N 条一模一样的事实。
+        constant_keys = _document_level_keys(records, (*value_keys, *_FALLBACK_VALUE_KEYS))
         for index, record in enumerate(records, 1):
             refs = _record_evidence_refs(record)
             evidence = refs[0] if refs else {}
@@ -162,11 +193,15 @@ def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]
             claimed_facts.append(
                 {
                     "factId": f"{fact_type}-{index}",
-                    "label": _fact_label(fact_type, record),
+                    "label": _fact_label(fact_type, record, skip=constant_keys),
                     # 去重键：焊工证同时被 r24 builder 和证书链产出，界面上就是同一张证两条。
                     "certificateNo": record.get("welderCertificateNo") or record.get("certificateNo") or record.get("documentNo"),
                     "value": next(
-                        (record.get(key) for key in (*value_keys, *_FALLBACK_VALUE_KEYS) if _present(record.get(key))),
+                        (
+                            record.get(key)
+                            for key in (*value_keys, *_FALLBACK_VALUE_KEYS)
+                            if key not in constant_keys and _present(record.get(key))
+                        ),
                         None,
                     ),
                     "documentVersionId": record.get("documentVersionId"),

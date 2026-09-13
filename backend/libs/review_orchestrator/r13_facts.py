@@ -304,6 +304,23 @@ def _meaningful_column(key: str) -> bool:
     return name.lower().replace(" ", "") in _KNOWN_ASCII_COLUMNS
 
 
+#: 表格抽取器给重名列自动编号：第一列叫 `X`，后面的叫 `X_2`、`X_3`……
+_AUTO_NUMBERED_COLUMN = re.compile(r"_\d+$")
+
+
+def _columns_are_auto_numbered(keys: list[str]) -> bool:
+    """这一行的列名是不是「同一个名字自动编号」出来的——那样列名不含任何信息。
+
+    2026-09-13 用户截图：焊接工艺评定 PDF 第 3 页的力学性能表，OCR 把表格标题格
+    并进了每一个表头，于是七列全叫 `■拉伸试验 试验报告编号:BA2310077`、`…_2`、`…_3`。
+    照「键：值」拼出来就是「■拉伸试验 试验报告编号:BA2310077_4：横截面积( $mm^2$ )」——
+    键比值还长，而且七个键说的是同一件事。这种情况只给值。
+    """
+    if len(keys) < 2:
+        return False
+    return len({_AUTO_NUMBERED_COLUMN.sub("", key) for key in keys}) == 1
+
+
 def _row_quote(row: dict[str, Any]) -> str:
     """表格行 → 「键：值 · 键：值」，只保留看得懂的列。
 
@@ -311,13 +328,13 @@ def _row_quote(row: dict[str, Any]) -> str:
     `{"BOM A_12": "无缝钢管", "0.275": "0.8M"}`（2026-09-13 用户实测截图）。
     引文是给人读的：读不懂的列名不如不写，真要看原样就点开原件。
     """
-    parts = [
-        f"{key}：{str(value).strip()}"
-        for key, value in row.items()
-        if _meaningful_column(key) and not is_placeholder(value)
-    ]
-    if parts:
-        return " · ".join(parts)[:800]
+    usable = [(str(key), str(value).strip()) for key, value in row.items()
+              if _meaningful_column(key) and not is_placeholder(value)]
+    if usable and not _columns_are_auto_numbered([key for key, _ in usable]):
+        return " · ".join(f"{key}：{value}" for key, value in usable)[:800]
+    if usable:
+        # 列名是自动编号出来的重名列：只给值，值本身才是这一行的内容。
+        return " · ".join(value for _, value in usable)[:400]
     # 整行都是认不出的列：给值本身，别把一串坏列名糊到界面上。
     values = [str(value).strip() for value in row.values() if not is_placeholder(value)]
     return " / ".join(values)[:200]
