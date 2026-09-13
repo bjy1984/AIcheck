@@ -89,6 +89,8 @@ assert.equal(completed.resultLabel, '部分证据支持')
 assert.equal(completed.findings.length, 1)
 assert.deepEqual(completed.findings[0], {
   id: 'FND-1',
+  // 这条发现没有 kbRefs，所以条款引用为空——有 kbRefs 时后端会解析成标准名/章节/原文
+  clauseRefs: [],
   typeLabel: '许可范围',
   severity: 'high',
   severityLabel: '高',
@@ -123,6 +125,7 @@ assert.deepEqual(workbenchFindingDisplay(completed.findings[0]), {
   ruleRefs: [{ source: 'criteria', text: '规则原文' }],
   severityTag: '重要',
   severityTone: 'orange',
+  clauseRefs: [],
   confidencePercent: 72,
   evidenceGroups: [{ fileId: 'DOC-1', fileName: 'DOC-1', pages: [], quotes: [] }]
 })
@@ -439,7 +442,8 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     deterministicResult: 'passed'
   })
   assert.equal(allDowngraded.verdict, '证据不足')
-  assert.equal(allDowngraded.tone, 'gray')
+  // 颜色口径：证据不足=黄（原来是灰，和「不适用」分不开）
+  assert.equal(allDowngraded.tone, 'orange')
   assert.deepEqual(allDowngraded.counts, { needAction: 0, confirm: 0, insufficient: 2, passed: 0 })
   assert.equal(allDowngraded.insufficientClaims.length, 1)
   assert.equal(allDowngraded.insufficientClaims[0].findingId, 'F1')
@@ -1035,8 +1039,16 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(friendlyCheckReason('pwht_weld_items_missing'), '未抽到热处理焊口记录')
   assert.equal(friendlyCheckReason('hardness_report_missing'), '缺少硬度报告')
   assert.equal(friendlyCheckReason('temperature_point_layout_missing'), '缺少温度测点布置')
-  assert.equal(friendlyCheckReason('r15_design_items_missing'), '未抽到设计文件条目', '显式表里有 r15 这条')
-  assert.equal(friendlyCheckReason('r18_design_items_missing'), '缺少设计条目', '没进显式表的规则前缀要剥掉再翻')
+  assert.equal(
+    friendlyCheckReason('r15_design_items_missing'),
+    '未抽到设计文件条目',
+    '显式表里有 r15 这条'
+  )
+  assert.equal(
+    friendlyCheckReason('r18_design_items_missing'),
+    '缺少设计条目',
+    '没进显式表的规则前缀要剥掉再翻'
+  )
   assert.equal(
     friendlyCheckReason('product_standard_limit_profile_missing'),
     '缺少产品标准限值档案'
@@ -1053,4 +1065,47 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(friendlyCheckReason('events_hash_mismatch'), '事件哈希不一致')
   assert.equal(friendlyCheckReason('work_item_coverage_undecidable'), '施焊记录覆盖情况无法判定')
   assert.equal(friendlyCheckReason('checkCount=0'), '规则跑了，但节点没有可检的资料', '显式表优先')
+}
+
+// 引用的标准条款要标出标准号，旧版要标红：条款原文一显示出来监检就会照着核，
+// 引 TSG Z6002-2010（已被 2026 版取代）比不显示更糟。
+{
+  const { buildWorkbenchAiPresentation } = await import('./workbenchReviewPresentation')
+  const view = buildWorkbenchAiPresentation({
+    run: { projectAnalysisRunId: 'PARUN-C', phase: 'completed', finishedAt: '2026-09-13 10:00:00' },
+    nodeReview: {
+      reviewResult: 'insufficient_evidence',
+      findingDrafts: [
+        {
+          id: 'F-1',
+          title: '焊工合格项目无法核对',
+          description: '项目代号解不开',
+          severity: 'high',
+          clauseRefs: [
+            {
+              clauseId: 'CHK-1',
+              standard: '特种设备焊接操作人员考核细则',
+              standardCode: 'TSG Z6002—2010',
+              section: '第三章 考核程序与要求',
+              clauseNo: 'p12-c13',
+              text: '考试机构应当对焊工申请考试资料的完整性负责',
+              pageNo: 12,
+              supersededEdition: {
+                supersededBy: 'TSG Z6002-2026',
+                effectiveFrom: '2026-08-01',
+                note: 'FeⅠ/Ⅱ/Ⅲ 互认'
+              }
+            },
+            { clauseId: 'CHK-2', standard: 'x', text: '', pageNo: null }
+          ]
+        }
+      ]
+    }
+  })
+  const [finding] = view.findings
+  assert.equal(finding.clauseRefs.length, 1, '没有原文的条款不显示')
+  assert.equal(finding.clauseRefs[0].standardCode, 'TSG Z6002—2010')
+  assert.equal(finding.clauseRefs[0].section, '第三章 考核程序与要求')
+  assert.equal(finding.clauseRefs[0].superseded?.supersededBy, 'TSG Z6002-2026')
+  assert.equal(finding.clauseRefs[0].superseded?.effectiveFrom, '2026-08-01')
 }

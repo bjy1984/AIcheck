@@ -133,7 +133,90 @@ def cap_generated_findings(
     return capped, metadata
 
 
+def _superseded(reference: Any) -> dict[str, Any] | None:
+    try:
+        from libs.standard_editions import superseded_edition
+
+        return superseded_edition(str(reference or ""))
+    except Exception:  # noqa: BLE001 -- 换版提示缺失不影响审查
+        return None
+
+
+def attach_clause_details(state: dict[str, Any], drafts: list[dict[str, Any]]) -> None:
+    """把 kbRefs 里的 clauseId 解析成条款详情，就地写进 finding 的 `clauseRefs`。
+
+    2026-09-13 用户要求「引用的标准条款要清晰标记出来」。模型早就在引条款了
+    （kbRefs.clauseIds，从检索包里选 id，不是自己背原文——这是对的，背原文就是幻觉入口），
+    但界面上只有一串 `CHK-KF-KB-DE16B8E7E8-14`，等于没引。这里把标准名、章节、条款号、
+    原文、页码补齐，界面直接显示、可点开标准原件。
+    """
+    clause_ids = {
+        str(clause_id)
+        for draft in drafts
+        if isinstance(draft, dict)
+        for ref in draft.get("kbRefs") or []
+        if isinstance(ref, dict)
+        for clause_id in ref.get("clauseIds") or []
+        if clause_id
+    }
+    if not clause_ids:
+        return
+    # 条款记录里只有标准中文名，标准号在 standard_document_versions 上（按 knowledgeFileId 对）。
+    codes_by_file = {
+        str(doc.get("knowledgeFileId") or ""): str(doc.get("code") or "")
+        for doc in state.get("standard_document_versions") or []
+        if isinstance(doc, dict) and doc.get("knowledgeFileId") and doc.get("code")
+    }
+    index: dict[str, dict[str, Any]] = {}
+    for clause in state.get("knowledge_clauses") or []:
+        if not isinstance(clause, dict):
+            continue
+        key = str(clause.get("clauseId") or clause.get("id") or "")
+        if key in clause_ids and key not in index:
+            index[key] = clause
+    if not index:
+        return
+    for draft in drafts:
+        if not isinstance(draft, dict):
+            continue
+        refs: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for ref in draft.get("kbRefs") or []:
+            for clause_id in (ref or {}).get("clauseIds") or []:
+                clause = index.get(str(clause_id))
+                if not clause or str(clause_id) in seen:
+                    continue
+                seen.add(str(clause_id))
+                title = str(clause.get("title") or "")
+                standard, _, section = title.partition(" / ")
+                code = codes_by_file.get(str(clause.get("fileId") or ""), "")
+                refs.append(
+                    {
+                        "clauseId": str(clause_id),
+                        "standard": standard.strip(),
+                        "standardCode": code,
+                        "section": section.strip(),
+                        # 引的是不是过期版本：条款原文一显示出来，监检就会照着核，
+                        # 引旧版比不显示更糟（节点 24/29 引的 TSG Z6002-2010 已被 2026 版取代）。
+                        "supersededEdition": _superseded(code),
+                        "clauseNo": clause.get("clauseNo"),
+                        "text": str(clause.get("text") or "")[:600],
+                        "pageNo": clause.get("pageNo"),
+                        "documentVersionId": clause.get("documentVersionId"),
+                        "fileId": clause.get("fileId"),
+                    }
+                )
+        if refs:
+            draft["clauseRefs"] = refs
+
+
 def store_generated_findings(review_run, drafts, *, complete, hash_payload):
+    try:
+        from libs.db.repository import repo
+
+        attach_clause_details(repo.state, drafts)
+    except Exception:  # noqa: BLE001 -- 条款补全失败只是界面少一块，不能让审查落库失败
+        pass
     review_run["findingDrafts"] = deepcopy(drafts)
     if complete:
         review_run["findingRetention"] = "complete"

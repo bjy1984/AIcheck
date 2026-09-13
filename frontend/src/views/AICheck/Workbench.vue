@@ -732,7 +732,9 @@ const nodeAiPresentationFindings = computed<WorkbenchAiFinding[]>(() => {
     evidenceCount: finding.evidenceCount,
     ruleCount: finding.ruleCount,
     evidenceRefs: [],
-    ruleRefs: []
+    ruleRefs: [],
+    // 自由文本解析路径没有条款引用（那条路只有一段文字，不含 kbRefs）
+    clauseRefs: []
   }))
 })
 const visibleNodeAiPresentationFindings = computed(() =>

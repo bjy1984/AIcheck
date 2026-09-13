@@ -32,6 +32,7 @@ const LABELS: Record<string, string> = {
   report: '报告',
   archive: '归档'
 }
+/** 颜色口径（2026-09-13 用户定）：完成=绿、要补东西=黄、失败=红、进行中=蓝、没开始=灰。 */
 const TONES: Record<string, 'red' | 'orange' | 'green' | 'blue' | 'gray'> = {
   completed: 'green',
   in_progress: 'blue',

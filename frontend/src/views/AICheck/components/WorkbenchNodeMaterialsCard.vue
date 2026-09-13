@@ -57,11 +57,17 @@ const statusText = (row: MaterialRow) => {
   if (isPending(row)) return '待确认'
   return isOptional(row) ? '未提供' : '缺'
 }
+/**
+ * 颜色口径（2026-09-13 用户定）：已确认=绿、缺证据=黄、错误/阻断=红。
+ * 必传缺失挡结论，等同「错误」用红；条件必传缺、挂了没确认属「证据不足」用黄；
+ * 可选没交不是问题，灰。
+ */
 const statusTone = (row: MaterialRow) => {
   const level = severity(row)
   if (level === 'done') return 'green'
-  if (isPending(row)) return 'orange'
-  return level === 'blocking' ? 'red' : level === 'attention' ? 'orange' : 'gray'
+  if (level === 'blocking') return 'red'
+  if (isPending(row) || level === 'attention') return 'orange'
+  return 'gray'
 }
 
 /** 所有计数都从同一份行数据算，标题和列表不可能对不上。 */

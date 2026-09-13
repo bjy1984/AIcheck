@@ -18,6 +18,20 @@ export const inspectionReviewDirectoryItems = (items: InspectionAuditItem[]) => 
 
 type ProjectAnalysisView = NonNullable<NodePackagePayload['projectAnalysis']>
 
+/** 一条被引用的标准条款：标准名 / 章节 / 条款号 / 原文 / 页码。 */
+export type WorkbenchAiClauseRef = {
+  clauseId: string
+  standard: string
+  /** 标准号，例如 TSG Z6002—2010。 */
+  standardCode: string
+  section: string
+  clauseNo: string
+  text: string
+  pageNo: number | null
+  /** 该版本已被取代时的提示：新版号、施行日、差异摘要。 */
+  superseded: { supersededBy: string; effectiveFrom: string; note: string } | null
+}
+
 export type WorkbenchAiFinding = {
   id: string
   typeLabel: string
@@ -28,6 +42,8 @@ export type WorkbenchAiFinding = {
   confidence?: number
   evidenceCount: number
   ruleCount: number
+  /** 模型引用的标准条款（后端按 kbRefs.clauseIds 解析出的原文）。 */
+  clauseRefs: WorkbenchAiClauseRef[]
   evidenceRefs: Array<Record<string, unknown>>
   ruleRefs: Array<Record<string, unknown>>
   /** 以下为 P9 R1 契约字段；旧路径（自由文本解析）没有，按"通过守卫、无待核对项"处理。 */
@@ -118,6 +134,7 @@ export const workbenchFindingDisplay = (finding: WorkbenchAiFinding) => ({
   description: humanizeFindingText(finding.description),
   evidenceCount: finding.evidenceCount,
   ruleCount: finding.ruleCount,
+  clauseRefs: finding.clauseRefs,
   evidenceRefs: finding.evidenceRefs,
   ruleRefs: finding.ruleRefs,
   severityTag: SEVERITY_TAGS[finding.severity] || finding.severityLabel || '',
@@ -531,6 +548,30 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
     confidence: typeof raw.confidence === 'number' ? raw.confidence : undefined,
     evidenceCount: evidenceRefs.length,
     ruleCount: ruleRefs.length,
+    clauseRefs: (Array.isArray(raw.clauseRefs) ? raw.clauseRefs : [])
+      .map((item) => (item || {}) as Record<string, unknown>)
+      .filter((item) => item.clauseId && item.text)
+      .map((item) => ({
+        clauseId: String(item.clauseId),
+        standard: String(item.standard || ''),
+        standardCode: String(item.standardCode || ''),
+        section: String(item.section || ''),
+        clauseNo: String(item.clauseNo || ''),
+        text: String(item.text || ''),
+        pageNo: typeof item.pageNo === 'number' ? item.pageNo : null,
+        superseded:
+          item.supersededEdition && typeof item.supersededEdition === 'object'
+            ? {
+                supersededBy: String(
+                  (item.supersededEdition as Record<string, unknown>).supersededBy || ''
+                ),
+                effectiveFrom: String(
+                  (item.supersededEdition as Record<string, unknown>).effectiveFrom || ''
+                ),
+                note: String((item.supersededEdition as Record<string, unknown>).note || '')
+              }
+            : null
+      })),
     evidenceRefs,
     ruleRefs,
     findingType,
@@ -763,7 +804,7 @@ export type WorkbenchAiFindingGroupKey = 'needAction' | 'confirm' | 'insufficien
 
 export type WorkbenchAiConclusion = {
   verdict: WorkbenchAiVerdict
-  tone: 'red' | 'orange' | 'gray' | 'green'
+  tone: 'red' | 'orange' | 'gray' | 'green' | 'blue'
   headline: string
   counts: Record<WorkbenchAiFindingGroupKey, number>
   keyFacts: Array<{ text: string; location: string }>
@@ -942,14 +983,16 @@ export const buildWorkbenchAiConclusion = ({
   }))
   return {
     verdict,
+    // 颜色口径（2026-09-13 用户定）：通过=绿、证据不足=黄、错误=红；
+    // 「待确认」是证据齐了等人拍板，用蓝，不和「证据不足」抢黄色。
     tone:
       verdict === '需处理'
         ? 'red'
         : verdict === '待确认'
-          ? 'orange'
+          ? 'blue'
           : verdict === '未见问题'
             ? 'green'
-            : 'gray',
+            : 'orange',
     headline,
     counts,
     keyFacts,

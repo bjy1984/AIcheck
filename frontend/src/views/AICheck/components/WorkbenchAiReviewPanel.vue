@@ -64,11 +64,11 @@ const conclusion = computed(() =>
 
 const GROUP_META: Record<
   WorkbenchAiFindingGroupKey,
-  { title: string; hint: string; tone: 'red' | 'orange' | 'gray' | 'green' }
+  { title: string; hint: string; tone: 'red' | 'orange' | 'gray' | 'green' | 'blue' }
 > = {
   needAction: { title: '需处理', hint: '通过证据核对，严重度高', tone: 'red' },
-  confirm: { title: '待确认', hint: '通过证据核对，需人工判断', tone: 'orange' },
-  insufficient: { title: '证据不足', hint: '模型结论未获证据支持，已折叠', tone: 'gray' },
+  confirm: { title: '待确认', hint: '通过证据核对，需人工判断', tone: 'blue' },
+  insufficient: { title: '证据不足', hint: '模型结论未获证据支持，已折叠', tone: 'orange' },
   passed: { title: '通过', hint: '查到了、符合要求；证据在下方，仍需人工确认', tone: 'green' }
 }
 
@@ -155,11 +155,16 @@ const CHECK_OUTCOME_ORDER = [
   'not_applicable',
   'passed'
 ]
-const CHECK_OUTCOME_TONES: Record<string, 'red' | 'orange' | 'gray' | 'green'> = {
+/**
+ * 颜色口径（2026-09-13 用户定）：已确认/通过=绿，证据不足=黄，错误/不符合=红。
+ * 「需人工判断」另给蓝色：它和「证据不足」是两回事——前者证据齐了等人拍板，
+ * 后者是缺东西；都涂黄就分不出该补件还是该判断。
+ */
+const CHECK_OUTCOME_TONES: Record<string, 'red' | 'orange' | 'gray' | 'green' | 'blue'> = {
   failed: 'red',
-  human_review_required: 'orange',
-  evidence_insufficient: 'gray',
   execution_error: 'red',
+  evidence_insufficient: 'orange',
+  human_review_required: 'blue',
   not_applicable: 'gray',
   passed: 'green'
 }
@@ -431,11 +436,11 @@ const ruleLabel = (rule: Record<string, unknown>) =>
               <dt>需处理</dt>
               <dd>{{ conclusion.counts.needAction }}</dd>
             </div>
-            <div class="is-orange">
+            <div class="is-blue">
               <dt>待确认</dt>
               <dd>{{ conclusion.counts.confirm }}</dd>
             </div>
-            <div class="is-gray">
+            <div class="is-orange">
               <dt>证据不足</dt>
               <dd>{{ conclusion.counts.insufficient }}</dd>
             </div>
@@ -761,6 +766,34 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                   </ul>
                 </div>
               </div>
+              <!-- 引用的标准条款：标准名 + 章节 + 条款号 + 原文，监检能直接对着查 -->
+              <ul
+                v-if="finding.clauseRefs.length"
+                class="ai-clause-list"
+                aria-label="引用的标准条款"
+              >
+                <li v-for="clause in finding.clauseRefs" :key="clause.clauseId">
+                  <div class="ai-clause-head">
+                    <strong>{{ clause.standardCode || clause.standard || '标准条款' }}</strong>
+                    <span v-if="clause.standardCode && clause.standard">{{ clause.standard }}</span>
+                    <span v-if="clause.section">{{ clause.section }}</span>
+                    <small v-if="clause.clauseNo">{{ clause.clauseNo }}</small>
+                    <small v-if="clause.pageNo">第 {{ clause.pageNo }} 页</small>
+                    <!-- 条款原文一显示出来监检就会照着核，引旧版比不显示更糟 -->
+                    <strong
+                      v-if="clause.superseded"
+                      class="ai-clause-superseded"
+                      :title="clause.superseded.note"
+                    >
+                      已被 {{ clause.superseded.supersededBy }} 取代（{{
+                        clause.superseded.effectiveFrom
+                      }}
+                      施行）
+                    </strong>
+                  </div>
+                  <q>{{ clause.text }}</q>
+                </li>
+              </ul>
               <div v-if="finding.ruleRefs.length" class="ai-rule-list">
                 <span v-for="(rule, index) in finding.ruleRefs" :key="index">
                   {{ ruleLabel(rule) }}
@@ -1173,6 +1206,10 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   color: #1a7f4b;
 }
 
+.ai-conclusion-counts > .is-blue dd {
+  color: #2f6bff;
+}
+
 .ai-conclusion-counts > .is-gray dd {
   color: var(--aicheck-text-subtle, #667085);
 }
@@ -1418,6 +1455,51 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-fact-more button:hover {
   text-decoration: underline;
+}
+
+.ai-clause-list {
+  display: grid;
+  padding: 8px 0 0;
+  margin: 0;
+  list-style: none;
+  gap: 6px;
+}
+
+.ai-clause-list li {
+  padding-left: 10px;
+  border-left: 3px solid #d8e3f8;
+}
+
+.ai-clause-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-clause-head strong {
+  color: #27364b;
+}
+
+.ai-clause-superseded {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fdeceb;
+  color: #b42318;
+  font-weight: 600;
+}
+
+.ai-clause-list q {
+  display: block;
+  margin-top: 2px;
+  quotes: '「' '」';
+  font-size: 12px;
+  line-height: 19px;
+  color: #27364b;
+  overflow-wrap: anywhere;
 }
 
 .ai-fact-same-count {
