@@ -1109,3 +1109,41 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(finding.clauseRefs[0].superseded?.supersededBy, 'TSG Z6002-2026')
   assert.equal(finding.clauseRefs[0].superseded?.effectiveFrom, '2026-08-01')
 }
+
+// 节点复核的发现落在 findingDrafts 上，不是 findings：读错键就一路退回解析自由文本，
+// 证据引用、规则依据、标准条款全丢（2026-09-13 实测）。
+{
+  const { nodeRunFindingViews } = await import('./workbenchReviewPresentation')
+  const fromDrafts = nodeRunFindingViews({
+    findingDrafts: [
+      {
+        id: 'FND-1',
+        title: '证件号与平台登记姓名不一致',
+        description: '平台登记持证人为赵相军',
+        severity: 'high',
+        evidenceRefs: [{ fileId: 'DOC-W', pageNo: 1, quotedText: '410521198609180550' }],
+        clauseRefs: [
+          {
+            clauseId: 'CHK-1',
+            standard: '特种设备焊接操作人员考核细则',
+            standardCode: 'TSG Z6002—2010',
+            section: '第三章',
+            clauseNo: 'p12-c13',
+            text: '考试机构应当对焊工申请考试资料的完整性负责',
+            pageNo: 12
+          }
+        ]
+      }
+    ]
+  } as never)
+  assert.equal(fromDrafts.length, 1)
+  assert.equal(fromDrafts[0].title, '证件号与平台登记姓名不一致')
+  assert.equal(fromDrafts[0].clauseRefs[0].standardCode, 'TSG Z6002—2010')
+  assert.equal(fromDrafts[0].evidenceCount, 1)
+  // findings 非空时以它为准（旧接口按这个形状返回）
+  const fromFindings = nodeRunFindingViews({
+    findings: [{ id: 'A', title: '旧接口', severity: 'low' }],
+    findingDrafts: [{ id: 'B', title: '不该用这条', severity: 'low' }]
+  } as never)
+  assert.equal(fromFindings[0].title, '旧接口')
+}

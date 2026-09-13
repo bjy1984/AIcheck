@@ -592,12 +592,23 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
  * 节点级 AiRun 的发现视图：直接读后端落库的 findings 数组。
  * 只有数组为空时，调用方才退回到解析 llmResultText 的旧路径。
  */
+/**
+ * 节点复核的结构化发现。
+ *
+ * 后端落库的键是 `findingDrafts`（review_run 上），这里原来只读 `findings`——永远是空，
+ * 于是一路退回「解析自由文本」，证据引用、规则依据、标准条款、降级原因全丢了
+ * （2026-09-13 实测：节点 24 的发现明明带 clauseRefs，界面上一条条款都没有）。
+ * 两个键都读：`findings` 留给已经按这个形状返回的旧接口。
+ */
 export const nodeRunFindingViews = (
-  run?: Pick<AiReviewRun, 'findings'> | null
-): WorkbenchAiFinding[] =>
-  (Array.isArray(run?.findings) ? run.findings : [])
+  run?: (Pick<AiReviewRun, 'findings'> & { findingDrafts?: unknown }) | null
+): WorkbenchAiFinding[] => {
+  const source =
+    Array.isArray(run?.findings) && run.findings.length ? run.findings : run?.findingDrafts
+  return (Array.isArray(source) ? source : [])
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     .map(findingView)
+}
 
 export const buildWorkbenchAiPresentation = (
   projectAnalysis?: ProjectAnalysisView | null
