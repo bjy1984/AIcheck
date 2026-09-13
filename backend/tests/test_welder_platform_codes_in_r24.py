@@ -85,7 +85,7 @@ def test_一个焊工一条证_空模板行不成事实():
     parse = state["ocr_parse_results"][0]
     parse["tables"] = [{
         "pageNo": 1,
-        "rows": [
+        "normalizedRows": [
             {"姓名": "姜军", "证书编号": "511621198504208836", "项目代号": "CTAF-Fe II-6G-3/57-FetS-02/11/12", "有效期": "自2025年10月至2029年09月"},
             {"姓名": "姜军", "证书编号": "511621198504208836", "有效期": "自 年 月至 年 月"},
             {"姓名": "姜军", "证书编号": "511621198504208836", "发证机关(章)": "批准日期"},
@@ -102,3 +102,30 @@ def test_一个焊工一条证_空模板行不成事实():
     quote = cert["evidence"]["quotedText"]
     assert not quote.startswith("{"), "引文要给人读，不是 json.dumps"
     assert cert["evidence"]["fileName"] == "10.姜军焊工证.pdf" and cert["evidence"]["documentId"] == "DOC-W"
+
+
+def test_一个业务字段都没有的行不成事实():
+    """OCR 把表头、空模板、跨页残行也读成行；这些行核不了，只会把真要看的挤下去。
+
+    2026-09-13 实测：节点 26 的 56 条事实里 55 条重复、节点 29 的 53 条全是空壳。
+    """
+    from libs.review_orchestrator.r24_r34_facts import build_r29_business_facts
+
+    state = _state()
+    state["documents"][0]["materialTypeCode"] = "welding_record"
+    state["documents"][0]["fileName"] = "焊接记录.pdf"
+    parse = state["ocr_parse_results"][0]
+    parse["fields"] = []
+    parse["tables"] = [{
+        "pageNo": 1,
+        "normalizedRows": [
+            {"焊缝编号": "W-001", "焊工姓名": "姜军", "焊接方法": "GTAW"},
+            {"焊缝编号": "", "焊工姓名": "", "焊接方法": ""},
+            {"有效期": "自 年 月至 年 月"},
+            {"发证机关(章)": "批准日期"},
+        ],
+    }]
+    facts = build_r29_business_facts(state, {"projectId": "P-1", "nodeId": 29, "inputDocumentVersionIds": ["DV-W"], "replay": True})["r29"]
+    records = facts["weldingRecords"]
+    assert len(records) == 1, f"只有第一行有业务内容，实际留下 {len(records)} 条"
+    assert records[0].get("weldNo") == "W-001"

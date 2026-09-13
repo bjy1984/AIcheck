@@ -231,9 +231,31 @@ def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namesp
         # 证据要带文件名与 documentId：界面上「第 1 页」不说是哪份文件，点也点不开。
         evidence.setdefault("fileName", common.get("fileName"))
         evidence.setdefault("documentId", common.get("documentId"))
+        if not _has_business_content(record):
+            continue
         record.update({"recordId": record_id, "recordKind": kind, "documentVersionId": common["documentVersionId"], "documentId": common.get("documentId"), "fileName": common.get("fileName"), "pageNo": evidence.get("pageNo"), "ocrConfidence": evidence.get("confidence"), "evidence": evidence})
         output.append({key: value for key, value in record.items() if value is not None})
     return output
+
+
+def _has_business_content(record: dict[str, Any]) -> bool:
+    """这一行有没有抽到任何业务内容。
+
+    表格每一行都会变成一条记录，而 OCR 常把表头、空模板、跨页残行也读成行
+    （2026-09-13 实测：节点 26 的 56 条事实里 55 条重复、节点 29 的 53 条全是空壳，
+    节点 24 两名焊工被拆成 15 行、其中 10 行只有「有效期: 自 年 月至 年 月」）。
+    一个业务字段都没有的行不该成为事实——它既核不了，也把真要看的挤下去。
+    """
+    for key, value in record.items():
+        if key in {"recordId", "recordKind", "documentVersionId", "documentId", "fileName", "pageNo", "ocrConfidence", "evidence"}:
+            continue
+        if isinstance(value, (list, dict)):
+            if value:
+                return True
+            continue
+        if value is not None and not is_placeholder(value):
+            return True
+    return False
 
 
 def _mapped(v: dict[str, Any], kind: str) -> dict[str, Any]:
