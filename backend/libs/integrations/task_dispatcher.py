@@ -462,7 +462,23 @@ def dispatch_ai_recheck(
 
             review_run = prepare_review_run_for_async_dispatch(run_id)
             if review_run is not None:
-                result = review_run_execute.delay(str(review_run["reviewRunId"]))
+                # 运行此刻已经以 queued 落库。入队再抛异常的话，它就永远停在「处理中」
+                # ——2026-09-13 实测：磁盘写满那阵子 27 个运行这样擱淺，界面上一直转圈，
+                # 直到两小时后有人手工跑 reconcile_orphan_ai_runs 才落终态。
+                # 入队失败必须当场落 failed_to_start，让人看得见、能重来。
+                try:
+                    result = review_run_execute.delay(str(review_run["reviewRunId"]))
+                except Exception as exc:  # noqa: BLE001 -- broker 故障不该留下假「处理中」
+                    _mark_review_run_enqueue_failed(review_run, exc)
+                    return {
+                        "mode": "celery",
+                        "taskId": None,
+                        "forcedAsync": True,
+                        "reviewRunId": review_run["reviewRunId"],
+                        "status": "failed_to_start",
+                        "errorCode": "CELERY_ENQUEUE_FAILED",
+                        "message": str(exc)[:200],
+                    }
                 return {
                     "mode": "celery",
                     "taskId": result.id,
@@ -490,6 +506,32 @@ def dispatch_ai_recheck(
         result = ai_recheck.delay(project_id, node_id, run_id)
         return {"mode": mode, "taskId": result.id}
     return {"mode": mode, "taskId": None}
+
+
+def _mark_review_run_enqueue_failed(review_run: dict[str, Any], exc: Exception) -> None:
+    """入队失败：把运行落成 failed_to_start 并留一条事件，别让它停在 queued。"""
+    from libs.review_orchestrator.dispatcher import (
+        append_review_event,
+        bump_review_run_revision,
+        flush_state_records,
+        review_run_state_records,
+    )
+
+    review_run["status"] = "failed_to_start"
+    review_run["dispatchErrorCode"] = "CELERY_ENQUEUE_FAILED"
+    review_run["dispatchErrorMessage"] = str(exc)[:500]
+    try:
+        bump_review_run_revision(review_run)
+        append_review_event(
+            str(review_run["reviewRunId"]),
+            event_type="review_run.dispatch_failed",
+            title="ReviewRun 入队失败",
+            status="failed_to_start",
+            details={"errorCode": "CELERY_ENQUEUE_FAILED", "message": str(exc)[:200]},
+        )
+        flush_state_records(review_run_state_records(str(review_run["reviewRunId"])))
+    except Exception:  # noqa: BLE001 -- 落终态本身失败时不要再抛，保留原始异常语义
+        return
 
 
 def dispatch_llm_compare(run_id: str) -> dict[str, Any]:
