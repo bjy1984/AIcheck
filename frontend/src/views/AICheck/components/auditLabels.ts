@@ -798,9 +798,23 @@ const REASON_STEMS: Record<string, string> = {
  * （`original_with_manufacturer_quality_seal_or_copy_with_dealer_and_handler_seals`，
  * 2026-09-13 线上巡检在节点 16 抓到）。按词典翻，翻不动就原样。
  */
+/**
+ * 检查项的期望/实际值里也会出现判定结论本身
+ * （`uploaded_drawing_catalog` 的 actual 是一串已上传的资料类型码，
+ *  锚定门的 actual 是 `evidence_insufficient`）。
+ */
+const OUTCOME_VALUE_LABELS: Record<string, string> = {
+  evidence_insufficient: '证据不足',
+  human_review_required: '需人工判断',
+  not_applicable: '不适用',
+  passed: '通过'
+}
+
 export const friendlyEnumValue = (value?: string | null) => {
   const text = String(value || '').trim()
   if (!text || !/^[a-z][a-z0-9_]{5,}$/.test(text)) return text
+  if (OUTCOME_VALUE_LABELS[text]) return OUTCOME_VALUE_LABELS[text]
+  if (materialTypeLabels[text]) return materialTypeLabels[text]
   if (REASON_STEMS[text]) return REASON_STEMS[text]
   // 先只按 `_or_` 切，每段先整段查表——否则 `_and_` 会把
   // 「copy_with_dealer_and_handler_seals」这种整词也切开（2026-09-13 实测）。
@@ -978,22 +992,134 @@ const indexedCheckLabel = (code: string): string => {
   return `${subjectLabel} ${index}：${restLabel === rest ? rest : restLabel}`
 }
 
+/**
+ * 后端有五族检查码是拼出来的，不是字面量，逐条写词典追不上
+ * （business_tools.py：`uploaded_{文档类型}`、`required_{事实路径}`、`grade_{级别}`、
+ * `{设计域}_{事实路径}`、`{设计域}_standard_ref_{序号}`）。
+ * 2026-09-13 线上审计：207 个生产节点包里这五族占了未翻译检查码的 59 种中的 55 种。
+ * 下面按族给规则，拼不出来的仍旧原样显示——半中半英比原文更难读。
+ */
+
+/** `uploaded_pipeline_data_sheet`：后缀是资料类型码，用资料词典给正式名称，比逐词拼准。 */
+const DOCUMENT_CHECK_FRAMES: Array<[RegExp, (name: string) => string]> = [
+  [/^uploaded_(.+)$/, (name) => `已上传${name}`],
+  [/^parseable_(.+)$/, (name) => `${name}可解析`]
+]
+
+/** 设计专项要求的四个域（evaluate_design_special_requirements）。 */
+const DESIGN_DOMAIN_LABELS: Record<string, string> = {
+  corrosion: '防腐蚀',
+  leaktest: '泄漏性试验',
+  ndt: '无损检测',
+  pressuretest: '压力试验'
+}
+
+/**
+ * 域后面那一截：可能是事实路径（`requirements.method` 压平成 `requirements_method`），
+ * 也可能是业务包里的规则码（`acceptance_level_specified`）。
+ */
+const DESIGN_DOMAIN_SUFFIXES: Record<string, string> = {
+  acceptance_level_specified: '已明确合格级别',
+  coverage_specified: '已明确检测比例',
+  method_specified: '已明确检测方法',
+  protection_method_specified: '已明确防护方法',
+  requirements_acceptancecriteria: '要求·合格标准',
+  requirements_coverage: '要求·检测比例',
+  requirements_method: '要求·方法',
+  requirements_protectionmethod: '要求·防护方法',
+  requirements_testpressure: '要求·试验压力',
+  specified: '设计是否提出要求',
+  test_pressure_specified: '已明确试验压力'
+}
+
+/**
+ * 冻结域工具（frozen_domain_checks.py）的三种「没收到入参」检查码，
+ * 形如 `r46_cathodic_scope_missing`。注意 scope 指的是**审查对象范围**（projectId 等），
+ * 不是「阴极保护的范围」——按字面逐词翻会翻反意思。
+ */
+const FROZEN_DOMAIN_GAPS: Record<string, string> = {
+  domains_missing: '缺少要核的专业域',
+  scope_missing: '缺少审查对象范围信息',
+  standard_rules_missing: '缺少固化的标准规则',
+  applicability_missing: '缺少适用性判断依据'
+}
+
+/** `r46_cathodic_scope_missing` 里的 `cathodic`：这条检查属于哪个专业。 */
+const FROZEN_DOMAIN_NAMES: Record<string, string> = {
+  blowing: '吹扫',
+  cathodic: '阴极保护',
+  certificate: '合格证',
+  compensator: '补偿器',
+  documents: '竣工资料',
+  grounding: '静电接地',
+  installation: '安装',
+  sleeve: '套管',
+  stress: '应力',
+  support: '支吊架'
+}
+
+/** `required_ndtpersonnel_roster`：路径被压成全小写无分隔，只能按整段查表。 */
+const FACT_PATH_LABELS: Record<string, string> = {
+  actualndt_workitems: '实际无损检测·检测项目',
+  certificatefacts_certificates: '证书事实·证书清单',
+  design_requiresinsulatedsupport: '设计文件·是否要求绝缘支架',
+  insulatedsupport_inspectionrecords: '绝缘支架·检查记录',
+  insulatedsupport_results: '绝缘支架·检查结果',
+  ndtpersonnel_qualificationcodes: '无损检测人员·资格代号',
+  ndtpersonnel_registration: '无损检测人员·注册信息',
+  ndtpersonnel_roster: '无损检测人员·名单'
+}
+
+/** 拼出来的那五族。认得出返回中文，认不出返回空串交给下一档兜底。 */
+const generatedCheckLabel = (code: string): string => {
+  for (const [pattern, frame] of DOCUMENT_CHECK_FRAMES) {
+    const slug = code.match(pattern)?.[1]
+    if (slug && materialTypeLabels[slug]) return frame(materialTypeLabels[slug])
+  }
+  const required = code.match(/^required_(.+)$/)?.[1]
+  if (required && FACT_PATH_LABELS[required]) return `必需项：${FACT_PATH_LABELS[required]}`
+  const frozen = code.match(
+    /^r\d+_(?:([a-z]+)_)?((?:scope|standard_rules|domains|applicability)_missing)$/
+  )
+  if (frozen) {
+    const gap = FROZEN_DOMAIN_GAPS[frozen[2]]
+    const domainName = frozen[1] ? FROZEN_DOMAIN_NAMES[frozen[1]] : ''
+    if (gap && (!frozen[1] || domainName)) return domainName ? `${domainName}：${gap}` : gap
+  }
+  const grade = code.match(/^grade_(gc[0-9a-z]+)$/)?.[1]
+  if (grade) return `管道级别 ${grade.toUpperCase()}`
+  const domain = code.match(/^([a-z]+)_(.+)$/)
+  if (domain && DESIGN_DOMAIN_LABELS[domain[1]]) {
+    const subject = DESIGN_DOMAIN_LABELS[domain[1]]
+    const standardRef = domain[2].match(/^standard_ref_(\d+)$/)?.[1]
+    if (standardRef) return `${subject}：引用标准 ${standardRef}`
+    const suffix = DESIGN_DOMAIN_SUFFIXES[domain[2]]
+    if (suffix) return `${subject}：${suffix}`
+  }
+  return ''
+}
+
 export const friendlyCheckCode = (value?: string | null) => {
   const raw = String(value || '').trim()
   if (!raw) return ''
   const [, prefix, code] = raw.match(/^(.*?):([^:]+)$/) || [null, '', raw]
+  const withPrefix = (label: string) => (prefix ? `${prefix}：${label}` : label)
+  if (checkCodeLabels[code]) return withPrefix(checkCodeLabels[code])
+  const generated = generatedCheckLabel(code)
+  if (generated) return withPrefix(generated)
   const indexed = indexedCheckLabel(code)
-  if (indexed) return prefix ? `${prefix}：${indexed}` : indexed
+  if (indexed) return withPrefix(indexed)
   const scope = code.match(/^scope_covers_(.+)$/)
   const base =
-    checkCodeLabels[code] ||
     (scope ? `许可范围覆盖 ${scope[1]}` : '') ||
     code.replace(/^fact_\d+_/, (m) => `事实${m.replace(/\D/g, '')}·`)
   const factMatch = code.match(/^fact_(\d+)_(.+)$/)
-  const label = factMatch
-    ? `事实 ${factMatch[1]}：${checkCodeLabels[factMatch[2]] || factMatch[2]}`
-    : base
-  return prefix ? `${prefix}：${label}` : label
+  if (factMatch)
+    return withPrefix(`事实 ${factMatch[1]}：${checkCodeLabels[factMatch[2]] || factMatch[2]}`)
+  if (base !== code) return withPrefix(base)
+  // 最后一档：借原因码那套后缀框架（`r43_certificate_scope_missing` → 「缺少证书范围」）。
+  const asReason = friendlyCheckReason(code)
+  return withPrefix(asReason && asReason !== code ? asReason : base)
 }
 
 export const friendlyEvidenceIssue = (value?: string | null) => {
@@ -1099,99 +1225,108 @@ export const friendlyToken = (value?: string | null, options: { keepCode?: boole
  * 原来这张表埋在 Workbench.vue 里只给一处用，现在挪出来共用。
  */
 export const materialTypeLabels: Record<string, string> = {
+  acceptance_witness_record: '到货验收见证资料',
+  anticorrosion_insulation_material_certificate: '防腐及保温材料质量证明文件',
+  anticorrosion_insulation_record: '防腐补口补伤和保温施工记录',
   approval_record: '批准记录',
   audit_report: '审核报告',
+  calculation_report: '强度计算书或应力分析报告',
   calibration_certificate: '校准证书',
+  cathodic_protection_record: '阴极保护和杂散电流排流装置资料',
+  construction_license: '施工单位安装许可证',
+  construction_organization_design: '施工组织设计',
+  construction_schedule: '施工计划工期文件',
+  consumable_management: '焊材管理记录',
+  consumable_receipt: '焊材入库/领用记录',
   control_matrix: '控制矩阵',
   data_access_log: '数据访问日志',
   defect_rectification: '缺陷整改记录',
+  design_change_document: '设计变更和书面批准文件',
+  design_document: '设计文件',
+  design_license: '设计单位许可证',
+  design_specification: '设计说明书',
   device_inspection_report: '设备检验报告',
   device_register: '设备台账',
+  drawing_catalog: '图纸目录',
   drawing_material_list: '图纸材料表',
+  drawing_review_record: '施工图审查手续',
   enterprise_material_standard: '企业材料标准',
+  external_query_screenshot: '外部查询截图',
+  factory_inspection_report: '出厂检验报告',
+  field_photo: '现场照片、底片或实物核验证据',
   foreign_component_inspection_record: '境外元件检验记录',
   foreign_manufactured_component_list: '境外制造元件清单',
-  incident_log: '事件记录',
-  last_inspection_report: '上次检验报告',
-  maintenance_record: '维护保养记录',
-  material_ndt_report: '材料无损检测报告',
-  new_material_data: '新材料数据',
-  org_chart: '组织机构图',
-  policy_document: '制度文件',
-  process_record: '过程记录',
-  remediation_plan: '整改方案',
-  risk_register: '风险台账',
-  safety_device_record: '安全附件记录',
-  sampling_witness_record: '抽样见证记录',
-  third_party_contract: '第三方合同',
-  training_record: '培训记录',
-  standard_reference: '标准规范正文',
-  unclassified_material: '未分类资料',
-  installation_license: '安装单位许可证',
-  ndt_agency_approval: '无损检测机构核准证',
-  ndt_personnel_certificate: '无损检测人员资格证',
-  valve_construction_record: '阀门施工记录',
-  pipe_fit_up_record: '管道组对记录',
-  weld_appearance_record: '焊接接头外观检查记录',
-  heat_treatment_instrument: '热处理测温仪表记录',
-  temperature_point_layout: '测温点布置图',
-  hardness_report: '硬度检测报告',
-  consumable_receipt: '焊材入库/领用记录',
-  consumable_management: '焊材管理记录',
-  welding_consumable_certificate: '焊接材料质量证明文件',
-  pipeline_summary: '管线汇总表',
-  wps: '焊接作业指导书 WPS',
-  pqr: '焊接工艺评定报告 PQR',
   generic_review_material: '审查资料',
-  design_license: '设计单位许可证',
-  construction_license: '施工单位安装许可证',
-  manufacturing_license: '制造单位许可证',
-  ndt_org_certificate: '无损检测机构核准证',
-  ndt_person_certificate: '无损检测人员资格证和执业注册证',
-  design_document: '设计文件',
-  drawing_review_record: '施工图审查手续',
-  calculation_report: '强度计算书或应力分析报告',
-  design_change_document: '设计变更和书面批准文件',
-  construction_organization_design: '施工组织设计',
-  construction_schedule: '施工计划工期文件',
-  quality_certificate: '产品质量证明书',
-  manufacturing_supervision_certificate: '制造监督检验证书',
-  type_test_report: '型式试验证书或型式试验报告',
-  factory_inspection_report: '出厂检验报告',
-  overseas_material_certificate: '境外制造或境外牌号材料证明文件',
-  acceptance_witness_record: '到货验收见证资料',
-  material_retest_report: '材料复验报告',
-  material_mark_transfer_record: '材料标志移植记录',
-  material_substitution_approval: '材料代用批准文件',
-  technical_review_approval: '技术评审和批准手续',
-  valve_test_report: '阀门施工资料和耐压试验报告',
-  welder_certificate: '焊工资格证',
-  welder_roster: '焊工名册',
-  wps_pqr: '焊接工艺评定报告和焊接作业指导书',
-  welding_material_certificate: '焊接材料质量证明文件',
-  welding_material_management_record: '焊材验收保管发放回收记录',
-  welding_record: '焊接记录和焊缝标识资料',
-  weld_repair_record: '焊缝返修记录',
+  grounding_test_record: '静电接地施工和测试记录',
+  hardness_report: '硬度检测报告',
+  heat_treatment_instrument: '热处理测温仪表记录',
   heat_treatment_procedure: '焊后热处理工艺文件',
   heat_treatment_record: '热处理记录、曲线和硬度检测报告',
+  incident_log: '事件记录',
+  installation_license: '安装单位许可证',
+  installation_record: '管道安装和现场制作记录',
   instrument_calibration_certificate: '仪表检定或校准证书',
+  last_inspection_report: '上次检验报告',
+  leakage_test_report: '泄漏试验记录或报告',
+  maintenance_record: '维护保养记录',
+  manufacturing_license: '制造单位许可证',
+  manufacturing_supervision_certificate: '制造监督检验证书',
+  material_mark_transfer_record: '材料标志移植记录',
+  material_ndt_report: '材料无损检测报告',
+  material_retest_report: '材料复验报告',
+  material_substitution_approval: '材料代用批准文件',
+  ndt_agency_approval: '无损检测机构核准证',
+  ndt_org_certificate: '无损检测机构核准证',
+  ndt_person_certificate: '无损检测人员资格证和执业注册证',
+  ndt_personnel_certificate: '无损检测人员资格证',
   ndt_plan: '无损检测方案',
   ndt_procedure: '无损检测工艺文件',
   ndt_report: '无损检测报告',
-  radiographic_film: '射线检测底片',
-  anticorrosion_insulation_material_certificate: '防腐及保温材料质量证明文件',
-  anticorrosion_insulation_record: '防腐补口补伤和保温施工记录',
-  cathodic_protection_record: '阴极保护和杂散电流排流装置资料',
-  grounding_test_record: '静电接地施工和测试记录',
-  installation_record: '管道安装和现场制作记录',
-  safety_accessory_record: '安全附件安装、校验或性能测试资料',
+  new_material_data: '新材料数据',
+  org_chart: '组织机构图',
+  overseas_material_certificate: '境外制造或境外牌号材料证明文件',
+  pipe_fit_up_record: '管道组对记录',
+  pipeline_data_sheet: '管道数据表',
+  pipeline_layout_drawing: '管道布置图',
+  pipeline_material_list: '管道材料表',
+  pipeline_summary: '管线汇总表',
+  platform_verification: '平台核验记录',
+  pmi_report: '光谱分析（PMI）报告',
+  policy_document: '制度文件',
+  pqr: '焊接工艺评定报告 PQR',
   pressure_test_plan: '耐压试验方案',
   pressure_test_report: '耐压试验记录或报告',
-  leakage_test_report: '泄漏试验记录或报告',
+  process_record: '过程记录',
   purge_cleaning_record: '吹扫清洗方案和记录',
-  field_photo: '现场照片、底片或实物核验证据',
+  quality_certificate: '产品质量证明书',
   quality_system_document: '质量保证体系文件和实施记录',
-  external_query_screenshot: '外部查询截图'
+  radiographic_film: '射线检测底片',
+  remediation_plan: '整改方案',
+  risk_register: '风险台账',
+  safety_accessory_record: '安全附件安装、校验或性能测试资料',
+  safety_device_record: '安全附件记录',
+  sampling_witness_record: '抽样见证记录',
+  standard_reference: '标准规范正文',
+  straight_pipe_strength_calculation: '直管段强度计算书',
+  technical_review_approval: '技术评审和批准手续',
+  temperature_point_layout: '测温点布置图',
+  third_party_contract: '第三方合同',
+  training_record: '培训记录',
+  type_test_report: '型式试验证书或型式试验报告',
+  unclassified_material: '未分类资料',
+  valve_construction_record: '阀门施工记录',
+  valve_test_report: '阀门施工资料和耐压试验报告',
+  weld_appearance_record: '焊接接头外观检查记录',
+  weld_repair_record: '焊缝返修记录',
+  welder_certificate: '焊工资格证',
+  welder_roster: '焊工名册',
+  welding_consumable_certificate: '焊接材料质量证明文件',
+  welding_material_certificate: '焊接材料质量证明文件',
+  welding_material_management_record: '焊材验收保管发放回收记录',
+  welding_process_card: '焊接工艺卡',
+  welding_record: '焊接记录和焊缝标识资料',
+  wps: '焊接作业指导书 WPS',
+  wps_pqr: '焊接工艺评定报告和焊接作业指导书'
 }
 
 export const friendlyMaterialType = (value?: string | null) => {
