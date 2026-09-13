@@ -235,12 +235,74 @@ const expandedFactGroups = ref<Set<string>>(new Set())
  * OCR 把管道特性表读坏后的表头配对（`操作压力：操作温度`）。这种行监检核不了，
  * 列 56 条只是把真正要看的东西挤下去；如实说有多少条、让他点开原件看。
  */
-const identifiedFacts = computed(() =>
-  nodeFacts.value.filter((fact) => fact.value || fact.platformVerified || !fact.scored)
-)
-const unidentifiedFacts = computed(() =>
-  nodeFacts.value.filter((fact) => !(fact.value || fact.platformVerified || !fact.scored))
-)
+/** 老留痕里的事实标签是 `r29-wpsItems-7` 这种 factId；按类型段翻成中文，不必重跑。 */
+const FACT_TYPE_NAMES: Record<string, string> = {
+  certificates: '焊工证',
+  workItems: '施焊记录',
+  weldingRecords: '焊接记录',
+  wpsItems: '焊接工艺规程 WPS',
+  pqrItems: '工艺评定报告 PQR',
+  qualityCertificates: '焊材质量证明书',
+  designRequirements: '设计要求',
+  physicalItems: '焊材实物记录',
+  managementRecords: '焊材管理记录',
+  fitUpRecords: '管道组对记录',
+  appearanceRecords: '外观检查记录',
+  repairRecords: '返修记录',
+  procedureCards: '热处理工艺卡',
+  qualificationReports: '热处理评定报告',
+  weldItems: '焊口',
+  instrumentRecords: '测温仪表记录',
+  temperaturePointLayouts: '测温点布置',
+  heatTreatmentReports: '热处理报告',
+  hardnessReports: '硬度检测报告'
+}
+
+const factDisplayLabel = (fact: WorkbenchAiGroundedFact) => {
+  if (fact.label && fact.label !== fact.factId) return fact.label
+  const type = fact.factId.replace(/^r\d+-/, '').replace(/-\d+$/, '')
+  return FACT_TYPE_NAMES[type] || type || fact.factId
+}
+
+/** 老留痕的引文还是 json.dumps(row)：那是给机器看的，别端到监检面前。 */
+const isRawQuote = (fact: WorkbenchAiGroundedFact) =>
+  fact.evidence.length > 0 && fact.evidence.every((item) => item.quotedText.trim().startsWith('{'))
+
+/**
+ * 一条事实要值得单独列，得让人分得清它是哪一条。
+ *
+ * 2026-09-13 用户实测节点 29：38 条 `r29-wpsItems-N`，值全是同一个文件标题
+ * 「焊接工艺评定任务书」，引文是 OCR 把试验报告表头当成列名的 JSON。同名同值的只留
+ * 一条并标出还有多少条；引文还是 JSON 的整条不列——看不懂的东西列 38 遍不叫「有依据」。
+ */
+const listableFacts = computed(() => {
+  const seen = new Map<
+    string,
+    { fact: WorkbenchAiGroundedFact; label: string; sameCount: number }
+  >()
+  nodeFacts.value.forEach((fact) => {
+    if (!(fact.value || fact.platformVerified || !fact.scored) || isRawQuote(fact)) return
+    const label = factDisplayLabel(fact)
+    const key = `${label}|${fact.value}`
+    const existing = seen.get(key)
+    if (existing) {
+      existing.sameCount += 1
+      if (fact.platformVerified && !existing.fact.platformVerified) existing.fact = fact
+      return
+    }
+    seen.set(key, { fact, label, sameCount: 1 })
+  })
+  return [...seen.values()]
+})
+
+const identifiedFacts = computed(() => listableFacts.value.map((item) => item.fact))
+const unidentifiedFacts = computed(() => {
+  const listed = new Set(identifiedFacts.value.map((fact) => fact.factId))
+  return nodeFacts.value.filter((fact) => !listed.has(fact.factId))
+})
+
+const sameFactCount = (fact: WorkbenchAiGroundedFact) =>
+  listableFacts.value.find((item) => item.fact.factId === fact.factId)?.sameCount ?? 1
 const unidentifiedFiles = computed(() => {
   // 按文件名去重：同一份资料的多个版本 documentId 不同，按 id 去重会把同一个文件名列两遍。
   const seen = new Map<string, string>()
@@ -256,9 +318,9 @@ const unidentifiedFiles = computed(() => {
 
 const factGroups = computed(() => {
   const groups = new Map<string, WorkbenchAiGroundedFact[]>()
-  identifiedFacts.value.forEach((fact) => {
-    // 「焊工证 姜军」归到「焊工证」；没有类型名的用 factId 前缀兜底。
-    const key = fact.label.split(' ')[0] || fact.factId.replace(/-\d+$/, '')
+  listableFacts.value.forEach(({ fact, label }) => {
+    // 「焊工证 姜军」归到「焊工证」；老留痕按 factId 的类型段归。
+    const key = label.split(' ')[0]
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)?.push(fact)
   })
@@ -491,8 +553,11 @@ const ruleLabel = (rule: Record<string, unknown>) =>
                   :class="{ 'is-platform-verified': fact.platformVerified }"
                 >
                   <div class="ai-outcome-fact-head">
-                    <span class="ai-unscored-fact-label">{{ fact.label }}</span>
+                    <span class="ai-unscored-fact-label">{{ factDisplayLabel(fact) }}</span>
                     <span class="ai-unscored-fact-value">{{ fact.value }}</span>
+                    <small v-if="sameFactCount(fact) > 1" class="ai-fact-same-count">
+                      另有 {{ sameFactCount(fact) - 1 }} 条同样内容
+                    </small>
                     <!-- 平台核到的那几条要一眼看出来：登记原文比 OCR 可信 -->
                     <small
                       v-if="fact.platformVerified"
@@ -594,7 +659,7 @@ const ruleLabel = (rule: Record<string, unknown>) =>
             <p v-if="unidentifiedFacts.length" class="ai-fact-unidentified">
               另有
               {{ unidentifiedFacts.length }}
-              条表格记录未能识别出可核字段（编号、牌号、焊口号等），未逐条列出。
+              条表格记录未能识别出可核字段（编号、牌号、焊口号等）或内容重复，未逐条列出。
               <template v-for="file in unidentifiedFiles" :key="file.documentId">
                 <button type="button" @click="emit('openFile', file.documentId)">
                   查看 {{ file.fileName }}
@@ -1353,6 +1418,10 @@ const ruleLabel = (rule: Record<string, unknown>) =>
 
 .ai-fact-more button:hover {
   text-decoration: underline;
+}
+
+.ai-fact-same-count {
+  color: var(--aicheck-text-subtle, #667085);
 }
 
 .ai-fact-platform {
