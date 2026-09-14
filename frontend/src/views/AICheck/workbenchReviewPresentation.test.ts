@@ -1206,3 +1206,91 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     '翻不动就原样'
   )
 }
+
+// 老留痕（后端 2026-09-13 已在源头修好，但已落库的运行不会自己变，而生产上绝大多数节点
+// 没重跑过）。用户实测节点 25：这两条一直显示到界面上，前端必须自己兜住。
+{
+  const { readableRowQuote, nodeRunFindingViews } = await import('./workbenchReviewPresentation')
+
+  // 1. 表格抽取器给重名列自动编号，七个键说的是同一件事，键比值还长
+  assert.equal(
+    readableRowQuote(
+      '■拉伸试验 试验报告编号:BA2310077：试样编号 · ■拉伸试验 试验报告编号:BA2310077_2：试样宽度(mm) · ■拉伸试验 试验报告编号:BA2310077_3：试样厚度(mm)'
+    ),
+    '试样编号 · 试样宽度(mm) · 试样厚度(mm)'
+  )
+  assert.equal(
+    readableRowQuote(
+      '■拉伸试验 试验报告编号:BA2310077：LS-1 · ■拉伸试验 试验报告编号:BA2310077_8：断母材'
+    ),
+    'LS-1 · 断母材'
+  )
+  // 列名真的不同就别动——「键：值」还是最好读的形式
+  assert.equal(
+    readableRowQuote('焊缝编号：GH-01 · 焊工姓名：姜军'),
+    '焊缝编号：GH-01 · 焊工姓名：姜军'
+  )
+  assert.equal(readableRowQuote('LS-1 · 断母材'), 'LS-1 · 断母材', '没有键的引文原样返回')
+
+  void nodeRunFindingViews
+}
+
+// 2. 一张表的 19 行全叫「焊接工艺规程 WPS 焊接工艺评定任务书」——那是文档标题顶上来当了行身份
+{
+  const { buildWorkbenchAiPresentation } = await import('./workbenchReviewPresentation')
+  const fact = (index: number) => ({
+    factId: `r25-wpsItems-${index}`,
+    label: '焊接工艺规程 WPS 焊接工艺评定任务书',
+    value: '焊接工艺评定任务书',
+    scored: true,
+    evidence: [
+      {
+        quotedText: `行 ${index}`,
+        fileName: '9.1金辉焊接工艺评定20.pdf',
+        documentId: 'DOC-EE3CC820'
+      }
+    ]
+  })
+  const view = buildWorkbenchAiPresentation({
+    run: { projectAnalysisRunId: 'PARUN-D', phase: 'completed', finishedAt: '2026-09-13 16:16:25' },
+    nodeReview: {
+      reviewResult: 'insufficient_evidence',
+      atomicCheckOutcomes: [
+        {
+          atomicCheckId: 'AC-R25-03',
+          name: '焊接工艺评定',
+          result: 'evidence_insufficient',
+          facts: [fact(1), fact(2), fact(3), fact(4)]
+        }
+      ]
+    } as never
+  })
+  const facts = view.checkOutcomes[0].facts
+  assert.deepEqual(
+    facts.map((item) => item.value),
+    ['', '', '', ''],
+    '处处相同的取值区分不了行，要清掉'
+  )
+  assert.deepEqual(
+    new Set(facts.map((item) => item.label)),
+    new Set(['焊接工艺规程 WPS']),
+    '标签上那截文档标题也要去掉'
+  )
+
+  // 只有两条时不判：同一批的两个试样恰好同值太常见
+  const two = buildWorkbenchAiPresentation({
+    run: { projectAnalysisRunId: 'PARUN-E', phase: 'completed', finishedAt: '2026-09-13 16:16:25' },
+    nodeReview: {
+      reviewResult: 'insufficient_evidence',
+      atomicCheckOutcomes: [
+        {
+          atomicCheckId: 'AC-1',
+          name: 'x',
+          result: 'evidence_insufficient',
+          facts: [fact(1), fact(2)]
+        }
+      ]
+    } as never
+  })
+  assert.equal(two.checkOutcomes[0].facts[0].value, '焊接工艺评定任务书', '两条不判文档级')
+}

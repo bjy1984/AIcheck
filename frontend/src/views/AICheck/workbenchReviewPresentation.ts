@@ -366,33 +366,98 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
           missing: item.missing === true
         })),
       reason: friendlyCheckReason(String(row.reason || '')),
-      facts: (Array.isArray(row.facts) ? row.facts : [])
-        .map((fact) => (fact || {}) as Record<string, unknown>)
-        .filter((fact) => Boolean(fact.factId))
-        .map((fact) => ({
-          factId: String(fact.factId),
-          label: String(fact.label || fact.factId),
-          value: String(fact.value ?? ''),
-          scored: fact.scored !== false,
-          platformVerified: fact.platformVerified === true,
-          evidence: (Array.isArray(fact.evidence) ? fact.evidence : [])
-            .map((item) => (item || {}) as Record<string, unknown>)
-            .map((item) => ({
-              evidenceRefId: String(item.evidenceRefId || ''),
-              documentVersionId: String(item.documentVersionId || ''),
-              documentId: String(item.documentId || ''),
-              fileName: String(item.fileName || ''),
-              pageNo: typeof item.pageNo === 'number' ? item.pageNo : null,
-              quotedText: String(item.quotedText || ''),
-              source: String(item.source || ''),
-              confidence: typeof item.confidence === 'number' ? item.confidence : null,
-              confidenceUnavailable: item.confidenceUnavailable === true,
-              humanCorrected: item.humanCorrected === true
-            }))
-            .filter((item) => item.quotedText || item.fileName)
-        }))
+      facts: withoutDocumentLevelIdentity(
+        (Array.isArray(row.facts) ? row.facts : [])
+          .map((fact) => (fact || {}) as Record<string, unknown>)
+          .filter((fact) => Boolean(fact.factId))
+          .map((fact) => ({
+            factId: String(fact.factId),
+            label: String(fact.label || fact.factId),
+            value: String(fact.value ?? ''),
+            scored: fact.scored !== false,
+            platformVerified: fact.platformVerified === true,
+            evidence: (Array.isArray(fact.evidence) ? fact.evidence : [])
+              .map((item) => (item || {}) as Record<string, unknown>)
+              .map((item) => ({
+                evidenceRefId: String(item.evidenceRefId || ''),
+                documentVersionId: String(item.documentVersionId || ''),
+                documentId: String(item.documentId || ''),
+                fileName: String(item.fileName || ''),
+                pageNo: typeof item.pageNo === 'number' ? item.pageNo : null,
+                quotedText: readableRowQuote(String(item.quotedText || '')),
+                source: String(item.source || ''),
+                confidence: typeof item.confidence === 'number' ? item.confidence : null,
+                confidenceUnavailable: item.confidenceUnavailable === true,
+                humanCorrected: item.humanCorrected === true
+              }))
+              .filter((item) => item.quotedText || item.fileName)
+          }))
+      )
     }))
     .filter((row) => Boolean(row.atomicCheckId))
+}
+
+/**
+ * 老留痕的表格引文清洗（后端 2026-09-13 已在源头修好，但**已经落库的运行不会自己变**，
+ * 而生产上绝大多数节点没有重跑过，界面读到的还是旧的那一份）。
+ *
+ * 用户实测（节点 25，9.1金辉焊接工艺评定20.pdf 第 3 页）：
+ * 「■拉伸试验 试验报告编号:BA2310077：试样编号 · ■拉伸试验 试验报告编号:BA2310077_2：试样宽度(mm) · …」
+ * ——OCR 把表格标题格并进了每一个表头，表格抽取器再给重名列自动编号，
+ * 于是七个键说的是同一件事，键还比值长。这种情况只留值。
+ */
+const AUTO_NUMBERED_SUFFIX = /_\d+$/
+
+export const readableRowQuote = (text: string): string => {
+  const raw = String(text || '')
+  if (!raw.includes('：') || !raw.includes(' · ')) return raw
+  const parts = raw.split(' · ')
+  if (parts.length < 2) return raw
+  const pairs = parts.map((part) => {
+    const at = part.indexOf('：')
+    return at > 0 ? { key: part.slice(0, at), value: part.slice(at + 1) } : null
+  })
+  if (pairs.some((pair) => pair === null)) return raw
+  const bases = new Set(pairs.map((pair) => pair!.key.replace(AUTO_NUMBERED_SUFFIX, '')))
+  if (bases.size !== 1) return raw
+  return pairs.map((pair) => pair!.value).join(' · ')
+}
+
+/**
+ * 同样是老留痕：`_extract_records` 把文档级字段并进了每一行，行自己没抽到业务字段时
+ * 文档标题就顶上来当身份，于是一张表的 19 行全叫「焊接工艺规程 WPS 焊接工艺评定任务书」，
+ * 界面显示成「1 条 · 另有 18 条同样内容」。
+ *
+ * 判据和后端一致：同一类事实里取值处处相同，它就区分不了行——清掉取值，
+ * 让这些行归到「未能识别出可核字段」那句汇总里，并把标签上的那截后缀也去掉。
+ * 少于三条不判（两条恰好相同太常见）。
+ */
+const withoutDocumentLevelIdentity = (
+  facts: WorkbenchAiGroundedFact[]
+): WorkbenchAiGroundedFact[] => {
+  const groups = new Map<string, WorkbenchAiGroundedFact[]>()
+  facts.forEach((fact) => {
+    const key = fact.factId.replace(/-\d+$/, '')
+    groups.set(key, [...(groups.get(key) || []), fact])
+  })
+  const shared = new Set<WorkbenchAiGroundedFact>()
+  groups.forEach((group) => {
+    if (group.length < 3) return
+    const values = new Set(group.map((fact) => fact.value))
+    if (values.size === 1 && group[0].value) group.forEach((fact) => shared.add(fact))
+  })
+  if (!shared.size) return facts
+  return facts.map((fact) =>
+    shared.has(fact)
+      ? {
+          ...fact,
+          value: '',
+          label: fact.label.endsWith(` ${fact.value}`)
+            ? fact.label.slice(0, -(fact.value.length + 1))
+            : fact.label
+        }
+      : fact
+  )
 }
 
 /** 期望/实际值成人话：数组去空、逗号连；对象不展开（界面上没意义）。 */
