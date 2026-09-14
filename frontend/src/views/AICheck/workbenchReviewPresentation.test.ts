@@ -1260,7 +1260,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
           atomicCheckId: 'AC-R25-03',
           name: '焊接工艺评定',
           result: 'evidence_insufficient',
-          facts: [fact(1), fact(2), fact(3), fact(4)]
+          facts: [fact(1), fact(2), fact(3), fact(4), fact(5), fact(6)]
         }
       ]
     } as never
@@ -1268,7 +1268,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   const facts = view.checkOutcomes[0].facts
   assert.deepEqual(
     facts.map((item) => item.value),
-    ['', '', '', ''],
+    ['', '', '', '', '', ''],
     '处处相同的取值区分不了行，要清掉'
   )
   assert.deepEqual(
@@ -1277,7 +1277,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     '标签上那截文档标题也要去掉'
   )
 
-  // 只有两条时不判：同一批的两个试样恰好同值太常见
+  // 少于五条不判：三根同为 Q345R 的管子是正常的，藏起来反而丢信息
   const two = buildWorkbenchAiPresentation({
     run: { projectAnalysisRunId: 'PARUN-E', phase: 'completed', finishedAt: '2026-09-13 16:16:25' },
     nodeReview: {
@@ -1292,5 +1292,5 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
       ]
     } as never
   })
-  assert.equal(two.checkOutcomes[0].facts[0].value, '焊接工艺评定任务书', '两条不判文档级')
+  assert.equal(two.checkOutcomes[0].facts[0].value, '焊接工艺评定任务书', '三条不判文档级')
 }

@@ -428,9 +428,13 @@ export const readableRowQuote = (text: string): string => {
  * 文档标题就顶上来当身份，于是一张表的 19 行全叫「焊接工艺规程 WPS 焊接工艺评定任务书」，
  * 界面显示成「1 条 · 另有 18 条同样内容」。
  *
- * 判据和后端一致：同一类事实里取值处处相同，它就区分不了行——清掉取值，
+ * 判据和后端同源：同一类事实里取值处处相同，它就区分不了行——清掉取值，
  * 让这些行归到「未能识别出可核字段」那句汇总里，并把标签上的那截后缀也去掉。
- * 少于三条不判（两条恰好相同太常见）。
+ *
+ * 门槛比后端高（5 条 vs 3 条），因为两边能看到的东西不一样：后端手上有整条记录，
+ * 发现某个字段是常量时还能换一个能区分行的字段来当取值；前端只拿得到拍平后的那一个
+ * 字符串，一旦判错就只能整条藏进汇总。三根同为 Q345R 的管子是正常的，
+ * 十九行同为「焊接工艺评定任务书」不是——把门槛抬到 5，只治后面这种。
  */
 const withoutDocumentLevelIdentity = (
   facts: WorkbenchAiGroundedFact[]
@@ -442,7 +446,7 @@ const withoutDocumentLevelIdentity = (
   })
   const shared = new Set<WorkbenchAiGroundedFact>()
   groups.forEach((group) => {
-    if (group.length < 3) return
+    if (group.length < 5) return
     const values = new Set(group.map((fact) => fact.value))
     if (values.size === 1 && group[0].value) group.forEach((fact) => shared.add(fact))
   })
