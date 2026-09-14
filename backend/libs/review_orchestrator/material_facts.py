@@ -121,6 +121,50 @@ FACT_TYPE_LABELS: dict[str, str] = {
     "hardnessReports": "硬度检测报告",
     "materials": "材料",
     "certificateItems": "证书条目",
+    # 下面这批是 r14/r15/r16-r18 的记录种类（record_kind / build_material_judgment 的第一元），
+    # 全是 snake_case，和上面的 camelCase 不是一套。2026-09-13 渲染级审计：这 22 个
+    # 一个都翻不出来——节点 16 的「certificate 监督检验证书编号 产品质量证明书编号」就是它。
+    # 它们暂时没露出来只是因为那些节点还没有可列的事实，不是因为没问题。
+    "approval": "批准文件",
+    "arrival_acceptance": "到货验收记录",
+    "arrival_inspection": "到货检验记录",
+    "certificate": "证书",
+    "complete_machine_inspection": "整机检验记录",
+    "design_item": "设计元件",
+    "factory_report": "出厂报告",
+    "inventory": "台账",
+    "item": "条目",
+    "lot": "批次",
+    "manufacturing_license": "制造单位许可证",
+    "material_ndt": "材料无损检测报告",
+    "material_retest": "材料复验报告",
+    "pipeline_characteristic": "管道特性表条目",
+    "quality_certificate": "产品质量证明书",
+    "record": "记录",
+    "report": "报告",
+    "sampling_witness": "抽样见证记录",
+    "special_report": "专项报告",
+    "substitution": "材料代用记录",
+    "supervision_certificate": "监督检验证书",
+    "type_test_report": "型式试验报告",
+    # r16-r23 用连字符（`r16-design-item`）。注意两边的归一化口径要一致：
+    # 前端只剥前面的 `rNN-`，后端原来取最后一段（`r16-design-item` → `item`），
+    # 于是同一条事实两边叫不同名字。现在后端也先按剥前缀的整段查。
+    "acceptance-record": "到货验收记录",
+    "actual-usage": "实际使用记录",
+    "design-item": "设计元件",
+    "material-data": "材料数据",
+    "material-inventory": "材料台账",
+    "material-ndt-report": "材料无损检测报告",
+    "quality-certificate": "产品质量证明书",
+    "retest-report": "复验报告",
+    "technical-review": "技术评审记录",
+    "transfer-record": "材料移植记录",
+    "type-test": "型式试验报告",
+    "valve-construction": "阀门施工记录",
+    "valve-lot": "阀门批次",
+    "valve-test": "阀门试验记录",
+    "witness-record": "见证记录",
 }
 
 # 事实的「值」按这个顺序找第一个有内容的字段；调用方给的 value_keys 优先。
@@ -140,8 +184,14 @@ def _fact_label(fact_type: str, record: dict[str, Any], *, skip: set[str] | None
     `skip` 是文档级常量字段：拿它当后缀会让一张表的每一行都叫同一个名字
     （见 `_document_level_keys`）。
     """
-    target = fact_type.split("-")[-1]
-    base = FACT_TYPE_LABELS.get(target, target)
+    # 归一化口径要和前端 factDisplayLabel 一致：先整段，再剥掉 `rNN-` 前缀，最后才退到末段。
+    without_rule = re.sub(r"^r\d+-", "", fact_type)
+    base = (
+        FACT_TYPE_LABELS.get(fact_type)
+        or FACT_TYPE_LABELS.get(without_rule)
+        or FACT_TYPE_LABELS.get(fact_type.split("-")[-1])
+        or without_rule
+    )
     skip = skip or set()
     for key in ("holderName", "welderName", "personName", "certificateNo", "documentNo", "recordNo", "weldNo"):
         if key in skip:

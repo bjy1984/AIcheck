@@ -275,7 +275,47 @@ const FACT_TYPE_NAMES: Record<string, string> = {
   instrumentRecords: '测温仪表记录',
   temperaturePointLayouts: '测温点布置',
   heatTreatmentReports: '热处理报告',
-  hardnessReports: '硬度检测报告'
+  hardnessReports: '硬度检测报告',
+  // r14/r15/r16-r18 的记录种类：这些事实后端根本不写 label（见 r15_facts.claimed_facts），
+  // 全靠这张表按 factId 的类型段翻。少一个就直接把 `design_item` 印到界面上。
+  approval: '批准文件',
+  arrival_acceptance: '到货验收记录',
+  arrival_inspection: '到货检验记录',
+  certificate: '证书',
+  complete_machine_inspection: '整机检验记录',
+  design_item: '设计元件',
+  factory_report: '出厂报告',
+  inventory: '台账',
+  item: '条目',
+  lot: '批次',
+  manufacturing_license: '制造单位许可证',
+  material_ndt: '材料无损检测报告',
+  material_retest: '材料复验报告',
+  pipeline_characteristic: '管道特性表条目',
+  quality_certificate: '产品质量证明书',
+  record: '记录',
+  report: '报告',
+  sampling_witness: '抽样见证记录',
+  special_report: '专项报告',
+  substitution: '材料代用记录',
+  supervision_certificate: '监督检验证书',
+  type_test_report: '型式试验报告',
+  // r16-r23 用连字符；键要加引号
+  'acceptance-record': '到货验收记录',
+  'actual-usage': '实际使用记录',
+  'design-item': '设计元件',
+  'material-data': '材料数据',
+  'material-inventory': '材料台账',
+  'material-ndt-report': '材料无损检测报告',
+  'quality-certificate': '产品质量证明书',
+  'retest-report': '复验报告',
+  'technical-review': '技术评审记录',
+  'transfer-record': '材料移植记录',
+  'type-test': '型式试验报告',
+  'valve-construction': '阀门施工记录',
+  'valve-lot': '阀门批次',
+  'valve-test': '阀门试验记录',
+  'witness-record': '见证记录'
 }
 
 const factDisplayLabel = (fact: WorkbenchAiGroundedFact) => {
