@@ -291,6 +291,7 @@ from libs.review_orchestrator import (
     review_run_state_records,
     review_run_timeline,
     review_run_view,
+    runtime_tools,
     signal_review_run_cancel,
     signal_review_run_human_decision,
     signal_review_run_human_input,
@@ -10965,9 +10966,7 @@ def review_conversation_agent_tool_output(
         return {"status": "succeeded", "basisCount": len(matches), "items": matches[:12], "fixedBinding": True}
     if tool_name == "run_node_formal_judgment":
         return review_conversation_formal_judgment(
-            project=project,
-            node=node,
-            evidence_links=evidence_links,
+            project=project, node=node, evidence_links=evidence_links,
         )
     runtime_tool_names = set(CONVERSATION_AGENT_RUNTIME_TOOL_NAMES) | {
         str(item["function"]["name"])
@@ -11008,7 +11007,7 @@ def review_conversation_agent_tool_output(
                 scoped_arguments,
                 context={"documentVersionIds": sorted(allowed_document_ids)},
             )
-        return dispatch_runtime_tool(repo.state, tool_name, arguments or {})
+        return runtime_tools.dispatch_bound_tool(repo.state, tool_name, arguments or {}, project, node, review_run)
     return {
         "status": "rejected",
         "errorCode": "REVIEW_AGENT_TOOL_NOT_ALLOWED",

@@ -165,7 +165,8 @@ def test_pipeline_task_lock_retries_when_postgres_lock_is_temporarily_unavailabl
     from libs import pipeline_lock as lock_module
 
     @contextmanager
-    def unavailable(_key: str):
+    def unavailable(_key: str, *, idle_timeout_seconds: int):
+        assert idle_timeout_seconds == 60
         raise PipelineLockUnavailable("postgres unavailable")
         yield False
 

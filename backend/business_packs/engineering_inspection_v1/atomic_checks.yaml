@@ -1,7 +1,7 @@
 atomicCheckSet:
   id: engineering-inspection-atomic-checks-v1
   schemaVersion: atomic-check-v1
-  version: 2026.07.16
+  version: 2026.09.23
   lifecycleStatus: published
 atomicChecks:
 - id: AC-R01-01
@@ -19,7 +19,7 @@ atomicChecks:
   nodeId: 1
   name: 设计单位许可资质·原子项2
   checkType: evidence_and_deterministic_rule
-  instruction: 核查设计许可证的范围根据设计文件中的施工说明、管道特性表，动力管道（GCD），在范围处一定要有GCD管道资质，GC2级别管道要有GC2或者GC1的资质，GC1级别管道要有GC1的资质
+  instruction: 依据市场监管总局 2021 年第 41 号公告附件 1 注一，结合项目管道等级核查设计许可范围：GCD 管道须有 GCD 许可，GC2 管道可由 GC2、GC1 或 GCD 许可覆盖，GC1 管道须有 GC1 许可
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R01-03
@@ -28,7 +28,7 @@ atomicChecks:
   nodeId: 1
   name: 设计单位许可资质·原子项3
   checkType: evidence_and_deterministic_rule
-  instruction: 有效期：是否能覆盖住施工期间，因为施工期间也要有技术变更澄清事宜
+  instruction: 核查设计许可证有效期是否覆盖施工及设计变更澄清期间
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R01-04
@@ -37,7 +37,7 @@ atomicChecks:
   nodeId: 1
   name: 设计单位许可资质·原子项4
   checkType: evidence_and_deterministic_rule
-  instruction: 找到设计许可证的范围，找到设计文件中的施工说明、管道特性表，动力管道（GCD）的施工范围，gcd管道资质要对应，对应的规则是：GC2级别管道要有GC2或者GC1的资质，GC1级别管道要有GC1的资质
+  instruction: 逐条核查设计文件、施工说明和管道特性表中的管道等级与设计许可范围是否一致
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R01-05

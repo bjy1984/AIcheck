@@ -247,6 +247,13 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
     - 一张证缺 validUntil → 该证 evidence_insufficient；没有任何证 → evidence_insufficient。
     多张证时：任一 failed → failed；否则任一 insufficient → evidence_insufficient；否则 passed。
     """
+    scope_profile = str(arguments.get("scopeProfile") or "design-license-scope-cn-v1")
+    if scope_profile not in {"design-license-scope-cn-v1", "design-license-scope-cn-v2"}:
+        return result(
+            "check_certificate_validity", "evidence_insufficient",
+            facts={"reason": "unsupported_scope_profile", "scopeProfile": scope_profile},
+            checks=[], rule_version="certificate-validity-cn-v2",
+        )
     certificates = [item for item in arguments.get("certificates") or [] if isinstance(item, dict)]
     period_start = parse_date(arguments.get("periodStart"))
     period_end = parse_date(arguments.get("periodEnd"))
@@ -298,7 +305,7 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
             scopes = {normalize_grade(item) for item in cert.get("scopes") or [] if item}
             certificate_type = str(cert.get("certificateType") or arguments.get("certificateType") or "")
             accepted_scopes = {
-                grade: _design_license_accepted_scopes(grade) if certificate_type == "design_license" else frozenset({grade})
+                grade: _design_license_accepted_scopes(grade, scope_profile) if certificate_type == "design_license" else frozenset({grade})
                 for grade in required_scopes
             }
             missing = sorted(grade for grade, accepted in accepted_scopes.items() if not scopes.intersection(accepted))
@@ -374,10 +381,11 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
             "referenceDate": reference.isoformat(),
             "expectedHolder": arguments.get("expectedHolder"),
             "requiredScopes": sorted(required_scopes),
+            "scopeProfile": scope_profile,
             "certificates": per_certificate,
         },
         checks=checks,
-        rule_version="certificate-validity-cn-v2",
+        rule_version="certificate-validity-cn-v3" if scope_profile == "design-license-scope-cn-v2" else "certificate-validity-cn-v2",
     )
     if warnings:
         output["warnings"] = list(dict.fromkeys(warnings))
@@ -391,6 +399,13 @@ def _norm_holder(value: Any) -> str:
 
 
 def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
+    scope_profile = str(arguments.get("scopeProfile") or "design-license-scope-cn-v1")
+    if scope_profile not in {"design-license-scope-cn-v1", "design-license-scope-cn-v2"}:
+        return result(
+            "check_design_license_scope", "evidence_insufficient",
+            facts={"reason": "unsupported_scope_profile", "scopeProfile": scope_profile},
+            checks=[], rule_version="design-license-scope-cn-v1",
+        )
     scopes = {normalize_grade(item) for item in arguments.get("licenseScopes") or [] if item}
     required = {normalize_grade(item) for item in arguments.get("requiredPipelineGrades") or [] if item}
     if not scopes or not required:
@@ -403,32 +418,38 @@ def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
             facts={
                 "licenseScopes": sorted(scopes),
                 "requiredPipelineGrades": sorted(required),
+                "scopeProfile": scope_profile,
                 "reason": "_and_".join(missing) + "_missing",
             },
             checks=[],
-            rule_version="design-license-scope-cn-v1",
+            rule_version=scope_profile,
         )
     checks = []
     for grade in sorted(required):
-        allowed = _design_license_accepted_scopes(grade)
+        allowed = _design_license_accepted_scopes(grade, scope_profile)
         checks.append(check(f"scope_covers_{grade}", bool(scopes & allowed), sorted(scopes), sorted(allowed)))
     passed = all(item["passed"] for item in checks)
     return result(
         "check_design_license_scope",
         "passed" if passed else "failed",
-        facts={"licenseScopes": sorted(scopes), "requiredPipelineGrades": sorted(required)},
+        facts={"licenseScopes": sorted(scopes), "requiredPipelineGrades": sorted(required), "scopeProfile": scope_profile},
         checks=checks,
-        rule_version="design-license-scope-cn-v1",
+        rule_version=scope_profile,
     )
 
 
-def _design_license_accepted_scopes(required_grade: str) -> frozenset[str]:
-    """与 R01 冻结原子项一致：GC1 可覆盖 GC2，其余级别按证书代码匹配。
+def _design_license_accepted_scopes(required_grade: str, scope_profile: str) -> frozenset[str]:
+    """按 R01 冻结版本解释许可范围；v2 加入 GCD 对 GC2 的覆盖。
 
-    市监总局 2021 年许可目录「注一」也明确 GC1 覆盖 GC2：
+    市监总局 2021 年许可目录「注一」明确 GC1、GCD 覆盖 GC2：
     https://www.samr.gov.cn/tzsbj/dtzb/gzdt/art/2021/art_ab36c6d55fde4d7daf8264578997607e.html
     """
-    return frozenset({"GC1", "GC2"}) if required_grade == "GC2" else frozenset({required_grade})
+    if required_grade != "GC2":
+        return frozenset({required_grade})
+    accepted = {"GC1", "GC2"}
+    if scope_profile == "design-license-scope-cn-v2":
+        accepted.add("GCD")
+    return frozenset(accepted)
 
 
 def decode_welder_qualification(arguments: dict[str, Any]) -> dict[str, Any]:

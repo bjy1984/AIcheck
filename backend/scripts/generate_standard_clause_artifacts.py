@@ -20,6 +20,7 @@ PACK_DIR = BACKEND_ROOT / "business_packs" / "engineering_inspection_v1"
 RULES_FILE = PACK_DIR / "rules.yaml"
 DOCS_DIR = REPO_ROOT / "docs"
 TRACE_INSTRUCTION = "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"
+PACK_VERSION = "2026.09.23"
 
 
 def catalog_item(
@@ -702,7 +703,7 @@ def build() -> None:
     assert set(KNOWLEDGE_DOCUMENTS) == {item["id"] for item in CATALOG}
 
     catalog = {
-        "standardCatalogSet": {"id": "engineering-inspection-standard-catalog-v1", "schemaVersion": "standard-catalog-v1", "version": "2026.07.16", "lifecycleStatus": "published"},
+        "standardCatalogSet": {"id": "engineering-inspection-standard-catalog-v1", "schemaVersion": "standard-catalog-v1", "version": PACK_VERSION, "lifecycleStatus": "published"},
         "standardCatalog": CATALOG,
     }
     dump_yaml(PACK_DIR / "standard_clause_catalog.yaml", catalog)
@@ -744,7 +745,7 @@ def build() -> None:
         })
     binding_data = {
         "standardClauseBindingSet": {
-            "id": "engineering-inspection-standard-clause-bindings-v2", "schemaVersion": "standard-clause-binding-v1", "version": "2026.07.16",
+            "id": "engineering-inspection-standard-clause-bindings-v2", "schemaVersion": "standard-clause-binding-v1", "version": PACK_VERSION,
             "lifecycleStatus": "published", "sourceBusinessRules": "rules/业务规则.md",
             "runtimePolicy": {"consumableLifecycleStatuses": ["published"], "requiredVerificationStatus": "source_verified", "primaryBindingCardinality": "exactly_one_per_rule", "freezeIntoReviewRunSnapshot": True},
         },
@@ -806,12 +807,12 @@ def build() -> None:
             },
         })
     dump_yaml(PACK_DIR / "atomic_checks.yaml", {
-        "atomicCheckSet": {"id": "engineering-inspection-atomic-checks-v1", "schemaVersion": "atomic-check-v1", "version": "2026.07.16", "lifecycleStatus": "published"},
+        "atomicCheckSet": {"id": "engineering-inspection-atomic-checks-v1", "schemaVersion": "atomic-check-v1", "version": PACK_VERSION, "lifecycleStatus": "published"},
         "atomicChecks": atomic_checks,
     })
     dump_yaml(PACK_DIR / "standard_clause_packages.yaml", {
         "standardClausePackageSet": {
-            "id": "engineering-inspection-standard-clause-packages-v1", "schemaVersion": "standard-clause-package-v1", "version": "2026.07.16", "lifecycleStatus": "published",
+            "id": "engineering-inspection-standard-clause-packages-v1", "schemaVersion": "standard-clause-package-v1", "version": PACK_VERSION, "lifecycleStatus": "published",
             "batches": [{"id": batch_id, "name": name, "sourceRuleIds": ids} for batch_id, name, ids in BATCHES],
             "runtimePolicy": {
                 "resolveBy": ["businessPackVersion", "sourceRuleId", "nodeId"],
@@ -827,7 +828,7 @@ def build() -> None:
     catalog_by_id = {item["id"]: item for item in CATALOG}
     lines = [
         "# 业务节点具体标准条款审核矩阵", "",
-        "> 版本：2026.07.16。主条款已经逐条核验并发布；专业补充条款中的 `visual_verified` 表示扫描件已完成人工可视复核，运行时仍以主条款和已固化业务规则为判断入口。", "",
+        f"> 版本：{PACK_VERSION}。主条款已经逐条核验并发布；专业补充条款中的 `visual_verified` 表示扫描件已完成人工可视复核，运行时仍以主条款和已固化业务规则为判断入口。", "",
         "| 批次 | 规则/节点 | 业务审核节点 | 主条款（直接监检依据） | 专业执行条款 | 适用条件 | 原子项 |", "|---|---:|---|---|---|---|---:|",
     ]
     for package in packages:

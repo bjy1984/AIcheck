@@ -5,6 +5,14 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
+from libs.business_pack import load_business_pack
+from libs.business_pack.clause_store import (
+    bind_project_node_clause_packages,
+    publish_standard_clause_release,
+    resolve_project_node_clause_package,
+)
 from libs.review_orchestrator.certificate_facts import (
     build_certificate_facts,
     certificate_profile_for_node,
@@ -92,6 +100,67 @@ def test_设计许可证GC1覆盖GC2时证照与范围工具结论一致():
     assert validity["result"] == scope["result"] == "passed"
     assert validity["facts"]["certificates"][0]["acceptedScopesByRequired"] == {"GC2": ["GC1", "GC2"]}
     assert validity["ruleVersion"] == "certificate-validity-cn-v2"
+
+
+def test_r01_新版GCD覆盖GC2_旧版仍按冻结规则判断():
+    base = {"referenceDate": "2026-09-23", "requiredScopes": ["GC2"], "certificateType": "design_license",
+            "certificates": [{"certificateNo": "TS-1", "validUntil": "2028-01-01", "scopes": ["GCD"]}]}
+    scope_args = {"licenseScopes": ["GCD"], "requiredPipelineGrades": ["GC2"]}
+
+    assert check_design_license_scope(scope_args)["result"] == "failed"
+    assert check_certificate_validity(base)["result"] == "failed"
+    new_profile = {"scopeProfile": "design-license-scope-cn-v2"}
+    scope = check_design_license_scope({**scope_args, **new_profile})
+    validity = check_certificate_validity({**base, **new_profile})
+    assert scope["result"] == validity["result"] == "passed"
+    assert scope["ruleVersion"] == "design-license-scope-cn-v2"
+    assert validity["ruleVersion"] == "certificate-validity-cn-v3"
+    assert validity["facts"]["certificates"][0]["acceptedScopesByRequired"] == {
+        "GC2": ["GC1", "GC2", "GCD"]
+    }
+
+
+def test_r01_新版不反向覆盖且未知版本不放行():
+    profile = {"scopeProfile": "design-license-scope-cn-v2"}
+    assert check_design_license_scope({**profile, "licenseScopes": ["GC2"],
+                                       "requiredPipelineGrades": ["GCD"]})["result"] == "failed"
+    assert check_design_license_scope({**profile, "licenseScopes": ["GCD"],
+                                       "requiredPipelineGrades": ["GC1"]})["result"] == "failed"
+    assert check_design_license_scope({**profile, "licenseScopes": ["GCD"],
+                                       "requiredPipelineGrades": []})["result"] == "evidence_insufficient"
+    assert check_design_license_scope({"scopeProfile": "unknown", "licenseScopes": ["GCD"],
+                                       "requiredPipelineGrades": ["GC2"]})["result"] == "evidence_insufficient"
+
+
+def test_r01_业务包新旧发布版本并存且原文保留():
+    pack = load_business_pack()
+    assert pack["version"] == "2026.09.23"
+    r01 = next(item for item in pack["ruleSets"] if item["sourceRuleId"] == "R01")
+    assert r01["version"] == "engineering-inspection-r01-v20260923"
+    assert "GC2 管道可由 GC2、GC1 或 GCD 许可覆盖" in r01["witnessText"]
+    assert "GC2级别管道要有GC2或者GC1的资质" in r01["sourceWitness"]
+    bindings = {item["atomicCheckId"]: item for item in pack["atomicCheckToolBindings"]}
+    for identity in ("AC-R01-02", "AC-R01-03", "AC-R01-04"):
+        assert bindings[identity]["parameters"]["scopeProfile"] == "design-license-scope-cn-v2"
+
+    old_pack = deepcopy(pack)
+    old_pack["version"] = "2026.07.16"
+    old_r01 = next(item for item in old_pack["standardClausePackages"] if item["sourceRuleId"] == "R01")
+    old_r01["requiredEvidence"] = ["previous-r01-evidence"]
+    state: dict = {}
+    publish_standard_clause_release(state, old_pack)
+    project = {"id": "P-OLD", "businessPackId": old_pack["id"],
+               "businessPackVersion": "2026.07.16", "updatedAt": "2026-09-22"}
+    bind_project_node_clause_packages(state, project, old_pack)
+    old_project_package = resolve_project_node_clause_package(state, "P-OLD", 1)
+    old_release = deepcopy([row for row in state["standard_clause_packages_db"]
+                            if row["releaseId"] == "engineering_inspection_v1@2026.07.16"])
+    publish_standard_clause_release(state, pack)
+    assert [row for row in state["standard_clause_packages_db"]
+            if row["releaseId"] == "engineering_inspection_v1@2026.07.16"] == old_release
+    assert len({row["releaseId"] for row in state["standard_clause_packages_db"]}) == 2
+    assert project["businessPackVersion"] == "2026.07.16"
+    assert resolve_project_node_clause_package(state, "P-OLD", 1) == old_project_package
 
 
 def test_设计证照范围不覆盖时仍判失败_非设计证不套设计规则():

@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from libs.business_pack import load_business_pack
 from libs.integrations.cnse_client import (
     CnseConfigurationError,
     CnseProtocolError,
@@ -168,6 +169,39 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
 
 def runtime_tool_catalog() -> list[dict[str, Any]]:
     return [dict(item) for item in RUNTIME_TOOL_DESCRIPTORS]
+
+
+def dispatch_bound_tool(
+    state: dict[str, Any], tool_name: str, arguments: dict[str, Any],
+    project: dict[str, Any], node: dict[str, Any], review_run: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Bind direct conversation checks to the same frozen profile as formal review."""
+    if tool_name != "check_design_license_scope" or int(node.get("nodeId") or 0) != 1:
+        return dispatch_runtime_tool(state, tool_name, arguments)
+    bindings = (review_run or {}).get("atomicCheckToolBindingsSnapshot")
+    if not isinstance(bindings, list) or not bindings:
+        pack = project.get("businessPackSnapshot")
+        if not isinstance(pack, dict):
+            pack = load_business_pack(str(project.get("businessPackId") or "engineering_inspection_v1"))
+        project_version = str(project.get("businessPackVersion") or "")
+        run_version = str((review_run or {}).get("businessPackVersion") or "")
+        if (project_version and project_version != str(pack.get("version") or "")) or (
+            run_version and run_version != str(pack.get("version") or "")
+        ):
+            bindings = []
+        else:
+            bindings = pack.get("atomicCheckToolBindings") or []
+    binding = next((item for item in bindings if isinstance(item, dict)
+                    and item.get("atomicCheckId") == "AC-R01-02"), None)
+    if binding is None:
+        return {"status": "rejected", "errorCode": "REVIEW_AGENT_RULE_PROFILE_UNAVAILABLE",
+                "message": "当前任务缺少冻结的设计许可范围规则版本。"}
+    profile = str((binding.get("parameters") or {}).get("scopeProfile") or "design-license-scope-cn-v1")
+    requested_profile = arguments.get("scopeProfile")
+    if requested_profile is not None and requested_profile != profile:
+        return {"status": "rejected", "errorCode": "REVIEW_AGENT_RULE_PROFILE_OVERRIDE",
+                "message": "工具请求不能改变当前任务冻结的设计许可范围规则版本。"}
+    return dispatch_runtime_tool(state, tool_name, {**arguments, "scopeProfile": profile})
 
 
 def dispatch_runtime_tool(
