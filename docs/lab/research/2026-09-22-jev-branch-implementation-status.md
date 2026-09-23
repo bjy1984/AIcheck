@@ -262,3 +262,12 @@ AICHECK_JEV_QUEUE_EXIT_CONFIDENCE=<经标注确认且高于进入阈值的值>
   [`2026-09-23-jev-evaluation-runner.md`](../verification/2026-09-23-jev-evaluation-runner.md)。
 - R19／Qwen 对照和缺少落库规则结果的题不进入规则引擎 33 题候选。本批
   完整后端 **5,454 通过、81 跳过、0 失败**，Ruff **286／286**。
+
+## 2026-09-23 收尾：测试数据外呼边界
+
+- 文件归属评估改为仅将完整当前 OCR 与冻结节点题发给 Jev，本地 ID、文件名、
+  旧挂载和规则结果不进入请求。新增七项目 `REPEATABLE READ READ ONLY` 快照
+  导出与录制网关请求测试，详见
+  [`2026-09-23-jev-ocr-only-export.md`](../verification/2026-09-23-jev-ocr-only-export.md)。
+- 当前无法连接 `aicheck-prod-new` 且没有新测试密钥，因此新七项目快照与真实
+  Jev 请求未发生；旧 546 次估算不当作实跑结果。

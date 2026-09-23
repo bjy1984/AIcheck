@@ -1,11 +1,13 @@
 """The live evaluation runner must enforce a budget and never export OCR text."""
 
+import io
 import json
 import stat
 from copy import deepcopy
 
 import pytest
 
+from libs.review_orchestrator import jev_client
 from scripts import run_jev_routing_evaluation as runner
 
 
@@ -46,6 +48,7 @@ def test_live_shadow_is_metadata_only_and_cost_is_reported_only_when_provider_su
 
     def recorded_answer(state, questions, *, observe):
         assert "PRIVATE-OCR-CONTENT" in state
+        assert all(value not in state for value in ("工程：", "节点：", "文件：", "版本：", "已核实", "EVAL-V"))
         observe({"elapsedSeconds": 0.42, "usage": {"cost_usd": 0.002}})
         return {key: {"type": "choice", "choice": "yes", "confidence": 0.93}
                 for key in questions}
@@ -91,3 +94,26 @@ def test_failed_live_request_counts_attempt_and_elapsed_time(monkeypatch):
     assert report["statusCounts"] == {"unavailable": 1}
     assert report["costStatus"] == "not_reported_by_api"
     assert "private transport diagnostic" not in json.dumps(report)
+
+
+def test_gateway_request_body_contains_ocr_and_fixed_question_only(monkeypatch):
+    for name in ("AICHECK_JEV_ENABLED", "AICHECK_JEV_DATA_EGRESS_APPROVED"):
+        monkeypatch.setenv(name, "true")
+    monkeypatch.setenv("AICHECK_JEV_API_KEY", "rotated-test-key")
+    case = _case("V-SECRET")
+    case["projectId"] = case["scope"]["projectId"] = "P-SECRET"
+    case["state"]["documents"][0].update(projectId="P-SECRET", fileName="PRIVATE-FILENAME.pdf")
+    captured = []
+
+    def fake_open(request, *, timeout):
+        captured.append(json.loads(request.data))
+        return io.BytesIO(json.dumps({"model": jev_client.MODEL, "answers": {"node_25": {
+            "type": "choice", "choice": "yes", "confidence": 0.91}}}).encode())
+
+    monkeypatch.setattr(jev_client.urllib.request, "urlopen", fake_open)
+    report = runner.run_cases([case], send=True, limit=1, max_requests=1)
+    assert report["statusCounts"] == {"completed": 1}
+    assert captured[0]["state"] == "[第 1 页] PRIVATE-OCR-CONTENT"
+    assert set(captured[0]) == {"state", "model", "questions"}
+    assert all(value not in json.dumps(captured[0]) for value in (
+        "P-SECRET", "V-SECRET", "PRIVATE-FILENAME", "已核实", "rotated-test-key"))

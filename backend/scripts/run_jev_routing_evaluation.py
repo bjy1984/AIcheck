@@ -27,9 +27,9 @@ from libs.jev_document_routing import (
     _node_questions,
     routing_question_points,
 )
+from libs.jev_evaluation_input import approved_ocr_text
 from libs.material_targeting import MANUAL_REJECTED
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, batch_jev_questions, jev_enabled
-from libs.review_orchestrator.jev_state import scoped_document_states
 from scripts.preflight_jev_document_routing import DEFAULT_OCR_DIR, preflight_project_corpus
 
 Ask = Callable[..., dict[str, Any]]
@@ -109,17 +109,9 @@ def _prepared(case: dict[str, Any]) -> dict[str, Any]:
         return {**base, "status": "invalid_scope", "requestCount": 0}
     if not case["questions"]:
         return {**base, "status": "no_templates", "requestCount": 0}
-    try:
-        states, _, overlong = scoped_document_states(case["state"], case["scope"], [])
-    except ValueError:
-        return {**base, "status": "invalid_scope", "requestCount": 0}
-    if overlong:
-        return {**base, "status": "overlong_document", "requestCount": 0}
-    if states and states[0]["ocrNotReady"]:
-        return {**base, "status": "ocr_not_ready", "requestCount": 0}
-    if not states or not states[0]["hasOcrText"]:
-        return {**base, "status": "no_ocr_text", "requestCount": 0}
-    full_state = states[0]["state"]
+    status, full_state = approved_ocr_text(case["state"], case["scope"])
+    if status != "ready":
+        return {**base, "status": status, "requestCount": 0}
     try:
         batches = batch_jev_questions(full_state, case["questions"], max_questions=QUESTION_BATCH_SIZE)
     except ValueError:
@@ -128,7 +120,7 @@ def _prepared(case: dict[str, Any]) -> dict[str, Any]:
         return {**base, "status": "request_budget_exceeded", "requestCount": 0,
                 "requiredBatchCount": len(batches)}
     input_hash = hashlib.sha256(json.dumps(
-        [full_state, case["questions"], case["humanRejectedNodeIds"], case["existingNodeIds"]],
+        [full_state, case["questions"]],
         ensure_ascii=False, sort_keys=True,
     ).encode()).hexdigest()
     return {**base, "status": "ready", "requestCount": len(batches), "inputHash": input_hash,

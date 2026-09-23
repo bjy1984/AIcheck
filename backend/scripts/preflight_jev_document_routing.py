@@ -21,8 +21,8 @@ from libs.jev_document_routing import (
     _node_questions,
     routing_question_points,
 )
+from libs.jev_evaluation_input import approved_ocr_text
 from libs.review_orchestrator.jev_client import batch_jev_questions
-from libs.review_orchestrator.jev_state import scoped_document_states
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OCR_DIR = ROOT / "output/two_project_node_eval_20260824/test2/ocr"
@@ -38,15 +38,10 @@ def preflight_file(path: Path, questions: dict[str, dict[str, Any]]) -> dict[str
         ]}],
     }
     scope = {"projectId": "EVAL", "nodeId": "待归属", "inputDocumentVersionIds": ["V"]}
-    documents, _, overlong = scoped_document_states(state, scope, [])
     row: dict[str, Any] = {"caseId": path.stem, "ocrChars": len(raw), "questionCount": len(questions)}
-    if overlong:
-        return {**row, "status": "overlong_document", "requestCount": 0}
-    if documents and documents[0]["ocrNotReady"]:
-        return {**row, "status": "ocr_not_ready", "requestCount": 0}
-    if not documents or not documents[0]["hasOcrText"]:
-        return {**row, "status": "no_ocr_text", "requestCount": 0}
-    full_state = documents[0]["state"]
+    status, full_state = approved_ocr_text(state, scope)
+    if status != "ready":
+        return {**row, "status": status, "requestCount": 0}
     row["stateChars"] = len(full_state)
     try:
         batches = batch_jev_questions(full_state, questions, max_questions=QUESTION_BATCH_SIZE)
@@ -140,14 +135,12 @@ def preflight_project_corpus(snapshot: dict[str, Any], *, expected_project_count
             else:
                 scope = {"projectId": project_id, "tenantId": document.get("tenantId"),
                          "nodeId": "待归属", "inputDocumentVersionIds": [version_id]}
-                states, _, overlong = scoped_document_states(snapshot, scope, [])
-                if overlong:
-                    row["status"] = "overlong_document"
-                elif not states or not states[0]["hasOcrText"]:
-                    row["status"] = "ocr_not_ready" if states and states[0]["ocrNotReady"] else "no_ocr_text"
+                status, full_state = approved_ocr_text(snapshot, scope)
+                if status != "ready":
+                    row["status"] = status
                 else:
                     try:
-                        batches = batch_jev_questions(states[0]["state"], questions,
+                        batches = batch_jev_questions(full_state, questions,
                                                       max_questions=QUESTION_BATCH_SIZE)
                     except ValueError:
                         row["status"] = "request_overlong"
