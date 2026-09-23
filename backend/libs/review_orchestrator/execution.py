@@ -1896,6 +1896,12 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
     if node_key == "jev_check_claims":
         if review_run.get("workflowEngine") != "temporal":
             return {"status": "skipped_inline"}
+        if checklist_mode.checklist_enabled() and context.get("checklistItems"):
+            # Checklist notes do not carry the freeform finding's explicit claims.
+            # Rewriting a condition-backed checklist verdict here would violate its contract.
+            review_run["jevClaimChecks"] = {"status": "unsupported_checklist_mode", "model": "jev-1.13.0",
+                                            "findings": [], "factConflicts": []}
+            return {"status": "unsupported_checklist_mode"}
         claim_checks = verify_finding_claims(repo.state, review_run, context.get("ruleResults") or [],
                                              context.get("findingDrafts") or [],
                                              business_facts=context.get("businessFacts"))
@@ -2001,6 +2007,7 @@ def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
 def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
+    claim_prompt_enabled = jev_stage_enabled("CLAIM_SHADOW") and not checklist_mode.checklist_enabled()
     project = context.get("project") or repo.require_project(str(review_run.get("projectId") or "")) or {}
     pack = project.get("businessPackSnapshot") or load_business_pack(
         str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
@@ -2049,7 +2056,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
-            *(["For each finding, list every independently checkable factual sentence verbatim in claims; each claim must be an exact substring of title or description. Do not add claims absent from the finding."] if jev_stage_enabled("CLAIM_SHADOW") else []),
+            *(["For each finding, list every independently checkable factual sentence verbatim in claims; each claim must be an exact substring of title or description. Do not add claims absent from the finding."] if claim_prompt_enabled else []),
             *output_contract.prompt_format_requirements(complete=bool(workstation)),
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
@@ -2097,7 +2104,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
                     "suggestedAction": "human_confirm|request_correction",
                     "groundingStatus": "grounded|insufficient_evidence",
                     "unsupportedClaims": [],
-                    **({"claims": ["verbatim factual sentence from title or description"]} if jev_stage_enabled("CLAIM_SHADOW") else {}),
+                    **({"claims": ["verbatim factual sentence from title or description"]} if claim_prompt_enabled else {}),
                 }
             ]
         },
