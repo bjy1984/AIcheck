@@ -8,7 +8,8 @@ assert.match(
   source,
   /<AutoReviewControl[\s\S]*v-if="role === 'inspection'"[\s\S]*:project-id="activeProjectId"/
 )
-const segmentedEnd = source.indexOf('</div>', source.indexOf('class="view-segmented"'))
+const segmentedEnd = source.indexOf('/>', source.indexOf('<InspectionViewTabs'))
+assert.ok(source.includes('<InspectionViewTabs'))
 const autoReviewPosition = source.indexOf('<AutoReviewControl')
 const registrationPosition = source.indexOf('handleOpenProjectRegistration', autoReviewPosition)
 assert.ok(autoReviewPosition > segmentedEnd, '自动审查按钮应位于视图切换控件之后')

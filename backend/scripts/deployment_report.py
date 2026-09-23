@@ -86,6 +86,14 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/registration-links/{token}/apply"),
 }
 READ_ONLY_POST_ROUTES = {
+    # Stateless review helpers intentionally never persist input or response bodies.
+    ("POST", "/inspection-services/certificate-validity"),
+    ("POST", "/api/inspection-services/certificate-validity"),
+    ("POST", "/inspection-services/certificate-registry"),
+    ("POST", "/api/inspection-services/certificate-registry"),
+    # Node recommendations inspect selected versions without creating review state.
+    ("POST", "/projects/{project_id}/inspection/important-review/analyze"),
+    ("POST", "/api/projects/{project_id}/inspection/important-review/analyze"),
     # Draft trial evaluates supplied examples without saving rules, facts, or findings.
     ("POST", "/projects/{project_id}/rules/versions/{version_id}/trial"),
     ("POST", "/api/projects/{project_id}/rules/versions/{version_id}/trial"),

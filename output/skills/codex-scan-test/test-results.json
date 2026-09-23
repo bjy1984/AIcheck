@@ -1,0 +1,70 @@
+{
+  "date": "2026-09-22",
+  "mode": "current Codex session + installed skill + direct installed stdio MCP",
+  "primaryFiles": 30,
+  "primaryPagesOrImages": 104,
+  "primaryFilesWithReadCoverage": 30,
+  "missingPrimaryPages": {},
+  "methodRecords": 85,
+  "methodCounts": {
+    "R04": 7,
+    "R05": 7,
+    "R06": 6,
+    "R07": 7,
+    "R08": 6,
+    "R09": 7,
+    "R12": 6,
+    "R13": 6,
+    "R16": 13,
+    "R24": 6,
+    "R25": 6,
+    "R26": 8
+  },
+  "weldRecords": 79,
+  "uniqueWeldRecords": 79,
+  "mcpToolCount": 7,
+  "localRulesPassed": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    12,
+    13,
+    16,
+    24,
+    25,
+    26
+  ],
+  "remoteConnection": {
+    "ok": false,
+    "error": {
+      "code": "notConfigured",
+      "message": "请设置AICHECK_BASE_URL为后台服务地址。"
+    }
+  },
+  "engineeringFilesSentToAicheck": 0,
+  "integrity": {
+    "inputFilesChecked": 71,
+    "changedInputFiles": [],
+    "installedFilesChecked": 8,
+    "changedInstalledFiles": []
+  },
+  "separateCliRun": "failed: CLI 0.144.6 requires upgrade for current model",
+  "formalInspectionConclusionIssued": false,
+  "businessAllPassed": false,
+  "releaseOpenItems": [
+    "规则内容与历史版本适用性需校正",
+    "远程标准/证件服务需配置与端到端联调",
+    "独立CLI与当前模型版本兼容性"
+  ],
+  "artifactValidationIssues": [],
+  "artifactValidationPassed": true,
+  "finalCrossGroupCorrectionValidated": true,
+  "corrections": [
+    "施工单位更名在已有安装许可证中有记载",
+    "已有交工压力/泄漏试验记录纳入证据",
+    "射线报告签发日期与实际检测日期区分"
+  ]
+}

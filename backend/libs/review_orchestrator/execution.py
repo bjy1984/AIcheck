@@ -367,7 +367,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
         "inputDocumentVersionIds": ai_run.get("inputDocumentVersionIds") or [],
-        **{key: repo.clone(ai_run[key]) for key in ("conditionObjectMapping", "handoffSelection") if key in ai_run},
+        **{key: repo.clone(ai_run[key]) for key in ("conditionObjectMapping", "handoffSelection", "importantReviewSnapshot") if key in ai_run},
         **({"inputDocumentPageRanges": page_ranges} if page_ranges is not None else {}),
         "schemaVersion": ai_run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
         "runMode": ai_run.get("runType") or "production",
@@ -1991,7 +1991,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         )
     context["toolScope"] = tool_scope_meta
     user_payload = {
-        "task": "Generate ReviewFindingDraftList JSON only.",
+        **output_contract.review_task_payload(review_run),
         **({"workstation": {key: value for key, value in workstation.items() if key != "systemPrompt"},
             "targetNodeId": review_run["nodeId"], "currentRule": current_rule,
             "nodeFields": fields} if workstation else {}),

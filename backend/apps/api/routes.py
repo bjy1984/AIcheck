@@ -9468,7 +9468,7 @@ def ai_recheck(
                     http_status=409,
                 )
             fallback_policy = local_gap_precheck_fallback_policy()
-            if not fallback_policy["allowed"]:
+            if not fallback_policy["allowed"] or body.get("importantNodeReview"):
                 return fail(
                     errors.CONFLICT,
                     request,
@@ -9512,7 +9512,7 @@ def ai_recheck(
         # → 后续 beat 全 duplicate_inflight → 自动派发永久卡死（2026-08-29 实测）。
         # 自动路径强制异步：锁只保护「建 run+入队」，审查在 worker 里跑。
         # 判据用 autoReviewPolicyRevision——只有自动审查会带它。
-        auto_review_dispatch = body.get("autoReviewPolicyRevision") is not None
+        auto_review_dispatch = body.get("autoReviewPolicyRevision") is not None or bool(body.get("importantNodeReview"))
         dispatch = task_dispatcher.dispatch_ai_recheck(
             project_id, node_id, run_id, force_async=auto_review_dispatch
         )

@@ -1,0 +1,930 @@
+[
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6508.png",
+    "relativePath": "Scan/png/IMG_6508.png",
+    "sha256": "1786c3d08f8f594b1d26617ad0c629937a9c344139d8570a19296be909fff97c",
+    "bytes": 18964144,
+    "primary": false,
+    "dimensions": [
+      5712,
+      3213
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6509.png",
+    "relativePath": "Scan/png/IMG_6509.png",
+    "sha256": "97feff3aa0300406bed324bf5f98a66164153730315aa5d4b964f7e815d84fbf",
+    "bytes": 19244305,
+    "primary": false,
+    "dimensions": [
+      5712,
+      3213
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6510.png",
+    "relativePath": "Scan/png/IMG_6510.png",
+    "sha256": "95fdda5b3392c8021a2e307ebb4e930088ca1498714bfea78701991628933cc2",
+    "bytes": 14850174,
+    "primary": false,
+    "dimensions": [
+      5712,
+      3213
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6511.png",
+    "relativePath": "Scan/png/IMG_6511.png",
+    "sha256": "41252e8928a918bc3cae024292160318393af64fea7140c944394697b144b04b",
+    "bytes": 20478693,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6512.png",
+    "relativePath": "Scan/png/IMG_6512.png",
+    "sha256": "b27909e51cf7272bdf283390291bd5244aaeb34796deb5bffe2130fce0246c50",
+    "bytes": 18489191,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6513.png",
+    "relativePath": "Scan/png/IMG_6513.png",
+    "sha256": "ca6c370ae2370c44898c002600babca25378ce14bcaeddbe48c1aa916c8f9b5e",
+    "bytes": 20105116,
+    "primary": false,
+    "dimensions": [
+      5712,
+      3213
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6514.png",
+    "relativePath": "Scan/png/IMG_6514.png",
+    "sha256": "d2083278cce74bf86b0ffe378cecc3942f0fb4121fe36c719d7e09fb8bcad3ff",
+    "bytes": 19938716,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6515.png",
+    "relativePath": "Scan/png/IMG_6515.png",
+    "sha256": "ab88263300fbe2f600fa6f3bfb34cbf78c12d432321026d5c5162465362e74a7",
+    "bytes": 19755297,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6516.png",
+    "relativePath": "Scan/png/IMG_6516.png",
+    "sha256": "525a73e48bae88fca96b4ea5333599eff2d06d61fe4b04de5ebc7099f5fb8194",
+    "bytes": 20333849,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6517.png",
+    "relativePath": "Scan/png/IMG_6517.png",
+    "sha256": "e7b72b5a4888b6e4a6d5109c138d0ca4aa1d008634e7161c2b85ffa4db54610a",
+    "bytes": 19782046,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6518.png",
+    "relativePath": "Scan/png/IMG_6518.png",
+    "sha256": "685323fb4c9a98e23d97d7814e2cb29763869e1e035ddcb10dfbc7ee859ff15b",
+    "bytes": 19744860,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6519.png",
+    "relativePath": "Scan/png/IMG_6519.png",
+    "sha256": "dee617b9b0588842b0d35f6dfa96343458d0a8f0a7eb5146ba2d574afbe230b1",
+    "bytes": 19273528,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6520.png",
+    "relativePath": "Scan/png/IMG_6520.png",
+    "sha256": "f9732d3343785de5f0147729fb89b8d5a20fc550cdd367c41160fe8397cbc10b",
+    "bytes": 19894934,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6521.png",
+    "relativePath": "Scan/png/IMG_6521.png",
+    "sha256": "b70397f3991054818b8bb7c122b2513af5e59d00fe98e6ba94dba8d3d40fea8e",
+    "bytes": 19968153,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6522.png",
+    "relativePath": "Scan/png/IMG_6522.png",
+    "sha256": "c5ab775f288e9aaab6bd1be0b3ff29fcfc53473aa5d6fca335cce2a0a9964ccd",
+    "bytes": 19139704,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6523.png",
+    "relativePath": "Scan/png/IMG_6523.png",
+    "sha256": "61bdf91d5c24fbe9ccb7a08775cf365fc6a74a7c34707f130c537c06ff3b259a",
+    "bytes": 19312149,
+    "primary": false,
+    "dimensions": [
+      3213,
+      5712
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6524.png",
+    "relativePath": "Scan/png/IMG_6524.png",
+    "sha256": "1e56202b632cc43ef01eb48a7eb1e9e098cedb16cec06dbb13cca85b239bb6c3",
+    "bytes": 17108224,
+    "primary": false,
+    "dimensions": [
+      5712,
+      3213
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6526.png",
+    "relativePath": "Scan/png/IMG_6526.png",
+    "sha256": "032421d1b3632485d0a489ec5c01f19fc860d4d56ce8c3413676ac525e8caadd",
+    "bytes": 8811617,
+    "primary": false,
+    "dimensions": [
+      4032,
+      2268
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6527.png",
+    "relativePath": "Scan/png/IMG_6527.png",
+    "sha256": "9b868db1d85946b9ab435ddd0a705a477b10df7a5ad08e8074e9a9b32ebe807c",
+    "bytes": 9048897,
+    "primary": false,
+    "dimensions": [
+      4032,
+      2268
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6528.png",
+    "relativePath": "Scan/png/IMG_6528.png",
+    "sha256": "c4712d0edced6228a1b0563f6f1905faa561fbeb1eb97a98e3fe3a4978a4c2a3",
+    "bytes": 9248409,
+    "primary": false,
+    "dimensions": [
+      4032,
+      2268
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6529.png",
+    "relativePath": "Scan/png/IMG_6529.png",
+    "sha256": "5090a20d4cfa4cca2a02283d74932c30afe0222e1cbf963b9bfbd03c448e080d",
+    "bytes": 10287910,
+    "primary": false,
+    "dimensions": [
+      4032,
+      2268
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6530.png",
+    "relativePath": "Scan/png/IMG_6530.png",
+    "sha256": "11108240607ff902b5f6dc761c7b920f950d48c02a597d137e36547c6e840ad7",
+    "bytes": 10291410,
+    "primary": false,
+    "dimensions": [
+      4032,
+      2268
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/卸车台配管平面图.png",
+    "relativePath": "Scan/png-1800/卸车台配管平面图.png",
+    "sha256": "f370620493759ad7a88c8cd7d0b2fa8220b1bb83a5fa3d80a406a7e90bfba6c5",
+    "bytes": 2770747,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/卸车台配管平面图.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/压力管道强度计算书.png",
+    "relativePath": "Scan/png-1800/压力管道强度计算书.png",
+    "sha256": "56bb88f3cf385fd6a503148dc7626106d1f1730fbfa201baee0e751e8dbcd6f2",
+    "bytes": 2940362,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/压力管道强度计算书.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/工艺图纸目录.png",
+    "relativePath": "Scan/png-1800/工艺图纸目录.png",
+    "sha256": "2dd2959c694c436463f1701a3a2ccc40f7708ca578fc822b01c2d0077387478f",
+    "bytes": 2866661,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/工艺图纸目录.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/工艺设计说明书part1.png",
+    "relativePath": "Scan/png-1800/工艺设计说明书part1.png",
+    "sha256": "36a61c25c68ab2e233ff97a260d7ddf7961df756d726d788c28c43ab44d3fdc7",
+    "bytes": 2926999,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part1.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/工艺设计说明书part2.png",
+    "relativePath": "Scan/png-1800/工艺设计说明书part2.png",
+    "sha256": "7eed3a3a03905bc9a5b4c8dfac69a164880cf1e4969e2885cdfdc91153715f42",
+    "bytes": 2972397,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part2.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/工艺设计说明书part3.png",
+    "relativePath": "Scan/png-1800/工艺设计说明书part3.png",
+    "sha256": "2e5838256940951d87987e3bb8435bea03acd936b4c1d30855fbced8de2a031c",
+    "bytes": 2910033,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part3.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/工艺设计说明书part4.png",
+    "relativePath": "Scan/png-1800/工艺设计说明书part4.png",
+    "sha256": "33eebec391d85d53b68fe9bd865efea7ef031199ab11f0275cafd929cc14b4fd",
+    "bytes": 2892554,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part4.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/工艺设计说明书part5.png",
+    "relativePath": "Scan/png-1800/工艺设计说明书part5.png",
+    "sha256": "2d66c230dee4bf3de5955463852d9b7f1ee9b8d4412c7dec136d19d2a3bba096",
+    "bytes": 2866617,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part5.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/工艺设计说明书part6.png",
+    "relativePath": "Scan/png-1800/工艺设计说明书part6.png",
+    "sha256": "53daab8098edb8f65241c4708f60104c7b10127364aa469320886fbc8105a770",
+    "bytes": 2761711,
+    "primary": false,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part6.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/管道及仪表流程图.png",
+    "relativePath": "Scan/png-1800/管道及仪表流程图.png",
+    "sha256": "3fe482e603555cb13399c04d860a656a347583f49ce904bf6752715dd35b7e4a",
+    "bytes": 2488719,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/管道及仪表流程图.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/管道安装材料表.png",
+    "relativePath": "Scan/png-1800/管道安装材料表.png",
+    "sha256": "02cb47f1c84e2e4ba8148b0b2d57af4c66616bf588059012bffd2fbfaf4c9a96",
+    "bytes": 2870490,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/管道安装材料表.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/管道特性表.png",
+    "relativePath": "Scan/png-1800/管道特性表.png",
+    "sha256": "2afaad383121c55ecbbcca0ee91a3bf377201ef0bdbc2bb9f0b16f15515922aa",
+    "bytes": 2892118,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/综合材料表part1.png",
+    "relativePath": "Scan/png-1800/综合材料表part1.png",
+    "sha256": "b1dde6c1c271fa4c1045005c9ac461c694f157ae204a7f4f9e09bee356819e56",
+    "bytes": 2972073,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/综合材料表part1.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/综合材料表part2.png",
+    "relativePath": "Scan/png-1800/综合材料表part2.png",
+    "sha256": "8948a38bbdf70b4dc29db6b150c842497b4858ed70c5c05f605a4a7f1426fc37",
+    "bytes": 2977705,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/综合材料表part2.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/综合材料表part3.png",
+    "relativePath": "Scan/png-1800/综合材料表part3.png",
+    "sha256": "3760782d9d449acee833e443bfd2a1ada34c269d369ee13deb2738414c839864",
+    "bytes": 2935070,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/综合材料表part3.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/综合材料表part4.png",
+    "relativePath": "Scan/png-1800/综合材料表part4.png",
+    "sha256": "32ccf3985b395975f94a356e67019a7b0395aecbe3fff37acf5cb5d953d61e98",
+    "bytes": 2939801,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/综合材料表part4.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/设备一览表.png",
+    "relativePath": "Scan/png-1800/设备一览表.png",
+    "sha256": "fbe5b1f09bcb439d8ad310b5b77291c3306d4ecc734cad9fca9bd45e787b0ea9",
+    "bytes": 2986097,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/设备一览表.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/png-1800/设备及管道油漆保温一览表.png",
+    "relativePath": "Scan/png-1800/设备及管道油漆保温一览表.png",
+    "sha256": "a3d696f5e58157f5300b64e0cb6c50074ee1df7b79f3b63de59ef7cfeb5c61ac",
+    "bytes": 2921658,
+    "primary": false,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1,
+    "relatedPrimary": "/Users/mac/Documents/AIcheck/Scan/设备及管道油漆保温一览表.png"
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+    "relativePath": "Scan/产品质量证明part1.pdf",
+    "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+    "bytes": 7965328,
+    "primary": true,
+    "pageCount": 7,
+    "pageTextLengths": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+    "relativePath": "Scan/产品质量证明part2.pdf",
+    "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+    "bytes": 6877328,
+    "primary": true,
+    "pageCount": 12,
+    "pageTextLengths": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/卸车台配管平面图.png",
+    "relativePath": "Scan/卸车台配管平面图.png",
+    "sha256": "f370620493759ad7a88c8cd7d0b2fa8220b1bb83a5fa3d80a406a7e90bfba6c5",
+    "bytes": 2770747,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/压力管道强度计算书.png",
+    "relativePath": "Scan/压力管道强度计算书.png",
+    "sha256": "56bb88f3cf385fd6a503148dc7626106d1f1730fbfa201baee0e751e8dbcd6f2",
+    "bytes": 2940362,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/大模型OCR结果.md",
+    "relativePath": "Scan/大模型OCR结果.md",
+    "sha256": "d91cc6198de45511f97d0b8300f9e9e436e86a25c7cdfae25aa8bdcef865692e",
+    "bytes": 56488,
+    "primary": true
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+    "relativePath": "Scan/射线检测报告.pdf",
+    "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+    "bytes": 2837594,
+    "primary": true,
+    "pageCount": 5,
+    "pageTextLengths": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/工艺图纸目录.png",
+    "relativePath": "Scan/工艺图纸目录.png",
+    "sha256": "2dd2959c694c436463f1701a3a2ccc40f7708ca578fc822b01c2d0077387478f",
+    "bytes": 2866661,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part1.png",
+    "relativePath": "Scan/工艺设计说明书part1.png",
+    "sha256": "36a61c25c68ab2e233ff97a260d7ddf7961df756d726d788c28c43ab44d3fdc7",
+    "bytes": 2926999,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part2.png",
+    "relativePath": "Scan/工艺设计说明书part2.png",
+    "sha256": "7eed3a3a03905bc9a5b4c8dfac69a164880cf1e4969e2885cdfdc91153715f42",
+    "bytes": 2972397,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part3.png",
+    "relativePath": "Scan/工艺设计说明书part3.png",
+    "sha256": "2e5838256940951d87987e3bb8435bea03acd936b4c1d30855fbced8de2a031c",
+    "bytes": 2910033,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part4.png",
+    "relativePath": "Scan/工艺设计说明书part4.png",
+    "sha256": "33eebec391d85d53b68fe9bd865efea7ef031199ab11f0275cafd929cc14b4fd",
+    "bytes": 2892554,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part5.png",
+    "relativePath": "Scan/工艺设计说明书part5.png",
+    "sha256": "2d66c230dee4bf3de5955463852d9b7f1ee9b8d4412c7dec136d19d2a3bba096",
+    "bytes": 2866617,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part6.png",
+    "relativePath": "Scan/工艺设计说明书part6.png",
+    "sha256": "53daab8098edb8f65241c4708f60104c7b10127364aa469320886fbc8105a770",
+    "bytes": 2761711,
+    "primary": true,
+    "dimensions": [
+      1012,
+      1800
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/焊工证.pdf",
+    "relativePath": "Scan/焊工证.pdf",
+    "sha256": "99bbc13a8f5a1f29771e1fdb7a1b97c804c4636d4698f414a368227091de1f05",
+    "bytes": 2373065,
+    "primary": true,
+    "pageCount": 2,
+    "pageTextLengths": [
+      0,
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/焊接工艺评定报告.pdf",
+    "relativePath": "Scan/焊接工艺评定报告.pdf",
+    "sha256": "054bba04f19061bf330969da896100964e76aa547e638786fefd98dd7b3e3b5b",
+    "bytes": 10810501,
+    "primary": true,
+    "pageCount": 12,
+    "pageTextLengths": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/特种设备制造许可证-河北广浩.pdf",
+    "relativePath": "Scan/特种设备制造许可证-河北广浩.pdf",
+    "sha256": "edabb139b703f5a0aefed27a4b2ddeb5a76f3d1091da96c6cc570c4476c2a294",
+    "bytes": 1832699,
+    "primary": true,
+    "pageCount": 1,
+    "pageTextLengths": [
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/特种设备制造许可证-烟台鲁宝.pdf",
+    "relativePath": "Scan/特种设备制造许可证-烟台鲁宝.pdf",
+    "sha256": "92161b9276eaa8708072e6fe2f1bc7649f608c99ef9acdace8c356012a72a464",
+    "bytes": 1855072,
+    "primary": true,
+    "pageCount": 1,
+    "pageTextLengths": [
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/特种设备安装改造维修许可证-贵州化工.pdf",
+    "relativePath": "Scan/特种设备安装改造维修许可证-贵州化工.pdf",
+    "sha256": "66b96692409e891d416b082117dd575e3fd4fb756afa03d298b98ea0087c4809",
+    "bytes": 678278,
+    "primary": true,
+    "pageCount": 1,
+    "pageTextLengths": [
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/特种设备生产许可证-贵州化工.pdf",
+    "relativePath": "Scan/特种设备生产许可证-贵州化工.pdf",
+    "sha256": "cd1c7f9017853f48f0145093ddfe59bc6a1b8fa8ed8cb45380ae4da548578cc8",
+    "bytes": 1458924,
+    "primary": true,
+    "pageCount": 1,
+    "pageTextLengths": [
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/特种设备设计资质.png",
+    "relativePath": "Scan/特种设备设计资质.png",
+    "sha256": "f14bcda780af8182253e3912c346204eb0e3efa1edbafc94a71efbd508e724e4",
+    "bytes": 1133965,
+    "primary": true,
+    "dimensions": [
+      1058,
+      1487
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/管道及仪表流程图.png",
+    "relativePath": "Scan/管道及仪表流程图.png",
+    "sha256": "3fe482e603555cb13399c04d860a656a347583f49ce904bf6752715dd35b7e4a",
+    "bytes": 2488719,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/管道安装材料表.png",
+    "relativePath": "Scan/管道安装材料表.png",
+    "sha256": "02cb47f1c84e2e4ba8148b0b2d57af4c66616bf588059012bffd2fbfaf4c9a96",
+    "bytes": 2870490,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png",
+    "relativePath": "Scan/管道特性表.png",
+    "sha256": "2afaad383121c55ecbbcca0ee91a3bf377201ef0bdbc2bb9f0b16f15515922aa",
+    "bytes": 2892118,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part1.png",
+    "relativePath": "Scan/综合材料表part1.png",
+    "sha256": "b1dde6c1c271fa4c1045005c9ac461c694f157ae204a7f4f9e09bee356819e56",
+    "bytes": 2972073,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part2.png",
+    "relativePath": "Scan/综合材料表part2.png",
+    "sha256": "8948a38bbdf70b4dc29db6b150c842497b4858ed70c5c05f605a4a7f1426fc37",
+    "bytes": 2977705,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part3.png",
+    "relativePath": "Scan/综合材料表part3.png",
+    "sha256": "3760782d9d449acee833e443bfd2a1ada34c269d369ee13deb2738414c839864",
+    "bytes": 2935070,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part4.png",
+    "relativePath": "Scan/综合材料表part4.png",
+    "sha256": "32ccf3985b395975f94a356e67019a7b0395aecbe3fff37acf5cb5d953d61e98",
+    "bytes": 2939801,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/设备一览表.png",
+    "relativePath": "Scan/设备一览表.png",
+    "sha256": "fbe5b1f09bcb439d8ad310b5b77291c3306d4ecc734cad9fca9bd45e787b0ea9",
+    "bytes": 2986097,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/设备及管道油漆保温一览表.png",
+    "relativePath": "Scan/设备及管道油漆保温一览表.png",
+    "sha256": "a3d696f5e58157f5300b64e0cb6c50074ee1df7b79f3b63de59ef7cfeb5c61ac",
+    "bytes": 2921658,
+    "primary": true,
+    "dimensions": [
+      1800,
+      1012
+    ],
+    "pageCount": 1
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/贵州化工交工资料.pdf",
+    "relativePath": "Scan/贵州化工交工资料.pdf",
+    "sha256": "515b8a3f5e0894a9aa52d49b485184bfb9e9d09cb53dd05c2156f0d3227050ba",
+    "bytes": 14639243,
+    "primary": true,
+    "pageCount": 24,
+    "pageTextLengths": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "path": "/Users/mac/Documents/AIcheck/Scan/贵州化工施工方案.pdf",
+    "relativePath": "Scan/贵州化工施工方案.pdf",
+    "sha256": "5b3755ecfc9475d98e3b83639c255dbf02b8cbca991704be8b1963132b16fd7e",
+    "bytes": 9343835,
+    "primary": true,
+    "pageCount": 19,
+    "pageTextLengths": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  }
+]

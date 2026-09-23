@@ -1,0 +1,15 @@
+{
+  "archive": "aicheck-inspection.zip",
+  "sha256": "79e8bde9abc332ca96aceb9b4ddd3f7f7cf26a0463b0a5daf2873e6e21a1edae",
+  "ruleSha256": "160ed6a20420d63329c4bded09053a468a0b3e3187d8dc9d7774deff8a814d6e",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/business-nodes-v3.md",
+    "references/review-contract.md",
+    "references/backend-workflow.md",
+    "references/platform-setup.md",
+    "scripts/aicheck_client.py",
+    "scripts/mcp_server.py"
+  ]
+}

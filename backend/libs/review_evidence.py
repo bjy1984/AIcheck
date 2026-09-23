@@ -953,6 +953,8 @@ def attach_review_evidence_package_to_ai_run(
     orchestration_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Freeze and attach the cumulative node evidence package to an AiRun."""
+    from libs.important_review_runtime import attach_important_review
+    attach_important_review(ai_run, orchestration_metadata or {})
 
     package = build_review_evidence_package(
         state,

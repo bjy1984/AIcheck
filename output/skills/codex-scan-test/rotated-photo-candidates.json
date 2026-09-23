@@ -1,0 +1,34 @@
+[
+  {
+    "source": "Scan/png/IMG_6520.png",
+    "nearest": [
+      0.506674204987781,
+      "Scan/综合材料表part1.png",
+      90
+    ]
+  },
+  {
+    "source": "Scan/png/IMG_6521.png",
+    "nearest": [
+      0.5051299337794187,
+      "Scan/综合材料表part2.png",
+      90
+    ]
+  },
+  {
+    "source": "Scan/png/IMG_6522.png",
+    "nearest": [
+      0.5220153254455275,
+      "Scan/综合材料表part3.png",
+      90
+    ]
+  },
+  {
+    "source": "Scan/png/IMG_6523.png",
+    "nearest": [
+      0.5377906191074738,
+      "Scan/综合材料表part4.png",
+      90
+    ]
+  }
+]

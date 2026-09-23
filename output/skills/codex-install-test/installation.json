@@ -1,0 +1,14 @@
+{
+  "installedPath": "/Users/mac/.agents/skills/aicheck-inspection",
+  "archiveSha256": "79e8bde9abc332ca96aceb9b4ddd3f7f7cf26a0463b0a5daf2873e6e21a1edae",
+  "files": {
+    "SKILL.md": "eb32fedb3eb4f3e86bf12b8f15f277b432c04e22b17f3c289cc63aa84c4becda",
+    "agents/openai.yaml": "adff44c1f7a1767e083a2cd0b4a9616ce457399c7df552bba65aa6e9e58eb190",
+    "references/business-nodes-v3.md": "160ed6a20420d63329c4bded09053a468a0b3e3187d8dc9d7774deff8a814d6e",
+    "references/review-contract.md": "ecf4934bd3bb474906e8cfe2e9201e51db607efe186237fab502cd5d28517bdb",
+    "references/backend-workflow.md": "624a7c1e7a2bda9ad561611df54ac96f4db2928577b4b6cdca6252ac42bf77a0",
+    "references/platform-setup.md": "079faa40a680b4f90a8cb0bfdcdfe813d0b31ad7adf3d0d2f8fc0c84f91330ae",
+    "scripts/aicheck_client.py": "17b945b9123d6054d9bb1ddc5dc57b3c4f63eb3d21cf2d94670a9b19bf1e0c12",
+    "scripts/mcp_server.py": "27d80bb51c30f718af1b907736ef8c23c6f9a6f008907a2941838c42156e0755"
+  }
+}

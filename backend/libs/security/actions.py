@@ -5,6 +5,7 @@ import re
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
+    ("POST", r"/inspection-services/(certificate-validity|certificate-registry)$", "ai:recheck"),
     ("POST", r"/projects/[^/]+/review-handoffs$", "review:save"),
     ("POST", r"/projects/[^/]+/review-handoffs/[^/]+/verifications$", "review:save"),
     ("POST", r"/projects/[^/]+/rules/draft-suggestion$", "review:save"),
@@ -51,6 +52,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     # 一键审查用**同一个动作**：批量不该比单个更宽松。
     # 给它单开一个动作的话，权限矩阵里就会出现「能批量、不能单个」这种
     # 谁也说不清的组合。
+    ("POST", r"/projects/[^/]+/inspection/important-review/(?:analyze|nodes/[^/]+/runs)$", "ai:recheck"),
     ("POST", r"/projects/[^/]+/inspection/ai-recheck-batch$", "ai:recheck"),
     ("PUT", r"/projects/[^/]+/inspection/auto-review-policy$", "ai:recheck"),
     ("POST", r"/projects/[^/]+/inspection/auto-review/run$", "ai:recheck"),

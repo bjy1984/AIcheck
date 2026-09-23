@@ -1,0 +1,337 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "protocolVersion": "2025-06-18",
+      "capabilities": {
+        "tools": {},
+        "resources": {}
+      },
+      "serverInfo": {
+        "name": "aicheck-inspection",
+        "version": "2.0.0"
+      },
+      "instructions": "读取 aicheck://skill 获取监检方法。资料仅由用户本地提供，宿主AI平台先完成OCR和资料整理。工具仅提供标准、规则及证件核验，不接收工程原文件，不创建工程资料或审查任务。所有结果为辅助意见。"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "tools": [
+        {
+          "name": "aicheck_connection",
+          "description": "检查标准、规则和证件审查服务的可用性与处理留存说明。",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "aicheck_standards",
+          "description": "检索公共标准依据，保留来源与版本；不读取工程资料，不证明标准现行性。",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "pageSize": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "aicheck_standard_content",
+          "description": "读取标准规范化原文及来源，供核对条款；不能以标准列表摘要代替原文。",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "fileId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "pageNo": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "section": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "fileId"
+            ],
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "aicheck_standard_status",
+          "description": "通过标准公共服务核验指定标准在审查日期的有效状态，不上传工程资料。",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "standardRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "reviewDate": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "minLength": 10,
+                "maxLength": 10
+              }
+            },
+            "required": [
+              "standardRef"
+            ],
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "aicheck_rules",
+          "description": "读取本地v3规则；source=server读取服务器公共审查规则及版本。无需工程身份或资料编号。",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "nodeId": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "server"
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "aicheck_certificate_validity",
+          "description": "对用户本地资料提取的证件字段核验有效期、主体与范围；不存储资料，不代表证件真伪或官方登记已核验。必须提供referenceDate或完整periodStart+periodEnd，日期为YYYY-MM-DD。",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "certificates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "certificateNo": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "holder": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "validFrom": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                      "minLength": 10,
+                      "maxLength": 10
+                    },
+                    "validUntil": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                      "minLength": 10,
+                      "maxLength": 10
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "maxItems": 100
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "expectedHolder": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "requiredScopes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "maxItems": 100
+              },
+              "periodStart": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "minLength": 10,
+                "maxLength": 10
+              },
+              "periodEnd": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "minLength": 10,
+                "maxLength": 10
+              },
+              "referenceDate": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "minLength": 10,
+                "maxLength": 10
+              }
+            },
+            "required": [
+              "certificates"
+            ],
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "aicheck_certificate_registry",
+          "description": "明确获用户授权后，将最少的证件标识发送官方登记查询；不存储查询结果，第三方留存依其政策；查不到或服务失败不能判为假证。",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "person",
+                  "organization_license"
+                ]
+              },
+              "identifier": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "allowExternalQuery": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "identifier",
+              "allowExternalQuery"
+            ],
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+          }
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "isError": false,
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"ok\": true, \"data\": {\"source\": \"local\", \"reference\": \"references/business-nodes-v3.md\", \"version\": \"160ed6a20420d63329c4bded09053a468a0b3e3187d8dc9d7774deff8a814d6e\", \"nodes\": [{\"nodeId\": 24, \"code\": \"R24\", \"name\": \"焊工资格证及持证合格项目\", \"content\": \"**工作见证（原文）**\\n\\n工作见证：需提供焊工的有效资格证书原件或复印件，以及证书上明确标注的\\\"合格项目\\\"范围（焊接方法、母材类别、位置、试件厚度与外径、填充金属类别、工艺因素）；提供参与本工程焊接的焊工名单，并由系统在全国特种设备公示信息查询平台按身份证号核验全部持证项目；提供施焊记录（序号 29）或焊接工艺卡以确定实际作业内容。\\n\\n**标准规范（原文）**\\n\\n标准规范：《特种设备焊接操作人员考核细则》（TSG Z6002-2026，2026-08-01 起施行；2026-08-01 前的施焊作业按 TSG Z6002-2010 判断）；市监特设发〔2026〕85 号（截至 2026-08-01 在有效期内的证书继续有效，覆盖范围按新细则执行）。\\n\\n监检人员需核对人证是否相符，且作业内容（序号 29）在证书允许范围内，按以下步骤逐焊口或逐管线判断：\\n\\n1、真实性与有效性：证书原件或复印件、焊工名单、公示平台返回的持证项目三方逐项比对（姓名、证件编号、项目代号、发证机关、有效期）；任一不一致列出三方取值并要求人工确认。平台查询须取全该焊工的所有持证项目——按人员检索的接口只返回一条记录，须按身份证号取回人员全部证书后再按证书类别筛出焊工项目，否则会把\\\"证书上有而这一条没返回\\\"误判成无此项目。证书有效期应覆盖施焊日期，平台记录的有效标志不能代替日期判断；连续中断焊接作业 6 个月以上的应有用人单位能力验证记录。\\n\\n2、代号解析：解析项目代号六段与工艺因素（如 GTAW-FeⅡ-6G-3/57-FefS-02/11/12：焊接方法 GTAW，母材类别 FeⅡ，位置 6G，试件厚度 3mm 与外径 57mm，填充金属 FefS，工艺因素 02/11/12），OCR 识别有误的代号（如 CTAF、SHAV、FetS）纠错后应提示人工核对原件；组合考试项目拆分为多个项目分别判断。\\n\\n3、逐维度覆盖（依据 TSG Z6002-2026 附录 A 各表）：\\n(1) 焊接方法相同（FCAW 与 GMAW 不互认；组合工艺按打底、填充盖面分别判断）；\\n(2) 母材类别：FeⅠ、FeⅡ、FeⅢ 互认，FeⅣ 独立；母材牌号按表 A-2 归入类别；\\n(3) 焊接位置按表 A-6，6G 覆盖全部向上焊位置，向下焊（5GX、6GX）单列，板试件用于管件时外径不小于 76mm；\\n(4) 焊缝金属厚度按表 A-7，试件厚度小于 12mm 时覆盖不大于 2 倍试件厚度，不小于 12mm 时不限；\\n(5) 外径按表 A-8：试件外径小于 25mm 覆盖不小于试件外径，25～76mm 覆盖不小于 25mm，不小于 76mm 覆盖不小于 76mm；\\n(6) 填充金属按表 A-3 覆盖链（Fef3J 覆盖 Fef3 覆盖 Fef1，FefS 对应实心或药芯焊丝）；\\n(7) 工艺因素：证书带因素 10（背面不加保护气）覆盖 11（加保护气），反之不覆盖；带衬垫(K) 只覆盖带衬垫、双面焊、角焊缝和不焊透接头；工艺因素与衬垫以 WPS 或工艺卡为准，工艺卡持证项目文本与参数表矛盾的单独提示。\\n任一维度不覆盖即判该焊工对该焊口不覆盖；焊缝金属厚度、外径、位置等关键输入缺失的判证据不足，不得以\\\"其余维度都覆盖\\\"放行。\\n\\n4、施焊事实的对应：覆盖判断的输入应取自施焊记录或焊口对应表中该焊工实际所焊焊口的参数，不得用管线的代表性参数代替。同一焊工在同一管线上跨规格施焊的，按规格分组分别判断；施焊记录未记录焊工与焊口对应关系的，判人证对应不可追溯，属证据不足而非覆盖不足。\\n\\n5、结论：每条管线或焊口至少有一名持证焊工全部维度覆盖方为符合；不锈钢管道 WPS 未规定背面保护气而焊工证书带因素 10 的，按不覆盖处理并提示核实根部保护措施（如现场充氩，应提供施焊记录或工艺纪律检查记录）。\\n\\n6、跨版本判定：施焊日期在 2026-08-01 之前的按 TSG Z6002-2010 的覆盖规则判断，之后的按 2026 版；同一工程跨越该日期的，按焊口的施焊日期分别适用，并在结论中注明所用版本。施焊日期取不到的判证据不足。\\n\\n示例：某焊工所焊管线材质 20 钢，规格 89×4.5mm，氩弧焊，焊工证项目 GTAW-FeⅡ-6G-3/57-FefS-02/11/12：方法 GTAW 相同；20 钢属 FeⅠ，FeⅡ 互认覆盖；6G 覆盖全位置；3/57 覆盖焊缝金属厚度不大于 6mm、外径不小于 25mm，覆盖 89×4.5mm；填充金属 FefS 与实心焊丝一致；工艺因素 02/11/12 与 WPS 一致，即通过。\\n\\n\\n---\"}]}}"
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "isError": false,
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"ok\": true, \"data\": {\"source\": \"local\", \"reference\": \"references/business-nodes-v3.md\", \"version\": \"160ed6a20420d63329c4bded09053a468a0b3e3187d8dc9d7774deff8a814d6e\", \"nodes\": [{\"nodeId\": 25, \"code\": \"R25\", \"name\": \"焊接（粘接）工艺文件\", \"content\": \"**工作见证（原文）**\\n\\n工作见证：提供经审批生效的《焊接工艺评定报告》(PQR)、对应的《焊接作业指导书》(WPS) 和焊接工艺卡；提供管线汇总表（管道特性表）以确定实际生产条件；有施焊记录的以焊口为准。\\n\\n**标准规范（原文）**\\n\\n标准规范：NB/T 47014-2023《承压设备焊接工艺评定》（2011 版评定在 2024-06-28 后使用应有按 2023 版复核的说明，否则判预警）；GB/T 20801.4-2025 第 7.1 条（WPS 应包含的内容）；GB 50236-2011 5.0.7；TSG 31-2025 4.2.1。\\n\\n重点核查 WPS 是否有 PQR 支撑、PQR 是否覆盖实际生产条件、WPS 参数是否与 PQR 一致，按以下步骤判断：\\n\\n1、归属与审批：每份 WPS 应注明所依据的 PQR 编号且该 PQR 存在；PQR 应为本单位评定；PQR 与 WPS 经焊接责任工程师审核、技术负责人批准；pWPS（预焊接工艺规程）不能代替正式 WPS，\\\"所依据评定编号\\\"栏为空的判未闭环。\\n\\n2、WPS 内容：应包含 GB/T 20801.4 第 7.1 条规定的十一项内容（焊接方法、母材类别与组别、厚度范围、坡口形式、焊材、预热与道间温度、焊后热处理、保护气体、电特性、技术措施、焊接位置等），缺项列出。\\n\\n3、覆盖矩阵：对管线汇总表每一条管线（或施焊记录每一焊口），按母材类别/组别 × 厚度 × 方法 × 位置 × 热处理状态的组合，判断是否有覆盖的 PQR：\\n(1) 母材按 NB/T 47014-2023 表 1 归入类别与组别后再比对，不比对牌号字面。WPS 写 Q345R、PQR 写 Fe-1-2、实际用 Q345B 三者写法不同但同属一组，属覆盖；高类别评定覆盖低类别，同组别互认，Fe-1-2 覆盖 Fe-1-1。三者中任一方查不到组别时不作同组认定，维持按字面判不一致，并按第 (5) 项处理；\\n(2) 母材厚度按表 6（横向弯曲）或表 7（纵向弯曲）由试件厚度推导覆盖范围，不得只依赖 PQR 自填的范围；PQR 只给试件厚度而未写合格厚度范围的，按表 6/表 7 推算，不判证据不足——该范围本就是标准规定由试件厚度算出的。有冲击要求时母材厚度下限按 6.1.5.2（试件厚度不小于 6mm 取试件厚度与 16mm 的较小值，小于 6mm 取试件厚度的一半）；焊缝金属厚度按方法不超过 2 倍评定值，受表 6 注 a 限制的方法另按表 8、表 9 判断；\\n(3) 重要因素应一致：焊后热处理类别、预热温度降低不超过 55℃、保护气种类、实心与药芯焊丝、SMAW 极性、有无衬垫；有冲击要求时补加因素一并核对。因素的重要/补加/次要归类按表 5 中该焊接方法对应的分类判断，不按因素名称笼统归类；\\n(4) 焊接位置、电流电压等次要因素只作\\\"WPS 参数在 PQR 记录范围内\\\"的提示，不单独判不覆盖；\\n(5) 母材不在表 1 之列时，按附录 B.2 判断，而不是直接判无法评定：公称成分在表 1 所列母材范围内且有\\\"母材归类报告\\\"表明承制单位已掌握其化学成分、力学性能和焊接性并确认与表 1 内某材料相当的，可归入该类别组别；成分不在表 1 范围内的，应有本单位评定标准且母材按归类报告分类分组。结论中应列出母材归类报告的九项必备内容（标准或技术条件、冶炼方法与热处理状态与制品形态与技术要求、产品质量证明书、焊接性、焊接方法与材料与工艺、使用业绩及来源、各项结论与数据来源、归类归组陈述、归入的类别组别及规定的标准抗拉强度最低值），并核对该报告是否存档备查。\\n\\n4、参数一致：WPS 中电流、电压、焊接速度、层间温度的范围应在 PQR 评定记录范围内；实际施焊参数（序号 29）应在 WPS 范围内。参数超范围时，按表 5 标注该因素在本焊接方法下的分级——重要因素超范围意味着需重新评定，补加因素超范围意味着需重做冲击试验，次要因素超范围只需修订 WPS（5.2.1）。分级只作为处置提示，不改变\\\"超出评定范围即不覆盖\\\"的判定结论；表 5 存在\\\"除焊条电弧焊、钨极气体保护焊外\\\"一类的例外，不得据分级放宽判定。\\n\\n5、自洽与联动：WPS 声明的适用范围超出由 PQR 推导的范围（如 GTAW 焊缝金属厚度写不大于 6mm 而评定值为 2×2mm）判预警；不锈钢母材（Fe-8、Fe-10）WPS 未规定背面保护气的，判预警\\\"需核实根部保护措施\\\"并传递给序号 24；WPS 指定的焊材类别应与母材组别配套，联动序号 26 一并核验。\\n\\n6、输出：以管线或焊口为行、WPS 为列给出覆盖矩阵，逐格注明失败维度与 NB/T 47014-2023 条号；对按表 6/表 7 推算出的厚度范围，注明试件厚度、所用表号与推算结果，使复核者可还原。\\n\\n\\n---\"}]}}"
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "isError": true,
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"ok\": false, \"error\": {\"code\": \"notConfigured\", \"message\": \"请设置AICHECK_BASE_URL为后台服务地址。\"}}"
+        }
+      ]
+    }
+  }
+]
