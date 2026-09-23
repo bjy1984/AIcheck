@@ -292,10 +292,10 @@ def test_单位证书的登记名要显示出来():
 
 
 def test_证照判不合格时要说清是哪条没过():
-    """2026-09-13 线上审计：P-2026-ECD202 节点 1 的设计单位许可证只覆盖 GB1/GB2/GC1，
-    工程要 GC2，整项判 failed——界面上写的原因却是「缺少施工起止日期」。
+    """证书确实不覆盖要求时，界面应先说明范围问题，不让日期缺口抢走原因。
 
-    原因是 `check_certificate_validity` 从不报 facts.reason，`_outcome_reason` 只认
+    2026-09-13 的 GB1/GB2/GC1 对 GC2 原本是一次误判，已另有回归锁定。
+    `check_certificate_validity` 曾不报 facts.reason，`_outcome_reason` 只认
     带 reason 的工具，同一原子项里报数据缺口的工具就抢先了。资质不覆盖是实质不合格，
     缺日期是资料没填齐，监检第一眼读到的不能是后者。
     """
@@ -308,7 +308,7 @@ def test_证照判不合格时要说清是哪条没过():
         "requiredScopes": ["GC2"],
         "certificates": [{
             "certificateNo": "TS1844171-2028", "holder": "广东政和工程有限公司",
-            "validUntil": "2028-01-17", "scopes": ["GB1", "GB2", "GC1"],
+            "validUntil": "2028-01-17", "scopes": ["GB1", "GB2"],
         }],
     })
     assert result["result"] == "failed"

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from libs.review_orchestrator.deterministic_tools import (
+    check_certificate_validity,
+    check_design_license_scope,
+)
 from libs.review_orchestrator.jev_state import consistent_rule_checks, scoped_document_states
 
 
@@ -47,6 +51,21 @@ def test_consistent_independent_checks_remain_available():
     ])
     assert [row["atomicCheckId"] for row in checks] == ["A", "B", "C"]
     assert conflicts == []
+
+
+def test_gc1_covering_gc2_real_tool_results_do_not_conflict_in_jev_state():
+    design_scope = check_design_license_scope({"licenseScopes": ["GC1"], "requiredPipelineGrades": ["GC2"]})
+    certificate = check_certificate_validity({"certificateType": "design_license", "requiredScopes": ["GC2"],
+                                              "referenceDate": "2026-09-23", "certificates": [{
+                                                  "certificateNo": "TS-1", "validUntil": "2028-01-01", "scopes": ["GC1"]}]})
+    assert design_scope["result"] == certificate["result"] == "passed"
+    rows, conflicts = consistent_rule_checks([{"atomicCheckResults": [
+        {"atomicCheckId": "AC-R01-02", "toolResults": [{"status": "succeeded", **design_scope}]},
+        {"atomicCheckId": "AC-R01-03", "toolResults": [{"status": "succeeded", **certificate}]},
+    ]}])
+    assert conflicts == []
+    assert any(row["code"] == "scope_covers_GC2" for row in rows)
+    assert any(row["code"].endswith(":scope_covers_required") for row in rows)
 
 
 def test_jev_state_uses_scoped_whole_document_and_rejects_foreign_project():

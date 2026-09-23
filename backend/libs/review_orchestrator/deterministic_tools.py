@@ -214,8 +214,8 @@ def check_date_covers(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 #: 证照核验失败时，按这个优先级把「哪条检查没过」翻成原子项的不通过原因。
-#: 2026-09-13 线上审计：节点 1 的设计单位许可证只覆盖 GB1/GB2/GC1、工程要 GC2，
-#: 判了 failed——但界面上那一项的原因写的是「缺少施工起止日期」。原因来自
+#: 2026-09-13 线上审计：节点 1 的设计单位许可证只有 GB1/GB2/GC1、工程要 GC2，
+#: 当时证照工具按代码完全相等误判 failed；界面又写了「缺少施工起止日期」。原因来自
 #: `_outcome_reason`，它只认带 facts.reason 的工具，而本工具从来不报 reason，
 #: 于是排在前面的日期工具赢了。监检第一眼读到的是错的那句。
 _CERTIFICATE_FAILURE_REASONS: tuple[tuple[str, str], ...] = (
@@ -243,7 +243,7 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
     - 有效期：有业务期间时要求 validFrom <= periodStart 且 validUntil >= periodEnd；
       项目没填施工起止时按 referenceDate（默认当日）判断是否已过期，并记 warning；
     - 主体一致：给了 expectedHolder 才比（去空白、去括号差异）；
-    - 范围覆盖：给了 requiredScopes 才比；
+    - 范围覆盖：给了 requiredScopes 才比；设计许可按已冻结的级别覆盖规则核验；
     - 一张证缺 validUntil → 该证 evidence_insufficient；没有任何证 → evidence_insufficient。
     多张证时：任一 failed → failed；否则任一 insufficient → evidence_insufficient；否则 passed。
     """
@@ -293,9 +293,15 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                 cert_checks.append(check(f"{label}:holder_matches_project", same, cert.get("holder"), arguments.get("expectedHolder")))
                 if not same:
                     status = "failed"
+        accepted_scopes: dict[str, frozenset[str]] = {}
         if required_scopes:
             scopes = {normalize_grade(item) for item in cert.get("scopes") or [] if item}
-            missing = sorted(required_scopes - scopes)
+            certificate_type = str(cert.get("certificateType") or arguments.get("certificateType") or "")
+            accepted_scopes = {
+                grade: _design_license_accepted_scopes(grade) if certificate_type == "design_license" else frozenset({grade})
+                for grade in required_scopes
+            }
+            missing = sorted(grade for grade, accepted in accepted_scopes.items() if not scopes.intersection(accepted))
             if not scopes:
                 cert_checks.append(check(f"{label}:scope_present", False, None, sorted(required_scopes)))
                 if status == "passed":
@@ -337,6 +343,7 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                 "validFrom": valid_from.isoformat() if valid_from else None,
                 "validUntil": valid_until.isoformat() if valid_until else None,
                 "scopes": list(cert.get("scopes") or []),
+                "acceptedScopesByRequired": {grade: sorted(accepted) for grade, accepted in accepted_scopes.items()},
                 "result": status,
                 "checks": cert_checks,
                 # 公示平台查了没有、查到没有——原来只留在事实里，界面上完全看不到
@@ -370,7 +377,7 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
             "certificates": per_certificate,
         },
         checks=checks,
-        rule_version="certificate-validity-cn-v1",
+        rule_version="certificate-validity-cn-v2",
     )
     if warnings:
         output["warnings"] = list(dict.fromkeys(warnings))
@@ -401,14 +408,9 @@ def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
             checks=[],
             rule_version="design-license-scope-cn-v1",
         )
-    coverage = {
-        "GC1": {"GC1"},
-        "GC2": {"GC1", "GC2"},
-        "GCD": {"GCD"},
-    }
     checks = []
     for grade in sorted(required):
-        allowed = coverage.get(grade, {grade})
+        allowed = _design_license_accepted_scopes(grade)
         checks.append(check(f"scope_covers_{grade}", bool(scopes & allowed), sorted(scopes), sorted(allowed)))
     passed = all(item["passed"] for item in checks)
     return result(
@@ -418,6 +420,15 @@ def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
         checks=checks,
         rule_version="design-license-scope-cn-v1",
     )
+
+
+def _design_license_accepted_scopes(required_grade: str) -> frozenset[str]:
+    """与 R01 冻结原子项一致：GC1 可覆盖 GC2，其余级别按证书代码匹配。
+
+    市监总局 2021 年许可目录「注一」也明确 GC1 覆盖 GC2：
+    https://www.samr.gov.cn/tzsbj/dtzb/gzdt/art/2021/art_ab36c6d55fde4d7daf8264578997607e.html
+    """
+    return frozenset({"GC1", "GC2"}) if required_grade == "GC2" else frozenset({required_grade})
 
 
 def decode_welder_qualification(arguments: dict[str, Any]) -> dict[str, Any]:

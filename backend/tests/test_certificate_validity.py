@@ -9,7 +9,10 @@ from libs.review_orchestrator.certificate_facts import (
     build_certificate_facts,
     certificate_profile_for_node,
 )
-from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+from libs.review_orchestrator.deterministic_tools import (
+    check_certificate_validity,
+    check_design_license_scope,
+)
 from libs.review_tools.executor import build_tool_arguments
 
 
@@ -76,6 +79,28 @@ def test_有效期覆盖施工期且主体一致则通过():
     codes = {item["code"] for item in output["checks"]}
     assert any(code.endswith("valid_until_covers_period_end") for code in codes)
     assert any(code.endswith("holder_matches_project") for code in codes)
+
+
+def test_设计许可证GC1覆盖GC2时证照与范围工具结论一致():
+    facts = build_certificate_facts(_state_with_design_license(), "P-1", 1, ["DV-1"])
+    cert = facts["certificateFacts"]["certificates"][0]
+    validity = check_certificate_validity({
+        **facts["certificateFacts"], **facts["certificateFacts"]["period"], "requiredScopes": ["GC2"]
+    })
+    scope = check_design_license_scope({"licenseScopes": cert["scopes"], "requiredPipelineGrades": ["GC2"]})
+
+    assert validity["result"] == scope["result"] == "passed"
+    assert validity["facts"]["certificates"][0]["acceptedScopesByRequired"] == {"GC2": ["GC1", "GC2"]}
+    assert validity["ruleVersion"] == "certificate-validity-cn-v2"
+
+
+def test_设计证照范围不覆盖时仍判失败_非设计证不套设计规则():
+    base = {"referenceDate": "2026-09-23", "requiredScopes": ["GC2"],
+            "certificates": [{"certificateNo": "TS-1", "validUntil": "2028-01-01", "scopes": ["GB1"]}]}
+    assert check_certificate_validity({**base, "certificateType": "design_license"})["result"] == "failed"
+    other = {**base, "certificateType": "ndt_personnel_certificate"}
+    other["certificates"] = [{**base["certificates"][0], "scopes": ["GC1"]}]
+    assert check_certificate_validity(other)["result"] == "failed"
 
 
 def test_过期或主体不符判失败_缺有效期判证据不足():
