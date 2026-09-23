@@ -131,5 +131,6 @@ def scoped_document_states(
         if len(full_state) > MAX_STATE_CHARS:
             overlong.append(version_id)
             continue
-        result.append({"documentVersionId": version_id, "state": full_state})
+        result.append({"documentVersionId": version_id, "state": full_state,
+                       "hasOcrText": bool(content)})
     return result, conflicts, overlong

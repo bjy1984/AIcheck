@@ -44,6 +44,16 @@ def test_unapproved_egress_does_not_call_model(monkeypatch):
     assert jev_opinion.second_opinions(state, run, rule_results, pack)["status"] == "disabled"
 
 
+def test_missing_ocr_text_does_not_ask_model(monkeypatch):
+    state, run, rule_results, pack = _case()
+    state["ocr_parse_results"] = []
+    monkeypatch.setattr(jev_opinion, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(jev_opinion, "ask_jev", lambda *_: 1 / 0)
+    result = jev_opinion.second_opinions(state, run, rule_results, pack)
+    assert result["status"] == "missing_document_text"
+    assert result["atomic"] == []
+
+
 def test_multiple_whole_files_with_conflicting_answers_are_human_only(monkeypatch):
     state, run, rule_results, pack = _case()
     state["documents"].append({"id": "D2", "projectId": "P", "fileName": "图纸.pdf"})

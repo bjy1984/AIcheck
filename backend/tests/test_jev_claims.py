@@ -84,3 +84,17 @@ def test_calibrated_gate_fails_closed_when_jev_unavailable(monkeypatch):
     assert result["status"] == "unavailable"
     assert "900A" not in drafts[0]["description"]
     assert drafts[0]["unsupportedClaims"] == ["claim_check_unavailable"]
+
+
+def test_missing_ocr_text_fails_closed_without_calling_model(monkeypatch):
+    state, run, drafts = _case()
+    state["ocr_parse_results"] = []
+    monkeypatch.setattr(jev_claims, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(jev_claims, "ask_jev", lambda *_: 1 / 0)
+    monkeypatch.setenv("AICHECK_JEV_CALIBRATION_APPROVED", "true")
+    monkeypatch.setenv("AICHECK_JEV_CLAIM_GATE_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_JEV_CLAIM_REJECT_CONFIDENCE", "0.95")
+    result = jev_claims.verify_finding_claims(state, run, [], drafts)
+    assert result["status"] == "missing_document_text"
+    assert drafts[0]["groundingStatus"] == "insufficient_evidence"
+    assert "900A" not in drafts[0]["description"]

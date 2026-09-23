@@ -43,7 +43,7 @@ def classify_review_tables(state: dict[str, Any], review_run: dict[str, Any]) ->
     if not jev_stage_enabled("TABLE_CLASSIFICATION"):
         return {"model": MODEL, "status": "disabled", "tables": {}, "overlongDocumentVersionIds": []}
     document_states, conflicts, overlong = scoped_document_states(state, review_run, [])
-    state_by_version = {row["documentVersionId"]: row["state"] for row in document_states}
+    state_by_version = {row["documentVersionId"]: row["state"] for row in document_states if row["hasOcrText"]}
     output: dict[str, Any] = {"model": MODEL, "status": "completed", "tables": {},
                               "overlongDocumentVersionIds": overlong, "factConflicts": conflicts}
     for parse in selected_parse_results(state, {}, context={"reviewRun": review_run}):

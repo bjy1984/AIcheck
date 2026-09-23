@@ -87,7 +87,10 @@ def second_opinions(state: dict[str, Any], review_run: dict[str, Any],
         # A partial node would look authoritative despite missing a whole file.
         return {"status": "overlong_documents", "model": MODEL, "atomic": [],
                 "factConflicts": conflicts, "overlongDocumentVersionIds": overlong}
-    full_states = [row["state"] for row in documents] or ["（本节点未挂接任何可用原文）"]
+    if not documents or any(not row["hasOcrText"] for row in documents):
+        return {"status": "missing_document_text", "model": MODEL, "atomic": [],
+                "factConflicts": conflicts, "overlongDocumentVersionIds": []}
+    full_states = [row["state"] for row in documents]
     if sum(map(len, full_states)) + len(full_states) - 1 <= MAX_STATE_CHARS:
         full_states = ["\n".join(full_states)]
     pages = _page_options(state, review_run) if len(full_states) == 1 else {}
