@@ -11,9 +11,25 @@ import json
 import os
 import urllib.request
 from typing import Any
+from urllib.parse import urlsplit
 
 MODEL = "jev-1.13.0"
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+
+
+def jev_endpoint() -> str:
+    """Switch compatible Jev APIs through configuration, with an explicit host allowlist."""
+    endpoint = str(os.getenv("AICHECK_JEV_API_URL") or ENDPOINT).strip()
+    parsed = urlsplit(endpoint)
+    approved = {
+        host.strip().lower()
+        for host in str(os.getenv("AICHECK_JEV_APPROVED_HOSTS") or "api.typesafe.ai").split(",")
+        if host.strip()
+    }
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.hostname.lower() not in approved
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        raise ValueError("jev_endpoint_not_approved")
+    return endpoint
 
 
 def jev_enabled() -> bool:
@@ -23,7 +39,7 @@ def jev_enabled() -> bool:
 
 
 def jev_stage_enabled(stage: str) -> bool:
-    if stage not in {"TABLE_CLASSIFICATION", "SECOND_OPINION", "CLAIM_SHADOW"}:
+    if stage not in {"TABLE_CLASSIFICATION", "SECOND_OPINION", "CLAIM_SHADOW", "DOCUMENT_ROUTING"}:
         raise ValueError("unknown_jev_stage")
     return jev_enabled() and os.getenv(f"AICHECK_JEV_{stage}_ENABLED", "").lower() in {"1", "true", "yes"}
 
@@ -35,7 +51,7 @@ def ask_jev(state: str, questions: dict[str, dict[str, Any]], *, timeout: float 
         raise ValueError("jev_state_or_questions_empty")
     body = json.dumps({"state": state, "model": MODEL, "questions": questions}, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
-        ENDPOINT,
+        jev_endpoint(),
         data=body,
         headers={"Authorization": f"Bearer {os.environ['AICHECK_JEV_API_KEY']}",
                  "Content-Type": "application/json"},

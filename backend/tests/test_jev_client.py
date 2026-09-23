@@ -49,3 +49,14 @@ def test_wrong_model_response_is_rejected(monkeypatch):
         b'{"model":"jev-latest","answers":{"q":{"type":"choice","choice":"yes","confidence":1}}}'))
     with pytest.raises(ValueError, match="jev_unexpected_model_version"):
         jev_client.ask_jev("state", {"q": {"type": "choice", "criteria": {"yes": "yes"}}})
+
+
+def test_compatible_api_endpoint_can_switch_only_to_an_approved_host(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_API_URL", "https://jev.example.test/v2/systemone")
+    with pytest.raises(ValueError, match="jev_endpoint_not_approved"):
+        jev_client.jev_endpoint()
+    monkeypatch.setenv("AICHECK_JEV_APPROVED_HOSTS", "api.typesafe.ai,jev.example.test")
+    assert jev_client.jev_endpoint() == "https://jev.example.test/v2/systemone"
+    monkeypatch.setenv("AICHECK_JEV_API_URL", "http://jev.example.test/v2/systemone")
+    with pytest.raises(ValueError, match="jev_endpoint_not_approved"):
+        jev_client.jev_endpoint()

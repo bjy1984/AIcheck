@@ -250,6 +250,32 @@ def dispatch_document_classification(
     }
 
 
+def dispatch_document_routing_shadow(
+    project_id: str, document_id: str, version_id: str, parse_result_id: str,
+) -> dict[str, Any]:
+    """Only queue the Jev shadow on a worker; never call it in inline mode."""
+    from libs.review_orchestrator.jev_client import jev_stage_enabled
+
+    mode = dispatch_mode()
+    if not jev_stage_enabled("DOCUMENT_ROUTING"):
+        return {"mode": mode, "taskId": None, "statusReason": "jev_document_routing_disabled"}
+    if mode != "celery":
+        return {"mode": mode, "taskId": None, "statusReason": "jev_document_routing_requires_async_dispatch"}
+    from apps.worker.tasks import classify_document_node_jev_shadow
+
+    tenant_id = current_tenant_id()
+    result = classify_document_node_jev_shadow.apply_async(
+        args=[project_id, document_id, version_id, tenant_id],
+        queue="llm.remote",
+        priority=broker_priority(5),
+        task_id=deterministic_task_id(
+            "jev-document-routing", f"{tenant_id}:{version_id}:{parse_result_id}",
+        ),
+    )
+    return {"mode": mode, "taskId": result.id, "queue": "llm.remote", "priority": 5,
+            "statusReason": "jev_document_routing_queued"}
+
+
 def dispatch_ocr_pipeline_official(run_id: str) -> dict[str, Any]:
     return _dispatch_ocr_pipeline_stage(
         run_id,

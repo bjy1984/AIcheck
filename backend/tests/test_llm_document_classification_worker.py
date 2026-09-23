@@ -109,6 +109,39 @@ def test_worker_applies_llm_classification_then_runs_existing_targeting_once(mon
     assert attempts[0]["status"] == "success"
 
 
+def test_worker_queues_jev_routing_only_after_classification_persists(monkeypatch) -> None:
+    repository, document, version = _repository_with_ocr()
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "refresh_ocr_worker_state", lambda *_args: None)
+    monkeypatch.setattr(tasks, "qwen_runtime_client", lambda: SuccessfulClient())
+    events = []
+    monkeypatch.setattr(tasks, "flush_state_records", lambda *_args, **_kwargs: events.append("persist"))
+    monkeypatch.setattr(tasks.task_dispatcher, "dispatch_document_routing_shadow", lambda *_args: (
+        events.append("dispatch") or {"taskId": "JEV-TASK"}
+    ))
+
+    result = tasks.classify_document_material.run(PROJECT_ID, document["id"], version["id"])
+
+    assert result["jevRoutingDispatch"]["taskId"] == "JEV-TASK"
+    assert events[-2:] == ["persist", "dispatch"]
+
+
+def test_jev_dispatch_failure_does_not_undo_classification(monkeypatch) -> None:
+    repository, document, version = _repository_with_ocr()
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "refresh_ocr_worker_state", lambda *_args: None)
+    monkeypatch.setattr(tasks, "flush_state_records", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tasks, "qwen_runtime_client", lambda: SuccessfulClient())
+    monkeypatch.setattr(tasks.task_dispatcher, "dispatch_document_routing_shadow", lambda *_args: (
+        1 / 0
+    ))
+
+    result = tasks.classify_document_material.run(PROJECT_ID, document["id"], version["id"])
+
+    assert result["status"] == "completed"
+    assert result["jevRoutingDispatch"] == {"taskId": None, "statusReason": "ZeroDivisionError"}
+
+
 def test_worker_final_failure_uses_rule_classifier_without_blocking_targeting(monkeypatch) -> None:
     repository, document, version = _repository_with_ocr()
     monkeypatch.setattr(tasks, "repo", repository)
