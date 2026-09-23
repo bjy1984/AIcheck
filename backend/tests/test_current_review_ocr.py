@@ -7,6 +7,7 @@ from test_r19_semantic_agent import r19_state, review_run
 from test_r40_record_correspondence import evaluate, fixture
 
 from libs.review_document_scope import freeze_document_scope
+from libs.review_grounding import build_grounded_review_input
 from libs.review_input_data import current_selected_parse_results
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
 from libs.review_orchestrator.r19_agent import build_r19_agent_context
@@ -56,6 +57,23 @@ def test_same_version_attempts_without_a_trustworthy_order_remain_ambiguous():
         {"id": "B", "documentVersionId": "V", "fields": [{"value": "B"}]},
     ]}
     assert current_selected_parse_results(state, {}, context={"reviewRun": {"inputDocumentVersionIds": ["V"]}}) == []
+
+
+def test_model_grounding_without_page_ranges_does_not_concatenate_old_attempt():
+    state = {"ocr_parse_results": [
+        {"id": "OLD", "documentVersionId": "V", "finishedAt": "2026-09-01T00:00:00Z",
+         "fragments": [{"pageNo": 1, "text": "STALE SOURCE", "confidence": 0.9}]},
+        {"id": "NEW", "documentVersionId": "V", "finishedAt": "2026-09-02T00:00:00Z",
+         "fragments": [{"pageNo": 1, "text": "CURRENT SOURCE", "confidence": 0.9}]},
+    ]}
+    grounded = build_grounded_review_input(state, {"V"})
+    assert grounded["summary"]["fragmentCount"] == 1
+    assert grounded["quality"][0]["parseResultId"] == "NEW"
+    assert "CURRENT SOURCE" in str(grounded["evidenceTextCorpus"])
+    assert "STALE SOURCE" not in str(grounded)
+    run = {"projectId": "P", "nodeId": 14, "inputDocumentVersionIds": ["V"]}
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    assert build_grounded_review_input(state, {"V"}, review_run=run)["summary"]["fragmentCount"] == 1
 
 
 def test_r40_uses_only_latest_attempt_but_still_requires_a_usable_source():

@@ -28,3 +28,8 @@
 验证：在 `backend/` 工作目录运行完整测试 **5,438 通过、81 跳过、0 失败**，
 全仓 Ruff 棘轮 **286／286**，改动文件 Ruff 与 `git diff --check` 通过。
 81 条环境选择性跳过不代表 PostgreSQL、MinIO、Temporal 在本批重新实测。
+
+后续检查发现模型 grounding 的两个入口曾未传 `review_run`：无页码范围时的
+正式图步骤，以及旧 AiRun／对比任务。现正式图步骤总传冻结任务，其他入口也按
+版本选当前解析；同版新旧 OCR 不再同时进入模型证据语料。单独回归覆盖了这个
+原先未触及的调用路径；原独立 `extracted_fields`／`evidence_links` 契约仍保留。

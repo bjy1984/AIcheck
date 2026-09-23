@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import time
 import urllib.request
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -76,7 +78,8 @@ def batch_jev_questions(
     return batches
 
 
-def ask_jev(state: str, questions: dict[str, dict[str, Any]], *, timeout: float = 15.0) -> dict[str, Any]:
+def ask_jev(state: str, questions: dict[str, dict[str, Any]], *, timeout: float = 15.0,
+            observe: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
     if not jev_enabled():
         raise RuntimeError("jev_data_egress_not_enabled")
     batches = batch_jev_questions(state, questions)
@@ -91,22 +94,38 @@ def ask_jev(state: str, questions: dict[str, dict[str, Any]], *, timeout: float 
                      "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.load(response)
-        if not isinstance(payload, dict) or payload.get("model") != MODEL:
-            raise ValueError("jev_unexpected_model_version")
-        answers = payload.get("answers")
-        if not isinstance(answers, dict) or set(answers) != set(batch):
-            raise ValueError("jev_incomplete_answers")
-        for key, question in batch.items():
-            answer = answers[key]
-            if not isinstance(answer, dict) or answer.get("type") != question.get("type"):
-                raise ValueError("jev_invalid_answer_type")
-            if question.get("type") == "choice":
-                choice = answer.get("choice")
-                confidence = answer.get("confidence")
-                if (choice not in question.get("criteria", {}) or type(confidence) not in {int, float}
-                        or not math.isfinite(confidence) or not 0 <= confidence <= 1):
-                    raise ValueError("jev_invalid_choice_answer")
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.load(response)
+            if not isinstance(payload, dict) or payload.get("model") != MODEL:
+                raise ValueError("jev_unexpected_model_version")
+            answers = payload.get("answers")
+            if not isinstance(answers, dict) or set(answers) != set(batch):
+                raise ValueError("jev_incomplete_answers")
+            for key, question in batch.items():
+                answer = answers[key]
+                if not isinstance(answer, dict) or answer.get("type") != question.get("type"):
+                    raise ValueError("jev_invalid_answer_type")
+                if question.get("type") == "choice":
+                    choice = answer.get("choice")
+                    confidence = answer.get("confidence")
+                    if (choice not in question.get("criteria", {}) or type(confidence) not in {int, float}
+                            or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+                        raise ValueError("jev_invalid_choice_answer")
+        except (OSError, ValueError) as exc:
+            if observe is not None:
+                observe({"questionCount": len(batch), "elapsedSeconds": round(time.monotonic() - started, 3),
+                         "usage": {}, "status": "transport_error" if isinstance(exc, OSError)
+                         else "invalid_response"})
+            raise
         all_answers.update(answers)
+        if observe is not None:
+            usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+            allowed = {"input_tokens", "output_tokens", "total_tokens", "prompt_tokens",
+                       "completion_tokens", "cost_usd", "total_cost_usd"}
+            numeric_usage = {key: value for key, value in usage.items()
+                             if key in allowed and type(value) in {int, float} and math.isfinite(value)}
+            observe({"questionCount": len(batch), "elapsedSeconds": round(time.monotonic() - started, 3),
+                     "usage": numeric_usage, "status": "completed"})
     return all_answers

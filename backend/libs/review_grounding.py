@@ -219,6 +219,13 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
                                  and (row["documentVersionId"] not in ranges
                                       or located_record_in_range(row, ranges[row["documentVersionId"]]))]
         state = scoped_state
+    else:
+        # Legacy AiRun and comparison entrypoints have no ReviewRun object, but
+        # must not feed two attempts of one version to the model either.
+        scoped_state = dict(state)
+        scoped_state["ocr_parse_results"] = current_selected_parse_results(
+            state, {"documentVersionIds": sorted(version_ids)}) if version_ids else []
+        state = scoped_state
     source_groups = [state.get("extracted_fields", []), state.get("ocr_parse_results", []), state.get("evidence_links", [])]
     available_version_ids = {
         str(item.get("documentVersionId"))

@@ -106,3 +106,43 @@ def test_gateway_rejects_boolean_confidence(monkeypatch):
 
     with pytest.raises(ValueError, match="jev_invalid_choice_answer"):
         jev_client.ask_jev("state", {"q": {"type": "choice", "criteria": {"yes": "有"}}})
+
+
+def test_optional_observer_receives_only_numeric_billing_metadata(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_JEV_DATA_EGRESS_APPROVED", "true")
+    monkeypatch.setenv("AICHECK_JEV_API_KEY", "new-test-key")
+    payload = {"model": jev_client.MODEL, "answers": {"q": {
+        "type": "choice", "choice": "yes", "confidence": 0.9}},
+        "usage": {"input_tokens": 12, "output_tokens": 3, "cost_usd": 0.001,
+                  "secret": "must-not-leak", "total_tokens": True}}
+    monkeypatch.setattr(jev_client.urllib.request, "urlopen", lambda *_args, **_kwargs: io.BytesIO(
+        json.dumps(payload).encode()))
+    observed = []
+    jev_client.ask_jev("private OCR", {"q": {"type": "choice", "criteria": {"yes": "有"}}},
+                       observe=observed.append)
+    assert len(observed) == 1
+    assert observed[0]["questionCount"] == 1
+    assert observed[0]["status"] == "completed"
+    assert observed[0]["usage"] == {"input_tokens": 12, "output_tokens": 3, "cost_usd": 0.001}
+    assert "private OCR" not in str(observed)
+    assert "new-test-key" not in str(observed)
+
+
+def test_observer_records_failed_request_latency_without_private_data(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_JEV_DATA_EGRESS_APPROVED", "true")
+    monkeypatch.setenv("AICHECK_JEV_API_KEY", "new-test-key")
+
+    def fail_request(*_args, **_kwargs):
+        raise OSError("private transport diagnostic")
+
+    monkeypatch.setattr(jev_client.urllib.request, "urlopen", fail_request)
+    observed = []
+    with pytest.raises(OSError):
+        jev_client.ask_jev("private OCR", {"q": {"type": "choice", "criteria": {"yes": "有"}}},
+                           observe=observed.append)
+    assert observed[0]["status"] == "transport_error"
+    assert observed[0]["elapsedSeconds"] >= 0
+    assert "private OCR" not in str(observed)
+    assert "private transport diagnostic" not in str(observed)

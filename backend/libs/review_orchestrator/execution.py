@@ -1583,8 +1583,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 "groundingStatus": grounding_input.get("groundingStatus"),
                 "reviewWarnings": grounding_input.get("reviewWarnings") or [],
             }
-        grounding_input = build_grounded_review_input(
-            repo.state, version_ids, **({"review_run": review_run} if review_run.get("inputDocumentPageRanges") else {}))
+        grounding_input = build_grounded_review_input(repo.state, version_ids, review_run=review_run)
         fields = grounding_input.get("fields") or []
         evidence_links = grounding_input.get("evidenceLinks") or []
         if context.get("businessFacts"):
