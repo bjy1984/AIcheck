@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from libs.review_orchestrator import execution, jev_fact_check, jev_primary, output_contract
 
+R02_SUSPECT = ("安装（施工）单位许可证·有效期截止日=2024-09-07"
+               "（原文第1页：「特种设备生产许可证有效期：2024年9月7日至2028年9月6日」）")
+
 
 def _state():
     return {
@@ -56,7 +59,7 @@ def test_a_rejected_extracted_value_is_marked_suspect_and_only_its_document_is_s
     monkeypatch.setattr(jev_fact_check, "ask_jev", answer)
     result = jev_fact_check.check_certificate_facts(_state(), _run(), _verification())
     assert result["status"] == "completed"
-    assert result["suspects"] == ["安装（施工）单位许可证·有效期截止日=2024-09-07"]
+    assert result["suspects"] == [R02_SUSPECT]
     assert len(sent) == 1 and "2028年9月6日" in sent[0] and "张三" not in sent[0]
     assert result["atomicCheckId"] == "AC-R02-02"
 
@@ -108,10 +111,10 @@ def test_graph_step_records_fact_check_and_output_shows_it_on_the_certificate_ch
     assert context["ruleResults"][0]["atomicCheckResults"][0]["result"] == "failed", "核对不改规则结论"
     view = output_contract.atomic_check_outcomes(context["ruleResults"], run)
     assert view[0]["result"] == "failed"
-    assert view[0]["jevFactCheck"]["suspects"] == ["安装（施工）单位许可证·有效期截止日=2024-09-07"]
+    assert view[0]["jevFactCheck"]["suspects"] == [R02_SUSPECT]
     summary = jev_primary.jev_hint_summary(run["jevDecision"], run["jevFactCheck"])
     assert summary == {"jevHint": {"factCheckStatus": "completed",
-                                   "factSuspects": ["安装（施工）单位许可证·有效期截止日=2024-09-07"]}}
+                                   "factSuspects": [R02_SUSPECT]}}
 
 
 def test_look_alike_holders_in_one_document_are_named_with_their_certificate_number():
@@ -166,11 +169,20 @@ def test_certificate_and_design_suspects_attach_to_their_own_checks(monkeypatch)
     result = jev_fact_check.check_facts(_state(), _run(), items)
     assert result["atomicCheckIds"] == ["AC-R02-02", "AC-R09-01"]
     # 证书与设计说明同在 V1：一次请求，第一个事实（证书截止日）被否决。
-    assert result["suspects"] == ["安装（施工）单位许可证·有效期截止日=2024-09-07"]
+    assert result["suspects"] == [R02_SUSPECT]
     records = [{"ruleCode": "R", "atomicCheckResults": [
         {"atomicCheckId": "AC-R02-02", "result": "failed", "toolResults": []},
         {"atomicCheckId": "AC-R09-01", "result": "evidence_insufficient", "toolResults": []}]}]
     view = output_contract.atomic_check_outcomes(records, {**_run(), "jevFactCheck": result})
-    assert view[0]["jevFactCheck"]["suspects"] == ["安装（施工）单位许可证·有效期截止日=2024-09-07"]
+    assert view[0]["jevFactCheck"]["suspects"] == [R02_SUSPECT]
     assert view[1]["jevFactCheck"]["suspects"] == []
     assert {row["field"] for row in view[1]["jevFactCheck"]["facts"]} >= {"pressureTest.method"}
+
+
+def test_a_suspect_value_not_written_anywhere_says_so(monkeypatch):
+    _enabled(monkeypatch)
+    monkeypatch.setattr(jev_fact_check, "ask_jev", lambda _text, questions, **_kw: {
+        key: {"type": "choice", "choice": "no" if key == "f0" else "yes", "confidence": 0.95} for key in questions})
+    result = jev_fact_check.check_certificate_facts(_state(), _run(), _verification(valid_until="2026-01-31"))
+    assert result["suspects"] == ["安装（施工）单位许可证·有效期截止日=2026-01-31（原文中找不到这个值）"]
+    assert "located" not in result["facts"][0]

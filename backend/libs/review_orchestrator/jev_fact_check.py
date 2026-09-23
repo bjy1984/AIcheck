@@ -17,10 +17,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from datetime import date
 from typing import Any
 
 from libs.jev_evaluation_input import approved_ocr_text
+from libs.review_input_data import latest_selected_parses
 from libs.review_orchestrator.certificate_facts import CERTIFICATE_NODE_PROFILES
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_usage_policy import LOW_CONFIDENCE
@@ -50,6 +52,38 @@ def _render(key: str, value: str) -> str:
             return value
         return f"{parsed.year}年{parsed.month}月{parsed.day}日"
     return value
+
+
+def _renderings(field: str, value: str) -> list[str]:
+    """Ways the same value can be written in the original text (dates vary most)."""
+    compact = re.sub(r"\s+", "", value)
+    if field in {"validUntil", "validFrom"}:
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError:
+            return [compact]
+        y, m, d = parsed.year, parsed.month, parsed.day
+        return [f"{y}年{m}月{d}日", f"{y}年{m:02d}月{d:02d}日", f"{y}-{m:02d}-{d:02d}", f"{y}.{m:02d}.{d:02d}",
+                f"{y}/{m:02d}/{d:02d}", f"{y}.{m}.{d}"]
+    return [compact]
+
+
+def locate_value(state: dict[str, Any], review_run: dict[str, Any], versions: list[str],
+                 field: str, value: str) -> dict[str, Any] | None:
+    """First page and surrounding words where the value is literally written; None if it is nowhere."""
+    parses = latest_selected_parses(state, {**review_run, "inputDocumentVersionIds": versions}, set(versions))
+    needles = [item for item in _renderings(field, value) if item]
+    for version_id in versions:
+        for fragment in (parses.get(version_id) or {}).get("fragments") or []:
+            if not isinstance(fragment, dict):
+                continue
+            body = re.sub(r"\s+", "", str(fragment.get("text") or ""))
+            hit = next(((body.find(needle), needle) for needle in needles if needle in body), None)
+            if hit:
+                start = max(hit[0] - 20, 0)
+                return {"documentVersionId": version_id, "pageNo": fragment.get("pageNo"),
+                        "quote": body[start:hit[0] + len(hit[1]) + 20]}
+    return None
 
 
 def _look_alike_holders(certificates: list[Any]) -> set[str]:
@@ -197,9 +231,15 @@ def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[d
         for index, row in enumerate(rows):
             answer = answers[f"f{index}"]
             choice, confidence = answer["choice"], float(answer["confidence"])
+            suspect = choice == "no" and confidence >= LOW_CONFIDENCE
+            # 可疑项附上本地找到的原文位置，监检一眼能核；原文里根本找不到这个值本身就是线索。
+            located = locate_value(state, review_run, versions, row["field"], row["value"]) if suspect else None
+            where = (f"（原文第{located['pageNo']}页：「{located['quote']}」）" if located
+                     else "（原文中找不到这个值）") if suspect else ""
             facts.append({**row, "status": "completed", "choice": choice, "confidence": confidence,
-                          "suspect": choice == "no" and confidence >= LOW_CONFIDENCE,
-                          "lowConfidence": confidence < LOW_CONFIDENCE})
+                          "suspect": suspect, "lowConfidence": confidence < LOW_CONFIDENCE,
+                          **({"located": located} if located else {}),
+                          **({"suspectLabel": row["suspectLabel"] + where} if suspect else {})})
     questions_hash = hashlib.sha256(json.dumps(
         {key: [item["instructions"] for item in group] for key, group in sorted(grouped.items())},
         ensure_ascii=False, sort_keys=True).encode()).hexdigest()
