@@ -65,3 +65,13 @@ def test_disabled_classifier_does_not_call_network(monkeypatch):
     monkeypatch.setattr(jev_tables, "jev_stage_enabled", lambda _: False)
     monkeypatch.setattr(jev_tables, "ask_jev", lambda *_: 1 / 0)
     assert jev_tables.classify_review_tables(state, run)["status"] == "disabled"
+
+
+def test_narrow_fallback_excludes_single_cell_section_and_empty_template():
+    data = {"栏目": "正式记录", "电流": "90A", "电压": "20V"}
+    parse = {"documentVersionId": "SYN-V1", "tables": [{"normalizedRows": [
+        {"栏目": "焊接参数", "电流": "", "电压": ""},
+        data,
+        {"栏目": "待填写", "电流": "", "电压": ""},
+    ]}]}
+    assert jev_tables.business_rows(parse, None) == [data]

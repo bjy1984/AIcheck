@@ -25,11 +25,28 @@ _TABLE_TYPES = {
     "other": "其他类型，或无法从原文确定",
 }
 _ROW_ROLES = {
-    "header": "表头或列名，不是业务数据",
-    "data": "一条业务数据",
-    "subtitle": "表内小标题、章节标题或单栏说明",
-    "template": "空白模板、占位符或未填写的示例行",
+    "header": "用来命名多列的表头，例如项目、数值、单位等列名；不是业务数据",
+    "data": "已填写的具体业务记录，有对象、参数或结果值",
+    "subtitle": "表内分组或章节标题；通常只有一个标题单元格有字，其余单元格为空，不表示已填写记录",
+    "template": "待填写的空白模板或占位符；没有实际对象、参数或结果值",
 }
+
+# A narrow, deterministic fallback for the one-cell title/blank-template rows
+# seen in WPS tables. It does not rely on a sub-0.90 model prediction.
+_SECTION_TITLES = {
+    "焊接参数", "焊接工艺参数", "焊接工艺评定", "力学性能", "力学性能试验",
+    "拉伸试验", "弯曲试验", "冲击试验", "热处理参数", "热处理工艺参数",
+}
+_EMPTY_TEMPLATE_MARKERS = {"待填写", "待填", "未填写", "请填写", "空白模板"}
+
+
+def _obvious_nondata_row(row: dict[str, Any]) -> bool:
+    if len(row) < 2:
+        return False
+    values = [str(value).strip() for value in row.values() if value is not None and str(value).strip()]
+    if len(values) != 1:
+        return False
+    return values[0] in _SECTION_TITLES | _EMPTY_TEMPLATE_MARKERS
 
 
 def table_hash(table: dict[str, Any]) -> str:
@@ -61,8 +78,10 @@ def classify_review_tables(state: dict[str, Any], review_run: dict[str, Any]) ->
                                f"仅根据本文件全文，表格 {table_index} 本身是什么类型？不要因为正文提到 WPS 就把力学性能表归为 WPS 参数。",
                                "criteria": _TABLE_TYPES})]
             question_items.extend((f"row_{index}", {"type": "choice", "instructions":
-                                   f"仅根据本文件全文，表格 {table_index} 第 {index} 行的角色是什么？",
-                                   "criteria": _ROW_ROLES}) for index in range(1, len(rows) + 1))
+                                   f"结合本文件全文，判断表格 {table_index} 第 {index} 行的角色。"
+                                   f"该行内容：{json.dumps(row, ensure_ascii=False, sort_keys=True)}。"
+                                   "不要把只有一个标题单元格有字、其余为空的小标题当作已填写业务记录。",
+                                   "criteria": _ROW_ROLES}) for index, row in enumerate(rows, 1))
             answers: dict[str, Any] = {}
             try:
                 for start in range(0, len(question_items), 50):
@@ -106,6 +125,8 @@ def business_rows(parse: dict[str, Any], classifications: dict[str, Any] | None,
             # Test specimens are not WPS/PQR records, but may be essential to R26 certificates.
             continue
         for row_index, row in enumerate(rows):
+            if _obvious_nondata_row(row):
+                continue
             role = (predicted.get("rowRoles") or [])[row_index] if predicted and row_index < len(predicted.get("rowRoles") or []) else {}
             confidence = role.get("confidence") if isinstance(role, dict) else None
             if isinstance(role, dict) and role.get("choice") in {"header", "subtitle", "template"} and isinstance(confidence, (int, float)) and confidence >= CONFIDENCE_FLOOR:
