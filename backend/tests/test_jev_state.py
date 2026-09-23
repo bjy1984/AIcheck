@@ -68,3 +68,12 @@ def test_oversized_document_is_reported_without_truncation():
     results, _, overlong = scoped_document_states(state, run, [])
     assert results == []
     assert overlong == ["V-A"]
+
+
+def test_same_project_id_from_other_tenant_is_not_jev_input():
+    state = _state()
+    state["documents"][0]["tenantId"] = "TENANT-B"
+    run = {"tenantId": "TENANT-A", "projectId": "P-A", "nodeId": 1,
+           "inputDocumentVersionIds": ["V-A"]}
+    with pytest.raises(ValueError, match="jev_document_outside_project"):
+        scoped_document_states(state, run, [])

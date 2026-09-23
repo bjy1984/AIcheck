@@ -100,10 +100,12 @@ def scoped_document_states(
     split a single oversized document into snippets or silently omit it.
     """
     project_id = str(review_run.get("projectId") or "")
+    tenant_id = str(review_run.get("tenantId") or "")
     documents = {str(row.get("id")): row for row in state.get("documents") or []
-                 if isinstance(row, dict) and str(row.get("projectId") or "") == project_id}
+                 if isinstance(row, dict) and str(row.get("projectId") or "") == project_id
+                 and (not tenant_id or not row.get("tenantId") or str(row["tenantId"]) == tenant_id)}
     versions = {str(row.get("id") or row.get("documentVersionId")): row
-                for row in (state.get("document_versions") or state.get("versions") or [])
+                for row in [*(state.get("versions") or []), *(state.get("document_versions") or [])]
                 if isinstance(row, dict)}
     requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or []}
     for version_id in requested:
