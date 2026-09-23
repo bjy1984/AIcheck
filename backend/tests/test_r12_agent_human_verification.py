@@ -112,6 +112,32 @@ def test_r12_candidate_extraction_excludes_personnel_and_installation_pages() ->
     assert [item["licenseNo"] for item in candidates] == ["TS2710504-2027", "TS2710692-2027"]
 
 
+def test_r12_same_version_reparse_replaces_old_manufacturing_license():
+    old = manufacturing_parse_result("V", page_no=1, license_no="TS2710504-2027",
+                                     organization="河北管件有限公司", scope="非焊接管件")
+    new = manufacturing_parse_result("V", page_no=1, license_no="TS2710692-2027",
+                                     organization="河北管件有限公司", scope="无缝钢管")
+    old.update(id="OLD", createdAt="2026-08-01 10:00:00")
+    new.update(id="NEW", createdAt="2026-08-02 10:00:00")
+    state = {"ocr_parse_results": [old, new], "versions": [], "documents": []}
+    run = {"nodeId": 12, "inputDocumentVersionIds": ["V"]}
+
+    candidates = extract_r12_license_candidates(state, run)
+
+    assert [item["licenseNo"] for item in candidates] == ["TS2710692-2027"]
+
+
+def test_r12_new_failed_ocr_does_not_restore_old_license_candidate():
+    old = manufacturing_parse_result("V", page_no=1, license_no="TS2710504-2027",
+                                     organization="河北管件有限公司", scope="非焊接管件")
+    old.update(id="OLD", createdAt="2026-08-01 10:00:00")
+    failed = {**old, "id": "FAILED", "status": "failed", "createdAt": "2026-08-02 10:00:00"}
+    state = {"ocr_parse_results": [old, failed], "versions": [], "documents": []}
+    run = {"nodeId": 12, "inputDocumentVersionIds": ["V"]}
+
+    assert extract_r12_license_candidates(state, run) == []
+
+
 def test_r12_human_task_requires_one_attested_response_per_candidate() -> None:
     state = {
         "ocr_parse_results": [

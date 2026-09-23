@@ -4,11 +4,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.jev_tables import business_rows
 from libs.review_orchestrator.material_facts import (
     build_material_judgment,
     deduplicate,
-    iter_requested_parse_results,
 )
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 from libs.review_orchestrator.r13_facts import (
@@ -88,7 +88,8 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     config = NODE_CONFIG[node]
     facts: dict[str, Any] = {key: [] for key in config}
     evidence_groups: list[tuple[str, list[dict[str, Any]], tuple[str, ...]]] = []
-    for parse_result in iter_requested_parse_results(state, review_run):
+    requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or []}
+    for parse_result in latest_usable_selected_parses(state, review_run, requested):
         kind = _document_kind(state, parse_result)
         for target, accepted_kinds in config.items():
             if kind not in accepted_kinds:
@@ -96,8 +97,8 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
             records = _extract_records(state, parse_result, node.upper(), kind,
                                        classifications=review_run.get("jevTableClassifications"))
             facts[target].extend(records)
-    for target in facts:
-        facts[target] = deduplicate(facts[target], "recordId")
+    for target, records in facts.items():
+        facts[target] = deduplicate(records, "recordId")
         evidence_groups.append((f"{node}-{target}", facts[target], ("documentNo", "recordNo", "weldNo", "materialGrade")))
     _overlay(facts, review_run, node)
     if node == "r34":

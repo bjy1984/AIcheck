@@ -142,9 +142,6 @@
  "libs/review_orchestrator/graph.py": {
   "BLE001": 3
  },
- "libs/review_orchestrator/r24_r34_facts.py": {
-  "PLC0206": 1
- },
  "libs/security/auth.py": {
   "BLE001": 4
  },

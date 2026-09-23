@@ -92,6 +92,35 @@ def test_classifier_ignores_stale_table_when_same_version_was_reparsed(monkeypat
     assert result["tables"]["V"][0]["tableHash"] != jev_tables.table_hash(old_table)
 
 
+def test_r25_deterministic_facts_use_only_latest_successful_ocr_attempt():
+    state, run, _ = _source()
+    state["ocr_parse_results"][0].update(id="OLD", status="success", createdAt="2026-08-01 10:00:00")
+    state["ocr_parse_results"].append({
+        "id": "NEW", "documentVersionId": "V", "status": "success",
+        "createdAt": "2026-08-02 10:00:00",
+        "fields": [{"fieldName": "报告编号", "fieldValue": "PQR-NEW", "pageNo": 1}],
+        "tables": [{"pageNo": 3, "normalizedRows": [{"报告编号": "PQR-NEW", "抗拉强度": "560"}]}],
+    })
+
+    facts = build_r25_business_facts(state, run)["r25"]
+
+    assert len(facts["pqrItems"]) == 1
+    assert facts["pqrItems"][0]["documentNo"] == "PQR-NEW"
+
+
+def test_r25_deterministic_facts_do_not_use_stale_success_after_new_ocr_failed():
+    state, run, _ = _source()
+    state["ocr_parse_results"][0].update(id="OLD", status="success", createdAt="2026-08-01 10:00:00")
+    state["ocr_parse_results"].append({
+        "id": "FAILED", "documentVersionId": "V", "status": "failed",
+        "createdAt": "2026-08-02 10:00:00", "fields": [{"fieldName": "报告编号", "fieldValue": "PQR-STALE"}],
+    })
+
+    facts = build_r25_business_facts(state, run)["r25"]
+
+    assert facts["pqrItems"] == []
+
+
 def test_narrow_fallback_excludes_single_cell_section_and_empty_template():
     data = {"栏目": "正式记录", "电流": "90A", "电压": "20V"}
     parse = {"documentVersionId": "SYN-V1", "tables": [{"normalizedRows": [

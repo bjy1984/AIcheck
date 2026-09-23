@@ -8,6 +8,8 @@ designDocument.designSealOrganization。2026-09-11 全节点扫描：后两处�
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 from libs.review_orchestrator.certificate_facts import merge_certificate_facts
 from libs.review_orchestrator.design_org_facts import build_design_org_facts
 from libs.review_orchestrator.deterministic_tools import check_design_license_scope
@@ -186,6 +188,34 @@ def test_设计文件OCR失败时不把残留字段当成已核完整资料():
     design = build_design_org_facts(state, _run())["designDocument"]
     assert design["pipelineGrades"] == []
     assert design["pipelineGradeIssues"] == ["DV-DWG"]
+
+
+def test_同版设计许可证重识别后只用最新证照事实():
+    state = _state()
+    old = state["ocr_parse_results"][1]
+    old.update(id="OLD", createdAt="2026-08-01 10:00:00")
+    new = deepcopy(old)
+    new.update(id="NEW", createdAt="2026-08-02 10:00:00")
+    new["fields"][0]["fieldValue"] = "TS1844171-NEW"
+    state["ocr_parse_results"].append(new)
+
+    facts = merge_certificate_facts(state, _run(), {})
+
+    assert [item["certificateNo"] for item in facts["certificateFacts"]["certificates"]] == ["TS1844171-NEW"]
+
+
+def test_最新设计许可证OCR失败时不借旧证据():
+    state = _state()
+    state["ocr_parse_results"][1].update(id="OLD", createdAt="2026-08-01 10:00:00")
+    state["ocr_parse_results"].append({
+        "id": "FAILED", "documentVersionId": "DV-LIC", "status": "failed",
+        "createdAt": "2026-08-02 10:00:00",
+        "fields": [{"fieldCode": "certificate_no", "fieldValue": "TS-STALE"}],
+    })
+
+    facts = merge_certificate_facts(state, _run(), {})
+
+    assert facts["certificateFacts"]["certificates"] == []
 
 
 def test_同一字段写多个级别但没有对象映射时不猜一种():

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
 
 R13_NODE_ID = 13
@@ -19,7 +19,8 @@ def build_r13_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
     )
     supervision_certificates: list[dict[str, Any]] = []
     type_test_reports: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or []}
+    for parse_result in latest_usable_selected_parses(state, review_run, requested):
         document_kind = _r13_document_kind(state, parse_result)
         if document_kind == "manufacturing_supervision_certificate":
             supervision_certificates.extend(_extract_supervision_certificates(state, parse_result))

@@ -44,6 +44,41 @@ def selected_parse_results(
     return results
 
 
+def latest_selected_parses(
+    state: dict[str, Any], review_run: dict[str, Any], requested: set[str],
+) -> dict[str, dict[str, Any]]:
+    """Select the latest OCR attempt for each frozen version after scope/correction checks."""
+    latest: dict[str, dict[str, Any]] = {}
+    for parse in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+        version_id = str(parse.get("documentVersionId") or "")
+        if version_id not in requested:
+            continue
+        previous = latest.get(version_id)
+        stamp = str(parse.get("finishedAt") or parse.get("updatedAt") or parse.get("createdAt") or "")
+        order = (stamp, str(parse.get("id") or parse.get("parseResultId") or ""))
+        if previous is None:
+            latest[version_id] = parse
+            continue
+        previous_stamp = str(previous.get("finishedAt") or previous.get("updatedAt")
+                             or previous.get("createdAt") or "")
+        previous_order = (previous_stamp, str(previous.get("id") or previous.get("parseResultId") or ""))
+        if order > previous_order:
+            latest[version_id] = parse
+    return latest
+
+
+def latest_usable_selected_parses(
+    state: dict[str, Any], review_run: dict[str, Any], requested: set[str],
+) -> list[dict[str, Any]]:
+    """Never fall back to an older successful OCR after the latest attempt failed."""
+    return [
+        parse for parse in latest_selected_parses(state, review_run, requested).values()
+        if str(parse.get("status") or "success").lower() in {
+            "success", "succeeded", "completed", "已识别", "人工修正",
+        }
+    ]
+
+
 def apply_field_corrections_to_parse_results(
     state: dict[str, Any],
     results: list[dict[str, Any]],
@@ -114,4 +149,3 @@ def apply_field_corrections_to_parse_results(
         )
         patched.append(clone)
     return patched
-

@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from libs.review_input_data import latest_selected_parses
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_state import (
     MAX_STATE_CHARS,
-    latest_selected_parses,
     scoped_document_states,
 )
 

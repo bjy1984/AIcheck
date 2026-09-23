@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.certificate_facts import (
     _confidence_unavailable,
     _documents_by_version,
@@ -103,12 +103,10 @@ def build_design_org_facts(state: dict[str, Any], review_run: dict[str, Any]) ->
     grade_sources: list[dict[str, Any]] = []
     grade_issues: list[str] = []
     parsed_design_versions: set[str] = set()
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    for parse_result in latest_usable_selected_parses(state, review_run, expected_design_versions):
         version_id = str(parse_result.get("documentVersionId") or "")
         document = documents.get(version_id)
         if not document or version_id not in expected_design_versions:
-            continue
-        if str(parse_result.get("status") or "success") not in {"success", "succeeded", "已识别", "人工修正", ""}:
             continue
         parsed_design_versions.add(version_id)
         file_name = str(document.get("fileName") or "")

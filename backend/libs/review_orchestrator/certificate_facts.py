@@ -32,7 +32,7 @@ from typing import Any
 
 from libs.contracts.responses import business_today
 from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 
 from .deterministic_tools import parse_date as _iso_parse_date
@@ -212,11 +212,9 @@ def build_certificate_facts(
     documents = _documents_by_version(state, project_id)
     items: list[dict[str, Any]] = []
     considered: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": source_run}):
+    for parse_result in latest_usable_selected_parses(state, source_run, requested):
         version_id = str(parse_result.get("documentVersionId") or "")
         if not version_id or version_id not in documents:
-            continue
-        if str(parse_result.get("status") or "success") not in {"success", "succeeded", "已识别", "人工修正", ""}:
             continue
         document = documents.get(version_id) or {}
         if not _matches_profile(profile, parse_result, document):
