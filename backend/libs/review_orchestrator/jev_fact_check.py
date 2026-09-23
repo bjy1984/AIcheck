@@ -63,8 +63,9 @@ def _renderings(field: str, value: str) -> list[str]:
         except ValueError:
             return [compact]
         y, m, d = parsed.year, parsed.month, parsed.day
+        # 只写到月的有效期（「2022年11月至2027年10月」）抽成月初/月末；整日写法都找不到时才认月份写法。
         return [f"{y}年{m}月{d}日", f"{y}年{m:02d}月{d:02d}日", f"{y}-{m:02d}-{d:02d}", f"{y}.{m:02d}.{d:02d}",
-                f"{y}/{m:02d}/{d:02d}", f"{y}.{m}.{d}"]
+                f"{y}/{m:02d}/{d:02d}", f"{y}.{m}.{d}", f"{y}年{m}月", f"{y}年{m:02d}月"]
     return [compact]
 
 
@@ -73,16 +74,18 @@ def locate_value(state: dict[str, Any], review_run: dict[str, Any], versions: li
     """First page and surrounding words where the value is literally written; None if it is nowhere."""
     parses = latest_selected_parses(state, {**review_run, "inputDocumentVersionIds": versions}, set(versions))
     needles = [item for item in _renderings(field, value) if item]
-    for version_id in versions:
-        for fragment in (parses.get(version_id) or {}).get("fragments") or []:
-            if not isinstance(fragment, dict):
-                continue
+    fragments = [(version_id, fragment) for version_id in versions
+                 for fragment in (parses.get(version_id) or {}).get("fragments") or [] if isinstance(fragment, dict)]
+    for needle in needles:
+        for version_id, fragment in fragments:
             body = re.sub(r"\s+", "", str(fragment.get("text") or ""))
-            hit = next(((body.find(needle), needle) for needle in needles if needle in body), None)
+            # 月份写法后面紧跟数字就是整日（「2022年11月9日」），不能当成只写到月。
+            found = re.search(re.escape(needle) + (r"(?!\d)" if needle.endswith("月") else ""), body)
+            hit = (found.start(), needle) if found else None
             if hit:
                 start = max(hit[0] - 20, 0)
                 return {"documentVersionId": version_id, "pageNo": fragment.get("pageNo"),
-                        "quote": body[start:hit[0] + len(hit[1]) + 20]}
+                        "quote": body[start:hit[0] + len(hit[1]) + 20], "matched": hit[1]}
     return None
 
 
@@ -195,6 +198,18 @@ def check_certificate_facts(state: dict[str, Any], review_run: dict[str, Any],
     return check_facts(state, review_run, certificate_fact_items(verification))
 
 
+def _as_written(state: dict[str, Any], review_run: dict[str, Any], versions: list[str],
+                item: dict[str, Any]) -> str:
+    """原文只写到月时，题目也只问到月：不能把「2022年11月」问成「2022年11月1日」再判它不符。"""
+    if item["field"] not in {"validUntil", "validFrom"}:
+        return item["instructions"]
+    located = locate_value(state, review_run, versions, item["field"], item["value"])
+    matched = (located or {}).get("matched") or ""
+    if not re.fullmatch(r"\d{4}年\d{1,2}月", matched):
+        return item["instructions"]
+    return item["instructions"].replace(_render(item["field"], item["value"]), matched, 1)
+
+
 def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
     """Ask Jev whether each fact is what the source documents state; mark confident "no" as suspect."""
     base: dict[str, Any] = {"model": MODEL, "templateVersion": TEMPLATE_VERSION, "facts": []}
@@ -220,7 +235,8 @@ def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[d
             statuses.add(status)
             facts.extend({**row, "status": status} for row in rows)
             continue
-        questions = {f"f{index}": {"type": "choice", "instructions": item["instructions"], "criteria": CHOICES}
+        questions = {f"f{index}": {"type": "choice", "instructions": _as_written(state, review_run, versions, item),
+                                   "criteria": CHOICES}
                      for index, item in enumerate(group)}
         try:
             answers = ask_jev(text, questions)

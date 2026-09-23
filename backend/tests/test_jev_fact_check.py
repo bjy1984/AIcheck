@@ -186,3 +186,36 @@ def test_a_suspect_value_not_written_anywhere_says_so(monkeypatch):
     result = jev_fact_check.check_certificate_facts(_state(), _run(), _verification(valid_until="2026-01-31"))
     assert result["suspects"] == ["安装（施工）单位许可证·有效期截止日=2026-01-31（原文中找不到这个值）"]
     assert "located" not in result["facts"][0]
+
+
+def test_month_only_validity_is_asked_at_month_precision(monkeypatch):
+    # 真实 OCR 实测：原文「有效期：2022年11月至2027年10月」，问「起始日是否为2022年11月1日」被判不符。
+    _enabled(monkeypatch)
+    state = _state()
+    state["ocr_parse_results"][0]["fragments"][0]["text"] = "特种设备生产许可证 有效期：2022年11月至2027年10月"
+    asked = []
+    monkeypatch.setattr(jev_fact_check, "ask_jev", lambda _text, questions, **_kw: asked.append(questions) or {
+        key: {"type": "choice", "choice": "yes", "confidence": 0.95} for key in questions})
+    verification = _verification(valid_until="2027-10-31")
+    verification["certificates"][0]["validFrom"] = "2022-11-01"
+    jev_fact_check.check_certificate_facts(state, _run(), verification)
+    texts = [question["instructions"] for question in asked[0].values()]
+    assert "有效期截止日是否为2027年10月？" in texts[0]
+    assert "有效期起始日是否为2022年11月？" in texts[1]
+    # 整日写法在原文里时照旧问到日。
+    state["ocr_parse_results"][0]["fragments"][0]["text"] = "有效期：2022年11月1日至2027年10月31日"
+    asked.clear()
+    jev_fact_check.check_certificate_facts(state, _run(), verification)
+    assert "有效期截止日是否为2027年10月31日？" in next(iter(asked[0].values()))["instructions"]
+
+
+def test_a_full_date_is_not_mistaken_for_a_month_only_date(monkeypatch):
+    _enabled(monkeypatch)
+    state = _state()
+    state["ocr_parse_results"][0]["fragments"][0]["text"] = "有效期：2022年11月9日至2027年10月8日"
+    asked = []
+    monkeypatch.setattr(jev_fact_check, "ask_jev", lambda _text, questions, **_kw: asked.append(questions) or {
+        key: {"type": "choice", "choice": "no", "confidence": 0.95} for key in questions})
+    verification = _verification(valid_until="2027-10-31")
+    jev_fact_check.check_certificate_facts(state, _run(), verification)
+    assert "有效期截止日是否为2027年10月31日？" in next(iter(asked[0].values()))["instructions"]

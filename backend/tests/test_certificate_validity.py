@@ -437,3 +437,20 @@ def test_合订的几张焊工证按人分开_不把甲的姓名配上乙的证�
         ("张三", "110101199001010011", "2028-11-30"),
         ("李四", "110101199202020022", "2027-04-30"),
     ]
+
+
+def test_证号类别位与证书类型不符时改用原文里唯一相符的编号():
+    # 真实 OCR 上 Jev 核对抓到：安装许可证取成了告知书里设计单位的 TS1 号，检测机构核准证取成了质量体系证书号。
+    fields = [{"fieldCode": "certificate_no", "fieldName": "许可证编号", "fieldValue": "TS1844168-2027", "pageNo": 1}]
+    text = "制造(管道设计)许可证编号:TS1844168-2027 施工单位 示例管道安装有限公司 许可证编号 TS3844617-2026"
+    state = _installation_licence_state(fields, text)
+    state["ocr_parse_results"][0]["fields"] = fields
+    item = build_certificate_facts(state, "P-1", 2, ["DV-1"])["certificateFacts"]["certificates"][0]
+    assert item["certificateNo"] == "TS3844617-2026"
+    assert item["replacedByNumberType"] == {"certificateNo": "TS1844168-2027"}
+    # 原文里有两个相符的编号时不猜，只记警告。
+    state = _installation_licence_state(fields, text + " 另一安装许可证编号 TS3811111-2027")
+    state["ocr_parse_results"][0]["fields"] = fields
+    item = build_certificate_facts(state, "P-1", 2, ["DV-1"])["certificateFacts"]["certificates"][0]
+    assert item["certificateNo"] == "TS1844168-2027"
+    assert "certificate_no_ambiguous" in item["extractionWarnings"]

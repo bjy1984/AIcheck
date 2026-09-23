@@ -200,6 +200,12 @@ _VALIDITY_RANGE_PATTERNS = (
                + r"\s*(?:至|到|—|–|-|~|～)\s*" + _DATE_TEXT),
     re.compile(_DATE_TEXT + r"\s*(?:至|到)\s*" + _DATE_TEXT + r"\s*(?:止|有效)"),
 )
+# 特种设备许可证编号的类别位：TS1 设计、TS3 安装改造修理、TS7 检验检测机构核准。
+# 资质合订本和告知书里常同时出现几张证的编号（管理体系认证 CTC…、设计单位 TS1…），
+# 2026-09-23 真实 OCR 上 Jev 核对抓到过：检测机构核准证取成了质量体系证书号，
+# 安装许可证取成了告知书里设计单位的 TS1 号。
+_EXPECTED_NUMBER_PREFIX = {"design_license": "TS1", "installation_license": "TS3", "ndt_agency_approval": "TS7"}
+_TS_NUMBER_RE = re.compile(r"TS\s*(\d)\s*(\d{6})\s*[-—–]\s*(\d{4})", re.IGNORECASE)
 # 字段名按子串认别名时，「有效期起」会被当成「有效期」命中截止日，反之亦然。
 _OPPOSITE_NAME_MARKERS = {
     "validUntil": ("起", "自", "从", "发证", "签发", "批准"),
@@ -505,9 +511,28 @@ def _extract_certificates(
                         "design_license", "installation_license", "ndt_agency_approval"
                     })
     _reconcile_validity_range(record, text, parse_result, version_id, file_name, protected=human_corrected)
+    _reconcile_certificate_number(record, text, profile["certificateType"], protected=human_corrected)
     if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
         return []
     return [record]
+
+
+def _reconcile_certificate_number(record: dict[str, Any], text: str, certificate_type: str, *,
+                                  protected: set[str]) -> None:
+    """编号类别位与证书类型不符时，改用原文里唯一一个类别位相符的编号；多个或没有就不猜，只记警告。"""
+    expected = _EXPECTED_NUMBER_PREFIX.get(certificate_type)
+    number = re.sub(r"\s+", "", str(record.get("certificateNo") or "")).upper()
+    if not expected or not number or number.startswith(expected) or "certificateNo" in protected:
+        return
+    candidates = {f"TS{match.group(1)}{match.group(2)}-{match.group(3)}" for match in _TS_NUMBER_RE.finditer(text)
+                  if f"TS{match.group(1)}" == expected}
+    if len(candidates) != 1:
+        record.setdefault("extractionWarnings", []).append(
+            "certificate_no_type_mismatch" if not candidates else "certificate_no_ambiguous")
+        return
+    record.setdefault("replacedByNumberType", {})["certificateNo"] = record["certificateNo"]
+    record["certificateNo"] = candidates.pop()
+    record.setdefault("sources", {})["certificateNo"] = "ocr_text_number_type"
 
 
 def _reconcile_validity_range(
