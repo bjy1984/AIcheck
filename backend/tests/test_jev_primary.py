@@ -398,3 +398,16 @@ def test_deterministic_rule_checks_never_get_a_jev_opinion(monkeypatch):
     assert plan["status"] == "no_semantic_checks"
     decision = jev_primary.decide_node(state, run, records, pack, plan)
     assert jev_primary.attach_hints(records, decision) == records
+
+
+def test_a_name_seen_only_inside_a_longer_name_is_not_in_scope(monkeypatch):
+    state, run, records, pack = _case()
+    _enabled(monkeypatch)
+    run["nodeId"] = 24
+    pack["nodeTemplates"] = [{"nodeId": 24, "name": "焊工资格", "requiredMaterials": []}]
+    pack["atomicChecks"][0]["nodeId"] = 24
+    facts = {"r24": {"certificates": [{"welderName": "李卫"}, {"welderName": "李卫伍"}]}}
+    state["ocr_parse_results"][0]["fragments"][0]["text"] = "李卫伍的焊工证有效期至2027年8月31日"
+    assert jev_primary.author_node_questions(state, run, records, pack,
+                                             business_facts=facts)["status"] == "multi_person_scope_unknown"
+    assert jev_primary._appears_on_its_own("李卫", ["李卫", "李卫伍"], "李卫伍与李卫的焊工证")

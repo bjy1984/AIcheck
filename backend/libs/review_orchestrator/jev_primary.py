@@ -77,6 +77,22 @@ def _rule_owned_ids(records: list[dict[str, Any]]) -> set[str]:
     return owned
 
 
+def _appears_on_its_own(name: str, names: list[str], text: str) -> bool:
+    """「李卫」只出现在「李卫伍」里面时，不算李卫本人在原文中出现。"""
+    longer = [other for other in names if other != name and name in other]
+    covered = {start + offset for other in longer for start in _find_all(text, other)
+               for offset in range(other.index(name), other.index(name) + 1)}
+    return any(start not in covered for start in _find_all(text, name))
+
+
+def _find_all(text: str, needle: str) -> list[int]:
+    starts, start = [], text.find(needle)
+    while start != -1:
+        starts.append(start)
+        start = text.find(needle, start + 1)
+    return starts
+
+
 def _atomic_results(records: list[dict[str, Any]]) -> dict[str, str]:
     return {
         str(item.get("atomicCheckId")): str(item.get("result") or "")
@@ -137,7 +153,7 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
         certificates = person_facts.get("certificates") or []
         names = [str(item.get("welderName") or "").strip() for item in certificates
                  if isinstance(item, dict)]
-        if not names or any(not name or name not in ocr_text for name in names):
+        if not names or any(not name or not _appears_on_its_own(name, names, ocr_text) for name in names):
             return {"status": "multi_person_scope_unknown"}
         if len(names) != len(set(names)) or len(names) > 20:
             return {"status": "ambiguous_person_identity"}

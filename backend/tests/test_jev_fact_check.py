@@ -112,3 +112,16 @@ def test_graph_step_records_fact_check_and_output_shows_it_on_the_certificate_ch
     summary = jev_primary.jev_hint_summary(run["jevDecision"], run["jevFactCheck"])
     assert summary == {"jevHint": {"factCheckStatus": "completed",
                                    "factSuspects": ["安装（施工）单位许可证·有效期截止日=2024-09-07"]}}
+
+
+def test_look_alike_holders_in_one_document_are_named_with_their_certificate_number():
+    # 边界实测：同表「李卫／李卫伍」时 Jev 以 0.41 把李卫答错过。
+    certificates = [
+        {"certificateType": "welder_certificate", "holder": holder, "certificateNo": number,
+         "validUntil": until, "evidenceRefs": [{"documentVersionId": "V2"}]}
+        for holder, number, until in (("李卫", "110101199001010011", "2025-11-30"),
+                                      ("李卫伍", "110101199202020022", "2027-08-31"))]
+    questions = jev_fact_check.fact_questions({"certificateType": "welder_certificate", "certificates": certificates})
+    texts = [item["instructions"] for item in questions["V2"] if item["field"] == "validUntil"]
+    assert texts[0].startswith("只看李卫（证件编号110101199001010011）的焊工资格证")
+    assert texts[1].startswith("只看李卫伍的焊工资格证")

@@ -25,7 +25,7 @@ from libs.review_orchestrator.certificate_facts import CERTIFICATE_NODE_PROFILES
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_usage_policy import LOW_CONFIDENCE
 
-TEMPLATE_VERSION = "jev-certificate-fact-check-v1"
+TEMPLATE_VERSION = "jev-certificate-fact-check-v2"
 CHOICES = {
     "yes": "原文明确写明这张证书的该项内容就是题目给出的值",
     "no": "原文写明的该项内容与题目给出的值不同，或题目给出的其实是别的日期、别的编号或其他证书的内容",
@@ -52,10 +52,26 @@ def _render(key: str, value: str) -> str:
     return value
 
 
+def _look_alike_holders(certificates: list[Any]) -> set[str]:
+    """Holders whose name is part of another holder's name in the same document (李卫 / 李卫伍)."""
+    by_version: dict[str, set[str]] = {}
+    for cert in certificates:
+        if not isinstance(cert, dict) or not str(cert.get("holder") or "").strip():
+            continue
+        for ref in cert.get("evidenceRefs") or []:
+            if isinstance(ref, dict) and ref.get("documentVersionId"):
+                by_version.setdefault(str(ref["documentVersionId"]), set()).add(str(cert["holder"]).strip())
+    return {name for names in by_version.values() for name in names
+            if any(name != other and name in other for other in names)}
+
+
 def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
     """Fixed-template questions per source document version, from the rule's own certificate facts."""
     by_version: dict[str, list[dict[str, Any]]] = {}
-    for index, cert in enumerate((verification or {}).get("certificates") or []):
+    certificates = (verification or {}).get("certificates") or []
+    # Jev 在同表「李卫／李卫伍」上以 0.41 答错过；名字互为包含时连证号一起点名。
+    look_alike = _look_alike_holders(certificates)
+    for index, cert in enumerate(certificates):
         if not isinstance(cert, dict):
             continue
         versions = sorted({str(ref.get("documentVersionId")) for ref in cert.get("evidenceRefs") or []
@@ -70,7 +86,9 @@ def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[s
             if not value:
                 continue
             # 同一份资料里可能有几个人的证：除了问持证人本身，都点名是谁的证。
-            target = f"{holder}的{kind}" if holder and key != "holder" else f"这张{kind}"
+            number = str(cert.get("certificateNo") or "").strip()
+            who = f"{holder}（证件编号{number}）" if holder in look_alike and number and key != "certificateNo" else holder
+            target = f"{who}的{kind}" if holder and key != "holder" else f"这张{kind}"
             by_version.setdefault(versions[0], []).append({
                 "certificateIndex": index, "certificateLabel": kind, "field": key, "value": value,
                 "instructions": f"只看{target}：它的{name}是否为{_render(key, value)}？{guard}",
