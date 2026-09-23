@@ -18,7 +18,8 @@ REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
     {"key": "load_ocr_result", "label": "加载 OCR 证据", "taskQueue": "review.graph"},
     {"key": "run_rule_engine", "label": "执行确定性规则", "taskQueue": "review.validation"},
-    {"key": "qwen_compose_jev_questions", "label": "Qwen 根据节点模板和 OCR 生成题目与选项", "taskQueue": "review.llm"},
+    # 键名保留兼容部署报告；题目已改为按原子项指令的固定模板生成，不再调 Qwen。
+    {"key": "qwen_compose_jev_questions", "label": "按冻结模板准备 Jev 语义题", "taskQueue": "review.llm"},
     {"key": "jev_decision", "label": "Jev 节点判定（待人工确认）", "taskQueue": "review.llm"},
     {"key": "retrieve_knowledge", "label": "检索知识依据", "taskQueue": "review.retrieval"},
     {"key": "build_prompt", "label": "构造审查 Prompt", "taskQueue": "review.graph"},
