@@ -12,9 +12,8 @@ import json
 import logging
 from typing import Any
 
-from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
-from libs.review_orchestrator.jev_state import scoped_document_states
+from libs.review_orchestrator.jev_state import latest_selected_parses, scoped_document_states
 
 CONFIDENCE_FLOOR = 0.90
 _TABLE_TYPES = {
@@ -63,7 +62,7 @@ def classify_review_tables(state: dict[str, Any], review_run: dict[str, Any]) ->
     state_by_version = {row["documentVersionId"]: row["state"] for row in document_states if row["hasOcrText"]}
     output: dict[str, Any] = {"model": MODEL, "status": "completed", "tables": {},
                               "overlongDocumentVersionIds": overlong, "factConflicts": conflicts}
-    for parse in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    for parse in latest_selected_parses(state, review_run, set(state_by_version)).values():
         version_id = str(parse.get("documentVersionId") or "")
         full_text = state_by_version.get(version_id)
         if not full_text:

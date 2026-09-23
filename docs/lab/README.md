@@ -1615,3 +1615,7 @@ Ruff 基線現為 287 條且無新增告警。這是可繼續開發與測試的�
 一個工程的節點 1／3 原生產 OCR 已做只讀離線回放，修正 R01 設計文件級別
 漏傳，並確認錯誤單位名稱守衛；歷史結論未變、未部署。範圍與限制見
 `docs/lab/verification/2026-09-23-r01-r03-original-ocr-replay.md`。
+
+七項目 OCR 的 Jev 文件歸屬容量預檢已完成：178／194 份可發起，
+另有重複 OCR 讀取問題已修；這不是實際 Jev 準確率。見
+`docs/lab/verification/2026-09-23-jev-seven-project-preflight.md`。

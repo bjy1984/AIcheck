@@ -96,3 +96,40 @@ def test_same_project_id_from_other_tenant_is_not_jev_input():
            "inputDocumentVersionIds": ["V-A"]}
     with pytest.raises(ValueError, match="jev_document_outside_project"):
         scoped_document_states(state, run, [])
+
+
+def test_duplicate_ocr_attempts_use_only_latest_whole_document():
+    state = _state()
+    old = state["ocr_parse_results"][0]
+    old.update(id="OLD", createdAt="2026-08-01 10:00:00")
+    state["ocr_parse_results"].append({
+        "id": "NEW", "documentVersionId": "V-A", "status": "success",
+        "createdAt": "2026-08-02 10:00:00",
+        "fragments": [{"pageNo": 2, "text": "新版许可范围 GC2"}],
+    })
+    run = {"projectId": "P-A", "nodeId": 1, "inputDocumentVersionIds": ["V-A"]}
+
+    documents, _, _ = scoped_document_states(state, run, [])
+
+    assert len(documents) == 1
+    assert "新版许可范围 GC2" in documents[0]["state"]
+    assert "许可范围 GC1" not in documents[0]["state"]
+
+
+@pytest.mark.parametrize("latest_status", ["failed", "needs_human_review"])
+def test_latest_unusable_ocr_does_not_fall_back_to_stale_success(latest_status):
+    state = _state()
+    state["ocr_parse_results"][0].update(id="OLD", status="success", createdAt="2026-08-01 10:00:00")
+    state["ocr_parse_results"].append({
+        "id": "NEW", "documentVersionId": "V-A", "status": latest_status,
+        "createdAt": "2026-08-02 10:00:00",
+        "fragments": [{"pageNo": 2, "text": "尚未核实的新 OCR"}],
+    })
+    run = {"projectId": "P-A", "nodeId": 1, "inputDocumentVersionIds": ["V-A"]}
+
+    documents, _, _ = scoped_document_states(state, run, [])
+
+    assert documents[0]["hasOcrText"] is False
+    assert documents[0]["ocrNotReady"] is True
+    assert "许可范围 GC1" not in documents[0]["state"]
+    assert "尚未核实的新 OCR" not in documents[0]["state"]

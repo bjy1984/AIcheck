@@ -140,6 +140,8 @@ def classify_document_node_routing(
         return {**base, "status": "invalid_scope"}
     if overlong_versions:
         return {**base, "status": "overlong_document", "overlongDocumentVersionIds": overlong_versions}
+    if states and states[0]["ocrNotReady"]:
+        return {**base, "status": "ocr_not_ready"}
     if not states or not states[0]["hasOcrText"]:
         return {**base, "status": "no_ocr_text"}
     business_pack_id = str(project.get("businessPackId") or "engineering_inspection_v1")

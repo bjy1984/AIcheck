@@ -67,6 +67,31 @@ def test_disabled_classifier_does_not_call_network(monkeypatch):
     assert jev_tables.classify_review_tables(state, run)["status"] == "disabled"
 
 
+def test_classifier_ignores_stale_table_when_same_version_was_reparsed(monkeypatch):
+    state, run, old_table = _source()
+    state["ocr_parse_results"][0].update(id="OLD", status="success", createdAt="2026-08-01 10:00:00")
+    new_table = {"pageNo": 3, "normalizedRows": [{"工艺编号": "WPS-NEW", "电流": "90A"}]}
+    state["ocr_parse_results"].append({
+        "id": "NEW", "documentVersionId": "V", "status": "success",
+        "createdAt": "2026-08-02 10:00:00", "tables": [new_table],
+    })
+    seen = []
+
+    def fake_ask(full_state, questions):
+        seen.append((full_state, questions))
+        return {key: {"type": "choice", "choice": "wps_parameters" if key == "table_type" else "data",
+                      "confidence": 0.99} for key in questions}
+
+    monkeypatch.setattr(jev_tables, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(jev_tables, "ask_jev", fake_ask)
+    result = jev_tables.classify_review_tables(state, run)
+
+    assert len(seen) == 1
+    assert "WPS-NEW" in seen[0][0] and "LS-1" not in seen[0][0]
+    assert result["tables"]["V"][0]["tableHash"] == jev_tables.table_hash(new_table)
+    assert result["tables"]["V"][0]["tableHash"] != jev_tables.table_hash(old_table)
+
+
 def test_narrow_fallback_excludes_single_cell_section_and_empty_template():
     data = {"栏目": "正式记录", "电流": "90A", "电压": "20V"}
     parse = {"documentVersionId": "SYN-V1", "tables": [{"normalizedRows": [

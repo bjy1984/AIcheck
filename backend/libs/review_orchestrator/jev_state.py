@@ -91,6 +91,29 @@ def _document_text(parse: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def latest_selected_parses(
+    state: dict[str, Any], review_run: dict[str, Any], requested: set[str],
+) -> dict[str, dict[str, Any]]:
+    """Use one OCR attempt per frozen version, including a newer failed attempt."""
+    latest: dict[str, dict[str, Any]] = {}
+    for parse in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+        version_id = str(parse.get("documentVersionId") or "")
+        if version_id not in requested:
+            continue
+        previous = latest.get(version_id)
+        stamp = str(parse.get("finishedAt") or parse.get("updatedAt") or parse.get("createdAt") or "")
+        order = (stamp, str(parse.get("id") or parse.get("parseResultId") or ""))
+        if previous is None:
+            latest[version_id] = parse
+            continue
+        previous_stamp = str(previous.get("finishedAt") or previous.get("updatedAt")
+                             or previous.get("createdAt") or "")
+        previous_order = (previous_stamp, str(previous.get("id") or previous.get("parseResultId") or ""))
+        if order > previous_order:
+            latest[version_id] = parse
+    return latest
+
+
 def scoped_document_states(
     state: dict[str, Any], review_run: dict[str, Any], rule_results: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
@@ -113,17 +136,17 @@ def scoped_document_states(
         if version is None or str(version.get("documentId") or "") not in documents:
             raise ValueError("jev_document_outside_project")
     checks, conflicts = consistent_rule_checks(rule_results)
-    by_version: dict[str, list[str]] = defaultdict(list)
-    for parse in selected_parse_results(state, {}, context={"reviewRun": review_run}):
-        version_id = str(parse.get("documentVersionId") or "")
-        body = _document_text(parse)
-        if body:
-            by_version[version_id].append(body)
+    parses = latest_selected_parses(state, review_run, requested)
     result: list[dict[str, Any]] = []
     overlong: list[str] = []
     for version_id in sorted(requested):
         document = documents[str(versions[version_id]["documentId"])]
-        content = "\n".join(by_version.get(version_id) or [])
+        parse = parses.get(version_id) or {}
+        ocr_status = str(parse.get("status") or "").lower()
+        ocr_not_ready = bool(parse) and ocr_status not in {
+            "", "success", "succeeded", "completed", "已识别", "人工修正",
+        }
+        content = "" if ocr_not_ready else _document_text(parse)
         full_state = (f"工程：{project_id}；节点：{review_run.get('nodeId')}\n"
                       f"文件：{document.get('fileName') or document.get('name') or version_id}；版本：{version_id}\n"
                       f"{content or '（本文件没有可用 OCR 原文）'}\n"
@@ -132,5 +155,5 @@ def scoped_document_states(
             overlong.append(version_id)
             continue
         result.append({"documentVersionId": version_id, "state": full_state,
-                       "hasOcrText": bool(content)})
+                       "hasOcrText": bool(content), "ocrNotReady": ocr_not_ready})
     return result, conflicts, overlong

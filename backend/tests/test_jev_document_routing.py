@@ -169,6 +169,19 @@ def test_wrong_project_stale_version_and_missing_ocr_never_call_jev(monkeypatch)
     assert routing.classify_document_node_routing(repo, "P", "D", "V")["status"] == "no_ocr_text"
 
 
+def test_unready_latest_ocr_never_calls_jev_or_reuses_stale_text(monkeypatch):
+    repo = source()
+    repo.state["ocr_parse_results"][0].update(status="success", createdAt="2026-08-01 10:00:00")
+    repo.state["ocr_parse_results"].append({
+        "documentVersionId": "V", "status": "failed", "createdAt": "2026-08-02 10:00:00",
+        "fragments": [{"pageNo": 1, "text": "失败尝试残留内容"}],
+    })
+    monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(routing, "ask_jev", lambda *_: 1 / 0)
+
+    assert routing.classify_document_node_routing(repo, "P", "D", "V")["status"] == "ocr_not_ready"
+
+
 def test_oversized_document_is_explicitly_skipped(monkeypatch):
     repo = source()
     repo.state["ocr_parse_results"][0]["fragments"][0]["text"] = "长" * 40_000

@@ -54,6 +54,30 @@ def test_missing_ocr_text_does_not_ask_model(monkeypatch):
     assert result["atomic"] == []
 
 
+def test_second_opinion_offers_only_latest_ocr_pages(monkeypatch):
+    state, run, rule_results, pack = _case()
+    state["ocr_parse_results"][0].update(id="OLD", status="success", createdAt="2026-08-01 10:00:00")
+    state["ocr_parse_results"][0]["fragments"][0]["pageNo"] = 99
+    state["ocr_parse_results"].append({
+        "id": "NEW", "documentVersionId": "V", "status": "success",
+        "createdAt": "2026-08-02 10:00:00",
+        "fragments": [{"text": "新版许可范围 GC1", "pageNo": 2}],
+    })
+    monkeypatch.setattr(jev_opinion, "jev_stage_enabled", lambda _: True)
+
+    def fake_ask(full_state, questions):
+        assert "新版许可范围 GC1" in full_state
+        assert "V:p2" in questions["p0"]["criteria"]
+        assert "V:p99" not in questions["p0"]["criteria"]
+        return {"q0": {"type": "choice", "choice": "passed", "confidence": 0.9},
+                "p0": {"type": "choice", "choice": "V:p2", "confidence": 0.9}}
+
+    monkeypatch.setattr(jev_opinion, "ask_jev", fake_ask)
+    result = jev_opinion.second_opinions(state, run, rule_results, pack)
+
+    assert result["atomic"][0]["suggestedSupportPage"] == "V:p2"
+
+
 def test_multiple_whole_files_with_conflicting_answers_are_human_only(monkeypatch):
     state, run, rule_results, pack = _case()
     state["documents"].append({"id": "D2", "projectId": "P", "fileName": "图纸.pdf"})
