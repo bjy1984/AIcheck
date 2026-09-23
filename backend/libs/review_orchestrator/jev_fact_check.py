@@ -1,4 +1,4 @@
-"""Jev confirms whether the certificate facts a rule used match the document.
+"""Jev confirms whether the facts a rule used match the source documents.
 
 This is the role Jev measured best at (docs/lab/verification/2026-09-23-jev-boundary-suite.md):
 "is this value what the text states for this certificate" was right 32/32, and it
@@ -25,7 +25,7 @@ from libs.review_orchestrator.certificate_facts import CERTIFICATE_NODE_PROFILES
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_usage_policy import LOW_CONFIDENCE
 
-TEMPLATE_VERSION = "jev-certificate-fact-check-v2"
+TEMPLATE_VERSION = "jev-fact-check-v3"
 CHOICES = {
     "yes": "原文明确写明这张证书的该项内容就是题目给出的值",
     "no": "原文写明的该项内容与题目给出的值不同，或题目给出的其实是别的日期、别的编号或其他证书的内容",
@@ -65,9 +65,24 @@ def _look_alike_holders(certificates: list[Any]) -> set[str]:
             if any(name != other and name in other for other in names)}
 
 
-def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
-    """Fixed-template questions per source document version, from the rule's own certificate facts."""
-    by_version: dict[str, list[dict[str, Any]]] = {}
+# 设计说明里的耐压／泄漏试验要求（design_facts.design_special_requirements）。
+# 只核对原文写明的内容；倍数是否达标等计算仍由确定性判据做。
+DESIGN_FACT_FIELDS: tuple[tuple[str, str, str, str], ...] = (
+    ("pressureTest", "method", "耐压试验", "试验方式"),
+    ("pressureTest", "testPressure", "耐压试验", "试验压力"),
+    ("pressureTest", "gaugeAccuracyClass", "耐压试验", "压力表精度等级"),
+    ("pressureTest", "gaugeCount", "耐压试验", "压力表数量"),
+    ("pressureTest", "acceptanceCriteria", "耐压试验", "合格标准"),
+    ("leakTest", "method", "泄漏试验", "试验方式"),
+    ("leakTest", "testPressure", "泄漏试验", "试验压力"),
+    ("leakTest", "acceptanceCriteria", "泄漏试验", "合格标准"),
+)
+_DESIGN_TOOL = "evaluate_design_special_requirements"
+
+
+def certificate_fact_items(verification: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """One item per certificate fact the rule used, with a fixed-template question."""
+    items: list[dict[str, Any]] = []
     certificates = (verification or {}).get("certificates") or []
     # Jev 在同表「李卫／李卫伍」上以 0.41 答错过；名字互为包含时连证号一起点名。
     look_alike = _look_alike_holders(certificates)
@@ -89,16 +104,63 @@ def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[s
             number = str(cert.get("certificateNo") or "").strip()
             who = f"{holder}（证件编号{number}）" if holder in look_alike and number and key != "certificateNo" else holder
             target = f"{who}的{kind}" if holder and key != "holder" else f"这张{kind}"
-            by_version.setdefault(versions[0], []).append({
+            items.append({
+                "atomicCheckId": (verification or {}).get("atomicCheckId"), "documentVersionIds": versions,
                 "certificateIndex": index, "certificateLabel": kind, "field": key, "value": value,
+                "suspectLabel": f"{kind}·{_FIELD_LABELS[key]}={value}",
                 "instructions": f"只看{target}：它的{name}是否为{_render(key, value)}？{guard}",
             })
-    return by_version
+    return items
+
+
+def design_fact_items(business_facts: dict[str, Any] | None,
+                      rule_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pressure and leak test requirements the design rule read from the design specification."""
+    domains = (((business_facts or {}).get("designSpecialRequirements") or {}).get("domains") or {})
+    atomic_id = next((str(item.get("atomicCheckId")) for record in rule_results
+                      for item in record.get("atomicCheckResults") or []
+                      if any(isinstance(tool, dict) and tool.get("toolName") == _DESIGN_TOOL
+                             for tool in item.get("toolResults") or [])), None)
+    items: list[dict[str, Any]] = []
+    for domain_key, field, test_name, field_name in DESIGN_FACT_FIELDS:
+        domain = domains.get(domain_key) or {}
+        versions = sorted({str(item) for item in (domain.get("source") or {}).get("documentVersionIds") or [] if item})
+        value = (domain.get("requirements") or {}).get(field)
+        # 多条陈述归属不清时判据会留空，这里同样不问；来源不明的也不问。
+        if not atomic_id or not versions or value in (None, "") or isinstance(value, (dict, list, bool)):
+            continue
+        value_text = str(int(value)) if isinstance(value, float) and value.is_integer() and field == "gaugeCount" \
+            else str(value)
+        items.append({
+            "atomicCheckId": atomic_id, "documentVersionIds": versions, "certificateLabel": "设计说明",
+            "field": f"{domain_key}.{field}", "value": value_text,
+            "suspectLabel": f"设计说明·{test_name}{field_name}={value_text}",
+            "instructions": (f"只看设计文件中关于{test_name}的要求：{field_name}是否写为{value_text}？"
+                             "只核对原文写明的内容，不做换算或推算；其他试验的要求不算。"),
+        })
+    return items
+
+
+def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
+    """Certificate questions grouped by source document (kept for callers of the first version)."""
+    return _group(certificate_fact_items(verification))
+
+
+def _group(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        grouped.setdefault("|".join(item["documentVersionIds"]), []).append(item)
+    return grouped
 
 
 def check_certificate_facts(state: dict[str, Any], review_run: dict[str, Any],
                             verification: dict[str, Any] | None) -> dict[str, Any]:
     """Ask Jev about each extracted certificate fact; return per-fact answers and suspects."""
+    return check_facts(state, review_run, certificate_fact_items(verification))
+
+
+def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Ask Jev whether each fact is what the source documents state; mark confident "no" as suspect."""
     base: dict[str, Any] = {"model": MODEL, "templateVersion": TEMPLATE_VERSION, "facts": []}
     if not jev_stage_enabled("FACT_CHECK"):
         return {**base, "status": "disabled"}
@@ -108,21 +170,22 @@ def check_certificate_facts(state: dict[str, Any], review_run: dict[str, Any],
                if item.strip()}
     if str(review_run.get("projectId") or "") not in allowed:
         return {**base, "status": "project_not_approved_for_jev"}
-    by_version = fact_questions(verification)
-    if not by_version:
+    grouped = _group(items)
+    if not grouped:
         return {**base, "status": "no_certificate_facts"}
     facts: list[dict[str, Any]] = []
     statuses: set[str] = set()
-    for version_id, items in sorted(by_version.items()):
-        status, text = approved_ocr_text(state, {**review_run, "inputDocumentVersionIds": [version_id]})
-        rows = [{key: item[key] for key in ("certificateIndex", "certificateLabel", "field", "value")}
-                | {"documentVersionId": version_id} for item in items]
+    for group_key, group in sorted(grouped.items()):
+        versions = group[0]["documentVersionIds"]
+        status, text = approved_ocr_text(state, {**review_run, "inputDocumentVersionIds": versions})
+        rows = [{key: item[key] for key in ("atomicCheckId", "certificateLabel", "field", "value", "suspectLabel")
+                 if key in item} | {"documentVersionId": group_key} for item in group]
         if status != "ready":
             statuses.add(status)
             facts.extend({**row, "status": status} for row in rows)
             continue
         questions = {f"f{index}": {"type": "choice", "instructions": item["instructions"], "criteria": CHOICES}
-                     for index, item in enumerate(items)}
+                     for index, item in enumerate(group)}
         try:
             answers = ask_jev(text, questions)
         except (OSError, RuntimeError, ValueError) as exc:
@@ -138,11 +201,11 @@ def check_certificate_facts(state: dict[str, Any], review_run: dict[str, Any],
                           "suspect": choice == "no" and confidence >= LOW_CONFIDENCE,
                           "lowConfidence": confidence < LOW_CONFIDENCE})
     questions_hash = hashlib.sha256(json.dumps(
-        {version: [item["instructions"] for item in items] for version, items in sorted(by_version.items())},
+        {key: [item["instructions"] for item in group] for key, group in sorted(grouped.items())},
         ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    atomic_ids = sorted({str(item["atomicCheckId"]) for item in items if item.get("atomicCheckId")})
     return {**base, "status": "completed" if statuses == {"completed"} else
             "partial" if "completed" in statuses else min(statuses),
-            "questionHash": questions_hash, "facts": facts,
-            "atomicCheckId": (verification or {}).get("atomicCheckId"),
-            "suspects": [f"{row['certificateLabel']}·{_FIELD_LABELS[row['field']]}={row['value']}"
-                         for row in facts if row.get("suspect")]}
+            "questionHash": questions_hash, "facts": facts, "atomicCheckIds": atomic_ids,
+            "atomicCheckId": atomic_ids[0] if len(atomic_ids) == 1 else None,
+            "suspects": [row["suspectLabel"] for row in facts if row.get("suspect")]}

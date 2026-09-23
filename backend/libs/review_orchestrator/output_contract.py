@@ -304,11 +304,7 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
     names = _atomic_check_names(str(run.get("businessPackId") or ""))
     opinions = _visible_jev_opinions(run)
     fact_check = run.get("jevFactCheck") if isinstance(run.get("jevFactCheck"), dict) else {}
-    fact_check_view = ({"status": fact_check["status"], "suspects": list(fact_check.get("suspects") or []),
-                        "facts": [{key: row.get(key) for key in ("certificateLabel", "field", "value", "choice",
-                                                                 "confidence", "suspect", "status")}
-                                  for row in fact_check.get("facts") or []]}
-                       if fact_check.get("status") in {"completed", "partial"} else None)
+    fact_rows = (fact_check.get("facts") or []) if fact_check.get("status") in {"completed", "partial"} else []
     seen: set[str] = set()
     outcomes: list[dict[str, Any]] = []
     for record in records:
@@ -330,8 +326,8 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     "decisionSource": "rule_engine",
                     # Jev 只给选项和把握值、不给理由：分歧只用来排人工核对的先后。
                     **({"jevHint": hint} if hint else {}),
-                    **({"jevFactCheck": fact_check_view}
-                       if fact_check_view and check_id == fact_check.get("atomicCheckId") else {}),
+                    **({"jevFactCheck": _fact_check_view(fact_check["status"], fact_rows, check_id)}
+                       if any(row.get("atomicCheckId") == check_id for row in fact_rows) else {}),
                     "ruleCode": str(record.get("ruleCode") or ""),
                     # 「需人工判断」的原因常是引擎没给分：把没分的事实列出来，
                     # 界面才有东西让人核，核完落成 fact_corrections 下次就有分。
@@ -347,6 +343,14 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                 }
             )
     return outcomes
+
+
+def _fact_check_view(status: str, rows: list[dict[str, Any]], check_id: str) -> dict[str, Any]:
+    """Jev 对这一原子项所用事实的原文核对：可疑项与逐条结果，不含原文。"""
+    own = [row for row in rows if row.get("atomicCheckId") == check_id]
+    return {"status": status, "suspects": [row["suspectLabel"] for row in own if row.get("suspect")],
+            "facts": [{key: row.get(key) for key in ("certificateLabel", "field", "value", "choice",
+                                                     "confidence", "suspect", "status")} for row in own]}
 
 
 def _visible_jev_opinions(run: dict[str, Any]) -> dict[str, dict[str, Any]]:

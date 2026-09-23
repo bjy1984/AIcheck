@@ -81,7 +81,11 @@ from libs.review_orchestrator.failure_policy import (
     review_failure_retryable,
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
-from libs.review_orchestrator.jev_fact_check import check_certificate_facts
+from libs.review_orchestrator.jev_fact_check import (
+    certificate_fact_items,
+    check_facts,
+    design_fact_items,
+)
 from libs.review_orchestrator.jev_primary import (
     attach_hints,
     author_node_questions,
@@ -1854,8 +1858,10 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         review_run["jevDecision"] = decision
         # Jev 只加提示、不改结论：规则、平台核验和计算结果照旧往下走。
         context["ruleResults"] = attach_hints(original, decision)
-        # 规则用到的证书事实请 Jev 对原文核一遍：答「否」只标记抽取可疑（R02-02 那一类）。
-        fact_check = check_certificate_facts(repo.state, review_run, context.get("certificateVerification"))
+        # 规则用到的证书、设计试验要求等事实请 Jev 对原文核一遍：答「否」只标记抽取可疑（R02-02 那一类）。
+        fact_check = check_facts(repo.state, review_run,
+                                 certificate_fact_items(context.get("certificateVerification"))
+                                 + design_fact_items(context.get("businessFacts"), original))
         review_run["jevFactCheck"] = fact_check
         return {"status": decision["status"], "decisionCount": len(decision["atomic"]),
                 "disagreementCount": len(decision.get("disagreementAtomicCheckIds") or []),
