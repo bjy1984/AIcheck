@@ -10,11 +10,17 @@ import logging
 from typing import Any
 
 from libs.review_input_data import current_selected_parse_results
-from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
+from libs.review_orchestrator.jev_client import (
+    MODEL,
+    ask_jev,
+    batch_jev_questions,
+    jev_stage_enabled,
+)
 from libs.review_orchestrator.jev_state import (
     MAX_STATE_CHARS,
     scoped_document_states,
 )
+from libs.review_orchestrator.r19_agent import r19_semantic_questions
 
 CHOICES = {
     "passed": "资料充分且该原子项满足要求",
@@ -22,6 +28,17 @@ CHOICES = {
     "evidence_insufficient": "资料不足，不能据此作出符合或不符合判断",
     "human_review_required": "现有资料需要监检人员专业判断或外部核验",
     "not_applicable": "有充分依据表明该原子项不适用于此对象",
+}
+
+R19_APPLICABILITY = {
+    "applicable": "有原文依据表明本题适用于当前材料或对象",
+    "not_applicable": "有原文依据表明本题不适用；不能仅凭未找到资料选此项",
+    "unknown": "现有原文不足以确定是否适用",
+}
+R19_JUDGMENT = {
+    "passed": "原文足以证明本题要求已满足",
+    "failed": "原文足以证明本题要求未满足",
+    "evidence_insufficient": "原文不足、相互矛盾或仍需外部或人工核验",
 }
 
 
@@ -78,11 +95,89 @@ def _source_rule_checks(pack: dict[str, Any], review_run: dict[str, Any],
             and str(row.get("id")) in actual_ids and str(row.get("instruction") or "").strip()]
 
 
+def _r19_shadow_questions(catalog: list[dict[str, Any]], pages: dict[str, str]) -> dict[str, dict[str, Any]]:
+    questions: dict[str, dict[str, Any]] = {}
+    for index, item in enumerate(catalog):
+        scope = f"{item['questionId']} {item['title']}：{item['instruction']}"
+        questions[f"a{index}"] = {"type": "choice", "instructions":
+            f"只根据本次完整 OCR 原文判断适用性。{scope}。缺资料不能当成不适用。",
+            "criteria": R19_APPLICABILITY}
+        questions[f"j{index}"] = {"type": "choice", "instructions":
+            f"只根据本次完整 OCR 原文判断要求是否满足。{scope}。不确定时选证据不足；此为影子意见，不代替监检裁决。",
+            "criteria": R19_JUDGMENT}
+        if pages:
+            questions[f"p{index}"] = {"type": "choice", "instructions":
+                f"哪一页最直接支持 {item['questionId']} 的判断？无支持页选 none；页码只是定位建议，不是正式证据引用。",
+                "criteria": {"none": "没有可确认的支持页", **pages}}
+    return questions
+
+
+def _r19_second_opinions(state: dict[str, Any], review_run: dict[str, Any],
+                         rule_results: list[dict[str, Any]]) -> dict[str, Any]:
+    # R19's primary judgment is Qwen semantic review. Do not inject it as a
+    # "verified rule check" into the independent Jev question state.
+    documents, conflicts, overlong = scoped_document_states(state, review_run, [])
+    base = {"model": MODEL, "atomic": [], "factConflicts": conflicts,
+            "overlongDocumentVersionIds": overlong, "comparisonSource": "r19_semantic_review"}
+    if overlong:
+        return {**base, "status": "overlong_documents"}
+    if any(row.get("ocrNotReady") for row in documents):
+        return {**base, "status": "ocr_not_ready"}
+    if not documents or any(not row["hasOcrText"] for row in documents):
+        return {**base, "status": "missing_document_text"}
+    full_state = "\n".join(row["state"] for row in documents)
+    if len(full_state) > MAX_STATE_CHARS:
+        return {**base, "status": "overlong_documents",
+                "overlongDocumentVersionIds": [row["documentVersionId"] for row in documents]}
+    catalog = r19_semantic_questions(review_run)
+    if not catalog:
+        return {**base, "status": "no_atomic_checks"}
+    pages = _page_options(state, review_run)
+    questions = _r19_shadow_questions(catalog, pages)
+    try:
+        batch_jev_questions(full_state, questions)
+    except ValueError:
+        return {**base, "status": "overlong_request"}
+    try:
+        answers = ask_jev(full_state, questions)
+    except (OSError, ValueError, RuntimeError) as exc:
+        logging.getLogger(__name__).warning("R19 Jev shadow unavailable: %s", type(exc).__name__)
+        return {**base, "status": "unavailable"}
+    current = {str(row.get("atomicCheckId")): str(row.get("result") or "")
+               for result in rule_results for row in result.get("atomicCheckResults") or []}
+    opinions = []
+    for index, item in enumerate(catalog):
+        applicability = answers[f"a{index}"]
+        judgment = answers[f"j{index}"]
+        applies = applicability["choice"]
+        if applies == "not_applicable":
+            choice, confidence = "not_applicable", float(applicability["confidence"])
+        elif applies == "unknown":
+            choice, confidence = "evidence_insufficient", float(applicability["confidence"])
+        else:
+            choice = str(judgment["choice"])
+            confidence = min(float(applicability["confidence"]), float(judgment["confidence"]))
+        suggested_page = answers.get(f"p{index}", {}).get("choice") if pages else None
+        atomic_id = str(item["questionId"])
+        opinions.append({"atomicCheckId": atomic_id, "choice": choice, "confidence": confidence,
+                         "model": MODEL, "applicability": applies,
+                         "suggestedSupportPage": suggested_page if suggested_page in pages else None,
+                         "sourceDocumentVersionIds": [row["documentVersionId"] for row in documents],
+                         "agreesWithRuleEngine": None,
+                         "agreesWithCurrentResult": choice == current[atomic_id] if atomic_id in current else None,
+                         "currentResult": current.get(atomic_id)})
+    return {**base, "status": "completed", "atomic": opinions}
+
+
 def second_opinions(state: dict[str, Any], review_run: dict[str, Any],
                     rule_results: list[dict[str, Any]], pack: dict[str, Any],
                     *, business_facts: dict[str, Any] | None = None) -> dict[str, Any]:
     if not jev_stage_enabled("SECOND_OPINION"):
         return {"status": "disabled", "model": MODEL, "atomic": [], "factConflicts": []}
+    if (int(review_run.get("nodeId") or 0) == 19
+            and str(review_run.get("reviewMode") or "formal") == "formal"
+            and not review_run.get("advisoryOnly")):
+        return _r19_second_opinions(state, review_run, rule_results)
     documents, conflicts, overlong = scoped_document_states(state, review_run, rule_results)
     checks = _source_rule_checks(pack, review_run, rule_results)
     if not checks:

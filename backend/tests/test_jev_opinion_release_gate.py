@@ -39,3 +39,12 @@ def test_invalid_threshold_pair_blocks_display(monkeypatch):
     _enable(monkeypatch)
     monkeypatch.setenv("AICHECK_JEV_QUEUE_ENTER_CONFIDENCE", "0.8")
     assert _visible_jev_opinions(_run()) == {}
+
+
+def test_r19_semantic_shadow_is_not_mislabeled_as_rule_engine_disagreement(monkeypatch):
+    _enable(monkeypatch)
+    run = _run()
+    run["jevSecondOpinions"]["comparisonSource"] = "r19_semantic_review"
+    run["jevSecondOpinions"]["atomic"][0]["agreesWithRuleEngine"] = None
+    run["jevSecondOpinions"]["atomic"][0]["agreesWithCurrentResult"] = False
+    assert _visible_jev_opinions(run) == {}

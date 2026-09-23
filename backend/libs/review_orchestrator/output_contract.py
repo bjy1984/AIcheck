@@ -352,6 +352,10 @@ def _visible_jev_opinions(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
     if not 0 < enter < exit_at <= 1:
         return {}
     snapshot = run.get("jevSecondOpinions") or {}
+    # R19 compares with Qwen's semantic judgment, not the deterministic rule engine.
+    # Keep it shadow-only until that comparison has its own calibrated UI contract.
+    if snapshot.get("comparisonSource") == "r19_semantic_review":
+        return {}
     if snapshot.get("status") != "completed" or snapshot.get("model") != "jev-1.13.0":
         return {}
     previous = run.get("jevQueuePrevious") or {}
