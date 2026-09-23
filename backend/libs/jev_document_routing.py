@@ -12,13 +12,17 @@ from collections import defaultdict
 from typing import Any
 
 from libs.material_targeting import MANUAL_REJECTED, review_points_for_project
-from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
+from libs.review_orchestrator.jev_client import (
+    MODEL,
+    ask_jev,
+    batch_jev_questions,
+    jev_stage_enabled,
+)
 from libs.review_orchestrator.jev_state import scoped_document_states
 
 CONFIDENCE_FLOOR = 0.90
 QUESTION_BATCH_SIZE = 30
 MAX_TEMPLATE_CHARS = 6_000
-MAX_REQUEST_CHARS = 40_000
 _CRITERIA = {
     "yes": "本文件的原文包含该节点至少一项审查所需的实质资料，不只是顺带提到名称。",
     "no": "本文件原文与该节点的审查资料无关，或只顺带提到该节点。",
@@ -58,28 +62,6 @@ def _node_questions(points: list[dict[str, Any]]) -> tuple[dict[str, dict[str, A
         }
         node_ids[key] = node_id
     return questions, node_ids, overlong
-
-
-def _question_batches(full_state: str, questions: dict[str, dict[str, Any]]) -> list[dict[str, dict[str, Any]]]:
-    """Limit the whole request envelope, not just its OCR state."""
-    batches: list[dict[str, dict[str, Any]]] = []
-    batch: dict[str, dict[str, Any]] = {}
-    for key, question in questions.items():
-        candidate = {**batch, key: question}
-        length = len(json.dumps({"state": full_state, "model": MODEL, "questions": candidate}, ensure_ascii=False))
-        if len(candidate) > QUESTION_BATCH_SIZE or length > MAX_REQUEST_CHARS:
-            if not batch:
-                return []
-            batches.append(batch)
-            batch = {key: question}
-            length = len(json.dumps({"state": full_state, "model": MODEL, "questions": batch}, ensure_ascii=False))
-            if length > MAX_REQUEST_CHARS:
-                return []
-        else:
-            batch = candidate
-    if batch:
-        batches.append(batch)
-    return batches
 
 
 def classify_document_node_routing(
@@ -136,8 +118,9 @@ def classify_document_node_routing(
             and previous.get("documentVersionId") == version_id
             and previous.get("inputHash") == input_hash):
         return {**previous, "reused": True}
-    batches = _question_batches(full_state, questions)
-    if not batches:
+    try:
+        batches = batch_jev_questions(full_state, questions, max_questions=QUESTION_BATCH_SIZE)
+    except ValueError:
         return {**base, "status": "request_overlong", "inputHash": input_hash,
                 "overlongNodeIds": overlong_templates}
     answers: dict[str, Any] = {}

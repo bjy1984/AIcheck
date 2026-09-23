@@ -60,3 +60,49 @@ def test_compatible_api_endpoint_can_switch_only_to_an_approved_host(monkeypatch
     monkeypatch.setenv("AICHECK_JEV_API_URL", "http://jev.example.test/v2/systemone")
     with pytest.raises(ValueError, match="jev_endpoint_not_approved"):
         jev_client.jev_endpoint()
+
+
+def test_gateway_splits_large_question_sets_and_combines_typed_answers(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_JEV_DATA_EGRESS_APPROVED", "true")
+    monkeypatch.setenv("AICHECK_JEV_API_KEY", "new-test-key")
+    requests = []
+
+    def fake_open(request, *, timeout):
+        payload = json.loads(request.data)
+        requests.append((payload, timeout))
+        answers = {key: {"type": "choice", "choice": "yes", "confidence": 0.9}
+                   for key in payload["questions"]}
+        return io.BytesIO(json.dumps({"model": jev_client.MODEL, "answers": answers}).encode())
+
+    monkeypatch.setattr(jev_client.urllib.request, "urlopen", fake_open)
+    questions = {f"q{index}": {"type": "choice", "instructions": "审查" * 100,
+                              "criteria": {"yes": "有", "no": "无"}} for index in range(60)}
+    answers = jev_client.ask_jev("完整原文" * 4_000, questions)
+
+    assert len(requests) > 1
+    assert set(answers) == set(questions)
+    assert all(len(json.dumps(payload, ensure_ascii=False)) <= jev_client.MAX_REQUEST_CHARS
+               for payload, _ in requests)
+
+
+def test_gateway_rejects_oversized_single_question_before_network(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_JEV_DATA_EGRESS_APPROVED", "true")
+    monkeypatch.setenv("AICHECK_JEV_API_KEY", "new-test-key")
+    monkeypatch.setattr(jev_client.urllib.request, "urlopen", lambda *_args, **_kwargs: 1 / 0)
+
+    with pytest.raises(ValueError, match="jev_request_overlong"):
+        jev_client.ask_jev("长" * 39_900, {"q": {"type": "choice", "instructions": "审查",
+                                              "criteria": {"yes": "有"}}})
+
+
+def test_gateway_rejects_boolean_confidence(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_JEV_DATA_EGRESS_APPROVED", "true")
+    monkeypatch.setenv("AICHECK_JEV_API_KEY", "new-test-key")
+    monkeypatch.setattr(jev_client.urllib.request, "urlopen", lambda *_args, **_kwargs: io.BytesIO(
+        b'{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"yes","confidence":true}}}'))
+
+    with pytest.raises(ValueError, match="jev_invalid_choice_answer"):
+        jev_client.ask_jev("state", {"q": {"type": "choice", "criteria": {"yes": "有"}}})
