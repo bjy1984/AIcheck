@@ -43,6 +43,9 @@ def decision_report(*, routing_run: dict[str, Any] | None = None,
                       "elapsedSeconds": (run or {}).get("elapsedSeconds"),
                       "providerReportedCostUSD": (run or {}).get("providerReportedCostUSD"),
                       "statusCounts": (run or {}).get("statusCounts") or {}}
+    if (routing_run and input_snapshot_sha256 and routing_run.get("inputSnapshotSha256")
+            and routing_run["inputSnapshotSha256"] != input_snapshot_sha256):
+        blockers.append("routing_snapshot_hash_mismatch")
     routing = None
     if routing_shadows is not None and routing_labels is not None:
         routing = evaluate_routing(routing_shadows, routing_labels)
@@ -93,6 +96,7 @@ def decision_report(*, routing_run: dict[str, Any] | None = None,
             "status": "ready_for_decision" if not blockers else "incomplete",
             "blockers": blockers, "model": "jev-1.13.0", "inputMode": "approved_ocr_only",
             "live": live, "routing": routing, "atomicRiskSample": atomic, "r19": r19,
+            "routingDescriptive": (routing_run or {}).get("descriptiveRouting"),
             "inputSnapshotSha256": input_snapshot_sha256,
             "routingInputCapacity": input_capacity,
             "atomicDiscoveryStatusCounts": (atomic_run or {}).get("discoveryStatusCounts") or {},

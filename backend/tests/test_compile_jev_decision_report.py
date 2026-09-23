@@ -37,6 +37,25 @@ def test_interim_report_carries_recomputable_input_capacity_without_document_ids
     assert "PRIVATE-A" not in str(report)
 
 
+def test_routing_run_from_a_different_snapshot_remains_blocked():
+    report = decision_report(
+        routing_run={"send": True, "attemptedRequestCount": 1,
+                     "inputSnapshotSha256": "old-snapshot"},
+        input_snapshot_sha256="current-snapshot",
+    )
+    assert "routing_snapshot_hash_mismatch" in report["blockers"]
+
+
+def test_live_routing_distribution_is_visible_without_claiming_accuracy():
+    report = decision_report(
+        routing_run={"send": True, "attemptedRequestCount": 8,
+                     "descriptiveRouting": {"choiceCounts": {"yes": 2, "no": 10}}},
+    )
+    assert report["routingDescriptive"] == {"choiceCounts": {"yes": 2, "no": 10}}
+    assert report["routing"] is None
+    assert report["status"] == "incomplete"
+
+
 def test_complete_recorded_artifacts_are_recomputable_but_do_not_approve_release():
     routing_shadows, routing_labels = [], []
     for index in range(28):

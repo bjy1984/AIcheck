@@ -288,3 +288,13 @@ AICHECK_JEV_QUEUE_EXIT_CONFIDENCE=<经标注确认且高于进入阈值的值>
   [`2026-09-23-jev-atomic-ocr-only-eval.md`](../verification/2026-09-23-jev-atomic-ocr-only-eval.md)。
 - 本批完整后端 **5,473 通过、81 跳过、0 失败**，Ruff **286／286**；
   实际调用 0 次、准确率未知。
+
+## 2026-09-23 真實外呼補充（以此為最新）
+
+使用者重新授權測試金鑰後，已完成兩份 `test2` 的 8／8 次，以及七項目的
+546／546 次實際 Jev 請求；七項目 178 份完整回覆、16 份按預檢跳過、
+0 不可達、0 重試。12,104 個節點配對的選擇和 28 份盲標樣本輸入哈希均已
+落盤並可重算。**監檢真值仍未到位，因此沒有精確率／召回率；供應商美元
+帳單亦未取得。**原子題和 R19 的合格實跑樣本仍為 0，決策報告維持
+`incomplete`。詳細數字與私有證據見
+[`2026-09-23-jev-live-routing-evaluation.md`](../verification/2026-09-23-jev-live-routing-evaluation.md)。
