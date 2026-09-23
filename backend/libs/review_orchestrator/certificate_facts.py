@@ -909,6 +909,26 @@ def merge_certificate_facts(
                 )
                 if evidence["evidenceRefId"] not in {r["evidenceRefId"] for r in judgment["evidenceRefs"]}:
                     judgment["evidenceRefs"].append(evidence)
+            for source in design_org["designDocument"].get("gradeSources") or []:
+                evidence = source["evidence"]
+                judgment["claimedFacts"].append({
+                    "factId": f"design-grade-{evidence['documentVersionId']}",
+                    "label": "设计文件管道级别", "value": source["value"],
+                    "documentVersionId": evidence["documentVersionId"],
+                    "factPath": "designDocument.pipelineGrades",
+                    "evidenceRefIds": [evidence["evidenceRefId"]],
+                    "confidence": evidence.get("confidence"),
+                    "confidenceUnavailable": bool(evidence.get("confidenceUnavailable")),
+                    "conflicted": False,
+                    "fields": [{"fieldName": evidence["fieldName"],
+                                "documentVersionId": evidence["documentVersionId"],
+                                "documentId": source["documentId"],
+                                "quotedText": evidence.get("quotedText"),
+                                "humanCorrected": bool(evidence.get("humanCorrected"))}]
+                    if evidence.get("fieldName") else [],
+                })
+                if evidence["evidenceRefId"] not in {r["evidenceRefId"] for r in judgment["evidenceRefs"]}:
+                    judgment["evidenceRefs"].append(evidence)
     for key, value in certificate_facts.items():
         if key == "judgment":
             # 节点 24 的焊工 builder 已经产 judgment；证书事实要并进去，不能互相覆盖。
