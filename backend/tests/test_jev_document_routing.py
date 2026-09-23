@@ -115,6 +115,17 @@ def test_oversized_document_is_explicitly_skipped(monkeypatch):
     assert result["overlongDocumentVersionIds"] == ["V"]
 
 
+def test_request_envelope_limit_includes_questions(monkeypatch):
+    repo = source()
+    repo.state["ocr_parse_results"][0]["fragments"][0]["text"] = "长" * 39_900
+    monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(routing, "ask_jev", lambda *_: 1 / 0)
+
+    result = routing.classify_document_node_routing(repo, "P", "D", "V")
+
+    assert result["status"] == "request_overlong"
+
+
 def test_network_error_does_not_create_an_apparent_suggestion(monkeypatch):
     monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: True)
     monkeypatch.setattr(routing, "ask_jev", lambda *_: (_ for _ in ()).throw(OSError("offline")))
