@@ -24,6 +24,9 @@ MAX_QUESTIONS_PER_REQUEST = 50
 # 2026-09-23 实测：429/529（system_overloaded）是瞬时的，退避后重试即可；
 # 400 max_tokens_exceeded 是输入超过约 32.8k token——密集中文约 3.3 万字就会撞上，
 # 字符上限挡不住，重试也没用，要单独归为「请求超长」。
+# 实测：密集中文 3.2 万字通过、3.5 万字被拒；真实资料混有数字和英文，约 0.63 token/字。
+# 按中文 1 token/字、其余 0.35 token/字保守估算，超过就在送出前拦下。
+MAX_ESTIMATED_INPUT_TOKENS = 32_000
 RETRY_STATUSES = frozenset({429, 529})
 RETRY_DELAYS_SECONDS = (2.0, 5.0)
 
@@ -56,6 +59,17 @@ def jev_stage_enabled(stage: str) -> bool:
     return jev_enabled() and os.getenv(f"AICHECK_JEV_{stage}_ENABLED", "").lower() in {"1", "true", "yes"}
 
 
+def estimated_input_tokens(text: str) -> int:
+    """Conservative token estimate for Jev's input limit (about 32.8k tokens)."""
+    cjk = sum(1 for char in text if "\u4e00" <= char <= "\u9fff" or "\u3400" <= char <= "\u4dbf")
+    return int(cjk + (len(text) - cjk) * 0.35) + 1
+
+
+def _over_limit(state: str, batch: dict[str, dict[str, Any]]) -> bool:
+    payload = json.dumps({"state": state, "model": MODEL, "questions": batch}, ensure_ascii=False)
+    return len(payload) > MAX_REQUEST_CHARS or estimated_input_tokens(payload) > MAX_ESTIMATED_INPUT_TOKENS
+
+
 def batch_jev_questions(
     state: str, questions: dict[str, dict[str, Any]],
     *, max_questions: int = MAX_QUESTIONS_PER_REQUEST,
@@ -68,15 +82,12 @@ def batch_jev_questions(
     batch: dict[str, dict[str, Any]] = {}
     for key, question in questions.items():
         candidate = {**batch, key: question}
-        payload = {"state": state, "model": MODEL, "questions": candidate}
-        size = len(json.dumps(payload, ensure_ascii=False))
-        if len(candidate) > max_questions or size > MAX_REQUEST_CHARS:
+        if len(candidate) > max_questions or _over_limit(state, candidate):
             if not batch:
                 raise ValueError("jev_request_overlong")
             batches.append(batch)
             batch = {key: question}
-            size = len(json.dumps({"state": state, "model": MODEL, "questions": batch}, ensure_ascii=False))
-            if size > MAX_REQUEST_CHARS:
+            if _over_limit(state, batch):
                 raise ValueError("jev_request_overlong")
         else:
             batch = candidate

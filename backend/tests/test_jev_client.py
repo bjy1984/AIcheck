@@ -208,3 +208,15 @@ def test_persistent_overload_and_other_errors_still_fail(monkeypatch):
                         lambda *_a, **_k: (_ for _ in ()).throw(_http_error(401, b"{}")))
     with pytest.raises(OSError):
         jev_client.ask_jev("state", {"q": {"type": "choice", "criteria": {"yes": "有"}}})
+
+
+def test_dense_chinese_over_the_token_limit_is_stopped_before_sending(monkeypatch):
+    # 2026-09-23 实测：密集中文 3.5 万字被 Jev 以 max_tokens_exceeded 拒绝，而 4 万字符上限放行了它。
+    _enabled(monkeypatch)
+    monkeypatch.setattr(jev_client.urllib.request, "urlopen", lambda *_a, **_k: 1 / 0)
+    question = {"q": {"type": "choice", "criteria": {"yes": "有"}}}
+    with pytest.raises(ValueError, match="jev_request_overlong"):
+        jev_client.batch_jev_questions("施工质量检查记录" * 4_400, question)
+    assert jev_client.batch_jev_questions("施工质量检查记录" * 3_700, question) == [question]
+    # 数字和英文占比高的资料按更低的比例估算，不因字符数被误拦。
+    assert jev_client.batch_jev_questions("GTAW-FeII-6G 2024.11.13 " * 1_500, question) == [question]
