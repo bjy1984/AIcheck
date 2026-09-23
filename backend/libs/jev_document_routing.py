@@ -1,13 +1,14 @@
-"""Whole-document, per-node Jev routing suggestions for uploaded project files.
+"""Whole-document, per-node Jev routing suggestions shown in the Lab picker.
 
-This is an asynchronous shadow signal. It never changes a material type, node
-binding, evidence link, or review result; those still require their own checks.
+The suggestion is version-bound and directly available to the person selecting
+materials. Accepting it uses the existing binding action and human confirmation.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import defaultdict
 from typing import Any
 
@@ -130,6 +131,10 @@ def classify_document_node_routing(
             or str(document.get("projectId") or "") != project_id
             or str(version.get("documentId") or "") != document_id):
         return {**base, "status": "invalid_scope"}
+    allowed_projects = {item.strip() for item in os.getenv("AICHECK_JEV_DOCUMENT_ROUTING_ALLOWED_PROJECTS", "").split(",")
+                        if item.strip()}
+    if project_id not in allowed_projects:
+        return {**base, "status": "project_not_approved_for_jev"}
     if str(document.get("currentVersionId") or "") != version_id:
         return {**base, "status": "stale_version"}
     run_scope = {"projectId": project_id, "tenantId": document.get("tenantId"),
@@ -173,7 +178,7 @@ def classify_document_node_routing(
         [full_state, questions, sorted(rejected_nodes), sorted(existing_nodes)],
         ensure_ascii=False, sort_keys=True,
     ).encode("utf-8")).hexdigest()
-    previous = document.get("jevRoutingShadow") or {}
+    previous = document.get("jevRoutingDecision") or {}
     if (previous.get("status") in {"completed", "partial"} and previous.get("model") == MODEL
             and previous.get("projectId") == project_id
             and previous.get("documentId") == document_id

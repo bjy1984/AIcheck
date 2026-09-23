@@ -521,14 +521,45 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
 // Jev 第二意見只影響人工優先級；原規則結果仍原樣保留。
 {
   const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
-  const [outcome] = workbenchCheckOutcomes({ atomicCheckOutcomes: [{
-    atomicCheckId: 'AC-R25-01', name: '工艺文件', result: 'passed',
-    secondOpinion: { choice: 'evidence_insufficient', confidence: 0.61,
-      model: 'jev-1.13.0', agreesWithRuleEngine: false,
-      needsHumanReview: true, priority: 'disagreement' }
-  }] })
+  const [outcome] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R25-01',
+        name: '工艺文件',
+        result: 'passed',
+        secondOpinion: {
+          choice: 'evidence_insufficient',
+          confidence: 0.61,
+          model: 'jev-1.13.0',
+          agreesWithRuleEngine: false,
+          needsHumanReview: true,
+          priority: 'disagreement'
+        }
+      }
+    ]
+  })
   assert.equal(outcome.secondOpinion?.priority, 'disagreement')
   assert.equal(outcome.result, 'passed', '第二意見不得改寫確定性判定')
+}
+
+// Lab 主判定直接顯示 Jev 選擇，同時保留原規則結果供監檢員核對。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [outcome] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R13-01',
+        result: 'evidence_insufficient',
+        decisionSource: 'jev',
+        deterministicResult: 'passed',
+        jevConfidence: 0.83
+      }
+    ]
+  })
+  assert.equal(outcome.result, 'evidence_insufficient')
+  assert.equal(outcome.decisionSource, 'jev')
+  assert.equal(outcome.deterministicResult, 'passed')
+  assert.equal(outcome.jevConfidence, 0.83)
 }
 
 // 逐项核查结果要带出来，通过项也要——只列问题时，「没报问题」和「压根没查」看起来一样。
@@ -579,9 +610,11 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
 
 // 两条取数路径都要带上：一键分析读 nodeReview，节点复核读 run 本身。
 {
-  const { buildWorkbenchAiPresentation, selectWorkbenchAiPresentation } = await import(
-    './workbenchReviewPresentation'
-  )
+  const {
+    buildWorkbenchAiConclusion,
+    buildWorkbenchAiPresentation,
+    selectWorkbenchAiPresentation
+  } = await import('./workbenchReviewPresentation')
   const fromProjectAnalysis = buildWorkbenchAiPresentation({
     run: { projectAnalysisRunId: 'PARUN-9', status: '已完成', finishedAt: '2026-09-11 10:00:00' },
     nodeReview: {
@@ -613,6 +646,65 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.deepEqual(
     fromNodeRun.checkOutcomes.map((item) => [item.atomicCheckId, item.result]),
     [['AC-R24-01', 'failed']]
+  )
+  const jevRun = selectWorkbenchAiPresentation({
+    projectAnalysis: buildWorkbenchAiPresentation(null),
+    nodeRun: {
+      id: 'AIRUN-JEV',
+      status: '完成',
+      finishedAt: '2026-09-23 12:00:00',
+      suggestion: {
+        result: '证据不足',
+        primaryResult: 'evidence_insufficient',
+        deterministicResult: 'passed',
+        decisionSource: 'jev'
+      },
+      atomicCheckOutcomes: [
+        {
+          atomicCheckId: 'AC-R13-01',
+          result: 'evidence_insufficient',
+          decisionSource: 'jev',
+          deterministicResult: 'passed'
+        }
+      ]
+    } as never,
+    nodeFindings: [],
+    nodeOutputText: ''
+  })
+  assert.equal(jevRun.sourceLabel, 'Jev 节点复核')
+  assert.equal(jevRun.primaryResult, 'evidence_insufficient')
+  assert.equal(jevRun.deterministicResult, 'passed')
+  assert.equal(
+    buildWorkbenchAiConclusion({
+      findings: [],
+      deterministicResult: jevRun.primaryResult,
+      decisionSource: jevRun.decisionSource
+    }).headline,
+    'Jev 认为证据不足，请核对原文后复核'
+  )
+  const unavailableRun = selectWorkbenchAiPresentation({
+    projectAnalysis: buildWorkbenchAiPresentation(null),
+    nodeRun: {
+      id: 'AIRUN-JEV-UNAVAILABLE',
+      status: '完成',
+      suggestion: {
+        result: '需人工确认',
+        primaryResult: 'human_review_required',
+        deterministicResult: 'passed',
+        decisionSource: 'jev_unavailable'
+      }
+    } as never,
+    nodeFindings: [],
+    nodeOutputText: ''
+  })
+  assert.equal(unavailableRun.sourceLabel, '节点判定未完成')
+  assert.equal(
+    buildWorkbenchAiConclusion({
+      findings: [],
+      deterministicResult: unavailableRun.primaryResult,
+      decisionSource: unavailableRun.decisionSource
+    }).headline,
+    '自动判定未完成，请人工核对原文后重试'
   )
 }
 

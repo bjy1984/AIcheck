@@ -81,9 +81,7 @@ from libs.review_orchestrator.failure_policy import (
     review_failure_retryable,
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
-from libs.review_orchestrator.jev_claims import verify_finding_claims
-from libs.review_orchestrator.jev_client import jev_stage_enabled
-from libs.review_orchestrator.jev_opinion import second_opinions
+from libs.review_orchestrator.jev_primary import apply_decision, author_node_questions, decide_node
 from libs.review_orchestrator.jev_tables import classify_review_tables
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.ndt_fact_builders import NDT_FACT_BUILDERS
@@ -1351,20 +1349,25 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["llmResultText"] = (ai_run.get("llmMetadata") or {}).get("resultText")
             ai_run["evidenceCoverage"] = repo.clone(review_run.get("evidenceCoverage") or ai_run.get("evidenceCoverage") or {})
             ai_run["failedEvidenceShardIds"] = list(review_run.get("failedEvidenceShardIds") or [])
-            deterministic_verdict = str(next(iter(context.get("ruleResults") or []), {}).get("result") or "")
+            deterministic_verdict = str(next(iter(context.get("deterministicRuleResults")
+                                                   or context.get("ruleResults") or []), {}).get("result") or "")
+            suggested_verdict = str(next(iter(context.get("ruleResults") or []), {}).get("result") or "")
             # 逐项核查结果（含通过项）也随运行一起带出去：界面只列问题时，
             # 「没报问题」和「压根没查」在人眼里是一样的。
             ai_run["atomicCheckOutcomes"] = repo.clone(output_contract.atomic_check_outcomes(context.get("ruleResults") or [], review_run))
-            review_run["jevQueueStatus"] = {
-                row["atomicCheckId"]: row["secondOpinion"]["needsHumanReview"]
-                for row in ai_run["atomicCheckOutcomes"] if row.get("secondOpinion")
-            }
-            opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=deterministic_verdict)
+            opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=suggested_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {
-                    # 建议结论携带确定性判定（最终仍由监检人员确认，任何结论不自动成立）。
-                    "result": SUGGESTION_RESULT_LABELS.get(deterministic_verdict, "需人工确认"),
+                    # Jev 分支由 Jev 产生建议；原规则结果保留供监检人员核对。
+                    "result": SUGGESTION_RESULT_LABELS.get(suggested_verdict, "需人工确认"),
+                    "primaryResult": suggested_verdict or None,
                     "deterministicResult": deterministic_verdict or None,
+                    "decisionSource": (
+                        "jev" if (review_run.get("jevDecision") or {}).get("status") == "completed"
+                        else "rule_engine" if (review_run.get("jevDecision") or {}).get("status") in {
+                            "disabled", "nonformal_run", "no_semantic_checks"
+                        } else "jev_unavailable"
+                    ),
                     "opinionDraft": opinion["text"],
                     "opinionSource": opinion["source"],
                     "confidence": opinion["confidence"],
@@ -1830,17 +1833,26 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "linkedClauseIds": linked_clause_ids,
             "certificateVerificationCount": verification_tool.get("verificationCount", 0),
         }
-    if node_key == "jev_second_opinion":
-        if review_run.get("workflowEngine") != "temporal":
-            return {"status": "skipped_inline"}
+    if node_key == "qwen_compose_jev_questions":
         project = context.get("project") or {}
         pack = project.get("businessPackSnapshot") or load_business_pack(
             str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
-        opinion = second_opinions(repo.state, review_run, context.get("ruleResults") or [], pack,
-                                  business_facts=context.get("businessFacts"))
-        review_run["jevSecondOpinions"] = opinion
-        return {"status": opinion["status"], "opinionCount": len(opinion["atomic"]),
-                "factConflictCount": len(opinion["factConflicts"])}
+        plan = author_node_questions(repo.state, review_run, context.get("ruleResults") or [], pack)
+        review_run["jevQuestionPlan"] = plan
+        return {"status": plan["status"], "questionCount": len(plan.get("questions") or []),
+                "model": plan.get("model")}
+    if node_key == "jev_decision":
+        project = context.get("project") or {}
+        pack = project.get("businessPackSnapshot") or load_business_pack(
+            str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
+        original = context.get("ruleResults") or []
+        decision = decide_node(repo.state, review_run, original, pack,
+                               review_run.get("jevQuestionPlan"))
+        review_run["jevDecision"] = decision
+        if decision["status"] not in {"disabled", "nonformal_run", "no_semantic_checks"}:
+            context["deterministicRuleResults"] = original
+            context["ruleResults"] = apply_decision(original, decision)
+        return {"status": decision["status"], "decisionCount": len(decision["atomic"])}
     if node_key == "retrieve_knowledge":
         retrieval = retrieve_knowledge_clauses(
             repo.state,
@@ -1897,21 +1909,6 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         for draft in drafts:
             append_tool_call(review_run, node_key, "create_review_finding_draft", {"findingDraftId": draft["id"]})
         return {"modelGateway": "qwen_runtime", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(drafts), **llm_details}
-    if node_key == "jev_check_claims":
-        if review_run.get("workflowEngine") != "temporal":
-            return {"status": "skipped_inline"}
-        if checklist_mode.checklist_enabled() and context.get("checklistItems"):
-            # Checklist notes do not carry the freeform finding's explicit claims.
-            # Rewriting a condition-backed checklist verdict here would violate its contract.
-            review_run["jevClaimChecks"] = {"status": "unsupported_checklist_mode", "model": "jev-1.13.0",
-                                            "findings": [], "factConflicts": []}
-            return {"status": "unsupported_checklist_mode"}
-        claim_checks = verify_finding_claims(repo.state, review_run, context.get("ruleResults") or [],
-                                             context.get("findingDrafts") or [],
-                                             business_facts=context.get("businessFacts"))
-        review_run["jevClaimChecks"] = claim_checks
-        return {"status": claim_checks["status"], "checkedFindings": len(claim_checks["findings"]),
-                "rejectionGateApplied": claim_checks.get("rejectionGateApplied", False)}
     if node_key == "schema_validation":
         result = validate_review_schema(context.get("findingDrafts") or [])
         context.setdefault("validationResults", {})[node_key] = result
@@ -2013,7 +2010,6 @@ def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
 def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
-    claim_prompt_enabled = jev_stage_enabled("CLAIM_SHADOW") and not checklist_mode.checklist_enabled()
     project = context.get("project") or repo.require_project(str(review_run.get("projectId") or "")) or {}
     pack = project.get("businessPackSnapshot") or load_business_pack(
         str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
@@ -2062,7 +2058,9 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
-            *(["For each finding, list every independently checkable factual sentence verbatim in claims; each claim must be an exact substring of title or description. Do not add claims absent from the finding."] if claim_prompt_enabled else []),
+            *([("本次节点建议由 Jev 按 Qwen 生成的题目和选项作出。只解释其选择并引用已有依据；"
+                "规则工具结果用于人工对照，若两者冲突要明确写出，不得改写 Jev 的选择。")]
+              if (review_run.get("jevDecision") or {}).get("status") == "completed" else []),
             *output_contract.prompt_format_requirements(complete=bool(workstation)),
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
@@ -2077,6 +2075,14 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
            if review_run.get("inputDocumentPageRanges") else {}),
         "groundingStatus": grounding_input.get("groundingStatus"),
         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
+        **({"jevDecision": {"model": "jev-1.13.0",
+                              "questionAuthorModel": (review_run.get("jevQuestionPlan") or {}).get("actualModel")
+                              or (review_run.get("jevQuestionPlan") or {}).get("model"),
+                              "questionPlanHash": (review_run.get("jevQuestionPlan") or {}).get("questionHash"),
+                              "atomic": [{"atomicCheckId": row.get("atomicCheckId"),
+                                          "choice": row.get("choice"), "confidence": row.get("confidence")}
+                                         for row in (review_run.get("jevDecision") or {}).get("atomic") or []]}}
+           if (review_run.get("jevDecision") or {}).get("status") == "completed" else {}),
         # 压掉嵌套工具输出里的证据引用列表再进提示词。原样给会让单个
         # locate_evidence_fragment 结果占掉 39% 预算（见 rule_result_digest）。
         "ruleResults": compact_rule_results(context.get("ruleResults") or []),
@@ -2110,7 +2116,6 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
                     "suggestedAction": "human_confirm|request_correction",
                     "groundingStatus": "grounded|insufficient_evidence",
                     "unsupportedClaims": [],
-                    **({"claims": ["verbatim factual sentence from title or description"]} if claim_prompt_enabled else {}),
                 }
             ]
         },

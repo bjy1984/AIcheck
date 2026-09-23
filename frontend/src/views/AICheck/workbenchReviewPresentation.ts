@@ -313,6 +313,10 @@ export type WorkbenchAiCheckOutcome = {
   /** passed / failed / evidence_insufficient / not_applicable / human_review_required / execution_error */
   result: string
   ruleCode?: string
+  /** Lab 主判定來源；原规则结论仍可逐项核对。 */
+  decisionSource?: 'jev' | 'jev_unavailable' | 'rule_engine'
+  deterministicResult?: string
+  jevConfidence?: number
   /** 引擎没给分、等人核的事实，及其引用的抽取字段；核完落成 fact_corrections 下次就有分。 */
   unscoredFacts: WorkbenchAiUnscoredFact[]
   /** 判定依据：业务工具的逐条检查（通过项也有）。 */
@@ -342,17 +346,30 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
       name: String(row.name || row.atomicCheckId || ''),
       result: String(row.result || ''),
       ruleCode: String(row.ruleCode || '') || undefined,
+      ...(['jev', 'jev_unavailable', 'rule_engine'].includes(String(row.decisionSource))
+        ? {
+            decisionSource: String(row.decisionSource) as WorkbenchAiCheckOutcome['decisionSource']
+          }
+        : {}),
+      ...(row.deterministicResult ? { deterministicResult: String(row.deterministicResult) } : {}),
+      ...(typeof row.jevConfidence === 'number' ? { jevConfidence: row.jevConfidence } : {}),
       ...(row.secondOpinion && typeof row.secondOpinion === 'object'
-        ? { secondOpinion: {
-            choice: String((row.secondOpinion as Record<string, unknown>).choice || ''),
-            confidence: Number((row.secondOpinion as Record<string, unknown>).confidence || 0),
-            model: String((row.secondOpinion as Record<string, unknown>).model || ''),
-            agreesWithRuleEngine: (row.secondOpinion as Record<string, unknown>).agreesWithRuleEngine === true,
-            needsHumanReview: (row.secondOpinion as Record<string, unknown>).needsHumanReview === true,
-            priority: (['disagreement', 'low_confidence', 'normal'].includes(String((row.secondOpinion as Record<string, unknown>).priority))
-              ? String((row.secondOpinion as Record<string, unknown>).priority)
-              : 'normal') as 'disagreement' | 'low_confidence' | 'normal'
-          } }
+        ? {
+            secondOpinion: {
+              choice: String((row.secondOpinion as Record<string, unknown>).choice || ''),
+              confidence: Number((row.secondOpinion as Record<string, unknown>).confidence || 0),
+              model: String((row.secondOpinion as Record<string, unknown>).model || ''),
+              agreesWithRuleEngine:
+                (row.secondOpinion as Record<string, unknown>).agreesWithRuleEngine === true,
+              needsHumanReview:
+                (row.secondOpinion as Record<string, unknown>).needsHumanReview === true,
+              priority: (['disagreement', 'low_confidence', 'normal'].includes(
+                String((row.secondOpinion as Record<string, unknown>).priority)
+              )
+                ? String((row.secondOpinion as Record<string, unknown>).priority)
+                : 'normal') as 'disagreement' | 'low_confidence' | 'normal'
+            }
+          }
         : {}),
       unscoredFacts: (Array.isArray(row.unscoredFacts) ? row.unscoredFacts : [])
         .map((fact) => (fact || {}) as Record<string, unknown>)
@@ -517,6 +534,8 @@ export type WorkbenchAiPresentation = {
   certificateVerification?: WorkbenchCertificateVerification
   /** 后端 suggestion.deterministicResult（passed/failed/evidence_insufficient/not_applicable）。 */
   deterministicResult?: string
+  primaryResult?: string
+  decisionSource?: 'jev' | 'jev_unavailable' | 'rule_engine'
   /** 本次执行逐项核查的结果，含通过项。只列问题时「没报问题」和「压根没查」看起来一样。 */
   checkOutcomes: WorkbenchAiCheckOutcome[]
   /** P8 H4：部分证据分片修复与升级后仍失败时的提示，例如"部分分片未完成 1/9"。 */
@@ -1026,12 +1045,16 @@ const recommendedAction = (
  */
 export const buildWorkbenchAiConclusion = ({
   findings,
-  deterministicResult
+  deterministicResult,
+  decisionSource
 }: {
   findings: WorkbenchAiFinding[]
   deterministicResult?: string | null
+  decisionSource?: 'jev' | 'jev_unavailable' | 'rule_engine'
 }): WorkbenchAiConclusion => {
   const deterministic = String(deterministicResult || '').toLowerCase()
+  const jev = decisionSource === 'jev'
+  const jevUnavailable = decisionSource === 'jev_unavailable'
   const groups: WorkbenchAiConclusion['groups'] = {
     needAction: [],
     confirm: [],
@@ -1061,7 +1084,7 @@ export const buildWorkbenchAiConclusion = ({
   }
   let verdict: WorkbenchAiVerdict
   if (deterministic === 'failed' || counts.needAction) verdict = '需处理'
-  else if (counts.confirm) verdict = '待确认'
+  else if (counts.confirm || jevUnavailable) verdict = '待确认'
   else if (counts.insufficient || deterministic === 'evidence_insufficient') verdict = '证据不足'
   else if (deterministic === 'passed' || deterministic === 'not_applicable') verdict = '未见问题'
   else if (counts.passed) verdict = '未见问题'
@@ -1072,20 +1095,28 @@ export const buildWorkbenchAiConclusion = ({
   if (verdict === '需处理') {
     headline = first
       ? compact(first.title)
-      : compact(`${DETERMINISTIC_LABELS.failed}，请按规则结果处理`)
+      : compact(`${jev ? 'Jev 建议不符合' : DETERMINISTIC_LABELS.failed}，请核对依据后处理`)
   } else if (verdict === '待确认') {
-    headline = compact(`${counts.confirm} 项待人工确认：${first?.title || ''}`)
+    headline = jevUnavailable
+      ? '自动判定未完成，请人工核对原文后重试'
+      : compact(`${counts.confirm} 项待人工确认：${first?.title || ''}`)
   } else if (verdict === '证据不足') {
     headline = counts.insufficient
       ? compact(`${counts.insufficient} 条发现证据不足，待核对 ${insufficientClaims.length} 项`)
       : deterministic === 'evidence_insufficient'
-        ? '确定性核验证据不足，请补充资料后复核'
+        ? jev
+          ? 'Jev 认为证据不足，请核对原文后复核'
+          : '确定性核验证据不足，请补充资料后复核'
         : 'AI 未形成任何发现，也无确定性核验结果'
   } else if (counts.passed && deterministic !== 'passed' && deterministic !== 'not_applicable') {
     headline = compact(`${counts.passed} 项核查通过：${groups.passed[0]?.title || ''}`)
   } else {
     headline =
-      deterministic === 'not_applicable' ? '规则不适用，AI 未见问题' : '确定性核验通过，AI 未见问题'
+      deterministic === 'not_applicable'
+        ? '规则不适用，AI 未见问题'
+        : jev
+          ? 'Jev 建议满足要求，待人工确认'
+          : '确定性核验通过，AI 未见问题'
   }
   // 关键事实：问题优先；只有通过项时列通过项，卡片才不至于一片空白。
   const keySource =
@@ -1161,7 +1192,12 @@ export const selectWorkbenchAiPresentation = ({
   return {
     runId: String(nodeRun.id || ''),
     activityAt: nodeActivityAt,
-    sourceLabel: '节点 AI 复核',
+    sourceLabel:
+      nodeRun.suggestion?.decisionSource === 'jev'
+        ? 'Jev 节点复核'
+        : nodeRun.suggestion?.decisionSource === 'jev_unavailable'
+          ? '节点判定未完成'
+          : '节点 AI 复核',
     statusLabel: failed ? 'AI 结果生成失败' : running ? 'AI 正在分析' : 'AI 已完成，等待人工确认',
     statusTone: failed ? 'red' : running ? 'blue' : 'green',
     resultLabel: failed ? '未产出结论' : String(nodeRun.suggestion?.result || '等待结果'),
@@ -1173,7 +1209,14 @@ export const selectWorkbenchAiPresentation = ({
             String(nodeRun.suggestion?.opinionDraft || '') ||
             '当前节点暂无结果说明。'
     ),
-    meta: [friendlyModelAlias(nodeRun.model), nodeRun.finishedAt || nodeRun.id]
+    meta: [
+      nodeRun.suggestion?.decisionSource === 'jev'
+        ? 'Qwen 出题 · Jev 选择 · Qwen 说明'
+        : nodeRun.suggestion?.decisionSource === 'jev_unavailable'
+          ? 'Qwen/Jev 流程未完成 · 待人工确认'
+          : friendlyModelAlias(nodeRun.model),
+      nodeRun.finishedAt || nodeRun.id
+    ]
       .filter(Boolean)
       .join(' · '),
     findings: nodeFindings,
@@ -1181,6 +1224,8 @@ export const selectWorkbenchAiPresentation = ({
       (nodeRun as unknown as Record<string, unknown>).certificateVerification
     ),
     deterministicResult: String(nodeRun.suggestion?.deterministicResult || '') || undefined,
+    primaryResult: String(nodeRun.suggestion?.primaryResult || '') || undefined,
+    decisionSource: nodeRun.suggestion?.decisionSource,
     checkOutcomes: workbenchCheckOutcomes(nodeRun),
     partialCoverageLabel: partialCoverageLabel(nodeRun),
     errorMessage: failed ? failureText : '',

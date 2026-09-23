@@ -3,11 +3,18 @@ from __future__ import annotations
 from copy import deepcopy
 from types import SimpleNamespace
 
+import pytest
+
 from apps.worker import tasks
 from libs import jev_document_routing as routing
 from libs.business_pack import build_project_requirements, build_project_tree
 from libs.db.seed import DEFAULT_BUSINESS_PACK, DEFAULT_MATERIAL_REVIEW_POINTS
 from libs.integrations import task_dispatcher
+
+
+@pytest.fixture(autouse=True)
+def approved_test_project(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_DOCUMENT_ROUTING_ALLOWED_PROJECTS", "P")
 
 
 class FakeRepo:
@@ -47,6 +54,13 @@ def test_routing_is_disabled_without_outbound_stage_gate(monkeypatch):
     monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: False)
     monkeypatch.setattr(routing, "ask_jev", lambda *_: 1 / 0)
     assert routing.classify_document_node_routing(source(), "P", "D", "V")["status"] == "disabled"
+
+
+def test_routing_refuses_unapproved_project(monkeypatch):
+    monkeypatch.delenv("AICHECK_JEV_DOCUMENT_ROUTING_ALLOWED_PROJECTS")
+    monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(routing, "ask_jev", lambda *_: 1 / 0)
+    assert routing.classify_document_node_routing(source(), "P", "D", "V")["status"] == "project_not_approved_for_jev"
 
 
 def test_whole_document_routing_records_shadow_disagreement_without_binding(monkeypatch):
@@ -257,7 +271,7 @@ def test_same_ocr_and_templates_reuse_recorded_result(monkeypatch):
 
     monkeypatch.setattr(routing, "ask_jev", fake_ask)
     first = routing.classify_document_node_routing(repo, "P", "D", "V")
-    repo.state["documents"][0]["jevRoutingShadow"] = first
+    repo.state["documents"][0]["jevRoutingDecision"] = first
     second = routing.classify_document_node_routing(repo, "P", "D", "V")
 
     assert len(calls) == 1
@@ -305,7 +319,7 @@ def test_worker_persists_only_current_version_shadow(monkeypatch):
     result = tasks.classify_document_node_jev_shadow.run("P", "D", "V")
 
     assert result["status"] == "completed"
-    assert saved[0]["documents"][0]["jevRoutingShadow"] == result
+    assert saved[0]["documents"][0]["jevRoutingDecision"] == result
 
 
 def test_worker_discards_late_shadow_after_new_upload(monkeypatch):
@@ -328,4 +342,4 @@ def test_worker_discards_late_shadow_after_new_upload(monkeypatch):
     result = tasks.classify_document_node_jev_shadow.run("P", "D", "V")
 
     assert result["status"] == "stale_version"
-    assert "jevRoutingShadow" not in repo.state["documents"][0]
+    assert "jevRoutingDecision" not in repo.state["documents"][0]

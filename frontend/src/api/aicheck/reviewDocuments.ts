@@ -3,7 +3,16 @@ import type { HandoffSelection } from './reviewHandoffs'
 import type { RuleObjectMappingRequest } from './projectRules'
 import type { DocumentAsset } from '@/types/aicheck'
 
-export type ReviewDocument = DocumentAsset & { bodyUploaded?: boolean }
+export type ReviewDocument = DocumentAsset & {
+  bodyUploaded?: boolean
+  jevRoutingDecision?: {
+    status: string
+    model: string
+    documentVersionId: string
+    nodeScores?: Array<{ nodeId: number; choice: 'yes' | 'no' | 'uncertain'; confidence: number }>
+  }
+}
+
 export type ReviewDocumentSelection = {
   versions: Array<{
     documentId: string

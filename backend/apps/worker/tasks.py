@@ -652,7 +652,9 @@ def classify_document_node_jev_shadow(
         if (not document or str(document.get("projectId") or "") != project_id
                 or str(document.get("currentVersionId") or "") != version_id):
             return {"status": "stale_version", "documentVersionId": version_id}
-        document["jevRoutingShadow"] = repo.clone(shadow)
+        # The Lab picker consumes this version-bound recommendation directly;
+        # accepting a node remains a human action through the existing binder.
+        document["jevRoutingDecision"] = repo.clone(shadow)
         try:
             flush_state_records({"documents": [document]})
         except Exception as exc:

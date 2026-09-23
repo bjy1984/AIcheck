@@ -73,7 +73,9 @@ const conclusion = computed(() =>
     ? undefined
     : buildWorkbenchAiConclusion({
         findings: props.presentation.findings,
-        deterministicResult: props.presentation.deterministicResult
+        deterministicResult:
+          props.presentation.primaryResult || props.presentation.deterministicResult,
+        decisionSource: props.presentation.decisionSource
       })
 )
 
@@ -185,6 +187,8 @@ const CHECK_OUTCOME_TONES: Record<string, 'red' | 'orange' | 'gray' | 'green' | 
 }
 
 const checkOutcomeRank = (outcome: WorkbenchAiCheckOutcome) => {
+  if (outcome.decisionSource === 'jev' && outcome.deterministicResult !== outcome.result) return -3
+  if (outcome.decisionSource === 'jev_unavailable') return -2
   if (outcome.secondOpinion?.priority === 'disagreement') return -2
   if (outcome.secondOpinion?.priority === 'low_confidence') return -1
   const index = CHECK_OUTCOME_ORDER.indexOf(outcome.result)
@@ -576,17 +580,37 @@ const ruleLabel = (rule: Record<string, unknown>) => {
               <AuditStatusTag :tone="checkOutcomeTone(outcome.result)" round>
                 {{ checkOutcomeLabel(outcome.result) }}
               </AuditStatusTag>
+              <AuditStatusTag v-if="outcome.decisionSource === 'jev'" tone="blue" round>
+                Jev 建议 · 待人工确认
+              </AuditStatusTag>
+              <AuditStatusTag
+                v-else-if="outcome.decisionSource === 'jev_unavailable'"
+                tone="orange"
+                round
+              >
+                Jev 未完成 · 待人工核查
+              </AuditStatusTag>
               <AuditStatusTag
                 v-if="outcome.secondOpinion"
                 :tone="outcome.secondOpinion.needsHumanReview ? 'orange' : 'green'"
                 round
               >
-                {{ outcome.secondOpinion.agreesWithRuleEngine
-                  ? outcome.secondOpinion.needsHumanReview ? '第二意見把握較低，建議人工' : '第二意見一致'
-                  : '第二意見分歧，建議人工' }}
+                {{
+                  outcome.secondOpinion.agreesWithRuleEngine
+                    ? outcome.secondOpinion.needsHumanReview
+                      ? '第二意見把握較低，建議人工'
+                      : '第二意見一致'
+                    : '第二意見分歧，建議人工'
+                }}
               </AuditStatusTag>
               <span>{{ outcome.name }}</span>
               <small>{{ outcome.atomicCheckId }}</small>
+              <small v-if="outcome.decisionSource === 'jev' && outcome.deterministicResult">
+                规则结果：{{ checkOutcomeLabel(outcome.deterministicResult) }}
+                <template v-if="outcome.jevConfidence !== undefined">
+                  · Jev 把握值 {{ Math.round(outcome.jevConfidence * 100) }}%</template
+                >
+              </small>
               <!-- 依据与证据：通过/不通过/需人工都列，监检才能核对而不是只看一个标签 -->
               <div
                 v-if="outcome.reason || outcome.checks.length || outcome.facts.length"

@@ -455,6 +455,8 @@ export type AiReviewRun = {
     /** P9 R2：opinionDraft 取自哪里（grounded_finding / deterministic_result / downgraded_summary / empty）。 */
     opinionSource?: string
     deterministicResult?: string | null
+    primaryResult?: string | null
+    decisionSource?: 'jev' | 'jev_unavailable' | 'rule_engine'
     confidence: number
     manualConfirmItems: string[]
   }

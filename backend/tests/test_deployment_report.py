@@ -247,8 +247,9 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert review_check["data"]["stepKeys"][:4] == [
         "classify_ocr_tables", "load_context", "load_ocr_result", "run_rule_engine",
     ]
-    assert "jev_second_opinion" in review_check["data"]["stepKeys"]
-    assert "jev_check_claims" in review_check["data"]["stepKeys"]
+    assert "qwen_compose_jev_questions" in review_check["data"]["stepKeys"]
+    assert "jev_decision" in review_check["data"]["stepKeys"]
+    assert "jev_check_claims" not in review_check["data"]["stepKeys"]
     assert "llm_generate_findings" in review_check["data"]["stepKeys"]
     assert "review.llm" in review_check["data"]["taskQueues"]
     fde_gate_check = next(

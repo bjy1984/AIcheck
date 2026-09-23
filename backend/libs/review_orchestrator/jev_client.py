@@ -44,7 +44,8 @@ def jev_enabled() -> bool:
 
 
 def jev_stage_enabled(stage: str) -> bool:
-    if stage not in {"TABLE_CLASSIFICATION", "SECOND_OPINION", "CLAIM_SHADOW", "DOCUMENT_ROUTING"}:
+    if stage not in {"TABLE_CLASSIFICATION", "SECOND_OPINION", "CLAIM_SHADOW", "DOCUMENT_ROUTING",
+                     "PRIMARY_DECISION"}:
         raise ValueError("unknown_jev_stage")
     return jev_enabled() and os.getenv(f"AICHECK_JEV_{stage}_ENABLED", "").lower() in {"1", "true", "yes"}
 

@@ -25,6 +25,7 @@ import {
   type ReviewDocument,
   type ReviewDocumentSelection
 } from '@/api/aicheck/reviewDocuments'
+import { jevRoutingForNode } from './jevRoutingPresentation'
 
 const PdfEvidencePage = defineAsyncComponent(
   () => import('@/views/AICheck/components/PdfEvidencePage.vue')
@@ -279,6 +280,9 @@ watch(visible, (value) => {
           >{{ item.currentOcrStatus || '待识别'
           }}{{ item.bodyUploaded === false ? ' · 文件未上传完整' : '' }}</span
         >
+        <ElTag v-if="jevRoutingForNode(item, nodeId)" :type="jevRoutingForNode(item, nodeId)?.tone">
+          {{ jevRoutingForNode(item, nodeId)?.label }} · 请核对原文
+        </ElTag>
         <ElButton
           link
           :disabled="saving"
