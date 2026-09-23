@@ -57,3 +57,10 @@ def test_ocr_over_limit_is_skipped_without_excerpt():
     state["ocr_parse_results"][-1]["fragments"] = [{"pageNo": 2, "text": "長" * 40_001}]
     scope["documentScopeSnapshot"] = freeze_document_scope(scope, state)
     assert approved_ocr_text(state, scope) == ("overlong_document", "")
+
+
+def test_tied_ocr_attempts_have_explicit_ambiguous_status():
+    state, scope = _case()
+    state["ocr_parse_results"][-1]["finishedAt"] = state["ocr_parse_results"][0]["finishedAt"]
+    scope["documentScopeSnapshot"] = freeze_document_scope(scope, state)
+    assert approved_ocr_text(state, scope) == ("ambiguous_ocr_attempt", "")

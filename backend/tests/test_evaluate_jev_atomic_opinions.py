@@ -2,7 +2,12 @@ from copy import deepcopy
 
 import pytest
 
-from scripts.evaluate_jev_atomic_opinions import candidates_from_state, evaluate_labels
+from scripts.evaluate_jev_atomic_opinions import (
+    candidates_from_state,
+    evaluate_labels,
+    r19_candidates_from_state,
+)
+from scripts.prepare_jev_atomic_labels import blind_packet
 
 
 def _state():
@@ -30,6 +35,35 @@ def test_new_33_case_pool_is_version_bound_and_never_claims_labels():
     assert len({row["caseId"] for row in prepared["candidates"]}) == 33
     assert all(row["inputHash"] and row["documentVersionIds"] for row in prepared["candidates"])
     assert all("inspectorChoice" not in row for row in prepared["candidates"])
+
+
+def test_blind_atomic_packet_hides_jev_and_rule_answers():
+    packet = blind_packet(_state())
+    assert packet["status"] == "ready_for_inspector"
+    assert len(packet["cases"]) == 33
+    assert all(row["choice"] is None for row in packet["cases"])
+    assert all("jevChoice" not in row and "currentResult" not in row
+               and "confidence" not in row for row in packet["cases"])
+
+
+def test_r19_eight_questions_are_separate_and_can_be_blind_labeled():
+    state = {"review_runs": [{"reviewRunId": "RR-R19", "projectId": "P", "nodeId": 19,
+                              "inputHash": "hash-r19", "jevSecondOpinions": {
+                                  "status": "completed", "model": "jev-1.13.0",
+                                  "comparisonSource": "r19_semantic_review", "atomic": [
+                                      {"atomicCheckId": f"AC-R19-{index:02d}", "choice": "passed",
+                                       "confidence": 0.8, "instruction": "固定语义题"}
+                                      for index in range(1, 9)]}}],
+             "rule_check_results": [{"reviewRunId": "RR-R19", "atomicCheckResults": [
+                 {"atomicCheckId": f"AC-R19-{index:02d}", "result": "evidence_insufficient"}
+                 for index in range(1, 9)]}]}
+    prepared = r19_candidates_from_state(state)
+    assert prepared["candidateCount"] == 8
+    assert candidates_from_state(state)["availableCount"] == 0
+    packet = blind_packet(state, comparison="r19")
+    assert packet["status"] == "ready_for_inspector"
+    assert len(packet["cases"]) == 8
+    assert all(row["choice"] is None and "jevChoice" not in row for row in packet["cases"])
 
 
 def test_insufficient_pool_is_reported_instead_of_fabricating_old_33_cases():

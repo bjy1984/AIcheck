@@ -98,6 +98,8 @@ def preflight_project_corpus(snapshot: dict[str, Any], *, expected_project_count
     parse_counts = Counter(str(row.get("documentVersionId")) for row in snapshot.get("ocr_parse_results") or []
                            if isinstance(row, dict))
     invalid_links = Counter()
+    routing_state = {key: snapshot.get(key) or []
+                     for key in ("documents", "versions", "ocr_parse_results")}
     for link in snapshot.get("node_evidence_links") or []:
         if not isinstance(link, dict):
             invalid_links["invalid_row"] += 1
@@ -135,7 +137,7 @@ def preflight_project_corpus(snapshot: dict[str, Any], *, expected_project_count
             else:
                 scope = {"projectId": project_id, "tenantId": document.get("tenantId"),
                          "nodeId": "待归属", "inputDocumentVersionIds": [version_id]}
-                status, full_state = approved_ocr_text(snapshot, scope)
+                status, full_state = approved_ocr_text(routing_state, scope)
                 if status != "ready":
                     row["status"] = status
                 else:

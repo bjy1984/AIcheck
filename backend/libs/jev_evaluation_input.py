@@ -18,23 +18,31 @@ from libs.review_orchestrator.jev_state import (
 
 def approved_ocr_text(state: dict[str, Any], scope: dict[str, Any]) -> tuple[str, str]:
     """Return (status, whole OCR); never return a partial document as ready."""
-    requested = {str(item) for item in scope.get("inputDocumentVersionIds") or [] if item}
-    if len(requested) != 1:
+    requested_order = [str(item) for item in scope.get("inputDocumentVersionIds") or [] if item]
+    requested = set(requested_order)
+    if not requested or len(requested) != len(requested_order):
         return "invalid_scope", ""
     try:
         # This validates that the requested version belongs to the project and
         # tenant before we inspect its OCR. Its formatted state is never sent.
         scoped_document_states(state, scope, [])
-        parse = latest_selected_parses(state, scope, requested).get(next(iter(requested)))
+        parses = latest_selected_parses(state, scope, requested)
     except ValueError:
         return "invalid_scope", ""
-    if not parse:
-        return "no_ocr_text", ""
-    if not ocr_parse_usable(parse):
-        return "ocr_not_ready", ""
-    text = _document_text(parse)
-    if not text:
-        return "no_ocr_text", ""
+    parts = []
+    for index, version_id in enumerate(requested_order, 1):
+        parse = parses.get(version_id)
+        if not parse:
+            attempts = sum(str(row.get("documentVersionId") or "") == version_id
+                           for row in state.get("ocr_parse_results") or [] if isinstance(row, dict))
+            return ("ambiguous_ocr_attempt" if attempts > 1 else "no_ocr_text"), ""
+        if not ocr_parse_usable(parse):
+            return "ocr_not_ready", ""
+        text = _document_text(parse)
+        if not text:
+            return "no_ocr_text", ""
+        parts.append(f"[资料 {index}]\n{text}" if len(requested_order) > 1 else text)
+    text = "\n".join(parts)
     if len(text) > MAX_STATE_CHARS:
         return "overlong_document", ""
     return "ready", text

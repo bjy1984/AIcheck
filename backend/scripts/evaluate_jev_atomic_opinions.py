@@ -62,6 +62,7 @@ def candidates_from_state(state: dict[str, Any]) -> dict[str, Any]:
                                "projectId": run.get("projectId"), "nodeId": run.get("nodeId"),
                                "atomicCheckId": atomic_id, "inputHash": input_hash,
                                "documentVersionIds": opinion.get("sourceDocumentVersionIds") or [],
+                               "instruction": str(opinion.get("instruction") or ""),
                                "currentResult": current, "jevChoice": choice,
                                "confidence": float(confidence),
                                "suggestedSupportPage": opinion.get("suggestedSupportPage"),
@@ -79,6 +80,51 @@ def candidates_from_state(state: dict[str, Any]) -> dict[str, Any]:
             else "insufficient_candidate_pool", "availableCount": len(candidates),
             "selectedDisagreementCount": len(disagreement), "selectedJevPassedCount": len(passed),
             "candidates": rows}
+
+
+def r19_candidates_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Keep eight-question Qwen semantic comparisons separate from rule-engine risk sampling."""
+    current_by_run: dict[str, dict[str, str]] = {}
+    for result in state.get("rule_check_results") or []:
+        run_id = str(result.get("reviewRunId") or "")
+        current_by_run.setdefault(run_id, {}).update({
+            str(row.get("atomicCheckId")): str(row.get("result"))
+            for row in result.get("atomicCheckResults") or []
+            if isinstance(row, dict) and row.get("atomicCheckId") and row.get("result") in CHOICES
+        })
+    rows = []
+    for run in state.get("review_runs") or []:
+        shadow = run.get("jevSecondOpinions") or {}
+        run_id = str(run.get("reviewRunId") or run.get("id") or "")
+        input_hash = str(run.get("inputHash") or "")
+        atomic = shadow.get("atomic") or []
+        if (shadow.get("status") != "completed" or shadow.get("model") != "jev-1.13.0"
+                or shadow.get("comparisonSource") != "r19_semantic_review"
+                or not run_id or not input_hash or len(atomic) != 8):
+            continue
+        prepared = []
+        for opinion in atomic:
+            atomic_id = str(opinion.get("atomicCheckId") or "")
+            confidence = opinion.get("confidence")
+            current = current_by_run.get(run_id, {}).get(atomic_id)
+            if (not atomic_id or opinion.get("choice") not in CHOICES or current not in CHOICES
+                    or type(confidence) not in {int, float} or not math.isfinite(confidence)
+                    or not 0 <= confidence <= 1):
+                prepared = []
+                break
+            prepared.append({"caseId": f"{run_id}/{atomic_id}", "reviewRunId": run_id,
+                             "projectId": run.get("projectId"), "nodeId": 19,
+                             "atomicCheckId": atomic_id, "inputHash": input_hash,
+                             "documentVersionIds": opinion.get("sourceDocumentVersionIds") or [],
+                             "instruction": str(opinion.get("instruction") or ""),
+                             "currentResult": current, "jevChoice": opinion["choice"],
+                             "confidence": float(confidence), "suggestedSupportPage": None,
+                             "comparisonSource": "r19_semantic_review"})
+        if len({row["atomicCheckId"] for row in prepared}) == 8:
+            rows.extend(prepared)
+    return {"schemaVersion": "jev-r19-inspector-candidates-v1",
+            "status": "ready_for_inspector" if rows else "no_completed_r19_shadow",
+            "candidateCount": len(rows), "candidates": rows}
 
 
 def evaluate_labels(candidates: list[dict[str, Any]], labels: list[dict[str, Any]]) -> dict[str, Any]:
@@ -155,13 +201,20 @@ def main() -> int:
     parser.add_argument("--snapshot", required=True, type=Path,
                         help="Private JSON with review_runs and rule_check_results; no OCR")
     parser.add_argument("--labels", type=Path, help="Private independent inspector labels JSON")
+    parser.add_argument("--comparison", choices=("rule_engine", "r19"), default="rule_engine")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     try:
         state = _private_json(args.snapshot)
-        prepared = candidates_from_state(state)
-        report = (evaluate_labels(prepared["candidates"], _private_json(args.labels))
-                  if args.labels else prepared)
+        prepared = (r19_candidates_from_state(state) if args.comparison == "r19"
+                    else candidates_from_state(state))
+        if args.labels:
+            labels = _private_json(args.labels)
+            if isinstance(labels, dict) and labels.get("schemaVersion") == "jev-atomic-blind-label-packet-v1":
+                labels = labels["cases"]
+            report = evaluate_labels(prepared["candidates"], labels)
+        else:
+            report = prepared
         _write_private(args.output, report)
     except (OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))

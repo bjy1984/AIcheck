@@ -44,6 +44,10 @@ def build_snapshot(state: dict[str, Any], project_ids: tuple[str, ...] = PROJECT
     links = [row for row in state.get("node_evidence_links") or []
              if row.get("projectId") in project_ids
              and str(row.get("documentVersionId") or "") in current_ids]
+    runs = [row for row in state.get("review_runs") or []
+            if row.get("projectId") in project_ids
+            and set(map(str, row.get("inputDocumentVersionIds") or [])) <= current_ids]
+    run_ids = {str(row.get("reviewRunId") or row.get("id") or "") for row in runs}
     configured = (state.get("admin_config") or {}).get("materialReviewPoints") or []
     routing = {
         str(project["id"]): [point for point in configured
@@ -57,6 +61,11 @@ def build_snapshot(state: dict[str, Any], project_ids: tuple[str, ...] = PROJECT
                 "projects": projects, "documents": documents, "versions": versions,
                 "ocr_parse_results": parses, "node_evidence_links": links,
                 "routingPointsByProject": routing,
+                "review_runs": runs,
+                "rule_check_results": [row for row in state.get("rule_check_results") or []
+                                       if str(row.get("reviewRunId") or "") in run_ids],
+                "fact_corrections": [row for row in state.get("fact_corrections") or []
+                                     if row.get("projectId") in project_ids],
                 "requirements": [row for row in state.get("requirements") or []
                                  if row.get("projectId") in project_ids],
                 "tree_nodes": [row for row in state.get("tree_nodes") or []
@@ -93,6 +102,8 @@ def _database_state(database_url: str) -> dict[str, Any]:
             projects = rows("projects", "AND object_id = ANY(%s)", project_ids)
             documents = rows("documents", "AND payload->>'projectId' = ANY(%s)", project_ids)
             current_ids = [str(item.get("currentVersionId") or "") for item in documents]
+            review_runs = rows("review_runs", "AND payload->>'projectId' = ANY(%s)", project_ids)
+            run_ids = [str(item.get("reviewRunId") or item.get("id") or "") for item in review_runs]
             return {"admin_config": row[0], "projects": projects, "documents": documents,
                     "versions": rows("versions", "AND object_id = ANY(%s)", current_ids),
                     "ocr_parse_results": rows("ocr_parse_results",
@@ -100,7 +111,12 @@ def _database_state(database_url: str) -> dict[str, Any]:
                     "node_evidence_links": rows("node_evidence_links",
                                                 "AND payload->>'documentVersionId' = ANY(%s)", current_ids),
                     "requirements": rows("requirements", "AND payload->>'projectId' = ANY(%s)", project_ids),
-                    "tree_nodes": rows("tree_nodes", "AND payload->>'projectId' = ANY(%s)", project_ids)}
+                    "tree_nodes": rows("tree_nodes", "AND payload->>'projectId' = ANY(%s)", project_ids),
+                    "review_runs": review_runs,
+                    "rule_check_results": rows("rule_check_results",
+                                               "AND payload->>'reviewRunId' = ANY(%s)", run_ids),
+                    "fact_corrections": rows("fact_corrections",
+                                             "AND payload->>'projectId' = ANY(%s)", project_ids)}
     except psycopg.Error as exc:
         raise ValueError("database_read_failed") from exc
 

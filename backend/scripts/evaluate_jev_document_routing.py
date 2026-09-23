@@ -25,6 +25,7 @@ LABEL_SOURCES = {"inspector", "provisional"}
 COMPLETE_STATUSES = {"completed"}
 SHADOW_STATUSES = COMPLETE_STATUSES | {
     "partial", "disabled", "invalid_scope", "stale_version", "no_ocr_text", "ocr_not_ready",
+    "ambiguous_ocr_attempt",
     "overlong_document", "no_templates", "request_overlong",
     "request_budget_exceeded", "invalid_response", "unavailable",
 }

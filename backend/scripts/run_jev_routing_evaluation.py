@@ -70,6 +70,8 @@ def snapshot_cases(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     projects = {str(row["id"]): row for row in snapshot["projects"]}
     versions = {str(row.get("id") or row.get("documentVersionId")): row for row in snapshot["versions"]}
     configured = snapshot.get("configuredPoints") or []
+    routing_state = {key: snapshot.get(key) or []
+                     for key in ("documents", "versions", "ocr_parse_results")}
     cases = []
     for project_id, project in sorted(projects.items()):
         points = routing_question_points(
@@ -88,7 +90,7 @@ def snapshot_cases(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             version = versions.get(version_id)
             links = [row for row in snapshot.get("node_evidence_links") or []
                      if row.get("projectId") == project_id and row.get("documentVersionId") == version_id]
-            cases.append({"state": snapshot, "scope": {"projectId": project_id,
+            cases.append({"state": routing_state, "scope": {"projectId": project_id,
                          "tenantId": document.get("tenantId"), "nodeId": "待归属",
                          "inputDocumentVersionIds": [version_id]},
                          "projectId": project_id, "documentId": document_id,
@@ -263,7 +265,8 @@ def main() -> int:
     except (OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps({key: value for key, value in report.items() if key != "shadows"}, ensure_ascii=False, indent=2))
-    return 0 if report["statusCounts"].get("unavailable", 0) == 0 else 2
+    return 0 if (not args.send or report["attemptedRequestCount"] > 0) and not report["statusCounts"].get(
+        "unavailable") else 2
 
 
 if __name__ == "__main__":
