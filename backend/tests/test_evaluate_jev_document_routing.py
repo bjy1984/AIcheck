@@ -45,6 +45,7 @@ def test_only_version_matched_inspector_labels_count_and_unlabelled_nodes_are_no
     assert report["status"] == "ready_for_review"
     assert report["documents"]["completedInspectorLabeled"] == 1
     assert report["documents"]["provisionalLabeled"] == 1
+    assert report["documents"]["staleInputHashLabeled"] == 0
     assert report["documents"]["statusCounts"] == {"completed": 1, "overlong_document": 1}
     assert report["labels"] == {
         "comparedNodeCount": 4, "positiveNodeCount": 2, "negativeNodeCount": 2,
@@ -57,6 +58,7 @@ def test_only_version_matched_inspector_labels_count_and_unlabelled_nodes_are_no
     assert report["jev"]["explicitNegativeOnPositive"] == 1
     assert report["jev"]["abstained"] == 1
     assert report["jev"]["precision"] == report["jev"]["recall"] == 0.5
+    assert report["jev"]["precision95CI"] == report["jev"]["recall95CI"] == [0.0945, 0.9055]
     assert report["existingBindings"]["precision"] == report["existingBindings"]["recall"] == 1.0
     assert not any(item["nodeId"] == 5 for item in report["jev"]["errors"])
     assert report["releaseThresholdApproved"] is False

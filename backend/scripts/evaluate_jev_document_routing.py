@@ -90,6 +90,7 @@ def _shadows(rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], dict[str,
             raise ValueError("human_rejection_veto_violated")
         output[key] = {"status": status, "scores": scores, "rejected": rejected,
                        "suggested": suggested,
+                       "inputHash": str(row.get("inputHash") or ""),
                        "existing": _node_ids(row.get("existingNodeIds") or [])}
     return output
 
@@ -115,7 +116,10 @@ def _labels(rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], dict[str, 
             node_labels[node] = item["choice"]
         if not node_labels:
             raise ValueError("node_labels_required")
-        output[key] = {"source": source, "labels": node_labels}
+        if "expectedNodeIds" in row and _node_ids(row["expectedNodeIds"]) != set(node_labels):
+            raise ValueError("incomplete_blind_node_labels")
+        output[key] = {"source": source, "labels": node_labels,
+                       "inputHash": str(row.get("inputHash") or "")}
     return output
 
 
@@ -142,11 +146,24 @@ def _metrics(rows: list[dict[str, Any]], threshold: float, *, baseline: bool = F
                 explicit_negative += 1
     positive_predictions = true_positive + false_positive
     positive_labels = true_positive + missed_positive
+
+    def wilson(successes: int, total: int) -> list[float] | None:
+        if not total:
+            return None
+        z = 1.96
+        rate = successes / total
+        divisor = 1 + z * z / total
+        center = (rate + z * z / (2 * total)) / divisor
+        margin = z * math.sqrt(rate * (1 - rate) / total + z * z / (4 * total * total)) / divisor
+        return [round(max(0.0, center - margin), 4), round(min(1.0, center + margin), 4)]
+
     return {
         "truePositive": true_positive, "falsePositive": false_positive,
         "missedPositive": missed_positive,
         "precision": round(true_positive / positive_predictions, 4) if positive_predictions else None,
         "recall": round(true_positive / positive_labels, 4) if positive_labels else None,
+        "precision95CI": wilson(true_positive, positive_predictions),
+        "recall95CI": wilson(true_positive, positive_labels),
         **({} if baseline else {"abstained": abstained, "explicitNegativeOnPositive": explicit_negative}),
         "errors": sorted(errors, key=lambda item: (item["caseId"], item["nodeId"], item["kind"])),
     }
@@ -159,13 +176,16 @@ def evaluate_routing(
         raise ValueError("invalid_threshold")
     shadows, labels = _shadows(shadow_rows), _labels(label_rows)
     statuses = Counter(row["status"] for row in shadows.values())
-    completed_labeled = partial_labeled = provisional = missing_shadow = uncertain = missing_score = 0
+    completed_labeled = partial_labeled = provisional = missing_shadow = uncertain = missing_score = stale = 0
     positive = negative = rejected_positive = 0
     compared: list[dict[str, Any]] = []
     for key, label in labels.items():
         shadow = shadows.get(key)
         if shadow is None:
             missing_shadow += 1
+            continue
+        if shadow["inputHash"] and label["inputHash"] != shadow["inputHash"]:
+            stale += 1
             continue
         if label["source"] != "inspector":
             provisional += 1
@@ -196,10 +216,12 @@ def evaluate_routing(
         "schemaVersion": "jev-document-routing-evaluation-v1",
         "status": "ready_for_review" if compared else "no_comparable_inspector_labels",
         "threshold": threshold,
+        "intervalMethod": "Wilson 95% on labeled node pairs; within-document correlation not modeled",
         "documents": {"shadowCount": len(shadows), "statusCounts": dict(sorted(statuses.items())),
                       "completedInspectorLabeled": completed_labeled,
                       "noncompletedInspectorLabeled": partial_labeled,
                       "provisionalLabeled": provisional, "labelsWithoutShadow": missing_shadow,
+                      "staleInputHashLabeled": stale,
                       "shadowsWithoutLabels": len(set(shadows) - set(labels))},
         "labels": {"comparedNodeCount": len(compared), "positiveNodeCount": positive,
                    "negativeNodeCount": negative, "uncertainNodeCount": uncertain,
@@ -227,6 +249,14 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _read_labels(path: Path) -> list[dict[str, Any]]:
+    if path.read_text(encoding="utf-8").lstrip().startswith("{"):
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(value, dict) and value.get("schemaVersion") == "jev-routing-blind-label-packet-v1":
+            return value["cases"]
+    return _read_jsonl(path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shadows", required=True, type=Path)
@@ -235,7 +265,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
-        report = evaluate_routing(_read_jsonl(args.shadows), _read_jsonl(args.labels), threshold=args.threshold)
+        report = evaluate_routing(_read_jsonl(args.shadows), _read_labels(args.labels), threshold=args.threshold)
     except (OSError, TypeError, ValueError) as exc:
         parser.error(str(exc))
     payload = json.dumps(report, ensure_ascii=False, indent=2)

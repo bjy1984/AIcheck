@@ -271,3 +271,9 @@ AICHECK_JEV_QUEUE_EXIT_CONFIDENCE=<经标注确认且高于进入阈值的值>
   [`2026-09-23-jev-ocr-only-export.md`](../verification/2026-09-23-jev-ocr-only-export.md)。
 - 当前无法连接 `aicheck-prod-new` 且没有新测试密钥，因此新七项目快照与真实
   Jev 请求未发生；旧 546 次估算不当作实跑结果。
+
+## 2026-09-23 收尾：文件归属独立真值入口
+
+- 新增固定抽样的每项目四份完整文件盲标题包；所有节点都需独立标注，版本与
+  请求哈希过期、漏标则不能计算精确率／召回率。题包不显示 Jev 答案或旧挂载。
+  操作见 [`2026-09-23-jev-blind-label-packet.md`](../verification/2026-09-23-jev-blind-label-packet.md)。
