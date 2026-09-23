@@ -80,6 +80,10 @@ from libs.review_orchestrator.failure_policy import (
     review_failure_retryable,
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
+from libs.review_orchestrator.jev_claims import verify_finding_claims
+from libs.review_orchestrator.jev_client import jev_stage_enabled
+from libs.review_orchestrator.jev_opinion import second_opinions
+from libs.review_orchestrator.jev_tables import classify_review_tables
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.ndt_fact_builders import NDT_FACT_BUILDERS
 from libs.review_orchestrator.node_fact_overrides import (
@@ -328,6 +332,11 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
     task_queues = review_task_queues()
     tenant_id = tenant_id_for_record(ai_run) or current_tenant_id()
     workflow_id = review_workflow_id(tenant_id, review_run_id)
+    previous_jev_queue = next((item.get("jevQueueStatus") for item in repo.state.get("review_runs", [])
+                               if isinstance(item, dict) and item.get("projectId") == ai_run.get("projectId")
+                               and tenant_id_for_record(item) == tenant_id
+                               and str(item.get("nodeId")) == str(ai_run.get("nodeId"))
+                               and isinstance(item.get("jevQueueStatus"), dict)), {})
     now = server_time()
     audit_runtime = audit_runtime_public_config(mode=str(ai_run.get("auditInputMode") or "") or None)
     clause_package_snapshot = repo.clone(ai_run.get("clausePackageSnapshot"))
@@ -404,6 +413,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "startedAt": None,
         "finishedAt": None,
         "revision": 1,
+        "jevQueuePrevious": repo.clone(previous_jev_queue),
     }
     if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() in {"1", "true", "yes"}:
         project = repo.require_project(str(record.get("projectId") or "")) or {}
@@ -1340,6 +1350,10 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             # 逐项核查结果（含通过项）也随运行一起带出去：界面只列问题时，
             # 「没报问题」和「压根没查」在人眼里是一样的。
             ai_run["atomicCheckOutcomes"] = repo.clone(output_contract.atomic_check_outcomes(context.get("ruleResults") or [], review_run))
+            review_run["jevQueueStatus"] = {
+                row["atomicCheckId"]: row["secondOpinion"]["needsHumanReview"]
+                for row in ai_run["atomicCheckOutcomes"] if row.get("secondOpinion")
+            }
             opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=deterministic_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {
@@ -1469,6 +1483,14 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
     ensure_document_sources(review_run, repo.state)
     audit_runtime = audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
+    if node_key == "classify_ocr_tables":
+        if review_run.get("workflowEngine") != "temporal":
+            return {"status": "skipped_inline"}
+        classified = classify_review_tables(repo.state, review_run)
+        review_run["jevTableClassifications"] = classified
+        return {"status": classified["status"], "classifiedTables": sum(
+            len(rows) for rows in classified["tables"].values()),
+            "overlongDocumentVersionIds": classified["overlongDocumentVersionIds"]}
     if node_key == "load_context":
         project = repo.require_project(str(review_run.get("projectId")))
         node = repo.node(str(review_run.get("projectId")), int(review_run.get("nodeId") or 0))
@@ -1804,6 +1826,17 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "linkedClauseIds": linked_clause_ids,
             "certificateVerificationCount": verification_tool.get("verificationCount", 0),
         }
+    if node_key == "jev_second_opinion":
+        if review_run.get("workflowEngine") != "temporal":
+            return {"status": "skipped_inline"}
+        project = context.get("project") or {}
+        pack = project.get("businessPackSnapshot") or load_business_pack(
+            str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
+        opinion = second_opinions(repo.state, review_run, context.get("ruleResults") or [], pack,
+                                  business_facts=context.get("businessFacts"))
+        review_run["jevSecondOpinions"] = opinion
+        return {"status": opinion["status"], "opinionCount": len(opinion["atomic"]),
+                "factConflictCount": len(opinion["factConflicts"])}
     if node_key == "retrieve_knowledge":
         retrieval = retrieve_knowledge_clauses(
             repo.state,
@@ -1860,6 +1893,15 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         for draft in drafts:
             append_tool_call(review_run, node_key, "create_review_finding_draft", {"findingDraftId": draft["id"]})
         return {"modelGateway": "qwen_runtime", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(drafts), **llm_details}
+    if node_key == "jev_check_claims":
+        if review_run.get("workflowEngine") != "temporal":
+            return {"status": "skipped_inline"}
+        claim_checks = verify_finding_claims(repo.state, review_run, context.get("ruleResults") or [],
+                                             context.get("findingDrafts") or [],
+                                             business_facts=context.get("businessFacts"))
+        review_run["jevClaimChecks"] = claim_checks
+        return {"status": claim_checks["status"], "checkedFindings": len(claim_checks["findings"]),
+                "rejectionGateApplied": claim_checks.get("rejectionGateApplied", False)}
     if node_key == "schema_validation":
         result = validate_review_schema(context.get("findingDrafts") or [])
         context.setdefault("validationResults", {})[node_key] = result
@@ -2007,6 +2049,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
+            *(["For each finding, list every independently checkable factual sentence verbatim in claims; each claim must be an exact substring of title or description. Do not add claims absent from the finding."] if jev_stage_enabled("CLAIM_SHADOW") else []),
             *output_contract.prompt_format_requirements(complete=bool(workstation)),
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
@@ -2054,6 +2097,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
                     "suggestedAction": "human_confirm|request_correction",
                     "groundingStatus": "grounded|insufficient_evidence",
                     "unsupportedClaims": [],
+                    **({"claims": ["verbatim factual sentence from title or description"]} if jev_stage_enabled("CLAIM_SHADOW") else {}),
                 }
             ]
         },
@@ -2547,6 +2591,7 @@ def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], 
         draft["suggestedAction"] = str(item.get("suggestedAction") or item.get("suggested_action") or "human_confirm")
         draft["groundingStatus"] = str(item.get("groundingStatus") or item.get("grounding_status") or base.get("groundingStatus") or "")
         draft["unsupportedClaims"] = item.get("unsupportedClaims") if isinstance(item.get("unsupportedClaims"), list) else []
+        draft["claims"] = [str(claim) for claim in item.get("claims") if isinstance(claim, str)] if isinstance(item.get("claims"), list) else []
         draft["requiresHumanConfirmation"] = True
         draft["llmGenerated"] = True
         drafts.append(draft)

@@ -1,4 +1,4 @@
-"""审查编排图的静态拓扑：十二个步骤及其顺序。
+"""审查编排图的静态拓扑：步骤及其顺序。
 
 从 execution.py 搬出来的纯声明数据。步骤定义与执行逻辑放在一起没有好处——
 这份表被 deployment_report、import_layering 等多处引用，读它的人不该被迫
@@ -14,12 +14,15 @@ from __future__ import annotations
 from typing import Any
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
+    {"key": "classify_ocr_tables", "label": "Jev 表格行分类（可回退）", "taskQueue": "review.llm"},
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
     {"key": "load_ocr_result", "label": "加载 OCR 证据", "taskQueue": "review.graph"},
     {"key": "run_rule_engine", "label": "执行确定性规则", "taskQueue": "review.validation"},
+    {"key": "jev_second_opinion", "label": "Jev 第二意见（不改裁决）", "taskQueue": "review.llm"},
     {"key": "retrieve_knowledge", "label": "检索知识依据", "taskQueue": "review.retrieval"},
     {"key": "build_prompt", "label": "构造审查 Prompt", "taskQueue": "review.graph"},
     {"key": "llm_generate_findings", "label": "QwenRuntime 生成审查草稿", "taskQueue": "review.llm"},
+    {"key": "jev_check_claims", "label": "Jev 逐句核对发现", "taskQueue": "review.llm"},
     {"key": "schema_validation", "label": "Schema 校验", "taskQueue": "review.validation"},
     {"key": "evidence_validation", "label": "证据校验", "taskQueue": "review.validation"},
     {"key": "reference_validation", "label": "依据校验", "taskQueue": "review.validation"},

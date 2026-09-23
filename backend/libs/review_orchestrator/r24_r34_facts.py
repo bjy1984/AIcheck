@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from libs.review_orchestrator.jev_tables import business_rows
 from libs.review_orchestrator.material_facts import (
     build_material_judgment,
     deduplicate,
@@ -92,7 +93,8 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
         for target, accepted_kinds in config.items():
             if kind not in accepted_kinds:
                 continue
-            records = _extract_records(state, parse_result, node.upper(), kind)
+            records = _extract_records(state, parse_result, node.upper(), kind,
+                                       classifications=review_run.get("jevTableClassifications"))
             facts[target].extend(records)
     for target in facts:
         facts[target] = deduplicate(facts[target], "recordId")
@@ -218,10 +220,12 @@ def _overlay_platform_welder_codes(
             cert["platformEvidence"] = platform_evidence[-1]
 
 
-def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namespace: str, kind: str) -> list[dict[str, Any]]:
+def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namespace: str, kind: str,
+                     *, classifications: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     common, evidence_items = _common_document_fields(state, parse_result)
     document_values = _field_values(parse_result)
-    rows = _all_rows(parse_result) or [{}]
+    rows = business_rows(parse_result, classifications,
+                         skip_mechanical=namespace in {"R25", "R29", "R32"}) or [{}]
     output: list[dict[str, Any]] = []
     for index, row in enumerate(rows, 1):
         values = {**document_values, **_normalized_business_row(row)}
