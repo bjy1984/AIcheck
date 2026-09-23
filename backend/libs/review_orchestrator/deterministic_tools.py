@@ -308,6 +308,10 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
         # 平台按证件号查到的是另一个人时它照样给通过——界面上就出现「与平台登记不一致」
         # 配「核验通过」的自相矛盾（2026-09-13 用户截图）。这是判定问题，不是显示问题。
         verification = cert.get("platformVerification") if isinstance(cert.get("platformVerification"), dict) else {}
+        if cert.get("holderFieldRejected"):
+            if status == "passed":
+                status = "evidence_insufficient"
+            cert_checks.append(check(f"{label}:holder_ocr_reliable", False, cert.get("holderFieldRejected"), "单位名称"))
         if verification.get("outcome") == "verified_mismatch":
             status = "evidence_insufficient"
             # 单位证书走的是 r12_registry，登记名字段叫 registryOrganizationName；

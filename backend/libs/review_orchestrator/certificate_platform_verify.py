@@ -131,6 +131,9 @@ def _verify_org_license(state: dict[str, Any], record: dict[str, Any]) -> dict[s
         {"candidateId": license_no, "organizationName": record.get("holder") or "", "licenseNo": license_no},
         entry.get("result") or {},
     )
+    if record.get("holderFieldRejected") and verification.get("outcome") in {"verified_match", "verified_mismatch"}:
+        verification = {**verification, "outcome": "unable_to_verify", "reason": "ocr_holder_unreliable",
+                        "comment": "证书上的单位名称抽取成了句子，不能仅凭许可证编号确认持证单位；请核对原文。"}
     updated = {**record, "platformVerification": verification}
     if verification.get("outcome") != "verified_match":
         return updated

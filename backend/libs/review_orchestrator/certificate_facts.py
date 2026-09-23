@@ -454,6 +454,14 @@ def _extract_certificates(
     }
     for key in ("holder", "certificateNo", "issuer", "validFrom", "validUntil"):
         hit = _first_field(fields, FIELD_ALIASES[key])
+        if key == "holder" and profile["certificateType"] in {
+            "design_license", "installation_license", "ndt_agency_approval"
+        }:
+            candidates = list(_all_fields(fields, FIELD_ALIASES[key]))
+            hit = next((candidate for candidate in candidates if not _organization_field_is_sentence(candidate["value"])), None)
+            if hit is None and candidates:
+                # OCR 有时把「你单位被评定为 A 级机构。」的后半句填入单位名称。
+                record["holderFieldRejected"] = candidates[0]["value"]
         if hit is not None:
             value = hit["value"]
             if key in {"validFrom", "validUntil"}:
@@ -475,11 +483,18 @@ def _extract_certificates(
                                             field_name=hit.get("name"), human_corrected=bool(hit.get("humanCorrected"))))
     if scope_hits:
         record["sources"]["scopes"] = "ocr_field"
-    _fill_from_text(record, text, parse_result, version_id, file_name)
+    _fill_from_text(record, text, parse_result, version_id, file_name,
+                    allow_person_holder=profile["certificateType"] not in {
+                        "design_license", "installation_license", "ndt_agency_approval"
+                    })
     if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
         return []
     return [record]
 
+
+def _organization_field_is_sentence(value: str) -> bool:
+    text = str(value or "").strip()
+    return "被评定为" in text or "被评为" in text or "你单位" in text or text.endswith(("。", "！", "!", "；", ";"))
 
 
 _PERSON_SPLIT = re.compile(r"(?=特种设备检验检测人员证)")
@@ -523,9 +538,12 @@ def _record_from_text(
     return record
 
 
-def _fill_from_text(record: dict[str, Any], text: str, parse_result: dict[str, Any], version_id: str, file_name: str) -> None:
+def _fill_from_text(
+    record: dict[str, Any], text: str, parse_result: dict[str, Any], version_id: str, file_name: str, *,
+    allow_person_holder: bool = True,
+) -> None:
     """按正文正则补缺（持证人、编号、发证机关、有效期起止、范围代号）。"""
-    if not record.get("holder"):
+    if allow_person_holder and not record.get("holder"):
         name = re.search(r"姓\s*名\s*[:：]?\s*([一-龥·]{2,6})", text)
         if name:
             record["holder"] = name.group(1)
@@ -754,6 +772,8 @@ def _warnings(certificates: list[dict[str, Any]], considered: list[dict[str, Any
     elif not certificates:
         warnings.append("certificate_document_present_but_fields_unextracted")
     for item in certificates:
+        if item.get("holderFieldRejected"):
+            warnings.append(f"holder_field_rejected:{item.get('certificateNo') or item.get('fileName')}")
         if not item.get("validUntil"):
             warnings.append(f"valid_until_missing:{item.get('certificateNo') or item.get('fileName')}")
         if not item.get("holder"):

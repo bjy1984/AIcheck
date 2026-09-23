@@ -98,6 +98,52 @@ def test_平台查不到_保留OCR事实_不冒充(monkeypatch):
     assert all(item.get("source") != "cnse_platform" for item in cert["evidence"])
 
 
+def test_单位名称被抽成评价句时不误报平台主体不一致(monkeypatch):
+    """节点 3 实例：正文有正确单位名，但坏字段不能直接拿去和平台登记名比较。"""
+    registry = {**ORG_RECORD, "zsbh": "TS7310417-2026", "dwmc": "山东扬石工程检验检测有限公司"}
+    monkeypatch.setattr("libs.integrations.external_registry_queries.query_cnse_organization_license",
+                        lambda no: {"licenseNo": no, "found": True, "record": registry})
+    state = _license_state()
+    state["documents"][0]["materialTypeCode"] = "ndt_org_certificate"
+    state["projects"][0]["ndtOrgName"] = registry["dwmc"]
+    fields = state["ocr_parse_results"][0]["fields"]
+    fields[0]["fieldValue"] = registry["zsbh"]
+    fields[1]["fieldValue"] = "被评定为 A 级机构。"
+    state["ocr_parse_results"][0]["fragments"] = [
+        {"pageNo": page, "text": f"无损检测机构核准证 {registry['zsbh']} {registry['dwmc']} 你单位被评定为 A 级机构。\n姓名：张三"}
+        for page in (1, 2, 3)
+    ]
+
+    facts = build_certificate_facts(state, "P-1", 3, ["DV-LIC"])
+    cert = facts["certificateFacts"]["certificates"][0]
+    assert cert["holder"] is None
+    assert cert["holderFieldRejected"] == "被评定为 A 级机构。"
+    assert cert["platformVerification"]["outcome"] == "unable_to_verify"
+    assert cert["platformVerification"]["reason"] == "ocr_holder_unreliable"
+    assert "verified_mismatch" not in str(cert)
+    assert all(item.get("source") != "cnse_platform" for item in cert["evidence"])
+    assert any(warning.startswith("holder_field_rejected:") for warning in facts["certificateFacts"]["extractionWarnings"])
+
+    from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+
+    verdict = check_certificate_validity({"certificates": [cert], "referenceDate": "2026-09-23"})
+    assert verdict["result"] == "evidence_insufficient"
+
+
+def test_单位名称多字段时选可信字段且保留真实不一致判断(monkeypatch):
+    monkeypatch.setattr("libs.integrations.external_registry_queries.query_cnse_organization_license",
+                        lambda no: {"licenseNo": no, "found": True, "record": ORG_RECORD})
+    state = _license_state()
+    fields = state["ocr_parse_results"][0]["fields"]
+    fields[1]["fieldValue"] = "被评定为 A 级机构。"
+    fields.append({"fieldCode": "organization_name", "fieldName": "单位名称", "fieldValue": "另一家工程有限公司", "pageNo": 1})
+
+    cert = build_certificate_facts(state, "P-1", 1, ["DV-LIC"])["certificateFacts"]["certificates"][0]
+    assert cert["holder"] == "另一家工程有限公司"
+    assert "holderFieldRejected" not in cert
+    assert cert["platformVerification"]["outcome"] == "verified_mismatch"
+
+
 def test_平台故障是软失败_不崩不改(monkeypatch):
     def broken(_no):
         raise CnseRequestError("403 Forbidden")
