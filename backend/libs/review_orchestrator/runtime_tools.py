@@ -32,7 +32,8 @@ from libs.integrations.std_samr_client import (
 from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
 from libs.review_input_data import (
     apply_field_corrections_to_parse_results,  # noqa: F401 -- public compatibility export
-    selected_parse_results,
+    current_selected_parse_results,
+    selected_parse_results,  # noqa: F401 -- public compatibility export
 )
 from libs.review_orchestrator.deterministic_tools import (
     DETERMINISTIC_TOOL_DESCRIPTORS,
@@ -271,7 +272,7 @@ def get_document_ocr_result(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parse_results = selected_parse_results(state, arguments, context=context)
+    parse_results = current_selected_parse_results(state, arguments, context=context)
     fields = [field for result in parse_results for field in dict_items(result.get("fields"))]
     tables = [table for result in parse_results for table in dict_items(result.get("tables"))]
     seals = [seal for result in parse_results for seal in dict_items(result.get("seals"))]
@@ -302,7 +303,7 @@ def recognize_document_seals(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parse_results = selected_parse_results(state, arguments, context=context)
+    parse_results = current_selected_parse_results(state, arguments, context=context)
     expected_issuer = str(arguments.get("expectedIssuer") or "").strip()
     seals = []
     for result in parse_results:
@@ -364,7 +365,7 @@ def recognize_signatures_and_seals(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parse_results = selected_parse_results(state, arguments, context=context)
+    parse_results = current_selected_parse_results(state, arguments, context=context)
     seal_result = recognize_document_seals(state, arguments, context=context)
     signatures = []
     for parse_result in parse_results:
@@ -402,7 +403,7 @@ def extract_document_fields(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parse_results = selected_parse_results(state, arguments, context=context)
+    parse_results = current_selected_parse_results(state, arguments, context=context)
     requested = {str(item) for item in arguments.get("fieldCodes") or [] if item}
     fields = []
     for parse_result in parse_results:
@@ -426,7 +427,7 @@ def extract_table_records(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parse_results = selected_parse_results(state, arguments, context=context)
+    parse_results = current_selected_parse_results(state, arguments, context=context)
     requested = {str(item) for item in arguments.get("businessSchemas") or [] if item}
     tables = []
     for parse_result in parse_results:
@@ -452,7 +453,7 @@ def locate_evidence_fragment(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parse_results = selected_parse_results(state, arguments, context=context)
+    parse_results = current_selected_parse_results(state, arguments, context=context)
     query_terms = [str(item).strip().lower() for item in arguments.get("queryTerms") or [] if str(item).strip()]
     try:
         minimum = float(arguments.get("minConfidence", 0.0))
@@ -504,7 +505,7 @@ def extract_structured_fields(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parse_results = selected_parse_results(state, arguments, context=context)
+    parse_results = current_selected_parse_results(state, arguments, context=context)
     material_type = str(
         arguments.get("materialTypeCode") or arguments.get("documentType") or ""
     ).strip()

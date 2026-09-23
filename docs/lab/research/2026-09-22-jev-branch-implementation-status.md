@@ -226,3 +226,15 @@ AICHECK_JEV_QUEUE_EXIT_CONFIDENCE=<经标注确认且高于进入阈值的值>
 - 此改动范围是上述链路；其他直接调用 `selected_parse_results` 的构建器尚未逐条
   核查。完整后端 **5,432 通过、81 跳过、0 失败**，Ruff 基线由 287 收紧到
   **286／286**。
+
+## 2026-09-23 其余 OCR 读取方收口
+
+- 已逐条核查其余直接调用 `selected_parse_results` 的正式审查读取方。R14／R15、
+  R19、NDT／R39／R40、管线与设计事实、条件试跑、运行时 OCR 工具及 grounding
+  现在都只使用每个冻结版本的当前 OCR；无可靠时间顺序的重复解析仍阻挡判定。
+  R39 的部分 OCR 仍保留已定位事实及缺页检查，不能把待人工复核等同解析失败。
+- 页码裁切现在保留 OCR 完成时间，避免裁切后错选旧尝试。原未冻结的历史管线读取
+  和独立 `extracted_fields`／`evidence_links` 契约保留，详见
+  [`2026-09-23-current-ocr-consumers.md`](../verification/2026-09-23-current-ocr-consumers.md)。
+- 完整后端 **5,438 通过、81 跳过、0 失败**；全仓 Ruff **286／286**。
+  这仍是代码与合成测试，不是七项目 Jev 准确率。

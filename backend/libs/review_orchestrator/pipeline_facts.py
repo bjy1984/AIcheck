@@ -18,7 +18,7 @@ from copy import deepcopy
 from typing import Any
 
 from libs.integrations.errors import IntegrationServiceError
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import current_selected_parse_results
 from libs.review_orchestrator.certificate_facts import _documents_by_version
 from libs.review_orchestrator.r14_facts import _extract_pipeline_characteristics, _value
 
@@ -106,7 +106,7 @@ def build_project_pipelines(state: dict[str, Any], project_id: str, *, review_ru
     versions = _documents_by_version(state, project_id)
     by_line: dict[str, dict[str, Any]] = {}
     candidates: dict[str, list[dict[str, Any]]] = {}
-    parses = (selected_parse_results(state, {}, context={"reviewRun": review_run})
+    parses = (current_selected_parse_results(state, {}, context={"reviewRun": review_run})
               if review_run is not None else state.get("ocr_parse_results") or [])
     for parse_result in parses:
         if not isinstance(parse_result, dict):

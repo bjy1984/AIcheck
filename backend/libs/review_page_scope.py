@@ -42,7 +42,8 @@ def located_record_in_range(record: dict[str, Any], bounds: dict[str, int]) -> b
 def restrict_parse_result(parse: dict[str, Any], bounds: dict[str, int]) -> dict[str, Any]:
     """Copy located evidence only; whole-document text/summary must not survive as fallback."""
     metadata_keys = ("id", "parseResultId", "documentVersionId", "documentId", "tenantId",
-                     "status", "fileName", "documentType", "profileId")
+                     "status", "outcomeStatus", "finishedAt", "updatedAt", "createdAt",
+                     "fileName", "documentType", "profileId")
     result = {key: deepcopy(parse[key]) for key in metadata_keys if key in parse}
     for key in ("fields", "tables", "seals", "fragments"):
         result[key] = [deepcopy(row) for row in parse.get(key) or []

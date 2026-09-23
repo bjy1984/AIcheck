@@ -6,7 +6,7 @@ import re
 from copy import deepcopy
 from typing import Any
 
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import current_selected_parse_results
 from libs.review_workstations import digest
 from libs.table_schema_mapping import classify_table, load_signatures, map_row
 
@@ -131,7 +131,7 @@ def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[st
     versions = {row["id"]: row for row in state.get("versions", []) if row.get("tenantId") == run.get("tenantId")}
     documents = {row["id"] for row in state.get("documents", [])
                  if row.get("projectId") == run.get("projectId") and row.get("tenantId") == run.get("tenantId")}
-    for parse in selected_parse_results(state, {}, context={"reviewRun": run}):
+    for parse in current_selected_parse_results(state, {}, context={"reviewRun": run}):
         version_id = parse.get("documentVersionId")
         if (parse.get("tenantId") != run.get("tenantId") or versions.get(version_id, {}).get("documentId") not in documents):
             continue

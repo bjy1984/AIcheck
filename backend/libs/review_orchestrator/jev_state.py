@@ -12,7 +12,7 @@ import re
 from collections import defaultdict
 from typing import Any
 
-from libs.review_input_data import latest_selected_parses
+from libs.review_input_data import latest_selected_parses, ocr_parse_usable
 
 MAX_STATE_CHARS = 40_000
 _SCOPE_CODE = re.compile(r"(?:^|:)scope_covers_(GC\d|GCD)$", re.IGNORECASE)
@@ -119,10 +119,7 @@ def scoped_document_states(
     for version_id in sorted(requested):
         document = documents[str(versions[version_id]["documentId"])]
         parse = parses.get(version_id) or {}
-        ocr_status = str(parse.get("status") or "").lower()
-        ocr_not_ready = bool(parse) and ocr_status not in {
-            "", "success", "succeeded", "completed", "已识别", "人工修正",
-        }
+        ocr_not_ready = bool(parse) and not ocr_parse_usable(parse)
         content = "" if ocr_not_ready else _document_text(parse)
         full_state = (f"工程：{project_id}；节点：{review_run.get('nodeId')}\n"
                       f"文件：{document.get('fileName') or document.get('name') or version_id}；版本：{version_id}\n"

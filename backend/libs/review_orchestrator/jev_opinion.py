@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from libs.review_input_data import latest_selected_parses
+from libs.review_input_data import current_selected_parse_results
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_state import (
     MAX_STATE_CHARS,
@@ -52,7 +52,8 @@ def _subjects(review_run: dict[str, Any], business_facts: dict[str, Any] | None)
 def _page_options(state: dict[str, Any], review_run: dict[str, Any]) -> dict[str, str]:
     options: dict[str, str] = {}
     versions = {str(item) for item in review_run.get("inputDocumentVersionIds") or []}
-    for parse in latest_selected_parses(state, review_run, versions).values():
+    for parse in current_selected_parse_results(state, {"documentVersionIds": sorted(versions)},
+                                                 context={"reviewRun": review_run}):
         version_id = str(parse.get("documentVersionId") or "")
         for key in ("layoutBlocks", "fields", "fragments", "tables"):
             for item in parse.get(key) or []:
