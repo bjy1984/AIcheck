@@ -52,9 +52,9 @@ def test_long_jev_task_can_extend_idle_timeout_without_changing_default(monkeypa
     ))
     with pipeline_lock("aicheck:test") as acquired:
         assert acquired is True
-    with pipeline_lock("aicheck:jev-document-routing:test", idle_timeout_seconds=150) as acquired:
+    with pipeline_lock("aicheck:jev-document-routing:test", idle_timeout_seconds=180) as acquired:
         assert acquired is True
 
     assert "SET idle_session_timeout = '60s'" in commands
-    assert "SET idle_session_timeout = '150s'" in commands
+    assert "SET idle_session_timeout = '180s'" in commands
     assert commands.count("close") == 2

@@ -126,6 +126,19 @@ def test_request_envelope_limit_includes_questions(monkeypatch):
     assert result["status"] == "request_overlong"
 
 
+def test_document_with_too_many_requests_stays_out_of_shadow_queue(monkeypatch):
+    monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(routing, "batch_jev_questions", lambda *_args, **_kwargs: [
+        {"q": {}} for _ in range(routing.MAX_ROUTING_BATCHES + 1)
+    ])
+    monkeypatch.setattr(routing, "ask_jev", lambda *_: 1 / 0)
+
+    result = routing.classify_document_node_routing(source(), "P", "D", "V")
+
+    assert result["status"] == "request_budget_exceeded"
+    assert result["requiredBatchCount"] == routing.MAX_ROUTING_BATCHES + 1
+
+
 def test_network_error_does_not_create_an_apparent_suggestion(monkeypatch):
     monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: True)
     monkeypatch.setattr(routing, "ask_jev", lambda *_: (_ for _ in ()).throw(OSError("offline")))

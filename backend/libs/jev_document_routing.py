@@ -22,25 +22,27 @@ from libs.review_orchestrator.jev_state import scoped_document_states
 
 CONFIDENCE_FLOOR = 0.90
 QUESTION_BATCH_SIZE = 30
+MAX_ROUTING_BATCHES = 10
 MAX_TEMPLATE_CHARS = 6_000
 _CRITERIA = {
-    "yes": "本文件的原文包含该节点至少一项审查所需的实质资料，不只是顺带提到名称。",
-    "no": "本文件原文与该节点的审查资料无关，或只顺带提到该节点。",
-    "uncertain": "OCR 原文不足、对象不明或资料归属有歧义，不能可靠判断。",
+    "yes": "正文有该节点所需的实质资料，非仅提及名称。",
+    "no": "正文无关或仅顺带提及。",
+    "uncertain": "OCR 不足、对象不明或归属有歧义。",
 }
 
 
 def _node_questions(points: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, int], list[int]]:
-    grouped: dict[int, list[dict[str, str]]] = defaultdict(list)
+    grouped: dict[int, dict[str, Any]] = defaultdict(lambda: {"nodeName": "", "requirements": []})
     for point in points:
         node_id = int(point.get("nodeId") or 0)
         if node_id < 1:
             continue
-        grouped[node_id].append({
-            "nodeName": str(point.get("nodeName") or ""),
-            "reviewContent": str(point.get("reviewContent") or ""),
-            "materialType": str(point.get("materialTypeName") or ""),
-            "fileContent": str(point.get("fileContent") or ""),
+        group = grouped[node_id]
+        group["nodeName"] = group["nodeName"] or str(point.get("nodeName") or "")
+        group["requirements"].append({
+            "review": str(point.get("reviewContent") or ""),
+            "material": str(point.get("materialTypeName") or ""),
+            "file": str(point.get("fileContent") or ""),
         })
     questions: dict[str, dict[str, Any]] = {}
     node_ids: dict[str, int] = {}
@@ -54,9 +56,8 @@ def _node_questions(points: list[dict[str, Any]]) -> tuple[dict[str, dict[str, A
         questions[key] = {
             "type": "choice",
             "instructions": (
-                f"仅根据这份文件的完整 OCR 原文，判断它是否可作为节点 {node_id} 的审查资料。"
-                "不得仅凭文件名、资料类型代码或正文中偶然出现的关键词判是。"
-                f"该节点审查模板：{template}"
+                f"仅凭完整 OCR 正文判断文件是否可用于节点 {node_id}。"
+                f"不能只看文件名或关键词。节点模板：{template}"
             ),
             "criteria": _CRITERIA,
         }
@@ -123,6 +124,9 @@ def classify_document_node_routing(
     except ValueError:
         return {**base, "status": "request_overlong", "inputHash": input_hash,
                 "overlongNodeIds": overlong_templates}
+    if len(batches) > MAX_ROUTING_BATCHES:
+        return {**base, "status": "request_budget_exceeded", "inputHash": input_hash,
+                "requiredBatchCount": len(batches), "overlongNodeIds": overlong_templates}
     answers: dict[str, Any] = {}
     try:
         for batch in batches:
