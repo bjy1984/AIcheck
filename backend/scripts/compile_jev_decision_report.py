@@ -7,9 +7,11 @@ provider billing remain explicit blockers; no threshold is approved here.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import stat
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +30,9 @@ def decision_report(*, routing_run: dict[str, Any] | None = None,
                     atomic_labels: list[dict[str, Any]] | None = None,
                     r19_run: dict[str, Any] | None = None,
                     r19_labels: list[dict[str, Any]] | None = None,
-                    billing: dict[str, Any] | None = None) -> dict[str, Any]:
+                    billing: dict[str, Any] | None = None,
+                    routing_preflight: dict[str, Any] | None = None,
+                    input_snapshot_sha256: str | None = None) -> dict[str, Any]:
     blockers = []
     live = {}
     for name, run in (("routing", routing_run), ("atomic", atomic_run), ("r19", r19_run)):
@@ -71,10 +75,27 @@ def decision_report(*, routing_run: dict[str, Any] | None = None,
             or type(billing.get("amountUSD")) not in {int, float}
             or billing["amountUSD"] < 0 or not billing.get("invoiceRef")):
         blockers.append("provider_billing_unverified")
+    input_capacity = None
+    if routing_preflight is not None:
+        statuses = Counter(row.get("status") for project in routing_preflight.get("projects") or []
+                           for row in project.get("files") or [])
+        input_capacity = {
+            "projectCount": routing_preflight.get("projectCount"),
+            "documentCount": routing_preflight.get("documentCount"),
+            "readyCount": routing_preflight.get("readyCount"),
+            "plannedRoutingRequestCount": routing_preflight.get("requestCount"),
+            "ocrAttemptCount": routing_preflight.get("ocrAttemptCount"),
+            "duplicateOcrVersionCount": routing_preflight.get("duplicateOcrVersionCount"),
+            "invalidEvidenceLinks": routing_preflight.get("invalidEvidenceLinks") or {},
+            "statusCounts": dict(sorted(statuses.items())),
+        }
     return {"schemaVersion": "jev-ocr-only-decision-report-v1",
             "status": "ready_for_decision" if not blockers else "incomplete",
             "blockers": blockers, "model": "jev-1.13.0", "inputMode": "approved_ocr_only",
             "live": live, "routing": routing, "atomicRiskSample": atomic, "r19": r19,
+            "inputSnapshotSha256": input_snapshot_sha256,
+            "routingInputCapacity": input_capacity,
+            "atomicDiscoveryStatusCounts": (atomic_run or {}).get("discoveryStatusCounts") or {},
             "billingUSD": billing.get("amountUSD") if billing and "provider_billing_unverified" not in blockers
             else None,
             "samplingCaveat": "16+17 risk-selected atomic cases are not population accuracy; routing truth covers 28 sampled documents",
@@ -109,6 +130,8 @@ def main() -> int:
     for name in ("routing-run", "routing-shadows", "routing-labels", "atomic-run",
                  "atomic-labels", "r19-run", "r19-labels", "billing"):
         parser.add_argument(f"--{name}", type=Path)
+    parser.add_argument("--routing-preflight", type=Path)
+    parser.add_argument("--input-snapshot", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     try:
@@ -119,6 +142,8 @@ def main() -> int:
         for path in (args.routing_shadows, args.routing_labels):
             if path and stat.S_IMODE(path.stat().st_mode) & 0o077:
                 raise ValueError("private_evaluation_file_permissions_required")
+        if args.input_snapshot and stat.S_IMODE(args.input_snapshot.stat().st_mode) & 0o077:
+            raise ValueError("private_snapshot_permissions_required")
         report = decision_report(
             routing_run=optional("routing_run"),
             routing_shadows=_read_jsonl(args.routing_shadows) if args.routing_shadows else None,
@@ -128,6 +153,9 @@ def main() -> int:
             r19_run=optional("r19_run"),
             r19_labels=_label_cases(args.r19_labels) if args.r19_labels else None,
             billing=optional("billing"),
+            routing_preflight=optional("routing_preflight"),
+            input_snapshot_sha256=(hashlib.sha256(args.input_snapshot.read_bytes()).hexdigest()
+                                   if args.input_snapshot else None),
         )
         _private_write(args.output, report)
     except (OSError, TypeError, ValueError) as exc:

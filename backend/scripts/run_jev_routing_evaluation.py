@@ -130,12 +130,14 @@ def _prepared(case: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_cases(cases: list[dict[str, Any]], *, send: bool, limit: int, max_requests: int,
-              ask: Ask = ask_jev) -> dict[str, Any]:
+              ask: Ask = ask_jev, expected_requests: int | None = None) -> dict[str, Any]:
     if limit < 1 or max_requests < 1:
         raise ValueError("positive_case_and_request_limits_required")
     selected = cases[:limit]
     prepared = [_prepared(case) for case in selected]
     planned = sum(row["requestCount"] for row in prepared if row["status"] == "ready")
+    if expected_requests is not None and planned != expected_requests:
+        raise ValueError("evaluation_preflight_request_count_changed")
     if send and not jev_enabled():
         raise ValueError("fresh_test_jev_key_and_egress_gates_required")
     if send and planned > max_requests:
@@ -205,12 +207,16 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=2)
     parser.add_argument("--case-id", action="append", help="Select an exact document ID; may be repeated")
     parser.add_argument("--max-requests", type=int, default=10)
+    parser.add_argument("--expected-requests", type=int,
+                        help="Exact request count from this batch's offline preflight")
     parser.add_argument("--send", action="store_true", help="Actually send approved test OCR to Jev")
     parser.add_argument("--output-shadows", type=Path, help="New 0600 JSONL file; no OCR text")
     parser.add_argument("--output-report", type=Path, help="New 0600 metadata report")
     args = parser.parse_args()
     if args.send and not args.output_shadows:
         parser.error("--send requires --output-shadows")
+    if args.send and args.expected_requests is None:
+        parser.error("--send requires --expected-requests")
     try:
         if args.snapshot:
             if stat.S_IMODE(args.snapshot.stat().st_mode) & 0o077:
@@ -226,7 +232,8 @@ def main() -> int:
             cases = selected
         reserved: list[Path] = []
         if args.send:
-            dry_run = run_cases(cases, send=False, limit=args.limit, max_requests=args.max_requests)
+            dry_run = run_cases(cases, send=False, limit=args.limit, max_requests=args.max_requests,
+                                expected_requests=args.expected_requests)
             if dry_run["plannedRequestCount"] > args.max_requests:
                 raise ValueError("evaluation_request_budget_exceeded")
             if not jev_enabled():
@@ -243,7 +250,8 @@ def main() -> int:
                     path.unlink(missing_ok=True)
                 raise
         try:
-            report = run_cases(cases, send=args.send, limit=args.limit, max_requests=args.max_requests)
+            report = run_cases(cases, send=args.send, limit=args.limit, max_requests=args.max_requests,
+                               expected_requests=args.expected_requests)
             if args.output_shadows:
                 body = "".join(json.dumps(row, ensure_ascii=False) + "\n"
                                for row in report["shadows"] if row["status"] != "ready")

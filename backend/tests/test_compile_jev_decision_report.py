@@ -19,6 +19,24 @@ def test_empty_report_exposes_every_missing_dependency():
     assert report["releaseThresholdApproved"] is False
 
 
+def test_interim_report_carries_recomputable_input_capacity_without_document_ids():
+    report = decision_report(
+        routing_preflight={"projectCount": 7, "documentCount": 3, "readyCount": 1,
+                           "requestCount": 4, "ocrAttemptCount": 4,
+                           "duplicateOcrVersionCount": 1, "invalidEvidenceLinks": {},
+                           "projects": [{"files": [{"documentId": "PRIVATE-A", "status": "ready"},
+                                                   {"documentId": "PRIVATE-B", "status": "ocr_not_ready"},
+                                                   {"documentId": "PRIVATE-C", "status": "overlong_document"}]}]},
+        input_snapshot_sha256="snapshot-hash",
+        atomic_run={"send": False, "discoveryStatusCounts": {"eligible": 2}},
+    )
+    assert report["routingInputCapacity"]["statusCounts"] == {
+        "ocr_not_ready": 1, "overlong_document": 1, "ready": 1}
+    assert report["inputSnapshotSha256"] == "snapshot-hash"
+    assert report["atomicDiscoveryStatusCounts"] == {"eligible": 2}
+    assert "PRIVATE-A" not in str(report)
+
+
 def test_complete_recorded_artifacts_are_recomputable_but_do_not_approve_release():
     routing_shadows, routing_labels = [], []
     for index in range(28):

@@ -269,8 +269,10 @@ AICHECK_JEV_QUEUE_EXIT_CONFIDENCE=<经标注确认且高于进入阈值的值>
   旧挂载和规则结果不进入请求。新增七项目 `REPEATABLE READ READ ONLY` 快照
   导出与录制网关请求测试，详见
   [`2026-09-23-jev-ocr-only-export.md`](../verification/2026-09-23-jev-ocr-only-export.md)。
-- 当前无法连接 `aicheck-prod-new` 且没有新测试密钥，因此新七项目快照与真实
-  Jev 请求未发生；旧 546 次估算不当作实跑结果。
+- 首次连接 `aicheck-prod-new` 超时，随后已用单一只读交易取得七项目数据并形成新私有
+  快照。新预检仍为 178／194、预计 546 次，但真实 Jev 请求尚未发生；
+  无新测试密钥及监检标注，准确率与费用未知。快照来源及限制见
+  [`2026-09-23-jev-fresh-snapshot-interim-report.md`](../verification/2026-09-23-jev-fresh-snapshot-interim-report.md)。
 
 ## 2026-09-23 收尾：文件归属独立真值入口
 

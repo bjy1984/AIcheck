@@ -2,11 +2,18 @@
 
 import json
 import stat
+import sys
+import types
 import zlib
 
 import pytest
 
-from scripts.export_jev_seven_project_snapshot import PROJECT_IDS, _private_write, build_snapshot
+from scripts.export_jev_seven_project_snapshot import (
+    PROJECT_IDS,
+    _database_state,
+    _private_write,
+    build_snapshot,
+)
 from scripts.preflight_jev_document_routing import preflight_project_corpus
 
 
@@ -55,3 +62,61 @@ def test_snapshot_fails_when_an_approved_project_has_no_current_version():
     state["versions"] = [row for row in state["versions"] if row["id"] != "V-0"]
     with pytest.raises(ValueError, match="current_versions_missing_or_duplicated"):
         build_snapshot(state)
+
+
+def test_local_source_fingerprint_rows_keep_full_shape_and_project_scope():
+    state = _state()
+    state["fact_corrections"] = [
+        {"projectId": PROJECT_IDS[0], "documentVersionId": "V-0", "fieldId": "F",
+         "correctedByUserId": "LOCAL-ONLY", "correctedValue": "revised"},
+        {"projectId": "OTHER-PROJECT", "documentVersionId": "V-OTHER", "fieldId": "F2"},
+    ]
+    state["extracted_fields"] = [{"documentVersionId": "V-0", "localValue": "kept"},
+                                 {"documentVersionId": "V-OTHER", "localValue": "foreign"}]
+    state["evidence_links"] = [{"documentVersionId": "V-0", "localMarker": "kept"}]
+    snapshot = build_snapshot(state)
+    assert snapshot["fact_corrections"] == [state["fact_corrections"][0]]
+    assert snapshot["extracted_fields"] == [state["extracted_fields"][0]]
+    assert snapshot["evidence_links"] == state["evidence_links"]
+
+
+def test_database_export_reads_the_document_versions_collection(monkeypatch):
+    queried_collections = []
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=()):
+            if query.startswith("SET TRANSACTION"):
+                return Cursor([])
+            if "aicheck_singletons" in query:
+                return Cursor([({"materialReviewPoints": []},)])
+            collection = params[1]
+            queried_collections.append(collection)
+            if collection == "documents":
+                return Cursor([({"id": "D", "currentVersionId": "V"},)])
+            if collection == "document_versions":
+                return Cursor([({"id": "V", "documentId": "D"},)])
+            return Cursor([])
+
+    monkeypatch.setitem(sys.modules, "psycopg", types.SimpleNamespace(
+        connect=lambda _url: Connection(), Error=Exception,
+    ))
+    state = _database_state("postgresql://test")
+    assert state["versions"] == [{"id": "V", "documentId": "D"}]
+    assert "document_versions" in queried_collections
+    assert "versions" not in queried_collections

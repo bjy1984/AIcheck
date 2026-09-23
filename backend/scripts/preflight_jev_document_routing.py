@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import zlib
 from collections import Counter
 from pathlib import Path
@@ -179,12 +181,17 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="Write a metadata-only report to this path")
     args = parser.parse_args()
     if args.snapshot:
+        if stat.S_IMODE(args.snapshot.stat().st_mode) & 0o077:
+            parser.error("private_snapshot_permissions_required")
         report = preflight_project_corpus(
             json.loads(zlib.decompress(args.snapshot.read_bytes())),
             expected_project_count=args.expected_project_count,
         )
         if args.output:
-            args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                json.dump(report, output, ensure_ascii=False, indent=2)
+                output.write("\n")
         else:
             print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if not report["invalidEvidenceLinks"] else 2

@@ -43,6 +43,15 @@ def test_paid_request_budget_rejects_whole_batch_before_first_call(monkeypatch):
     assert called == []
 
 
+def test_changed_preflight_count_rejects_before_outbound(monkeypatch):
+    monkeypatch.setattr(runner, "jev_enabled", lambda: True)
+    called = []
+    with pytest.raises(ValueError, match="evaluation_preflight_request_count_changed"):
+        runner.run_cases([_case()], send=True, limit=1, max_requests=2,
+                         expected_requests=2, ask=lambda *_args, **_kwargs: called.append(True))
+    assert called == []
+
+
 def test_live_shadow_is_metadata_only_and_cost_is_reported_only_when_provider_supplies_it(monkeypatch):
     monkeypatch.setattr(runner, "jev_enabled", lambda: True)
 

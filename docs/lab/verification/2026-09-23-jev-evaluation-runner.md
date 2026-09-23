@@ -19,7 +19,7 @@
 cd backend
 .venv/bin/python -m scripts.run_jev_routing_evaluation \
   --test2 --case-id EVAL-test2-019 --case-id EVAL-test2-020 \
-  --limit 2 --max-requests 10 --send \
+  --limit 2 --max-requests 8 --expected-requests 8 --send \
   --output-shadows /private/path/test2-jev-shadows.jsonl \
   --output-report /private/path/test2-jev-report.json
 ```

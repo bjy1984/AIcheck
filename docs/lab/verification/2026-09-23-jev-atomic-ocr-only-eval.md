@@ -7,16 +7,19 @@
 问题，与当前 Qwen 结果比较，不混入规则引擎 16＋17 风险样本。节点 24／29
 的多人题暂不纳入该原子题回放，报告列出排除数量，不借通用题冒充逐人评估。
 
-待新快照与轮换测试密钥到位后，先不加 `--send` 预检，再按精确请求上限小批实跑：
+轮换测试密钥到位后，先不加 `--send` 预检，再按精确请求上限小批实跑。
+以下 `N` 必须换成该批刚预检得到的精确请求数：
 
 ```bash
 cd backend
 .venv/bin/python -m scripts.run_jev_atomic_evaluation \
-  --snapshot /private/path/seven-project.json.zlib --limit 2 --max-requests 10 \
+  --snapshot /private/path/seven-project.json.zlib --limit 2 --max-requests N \
+  --expected-requests N \
   --send --output /private/path/atomic-run.json
 .venv/bin/python -m scripts.run_jev_atomic_evaluation \
   --snapshot /private/path/seven-project.json.zlib --mode r19 \
-  --limit 2 --max-requests 10 --send --output /private/path/r19-run.json
+  --limit 2 --max-requests N --expected-requests N \
+  --send --output /private/path/r19-run.json
 ```
 
 `prepare_jev_atomic_labels.py` 从实际影子记录生成盲标题包。默认抽 16 道规则分歧
@@ -29,11 +32,14 @@ cd backend
 `incomplete` 与阻塞项；即便齐全也只为 `ready_for_decision`，不自动批准门槛、
 拒绝主张、文件挂载或正式裁决。33 题是风险抽样，不可说成全体准确率。
 
-本环境当前仍没有新测试密钥或七项目快照，监检标注亦未到位；三组实际 Jev 调用
-均为 0。本批只完成录制回归、盲标题包及可重算的中间报告路径。
+本环境当前仍没有新测试密钥，监检标注亦未到位；三组实际 Jev 调用均为 0。
+七项目快照已取得，但本次历史任务中原子题 12 个候选全部因资料指纹变化或
+全文超长而停下；R19 无可对照正式任务。详见
+[`新快照与中间报告`](2026-09-23-jev-fresh-snapshot-interim-report.md)。
 
 本机运行报告编译器得到 `incomplete`，阻塞项为三组实际调用、文件归属真值、
 33 题真值、R19 真值及供应商账单；私有 JSON 在
-`/tmp/aicheck-jev-decision-interim-20260923.json`（0600）。完整后端测试
+`/Users/big67/.codex/aicheck-jev-eval/2026-09-23/aicheck-jev-decision-single-interim-20260923.json`
+（0600）。此前完整后端测试
 **5,473 通过、81 跳过、0 失败**，Ruff 基线 **286／286**，`git diff --check`
 通过。81 项环境选择性跳过不算外部服务实测。

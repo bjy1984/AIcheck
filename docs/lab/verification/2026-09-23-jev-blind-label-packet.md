@@ -3,8 +3,8 @@
 `backend/scripts/prepare_jev_routing_labels.py` 从新七项目私有 OCR 快照中，按固定
 哈希种子在**看到 Jev 答案之前**每项目抽四份完整可处理文件。每份列出全部可用
 节点和空白「属于／不属于／不确定」栏，保存文件版本及实际 Jev 请求输入哈希。
-题包不包含 Jev 的选择／把握值，也不包含现有挂载。OCR 原文继续由监检人员
-在内部文件界面读取，题包不复制正文。
+题包不包含 Jev 的选择／把握值，也不包含现有挂载。另有私有来源包，逐份提供
+完整 OCR 与固定节点题目供监检员查阅；来源包和空白标注表分开保存。
 
 标注人填写 `annotatedBy` 和每个 `nodeLabels[].choice`，可用值是
 `belongs`、`does_not_belong`、`uncertain`。`expectedNodeIds` 不得删改；漏标
@@ -22,5 +22,7 @@ cd backend
   --output /private/path/jev-routing-inspector-packet.json
 ```
 
-当前七项目新快照尚未取得，所以本批**未生成真实题包，也没有监检标注**。
-录制测试验证了固定抽样、空白题包、不泄露预测／旧挂载、版本哈希与完整节点检查。
+新快照已取得，真实题包为 28 份文件、1,904 个节点配对；监检标注目前仍为 0。
+私有路径、快照哈希及来源包见
+[`新快照与中间报告`](2026-09-23-jev-fresh-snapshot-interim-report.md)。录制测试验证
+固定抽样、空白题包、不泄露预测／旧挂载、版本哈希与完整节点检查。

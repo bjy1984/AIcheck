@@ -107,6 +107,15 @@ def test_request_cap_and_failed_latest_prevent_outbound(monkeypatch):
     assert report["attemptedRequestCount"] == 0
 
 
+def test_atomic_preflight_count_change_rejects_before_outbound(monkeypatch):
+    from scripts import run_jev_atomic_evaluation as evaluation
+
+    monkeypatch.setattr(evaluation, "jev_enabled", lambda: True)
+    with pytest.raises(ValueError, match="evaluation_preflight_request_count_changed"):
+        run_cases(atomic_cases(_snapshot()), send=True, limit=1, max_requests=2,
+                  expected_requests=2, ask=lambda *_args, **_kwargs: 1 / 0)
+
+
 def test_conflicting_local_rule_results_are_not_used_as_comparison_truth():
     snapshot = _snapshot()
     snapshot["rule_check_results"].append({"reviewRunId": "RR-1", "atomicCheckResults": [
