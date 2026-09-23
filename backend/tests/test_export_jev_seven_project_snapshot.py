@@ -8,6 +8,7 @@ import zlib
 
 import pytest
 
+from scripts import export_jev_seven_project_snapshot as exporter
 from scripts.export_jev_seven_project_snapshot import (
     PROJECT_IDS,
     _database_state,
@@ -120,3 +121,15 @@ def test_database_export_reads_the_document_versions_collection(monkeypatch):
     assert state["versions"] == [{"id": "V", "documentId": "D"}]
     assert "document_versions" in queried_collections
     assert "versions" not in queried_collections
+
+
+def test_explicit_private_replay_ignores_ambient_database_url(tmp_path, monkeypatch):
+    source = tmp_path / "source.json.zlib"
+    source.write_bytes(zlib.compress(json.dumps(_state()).encode()))
+    source.chmod(0o600)
+    output = tmp_path / "snapshot.json.zlib"
+    monkeypatch.setenv("AICHECK_DATABASE_URL", "postgresql://must-not-be-read")
+    monkeypatch.setattr(exporter, "_database_state", lambda _url: 1 / 0)
+    monkeypatch.setattr(sys, "argv", ["export", "--state-zlib", str(source), "--output", str(output)])
+    assert exporter.main() == 0
+    assert output.exists()

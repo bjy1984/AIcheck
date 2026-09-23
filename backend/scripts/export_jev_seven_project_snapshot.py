@@ -159,12 +159,15 @@ def _private_write(path: Path, data: bytes) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database-url", default=os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL"))
+    parser.add_argument("--database-url")
     parser.add_argument("--state", type=Path, help="Existing private JSON state for offline replay")
     parser.add_argument("--state-zlib", type=Path, help="Existing private zlib JSON state for offline replay")
     parser.add_argument("--output", required=True, type=Path, help="New private .json.zlib path")
     args = parser.parse_args()
-    if sum(map(bool, (args.database_url, args.state, args.state_zlib))) != 1:
+    database_url = args.database_url
+    if not args.state and not args.state_zlib:
+        database_url = database_url or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if sum(map(bool, (database_url, args.state, args.state_zlib))) != 1:
         parser.error("provide exactly one of --state, --state-zlib, or a database URL")
     try:
         if args.state or args.state_zlib:
@@ -174,7 +177,7 @@ def main() -> int:
             state = (json.loads(zlib.decompress(source.read_bytes())) if args.state_zlib
                      else json.loads(source.read_text(encoding="utf-8")))
         else:
-            state = _database_state(args.database_url)
+            state = _database_state(database_url)
         snapshot = build_snapshot(state)
         payload = zlib.compress(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode(), level=9)
         _private_write(args.output, payload)
