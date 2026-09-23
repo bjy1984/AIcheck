@@ -31,7 +31,10 @@ from datetime import date, timedelta
 from typing import Any
 
 from libs.contracts.responses import business_today
-from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
+from libs.ocr.welder_certificate_tool import (
+    extract_welder_certificate_from_ocr_result,
+    split_welder_cards,
+)
 from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 
@@ -436,7 +439,6 @@ def _extract_certificates(
     if profile["certificateType"] == "welder_certificate":
         welder = _welder_certificates(parse_result, version_id, file_name)
         if welder:
-            _fill_from_text(welder[0], _full_text(parse_result), parse_result, version_id, file_name)
             return welder
     fields = _field_values(parse_result)
     text = _full_text(parse_result)
@@ -647,6 +649,21 @@ def _roman(value: str) -> str:
 
 
 def _welder_certificates(parse_result: dict[str, Any], version_id: str, file_name: str) -> list[dict[str, Any]]:
+    # 几个焊工的证合订成一份时按「某某焊工证」分段，每人一条；不分段会把甲的姓名配上乙的证号。
+    fragments = [item for item in parse_result.get("fragments") or [] if isinstance(item, dict)]
+    segments = split_welder_cards(fragments) if fragments else [fragments]
+    parts = [parse_result] if len(segments) == 1 else [{**parse_result, "fragments": segment} for segment in segments]
+    records = []
+    for part in parts:
+        found = _welder_certificate(part, version_id, file_name)
+        if found:
+            # 正文补缺只用这个人自己那一段，不能从合订本别人的证上补。
+            _fill_from_text(found[0], _full_text(part), part, version_id, file_name)
+        records.extend(found)
+    return records
+
+
+def _welder_certificate(parse_result: dict[str, Any], version_id: str, file_name: str) -> list[dict[str, Any]]:
     try:
         extraction = extract_welder_certificate_from_ocr_result(parse_result)
     except Exception:  # noqa: BLE001 - 抽取器失败就退回通用路径
@@ -657,9 +674,11 @@ def _welder_certificates(parse_result: dict[str, Any], version_id: str, file_nam
     certificate_no = _field_obj_value(fields.get("certificateNo"))
     if not name and not certificate_no and not qualified:
         return []
-    valid_until_dates = [parse_date(item.get("validUntil")) for item in qualified]
+    # 日期自相矛盾（批准日晚于截止日）的项不参与有效期判断。
+    qualified_dated = [item for item in qualified if not item.get("dateConflict")]
+    valid_until_dates = [parse_date(item.get("validUntil")) for item in qualified_dated]
     valid_until_dates = [item for item in valid_until_dates if item]
-    approval_dates = [parse_date(item.get("approvalDate")) for item in qualified]
+    approval_dates = [parse_date(item.get("approvalDate")) for item in qualified_dated]
     approval_dates = [item for item in approval_dates if item]
     record = {
         "certificateType": "welder_certificate",

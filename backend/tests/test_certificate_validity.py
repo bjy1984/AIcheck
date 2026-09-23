@@ -413,3 +413,27 @@ def test_有效期起字段不能当截止日():
     item = build_certificate_facts(_installation_licence_state(fields, ""), "P-1", 2, ["DV-1"])[
         "certificateFacts"]["certificates"][0]
     assert (item["validFrom"], item["validUntil"]) == ("2024-09-07", "2028-09-06")
+
+
+def test_合订的几张焊工证按人分开_不把甲的姓名配上乙的证号():
+    # 生产实例：三名焊工的证合订成一份，旧版产出一条「李卫伍＋赵相军证号」的记录。
+    fragments = [{"pageNo": 1, "text": text} for text in [
+        "焊工清单", "序号 姓名 证号 有效期",
+        "张三焊工证", "考试合格作业项目(取证)", "项目代号 有效期 发证机关(章)", "批准日期",
+        "GTAW-FeⅡ-6G-3/159-FefS-02/11/12 自 2024年12月至 2028年11月 示例市局 2024年12月26日",
+        "姓名 张三", "证件编号 110101199001010011", "发证机关 示例市市场监督管理局",
+        "李四焊工证", "考试合格作业项目(取证)", "项目代号 有效期 发证机关(章)", "批准日期",
+        "SMAW-FeⅡ-6G(K)-12/159-Fef3J 自 2023年4月至 2027年4月 示例县局 2023年2月17日",
+        "姓名 李四", "证件编号 110101199202020022", "发证机关 示例县市场监督管理局",
+    ]]
+    state = {
+        "projects": [{"id": "P-1", "constructionStart": "2025-04-01", "plannedConstructionEnd": "2026-04-30"}],
+        "documents": [{"id": "DOC-1", "projectId": "P-1", "fileName": "焊工证.pdf",
+                       "materialTypeCode": "welder_certificate", "currentVersionId": "DV-1"}],
+        "ocr_parse_results": [{"documentVersionId": "DV-1", "status": "success", "fields": [], "fragments": fragments}],
+    }
+    certificates = build_certificate_facts(state, "P-1", 24, ["DV-1"])["certificateFacts"]["certificates"]
+    assert [(item["holder"], item["certificateNo"], item["validUntil"]) for item in certificates] == [
+        ("张三", "110101199001010011", "2028-11-30"),
+        ("李四", "110101199202020022", "2027-04-30"),
+    ]

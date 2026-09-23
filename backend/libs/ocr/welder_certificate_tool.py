@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import calendar
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +14,14 @@ TOOL_VERSION = "welder-certificate-extractor-v1"
 DATE_RE = re.compile(
     r"(?:19|20)\d{2}\s*[.。,\-/年]\s*\d{1,2}\s*[.。,\-/月]\s*\d{1,2}\s*(?:日)?"
 )
+# 焊工证卡片的有效期常只写到月（「自 2024年11月 至 2028年10月」），名单表也常写「2024-11」。
+ANY_DATE_TEXT = r"(?:19|20)\d{2}\s*[.。,\-/年]\s*\d{1,2}(?:\s*[.。,\-/月]\s*\d{1,2}\s*日?|\s*月)?"
+ANY_DATE_RE = re.compile(ANY_DATE_TEXT)
+VALIDITY_RANGE_RE = re.compile(r"自?\s*(" + ANY_DATE_TEXT + r")\s*(?:至|到|—|~|～)\s*(" + ANY_DATE_TEXT + r")")
+ROW_START_RE = re.compile(r"^\d{1,3}\s")
+APPROVAL_LABELS = ("批准日期", "发证日期", "取证日期")
+VALIDITY_LABELS = ("有效期限", "有效期至", "有效日期", "有效期")
+CARD_HEADING_RE = re.compile(r"^\s*([一-龥·]{2,4})\s*焊工证\s*$")
 ID_NO_RE = re.compile(r"\b\d{17}[\dXx]\b")
 ARCHIVE_NO_RE = re.compile(r"\b(?:TS)?[A-Z0-9]{8,24}\b", re.IGNORECASE)
 OP_PREFIX_RE = re.compile(r"\b(?:GT(?:AW|AT|AN|AI)|SMAW|GMAW|FCAW|SAW|PAW|OFW)\b", re.IGNORECASE)
@@ -259,37 +268,130 @@ def issuing_authority_candidate(text: str) -> str | None:
     return None
 
 
+def header_date_kinds(line: str) -> list[str]:
+    """Date columns named in a table header, in the order they appear."""
+    found = []
+    for kind, labels in (("approval", APPROVAL_LABELS), ("validity", VALIDITY_LABELS)):
+        positions = [line.find(label) for label in labels if label in line]
+        if positions:
+            found.append((min(positions), kind))
+    return [kind for _position, kind in sorted(found)]
+
+
+def parse_certificate_date(raw: str, *, month_end: bool) -> date | None:
+    parts = [int(part) for part in re.findall(r"\d+", raw)]
+    try:
+        if len(parts) >= 3:
+            return date(parts[0], parts[1], parts[2])
+        if len(parts) == 2 and 1 <= parts[1] <= 12:
+            day = calendar.monthrange(parts[0], parts[1])[1] if month_end else 1
+            return date(parts[0], parts[1], day)
+    except ValueError:
+        return None
+    return None
+
+
+def item_dates(text: str, kinds: list[str]) -> tuple[date | None, date | None, bool]:
+    """(approval, validUntil, conflict) for one row, by the header's column order, never by guesswork.
+
+    A validity range「自 A 至 B」ends on B (month-only B means the month's last day); a
+    remaining full date is the approval date. Without a range, dates follow the header's
+    column order. Two dates and no header: the earlier is approval, the later is validity.
+    """
+    approval = until = None
+    ranged = VALIDITY_RANGE_RE.search(text)
+    if ranged:
+        until = parse_certificate_date(ranged.group(2), month_end=True)
+        rest = text[: ranged.start()] + " " + text[ranged.end():]
+        others = [parse_certificate_date(match.group(0), month_end=False) for match in ANY_DATE_RE.finditer(rest)]
+        approval = next((value for value in others if value), None)
+    else:
+        found = [match.group(0) for match in ANY_DATE_RE.finditer(text)]
+        if kinds and len(found) >= len(kinds):
+            for kind, raw in zip(kinds, found, strict=False):
+                if kind == "approval":
+                    approval = parse_certificate_date(raw, month_end=False)
+                else:
+                    until = parse_certificate_date(raw, month_end=True)
+        elif not kinds and len(found) >= 2:
+            parsed = sorted(value for value in (parse_certificate_date(raw, month_end=True) for raw in found[:2])
+                            if value)
+            if len(parsed) == 2:
+                approval, until = parse_certificate_date(found[0], month_end=False), parsed[1]
+                approval = min(approval, parsed[1]) if approval else parsed[0]
+    if approval and until and approval > until:
+        return approval, None, True
+    return approval, until, False
+
+
 def extract_qualified_items(lines: list[str]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     buffer: list[str] = []
+    kinds: list[str] = []
+    in_header = False
+
+    def flush() -> None:
+        joined = " ".join(buffer)
+        codes = operation_codes(joined)
+        approval, until, conflict = item_dates(joined, kinds)
+        if codes and (until or conflict):
+            valid_until = until.strftime("%Y.%m.%d") if until else ""
+            items.append({
+                "itemNo": len(items) + 1,
+                "operationItemCode": " 和 ".join(codes),
+                "operationItemCodes": codes,
+                "approvalDate": approval.strftime("%Y.%m.%d") if approval else "",
+                "validUntil": valid_until,
+                "validityStatus": validity_status(valid_until) if valid_until else "unknown",
+                **({"dateConflict": True} if conflict else {}),
+                "evidenceText": joined,
+                "confidence": (
+                    0.74
+                    if conflict or any("requires_original_review" in code for code in codes)
+                    else 0.82
+                ),
+            })
+        buffer.clear()
+
     for line in lines:
-        if "作业项目代号" in line or "批准日期" in line or "有效日期" in line:
+        header = header_date_kinds(line)
+        if header and not OP_PREFIX_RE.search(line) and not ANY_DATE_RE.search(line):
+            if buffer:
+                flush()
+            # 卡片表头常折成两行：「项目代号 有效期 发证机关(章)」+「批准日期」。
+            kinds = (kinds if in_header else []) + [kind for kind in header if kind not in kinds or not in_header]
+            in_header = True
             continue
+        in_header = False
+        starts_row = bool(ROW_START_RE.match(line)) or bool(OP_PREFIX_RE.search(line))
+        if buffer and starts_row and operation_codes(" ".join(buffer)) and ANY_DATE_RE.search(" ".join(buffer)):
+            flush()
         if OP_PREFIX_RE.search(line) or buffer:
             buffer.append(line)
             joined = " ".join(buffer)
-            dates = [normalize_date(match.group(0)) for match in DATE_RE.finditer(joined)]
-            codes = operation_codes(joined)
-            if codes and len(dates) >= 2:
-                item = {
-                    "itemNo": len(items) + 1,
-                    "operationItemCode": " 和 ".join(codes),
-                    "operationItemCodes": codes,
-                    "approvalDate": dates[0],
-                    "validUntil": dates[1],
-                    "validityStatus": validity_status(dates[1]),
-                    "evidenceText": joined,
-                    "confidence": (
-                        0.74
-                        if any("requires_original_review" in code for code in codes)
-                        else 0.82
-                    ),
-                }
-                items.append(item)
-                buffer = []
+            needed = max(len(kinds), 1) if kinds else 2
+            if operation_codes(joined) and (VALIDITY_RANGE_RE.search(joined) and (
+                    "approval" not in kinds or len(ANY_DATE_RE.findall(joined)) >= 3)
+                    or (not VALIDITY_RANGE_RE.search(joined) and len(ANY_DATE_RE.findall(joined)) >= needed)):
+                flush()
             elif len(joined) > 360:
-                buffer = []
+                buffer.clear()
+    if buffer:
+        flush()
     return items
+
+
+def split_welder_cards(fragments: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split a bundle of several welders' cards at each「某某焊工证」heading.
+
+    Without at least two headings the document is returned whole, as before. Text before
+    the first heading (for example a welder list) belongs to no card and is left out.
+    """
+    starts = [index for index, fragment in enumerate(fragments)
+              if CARD_HEADING_RE.match(str(fragment.get("text") or ""))]
+    if len(starts) < 2:
+        return [fragments]
+    return [fragments[start:end] for start, end in zip(starts, [*starts[1:], len(fragments)], strict=True)]
 
 
 def operation_codes(text: str) -> list[str]:
