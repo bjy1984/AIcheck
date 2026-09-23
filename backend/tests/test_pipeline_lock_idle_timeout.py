@@ -11,6 +11,10 @@ session 级 advisory lock 只在连接断开时释放。持锁的 worker 进程�
 from __future__ import annotations
 
 import pathlib
+import sys
+from types import SimpleNamespace
+
+from libs.pipeline_lock import pipeline_lock
 
 BACKEND_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -29,3 +33,28 @@ def test_lock_still_releases_in_finally() -> None:
     source = (BACKEND_ROOT / "libs" / "pipeline_lock.py").read_text(encoding="utf-8")
     assert "pg_advisory_unlock" in source
     assert "connection.close()" in source
+
+
+def test_long_jev_task_can_extend_idle_timeout_without_changing_default(monkeypatch) -> None:
+    commands = []
+
+    class Connection:
+        def execute(self, command, *_args):
+            commands.append(command)
+            return SimpleNamespace(fetchone=lambda: [True])
+
+        def close(self):
+            commands.append("close")
+
+    monkeypatch.setenv("AICHECK_DATABASE_URL", "postgresql://test")
+    monkeypatch.setitem(sys.modules, "psycopg", SimpleNamespace(
+        connect=lambda *_args, **_kwargs: Connection(), Error=Exception,
+    ))
+    with pipeline_lock("aicheck:test") as acquired:
+        assert acquired is True
+    with pipeline_lock("aicheck:jev-document-routing:test", idle_timeout_seconds=150) as acquired:
+        assert acquired is True
+
+    assert "SET idle_session_timeout = '60s'" in commands
+    assert "SET idle_session_timeout = '150s'" in commands
+    assert commands.count("close") == 2

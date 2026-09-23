@@ -632,6 +632,7 @@ def classify_document_material(
     lambda _self, _project_id, _document_id, version_id, tenant_id=None: (
         f"{tenant_id or current_tenant_id()}:{version_id}"
     ),
+    idle_timeout_seconds=150,
 )
 def classify_document_node_jev_shadow(
     self, project_id: str, document_id: str, version_id: str,
