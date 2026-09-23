@@ -303,9 +303,12 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
     """
     names = _atomic_check_names(str(run.get("businessPackId") or ""))
     opinions = _visible_jev_opinions(run)
-    decision = run.get("jevDecision") or {}
-    jev_choices = {str(row.get("atomicCheckId")): row for row in decision.get("atomic") or []
-                   if isinstance(row, dict) and row.get("atomicCheckId")}
+    fact_check = run.get("jevFactCheck") if isinstance(run.get("jevFactCheck"), dict) else {}
+    fact_check_view = ({"status": fact_check["status"], "suspects": list(fact_check.get("suspects") or []),
+                        "facts": [{key: row.get(key) for key in ("certificateLabel", "field", "value", "choice",
+                                                                 "confidence", "suspect", "status")}
+                                  for row in fact_check.get("facts") or []]}
+                       if fact_check.get("status") in {"completed", "partial"} else None)
     seen: set[str] = set()
     outcomes: list[dict[str, Any]] = []
     for record in records:
@@ -318,25 +321,17 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
             if not check_id or check_id in seen:
                 continue
             seen.add(check_id)
-            original_result = str(atomic.get("deterministicResult") or atomic.get("result") or "")
-            jev_row = jev_choices.get(check_id) if decision.get("status") == "completed" else None
-            active_result = str(jev_row.get("choice") or "") if jev_row else str(atomic.get("result") or "")
-            if decision and decision.get("status") not in {"completed", "disabled", "nonformal_run",
-                                                           "no_semantic_checks"}:
-                active_result = ("evidence_insufficient" if decision["status"] in {
-                    "no_ocr_text", "ocr_not_ready", "overlong_document", "ambiguous_ocr_attempt"
-                } else "human_review_required")
-            source = ("jev" if jev_row else "jev_unavailable" if decision and decision.get("status")
-                      not in {"completed", "disabled", "nonformal_run", "no_semantic_checks"} else "rule_engine")
+            hint = atomic.get("jevHint") if isinstance(atomic.get("jevHint"), dict) else None
             outcomes.append(
                 {
                     "atomicCheckId": check_id,
                     "name": names.get(check_id) or check_id,
-                    "result": active_result,
-                    "decisionSource": source,
-                    **({"deterministicResult": original_result, "jevConfidence": jev_row["confidence"],
-                        **({"perPerson": jev_row["perPerson"]} if jev_row.get("perPerson") else {})}
-                       if jev_row else {"deterministicResult": original_result} if source == "jev_unavailable" else {}),
+                    "result": str(atomic.get("result") or ""),
+                    "decisionSource": "rule_engine",
+                    # Jev 只给选项和把握值、不给理由：分歧只用来排人工核对的先后。
+                    **({"jevHint": hint} if hint else {}),
+                    **({"jevFactCheck": fact_check_view}
+                       if fact_check_view and check_id == fact_check.get("atomicCheckId") else {}),
                     "ruleCode": str(record.get("ruleCode") or ""),
                     # 「需人工判断」的原因常是引擎没给分：把没分的事实列出来，
                     # 界面才有东西让人核，核完落成 fact_corrections 下次就有分。
@@ -346,9 +341,7 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     # 通过/不通过/需人工都要看得见依据：业务工具的逐条检查、不足原因、
                     # 以及事实引用的证据原文（文件·页·引文·来源）。
                     "checks": _business_checks(atomic),
-                    "reason": ("Jev 与规则结果不同，请核对原文后确认。" if jev_row and active_result != original_result
-                               else "出题或答题本次未完成，需人工核查或重试。" if source == "jev_unavailable"
-                               else _outcome_reason(atomic)),
+                    "reason": _outcome_reason(atomic),
                     "facts": _grounded_facts(atomic),
                     **({"secondOpinion": opinions[check_id]} if check_id in opinions else {}),
                 }

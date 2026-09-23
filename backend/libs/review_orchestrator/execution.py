@@ -81,7 +81,13 @@ from libs.review_orchestrator.failure_policy import (
     review_failure_retryable,
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
-from libs.review_orchestrator.jev_primary import apply_decision, author_node_questions, decide_node
+from libs.review_orchestrator.jev_fact_check import check_certificate_facts
+from libs.review_orchestrator.jev_primary import (
+    attach_hints,
+    author_node_questions,
+    decide_node,
+    jev_hint_summary,
+)
 from libs.review_orchestrator.jev_tables import classify_review_tables
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.ndt_fact_builders import NDT_FACT_BUILDERS
@@ -1358,16 +1364,12 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=suggested_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {
-                    # Jev 分支由 Jev 产生建议；原规则结果保留供监检人员核对。
+                    # 结论只来自规则、平台核验和计算；Jev 只给出分歧提示。
                     "result": SUGGESTION_RESULT_LABELS.get(suggested_verdict, "需人工确认"),
                     "primaryResult": suggested_verdict or None,
                     "deterministicResult": deterministic_verdict or None,
-                    "decisionSource": (
-                        "jev" if (review_run.get("jevDecision") or {}).get("status") == "completed"
-                        else "rule_engine" if (review_run.get("jevDecision") or {}).get("status") in {
-                            "disabled", "nonformal_run", "no_semantic_checks"
-                        } else "jev_unavailable"
-                    ),
+                    "decisionSource": "rule_engine",
+                    **jev_hint_summary(review_run.get("jevDecision"), review_run.get("jevFactCheck")),
                     "opinionDraft": opinion["text"],
                     "opinionSource": opinion["source"],
                     "confidence": opinion["confidence"],
@@ -1850,10 +1852,14 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         decision = decide_node(repo.state, review_run, original, pack,
                                review_run.get("jevQuestionPlan"), business_facts=context.get("businessFacts"))
         review_run["jevDecision"] = decision
-        if decision["status"] not in {"disabled", "nonformal_run", "no_semantic_checks"}:
-            context["deterministicRuleResults"] = original
-            context["ruleResults"] = apply_decision(original, decision)
-        return {"status": decision["status"], "decisionCount": len(decision["atomic"])}
+        # Jev 只加提示、不改结论：规则、平台核验和计算结果照旧往下走。
+        context["ruleResults"] = attach_hints(original, decision)
+        # 规则用到的证书事实请 Jev 对原文核一遍：答「否」只标记抽取可疑（R02-02 那一类）。
+        fact_check = check_certificate_facts(repo.state, review_run, context.get("certificateVerification"))
+        review_run["jevFactCheck"] = fact_check
+        return {"status": decision["status"], "decisionCount": len(decision["atomic"]),
+                "disagreementCount": len(decision.get("disagreementAtomicCheckIds") or []),
+                "factCheckStatus": fact_check["status"], "factSuspectCount": len(fact_check.get("suspects") or [])}
     if node_key == "retrieve_knowledge":
         retrieval = retrieve_knowledge_clauses(
             repo.state,

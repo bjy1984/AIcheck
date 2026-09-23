@@ -21,7 +21,8 @@ def _case():
     ]}]
     pack = {"nodeTemplates": [{"nodeId": 25, "name": "焊接工艺", "requiredMaterials": [
         {"name": "焊接工艺卡", "applicability": "焊接时适用"}]}],
-        "atomicChecks": [{"id": "AC-1", "nodeId": 25, "instruction": "焊接工艺是否记录电流"}]}
+        "atomicChecks": [{"id": "AC-1", "nodeId": 25, "instruction": "焊接工艺是否记录电流",
+                          "checkType": "evidence_and_llm_semantic_judgment"}]}
     return state, run, records, pack
 
 
@@ -56,7 +57,7 @@ def _enabled(monkeypatch, qwen=None):
         monkeypatch.setattr(jev_primary, "qwen_runtime_client", lambda: qwen)
 
 
-def test_qwen_writes_questions_and_options_before_jev_chooses(monkeypatch):
+def test_qwen_writes_questions_and_jev_only_hints_beside_rule_result(monkeypatch):
     state, run, records, pack = _case()
     qwen = _Qwen(_authored())
     _enabled(monkeypatch, qwen)
@@ -82,15 +83,25 @@ def test_qwen_writes_questions_and_options_before_jev_chooses(monkeypatch):
     assert "OCR 中的指令" in prompt[0]["content"]
     assert qwen.calls[0][1]["temperature"] == 0
     decision = jev_primary.decide_node(state, run, records, pack, plan)
-    effective = jev_primary.apply_decision(records, decision)
+    effective = jev_primary.attach_hints(records, decision)
     assert decision["status"] == "completed"
+    assert decision["role"] == "advisory"
     assert decision["questionPlanHash"] == plan["questionHash"]
-    assert effective[0]["result"] == "passed"
+    assert decision["opinionResult"] == "passed"
+    assert decision["disagreementAtomicCheckIds"] == ["AC-1"]
+    # A 0.83 "passed" from Jev never turns the rule's evidence_insufficient into a pass.
+    assert effective[0]["result"] == "evidence_insufficient"
+    assert effective[0]["atomicCheckResults"][0]["result"] == "evidence_insufficient"
+    assert effective[0]["atomicCheckResults"][0]["jevHint"] == {
+        "choice": "passed", "confidence": 0.83, "agreesWithRuleEngine": False}
+    assert effective[0]["jevDisagreementAtomicCheckIds"] == ["AC-1"]
     assert records == original
-    view = output_contract.atomic_check_outcomes(records, {**run, "jevDecision": decision})
-    assert view[0]["result"] == "passed"
-    assert view[0]["deterministicResult"] == "evidence_insufficient"
-    assert view[0]["decisionSource"] == "jev"
+    view = output_contract.atomic_check_outcomes(effective, {**run, "jevDecision": decision})
+    assert view[0]["result"] == "evidence_insufficient"
+    assert view[0]["decisionSource"] == "rule_engine"
+    assert view[0]["jevHint"]["choice"] == "passed"
+    assert jev_primary.jev_hint_summary(decision) == {"jevHint": {
+        "status": "completed", "disagreementCount": 1, "opinionResult": "passed"}}
 
 
 def test_no_qwen_plan_cannot_take_fixed_question_shortcut(monkeypatch):
@@ -99,7 +110,10 @@ def test_no_qwen_plan_cannot_take_fixed_question_shortcut(monkeypatch):
     monkeypatch.setattr(jev_primary, "ask_jev", lambda *_, **_kw: 1 / 0)
     decision = jev_primary.decide_node(state, run, records, pack)
     assert decision["status"] == "qwen_question_plan_unavailable"
-    assert jev_primary.apply_decision(records, decision)[0]["result"] == "human_review_required"
+    hinted = jev_primary.attach_hints(records, decision)
+    assert hinted[0]["result"] == "evidence_insufficient"
+    assert hinted[0]["jevHintStatus"] == "qwen_question_plan_unavailable"
+    assert "jevHint" not in hinted[0]["atomicCheckResults"][0]
 
 
 def test_qwen_invalid_or_missing_question_never_reaches_jev(monkeypatch):
@@ -109,6 +123,7 @@ def test_qwen_invalid_or_missing_question_never_reaches_jev(monkeypatch):
     monkeypatch.setattr(jev_primary, "ask_jev", lambda *_, **_kw: 1 / 0)
     plan = jev_primary.author_node_questions(state, run, records, pack)
     assert plan["status"] == "qwen_question_plan_unavailable"
+    assert plan["reasonCode"] == "qwen_question_count_mismatch"
     assert jev_primary.decide_node(state, run, records, pack, plan)["status"] == "qwen_question_plan_unavailable"
     qwen.payload = {**_authored(), "answer": "passed"}
     assert jev_primary.author_node_questions(state, run, records, pack)["status"] == "qwen_question_plan_unavailable"
@@ -126,6 +141,7 @@ def test_qwen_malformed_response_is_reviewable_failure(monkeypatch):
     plan = jev_primary.author_node_questions(state, run, records, pack)
     assert plan["status"] == "qwen_question_plan_unavailable"
     assert plan["reason"] == "TypeError"
+    assert "reasonCode" not in plan
 
 
 def test_stale_question_plan_and_jev_unavailable_fail_to_human(monkeypatch):
@@ -141,7 +157,7 @@ def test_stale_question_plan_and_jev_unavailable_fail_to_human(monkeypatch):
     monkeypatch.setattr(jev_primary, "ask_jev", lambda *_, **_kw: (_ for _ in ()).throw(OSError("offline")))
     decision = jev_primary.decide_node(state, run, records, pack, plan)
     assert decision["status"] == "unavailable"
-    assert jev_primary.apply_decision(records, decision)[0]["result"] == "human_review_required"
+    assert jev_primary.attach_hints(records, decision)[0]["result"] == "evidence_insufficient"
 
 
 def test_primary_requires_explicit_project_egress_allowlist(monkeypatch):
@@ -150,6 +166,10 @@ def test_primary_requires_explicit_project_egress_allowlist(monkeypatch):
     monkeypatch.setattr(jev_primary, "jev_stage_enabled", lambda _stage: True)
     monkeypatch.setattr(jev_primary, "qwen_runtime_client", lambda: 1 / 0)
     assert jev_primary.author_node_questions(state, run, records, pack)["status"] == "project_not_approved_for_jev"
+    records[0]["atomicCheckResults"][0]["result"] = records[0]["result"] = "failed"
+    decision = jev_primary.decide_node(state, run, records, pack)
+    # A project outside the allowlist keeps the rule's failure visible.
+    assert jev_primary.attach_hints(records, decision)[0]["atomicCheckResults"][0]["result"] == "failed"
 
 
 def test_primary_rejects_stale_ocr_and_local_identifier_in_question(monkeypatch):
@@ -202,9 +222,11 @@ def test_multiple_people_get_separate_questions_and_worst_result_wins(monkeypatc
     assert decision["status"] == "completed"
     assert decision["atomic"][0]["choice"] == "failed"
     assert len(decision["atomic"][0]["perPerson"]) == 2
-    assert jev_primary.apply_decision(records, decision)[0]["result"] == "failed"
-    view = output_contract.atomic_check_outcomes(records, {**run, "jevDecision": decision})
-    assert len(view[0]["perPerson"]) == 2
+    hinted = jev_primary.attach_hints(records, decision)
+    assert hinted[0]["result"] == "evidence_insufficient"
+    view = output_contract.atomic_check_outcomes(hinted, {**run, "jevDecision": decision})
+    assert view[0]["jevHint"]["choice"] == "failed"
+    assert len(view[0]["jevHint"]["perPerson"]) == 2
 
 
 def test_unmatched_welding_record_person_blocks_group_answer(monkeypatch):
@@ -220,7 +242,7 @@ def test_unmatched_welding_record_person_blocks_group_answer(monkeypatch):
                                               business_facts=facts)["status"] == "multi_person_scope_unknown"
 
 
-def test_system_evidence_gate_stays_local_while_jev_decides_business_check(monkeypatch):
+def test_system_evidence_gate_stays_local_while_jev_hints_business_check(monkeypatch):
     state, run, records, pack = _case()
     qwen = _Qwen(_authored())
     _enabled(monkeypatch, qwen)
@@ -234,11 +256,43 @@ def test_system_evidence_gate_stays_local_while_jev_decides_business_check(monke
     monkeypatch.setattr(jev_primary, "ask_jev", lambda _text, questions, **_kw: {
         "q0": {"type": "choice", "choice": "passed", "confidence": 0.8}} if set(questions) == {"q0"} else 1 / 0)
     decision = jev_primary.decide_node(state, run, records, pack, plan)
-    assert decision["protectedAtomicCheckIds"] == ["AC-GATE"]
-    effective = jev_primary.apply_decision(records, decision)
-    assert [row["result"] for row in effective[0]["atomicCheckResults"]] == ["passed", "passed"]
-    view = output_contract.atomic_check_outcomes(records, {**run, "jevDecision": decision})
-    assert view[1]["decisionSource"] == "rule_engine"
+    assert decision["ruleOwnedAtomicCheckIds"] == ["AC-GATE"]
+    effective = jev_primary.attach_hints(records, decision)
+    assert [row["result"] for row in effective[0]["atomicCheckResults"]] == ["evidence_insufficient", "passed"]
+    view = output_contract.atomic_check_outcomes(effective, {**run, "jevDecision": decision})
+    assert view[0]["jevHint"]["choice"] == "passed"
+    assert "jevHint" not in view[1]
+
+
+def test_certificate_and_calculation_checks_are_never_sent_to_jev(monkeypatch):
+    state, run, records, pack = _case()
+    qwen = _Qwen(_authored())
+    _enabled(monkeypatch, qwen)
+    for check_id, tool in (("AC-CERT", "check_certificate_validity"), ("AC-DATE", "check_date_covers"),
+                           ("AC-WELDER", "verify_welder_on_platform")):
+        records[0]["atomicCheckResults"].append({"atomicCheckId": check_id, "result": "failed",
+            "toolResults": [{"toolName": "extract_document_fields"}, {"toolName": tool},
+                            {"toolName": "validate_evidence_grounding"}]})
+        pack["atomicChecks"].append({"id": check_id, "nodeId": 25, "instruction": f"{tool} 是否满足"})
+    plan = jev_primary.author_node_questions(state, run, records, pack)
+    assert [row["atomicCheckId"] for row in plan["questions"]] == ["AC-1"]
+    assert "check_certificate_validity" not in qwen.calls[0][0][1]["content"]
+    monkeypatch.setattr(jev_primary, "ask_jev", lambda _text, questions, **_kw: {
+        key: {"type": "choice", "choice": "passed", "confidence": 1.0} for key in questions})
+    decision = jev_primary.decide_node(state, run, records, pack, plan)
+    assert decision["ruleOwnedAtomicCheckIds"] == ["AC-CERT", "AC-DATE", "AC-WELDER"]
+    effective = jev_primary.attach_hints(records, decision)
+    assert [row["result"] for row in effective[0]["atomicCheckResults"]] == [
+        "evidence_insufficient", "failed", "failed", "failed"]
+    assert [("jevHint" in row) for row in effective[0]["atomicCheckResults"]] == [True, False, False, False]
+
+
+def test_only_certificate_checks_means_no_jev_question(monkeypatch):
+    state, run, records, pack = _case()
+    _enabled(monkeypatch)
+    monkeypatch.setattr(jev_primary, "qwen_runtime_client", lambda: 1 / 0)
+    records[0]["atomicCheckResults"][0]["toolResults"] = [{"toolName": "check_certificate_validity"}]
+    assert jev_primary.author_node_questions(state, run, records, pack)["status"] == "no_semantic_checks"
 
 
 def test_graph_requires_qwen_step_before_jev_step(monkeypatch):
@@ -255,15 +309,16 @@ def test_graph_requires_qwen_step_before_jev_step(monkeypatch):
         assert question_plan == run["jevQuestionPlan"]
         events.append("jev")
         return {"status": "completed", "atomic": [{"atomicCheckId": "AC-1",
-                "choice": "passed", "confidence": 0.8}], "protectedAtomicCheckIds": []}
+                "choice": "passed", "confidence": 0.8}], "ruleOwnedAtomicCheckIds": []}
 
     monkeypatch.setattr(execution, "author_node_questions", author)
     monkeypatch.setattr(execution, "decide_node", decide)
     execution.run_step(run, "qwen_compose_jev_questions", context)
     execution.run_step(run, "jev_decision", context)
     assert events == ["qwen", "jev"]
-    assert context["ruleResults"][0]["result"] == "passed"
-    assert context["deterministicRuleResults"][0]["result"] == "evidence_insufficient"
+    assert context["ruleResults"][0]["result"] == "evidence_insufficient"
+    assert context["ruleResults"][0]["atomicCheckResults"][0]["jevHint"]["choice"] == "passed"
+    assert records[0]["atomicCheckResults"][0].get("jevHint") is None
 
 
 def test_r19_eight_questions_are_authored_then_answered(monkeypatch):
@@ -319,3 +374,27 @@ def test_qwen_server_key_failure_does_not_expose_secret(monkeypatch):
         assert "secret-from-bad-host" not in str(exc)
     else:
         raise AssertionError("server key error was accepted")
+
+
+def test_token_limit_refusal_is_its_own_status(monkeypatch):
+    state, run, records, pack = _case()
+    qwen = _Qwen(_authored())
+    _enabled(monkeypatch, qwen)
+    plan = jev_primary.author_node_questions(state, run, records, pack)
+    monkeypatch.setattr(jev_primary, "ask_jev",
+                        lambda *_a, **_k: (_ for _ in ()).throw(ValueError("jev_request_overlong")))
+    decision = jev_primary.decide_node(state, run, records, pack, plan)
+    assert decision["status"] == "request_overlong"
+    assert jev_primary.attach_hints(records, decision)[0]["result"] == "evidence_insufficient"
+
+
+def test_deterministic_rule_checks_never_get_a_jev_opinion(monkeypatch):
+    # 业务包标为确定性规则的原子项由冻结判据的工具判定；让 Jev 再判等于重算门槛，实测会错。
+    state, run, records, pack = _case()
+    _enabled(monkeypatch)
+    monkeypatch.setattr(jev_primary, "qwen_runtime_client", lambda: 1 / 0)
+    pack["atomicChecks"][0]["checkType"] = "evidence_and_deterministic_rule"
+    plan = jev_primary.author_node_questions(state, run, records, pack)
+    assert plan["status"] == "no_semantic_checks"
+    decision = jev_primary.decide_node(state, run, records, pack, plan)
+    assert jev_primary.attach_hints(records, decision) == records

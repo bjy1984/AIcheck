@@ -307,17 +307,54 @@ export type WorkbenchAiGroundedFact = {
   evidence: WorkbenchAiFactEvidence[]
 }
 
+export type WorkbenchJevPersonChoice = { person: string; choice: string; confidence: number }
+
+const jevPersonChoices = (rows: unknown): WorkbenchJevPersonChoice[] | undefined =>
+  Array.isArray(rows)
+    ? rows
+        .filter((item): item is Record<string, unknown> =>
+          Boolean(item && typeof item === 'object' && !Array.isArray(item))
+        )
+        .map((item) => ({
+          person: String(item.person || ''),
+          choice: String(item.choice || ''),
+          confidence: Number(item.confidence || 0)
+        }))
+    : undefined
+
+const jevHintOf = (raw: unknown): WorkbenchAiCheckOutcome['jevHint'] => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const hint = raw as Record<string, unknown>
+  if (!hint.choice || typeof hint.confidence !== 'number') return undefined
+  const perPerson = jevPersonChoices(hint.perPerson)
+  return {
+    choice: String(hint.choice),
+    confidence: hint.confidence,
+    agreesWithRuleEngine: hint.agreesWithRuleEngine === true,
+    ...(perPerson?.length ? { perPerson } : {})
+  }
+}
+
 export type WorkbenchAiCheckOutcome = {
   atomicCheckId: string
   name: string
   /** passed / failed / evidence_insufficient / not_applicable / human_review_required / execution_error */
   result: string
   ruleCode?: string
-  /** Lab 主判定來源；原规则结论仍可逐项核对。 */
+  /** 新运行一律是 rule_engine；jev / jev_unavailable 只出现在调整方向前的历史运行。 */
   decisionSource?: 'jev' | 'jev_unavailable' | 'rule_engine'
   deterministicResult?: string
   jevConfidence?: number
-  perPerson?: { person: string; choice: string; confidence: number }[]
+  perPerson?: WorkbenchJevPersonChoice[]
+  /** Jev 只给选项和把握值、不给理由；不改结论，分歧只用来排人工核对的先后。 */
+  jevHint?: {
+    choice: string
+    confidence: number
+    agreesWithRuleEngine: boolean
+    perPerson?: WorkbenchJevPersonChoice[]
+  }
+  /** Jev 对规则所用证书事实的原文核对：答「否」且把握值≥0.70 的列为可疑，不改结论。 */
+  jevFactCheck?: { status: string; suspects: string[] }
   /** 引擎没给分、等人核的事实，及其引用的抽取字段；核完落成 fact_corrections 下次就有分。 */
   unscoredFacts: WorkbenchAiUnscoredFact[]
   /** 判定依据：业务工具的逐条检查（通过项也有）。 */
@@ -354,17 +391,19 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
         : {}),
       ...(row.deterministicResult ? { deterministicResult: String(row.deterministicResult) } : {}),
       ...(typeof row.jevConfidence === 'number' ? { jevConfidence: row.jevConfidence } : {}),
-      ...(Array.isArray(row.perPerson)
+      ...(Array.isArray(row.perPerson) ? { perPerson: jevPersonChoices(row.perPerson) } : {}),
+      ...(jevHintOf(row.jevHint) ? { jevHint: jevHintOf(row.jevHint) } : {}),
+      ...(row.jevFactCheck &&
+      typeof row.jevFactCheck === 'object' &&
+      !Array.isArray(row.jevFactCheck)
         ? {
-            perPerson: row.perPerson
-              .filter((item): item is Record<string, unknown> =>
-                Boolean(item && typeof item === 'object' && !Array.isArray(item))
-              )
-              .map((item) => ({
-                person: String(item.person || ''),
-                choice: String(item.choice || ''),
-                confidence: Number(item.confidence || 0)
-              }))
+            jevFactCheck: {
+              status: String((row.jevFactCheck as Record<string, unknown>).status || ''),
+              suspects: (Array.isArray((row.jevFactCheck as Record<string, unknown>).suspects)
+                ? ((row.jevFactCheck as Record<string, unknown>).suspects as unknown[])
+                : []
+              ).map(String)
+            }
           }
         : {}),
       ...(row.secondOpinion && typeof row.secondOpinion === 'object'
@@ -1229,6 +1268,12 @@ export const selectWorkbenchAiPresentation = ({
         : nodeRun.suggestion?.decisionSource === 'jev_unavailable'
           ? 'Qwen/Jev 流程未完成 · 待人工确认'
           : friendlyModelAlias(nodeRun.model),
+      nodeRun.suggestion?.jevHint?.disagreementCount
+        ? `Jev 提示 ${nodeRun.suggestion.jevHint.disagreementCount} 项与规则不一致`
+        : '',
+      nodeRun.suggestion?.jevHint?.factSuspects?.length
+        ? `Jev 核对：${nodeRun.suggestion.jevHint.factSuspects.length} 个抽取值可疑`
+        : '',
       nodeRun.finishedAt || nodeRun.id
     ]
       .filter(Boolean)

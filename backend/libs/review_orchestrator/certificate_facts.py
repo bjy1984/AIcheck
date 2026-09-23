@@ -146,7 +146,7 @@ _MONTH_TEXT = r"(\d{4}\s*[年.\-/]\s*\d{1,2}\s*月?)(?![\d日])"
 _TEXT_PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "validUntil": [
         re.compile(r"有效期(?:限)?(?:至|止|到)\s*[:：]?\s*" + _DATE_TEXT),
-        re.compile(r"有效(?:期|日期)\s*[:：]?\s*" + _DATE_TEXT + r"\s*(?:至|到|—|-|~)\s*" + _DATE_TEXT),
+        re.compile(r"有效(?:期|日期)(?:限)?\s*[:：]?\s*(?:自|从)?\s*" + _DATE_TEXT + r"\s*(?:至|到|—|–|-|~|～)\s*" + _DATE_TEXT),
         re.compile(r"(?:至|到)\s*" + _DATE_TEXT + r"\s*(?:止|有效)"),
         re.compile(r"有效期(?:限)?(?:至|止|到)\s*[:：]?\s*" + _MONTH_TEXT),
         re.compile(r"有效期(?:限)?\s*[:：]?\s*(?:自)?\s*" + _MONTH_TEXT + r"\s*(?:至|到|—|-|~)\s*" + _MONTH_TEXT),
@@ -188,6 +188,20 @@ def project_certificate_period(project: dict[str, Any] | None) -> dict[str, Any]
         "periodEnd": end.isoformat() if end else None,
         "referenceDate": business_today().isoformat(),
     }
+
+
+# 原文写明的有效期区间。OCR 字段常把「A 至 B」的起始日 A 填进「有效期至」，
+# 已落库的旧解析结果也是这样，所以区间要在规则侧再对一次，不能只靠 OCR 服务。
+_VALIDITY_RANGE_PATTERNS = (
+    re.compile(r"有效(?:期|日期)(?:限)?\s*[:：]?\s*(?:自|从)?\s*" + _DATE_TEXT
+               + r"\s*(?:至|到|—|–|-|~|～)\s*" + _DATE_TEXT),
+    re.compile(_DATE_TEXT + r"\s*(?:至|到)\s*" + _DATE_TEXT + r"\s*(?:止|有效)"),
+)
+# 字段名按子串认别名时，「有效期起」会被当成「有效期」命中截止日，反之亦然。
+_OPPOSITE_NAME_MARKERS = {
+    "validUntil": ("起", "自", "从", "发证", "签发", "批准"),
+    "validFrom": ("至", "止", "截止"),
+}
 
 
 def build_certificate_facts(
@@ -450,8 +464,9 @@ def _extract_certificates(
         "evidence": [],
         "sources": {},
     }
+    human_corrected: set[str] = set()
     for key in ("holder", "certificateNo", "issuer", "validFrom", "validUntil"):
-        hit = _first_field(fields, FIELD_ALIASES[key])
+        hit = _first_field(fields, FIELD_ALIASES[key], exclude_name_markers=_OPPOSITE_NAME_MARKERS.get(key, ()))
         if key == "holder" and profile["certificateType"] in {
             "design_license", "installation_license", "ndt_agency_approval"
         }:
@@ -468,6 +483,8 @@ def _extract_certificates(
             if value:
                 record[key] = value
                 record["sources"][key] = "ocr_field"
+                if hit.get("humanCorrected"):
+                    human_corrected.add(key)
                 record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw"),
                                                     confidence=hit.get("confidence"), confidence_unavailable=unavailable,
                                                     field_name=hit.get("name"), human_corrected=bool(hit.get("humanCorrected"))))
@@ -485,9 +502,53 @@ def _extract_certificates(
                     allow_person_holder=profile["certificateType"] not in {
                         "design_license", "installation_license", "ndt_agency_approval"
                     })
+    _reconcile_validity_range(record, text, parse_result, version_id, file_name, protected=human_corrected)
     if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
         return []
     return [record]
+
+
+def _reconcile_validity_range(
+    record: dict[str, Any], text: str, parse_result: dict[str, Any], version_id: str, file_name: str, *,
+    protected: set[str],
+) -> None:
+    """按原文里与截止日同属一个「有效期 A 至 B」的区间校正起止日。
+
+    OCR 字段把起始日 A 当成截止日时改回 B；起始日缺失或取的是发证日期时改为 A。
+    只认与当前截止日对得上的区间：资质合订本里常有好几张证书，别的区间属于别的
+    证书，不能拿来覆盖。人工修正过的值不动，被替换的原值留痕。
+    """
+    until = record.get("validUntil")
+    if not until or "validUntil" in protected:
+        return
+    for pattern in _VALIDITY_RANGE_PATTERNS:
+        for match in pattern.finditer(text):
+            start = parse_date(re.sub(r"\s+", "", match.group(1)))
+            end = parse_date(re.sub(r"\s+", "", match.group(2)), month_end=True)
+            if not start or not end or end <= start:
+                continue
+            sources = record.setdefault("sources", {})
+            replaced: dict[str, Any] = {}
+            if until == start.isoformat() and sources.get("validUntil") == "ocr_field":
+                replaced["validUntil"] = until
+                record["validUntil"] = end.isoformat()
+                sources["validUntil"] = "ocr_text_range"
+            elif until != end.isoformat():
+                continue
+            # 发证日期不等于生效日；同一区间的起始日才是有效期起点。
+            if ("validFrom" not in protected and record.get("validFrom") != start.isoformat()
+                    and sources.get("validFrom") in {None, "ocr_field"}):
+                if record.get("validFrom"):
+                    replaced["validFrom"] = record["validFrom"]
+                record["validFrom"] = start.isoformat()
+                sources["validFrom"] = "ocr_text_range"
+            if replaced:
+                record["replacedByValidityRange"] = replaced
+            page_no, quoted, fragment_confidence = _locate_text(parse_result, match.group(0))
+            record.setdefault("evidence", []).append(_evidence(
+                version_id, file_name, page_no, None, quoted,
+                confidence=fragment_confidence, confidence_unavailable=_confidence_unavailable(parse_result)))
+            return
 
 
 def _organization_field_is_sentence(value: str) -> bool:
@@ -669,8 +730,11 @@ def _field_values(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
     return values
 
 
-def _first_field(fields: list[dict[str, Any]], aliases: tuple[str, ...]) -> dict[str, Any] | None:
+def _first_field(fields: list[dict[str, Any]], aliases: tuple[str, ...], *,
+                 exclude_name_markers: tuple[str, ...] = ()) -> dict[str, Any] | None:
     for hit in _all_fields(fields, aliases):
+        if hit["name"] and any(marker in hit["name"] for marker in exclude_name_markers):
+            continue
         return hit
     return None
 

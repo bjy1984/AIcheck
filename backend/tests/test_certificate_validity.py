@@ -367,3 +367,49 @@ def test_frozen_empty_certificate_merge_clears_previous_certificates_without_mut
     assert result[namespace]["certificateNo"] is None
     assert result[namespace]["certificates"] == []
     assert old == original
+
+
+def _installation_licence_state(fields, text):
+    return {
+        "projects": [{"id": "P-1", "contractorOrgName": "示例管道安装有限公司",
+                      "constructionStart": "2025-04-01", "plannedConstructionEnd": "2026-04-30"}],
+        "documents": [{"id": "DOC-1", "projectId": "P-1", "fileName": "安装许可证.pdf",
+                       "materialTypeCode": "installation_license", "currentVersionId": "DV-1"}],
+        "ocr_parse_results": [{"documentVersionId": "DV-1", "status": "success",
+                               "profileId": "qualification_certificate_v1",
+                               "fields": [{"fieldCode": "certificate_no", "fieldName": "许可证编号",
+                                           "fieldValue": "TS3841999-2028", "pageNo": 1}, *fields],
+                               "fragments": [{"pageNo": 1, "text": text}]}],
+    }
+
+
+def test_已落库的区间起始日被当成截止日时按原文区间改回():
+    # 生产实例 R02-02：旧 OCR 结果把「2024年9月7日至2028年9月6日」存成有效期至 2024年9月7日。
+    fields = [{"fieldCode": "valid_until", "fieldName": "有效期至", "fieldValue": "2024年9月7日", "pageNo": 1},
+              {"fieldCode": "issue_date", "fieldName": "发证日期", "fieldValue": "2024年7月31日", "pageNo": 1}]
+    facts = build_certificate_facts(_installation_licence_state(
+        fields, "发证日期：2024年7月31日 有效期：2024年9月7日至2028年9月6日"), "P-1", 2, ["DV-1"])
+    item = facts["certificateFacts"]["certificates"][0]
+    assert (item["validFrom"], item["validUntil"]) == ("2024-09-07", "2028-09-06")
+    assert item["sources"]["validUntil"] == "ocr_text_range"
+    assert item["replacedByValidityRange"] == {"validUntil": "2024-09-07", "validFrom": "2024-07-31"}
+
+
+def test_别的证书的区间和人工修正都不能覆盖截止日():
+    fields = [{"fieldCode": "valid_until", "fieldName": "有效期至", "fieldValue": "2028年05月12日", "pageNo": 1}]
+    bundle = "有效期至：2028年05月12日 证书有效日期：2021年06月30日至2024年06月29日"
+    item = build_certificate_facts(_installation_licence_state(fields, bundle), "P-1", 2, ["DV-1"])[
+        "certificateFacts"]["certificates"][0]
+    assert item["validUntil"] == "2028-05-12" and "replacedByValidityRange" not in item
+    corrected = [{**fields[0], "fieldValue": "2024年9月7日", "humanCorrected": True}]
+    item = build_certificate_facts(_installation_licence_state(
+        corrected, "有效期：2024年9月7日至2028年9月6日"), "P-1", 2, ["DV-1"])["certificateFacts"]["certificates"][0]
+    assert item["validUntil"] == "2024-09-07", "人工修正过的值不能被正文覆盖"
+
+
+def test_有效期起字段不能当截止日():
+    fields = [{"fieldCode": "", "fieldName": "有效期起", "fieldValue": "2024年9月7日", "pageNo": 1},
+              {"fieldCode": "", "fieldName": "有效期止", "fieldValue": "2028年9月6日", "pageNo": 1}]
+    item = build_certificate_facts(_installation_licence_state(fields, ""), "P-1", 2, ["DV-1"])[
+        "certificateFacts"]["certificates"][0]
+    assert (item["validFrom"], item["validUntil"]) == ("2024-09-07", "2028-09-06")

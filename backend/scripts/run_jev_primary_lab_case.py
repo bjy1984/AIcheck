@@ -154,7 +154,7 @@ def replay(snapshot: dict, project_id: str, node_id: int, *, send: bool,
         question_plan = {"status": "not_run"}
         decision = {"status": "preflight_only", "requestBatchCount": None, "atomic": []}
         effective = rules
-    return {"schemaVersion": "jev-primary-lab-case-v1", "projectId": project_id,
+    return {"schemaVersion": "jev-primary-lab-case-v2", "projectId": project_id,
             "nodeId": node_id, "documentVersionIds": versions, "ocrCharCount": len(ocr_text),
             "questionAuthorInputStatus": question_input["status"],
             "plannedQuestionCount": len(question_input.get("checks") or []),
@@ -165,6 +165,8 @@ def replay(snapshot: dict, project_id: str, node_id: int, *, send: bool,
                                   "toolNames": [tool.get("toolName") for tool in row.get("toolResults") or []]}
                                  for row in rules[0]["atomicCheckResults"]],
             "jevDecision": decision, "activeResult": effective[0].get("result"),
+            # Jev is advisory: the active result stays the rule result; compare Jev's own view.
+            "jevOpinionResult": decision.get("opinionResult"),
             "readOnly": True}
 
 
@@ -219,7 +221,8 @@ def main() -> int:
                       "plannedQuestionCount": report["plannedQuestionCount"],
                       "requestCount": report["jevDecision"].get("requestBatchCount"),
                       "actualRuleResult": report["actualRuleResult"],
-                      "activeResult": report["activeResult"]}, ensure_ascii=False))
+                      "activeResult": report["activeResult"],
+                      "jevOpinionResult": report["jevOpinionResult"]}, ensure_ascii=False))
     return 0 if report["jevDecision"]["status"] in {"completed", "preflight_only"} else 2
 
 

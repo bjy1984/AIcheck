@@ -11,6 +11,7 @@ import json
 import math
 import os
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from typing import Any
@@ -20,6 +21,11 @@ MODEL = "jev-1.13.0"
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MAX_REQUEST_CHARS = 40_000
 MAX_QUESTIONS_PER_REQUEST = 50
+# 2026-09-23 实测：429/529（system_overloaded）是瞬时的，退避后重试即可；
+# 400 max_tokens_exceeded 是输入超过约 32.8k token——密集中文约 3.3 万字就会撞上，
+# 字符上限挡不住，重试也没用，要单独归为「请求超长」。
+RETRY_STATUSES = frozenset({429, 529})
+RETRY_DELAYS_SECONDS = (2.0, 5.0)
 
 
 def jev_endpoint() -> str:
@@ -45,7 +51,7 @@ def jev_enabled() -> bool:
 
 def jev_stage_enabled(stage: str) -> bool:
     if stage not in {"TABLE_CLASSIFICATION", "SECOND_OPINION", "CLAIM_SHADOW", "DOCUMENT_ROUTING",
-                     "PRIMARY_DECISION"}:
+                     "PRIMARY_DECISION", "FACT_CHECK"}:
         raise ValueError("unknown_jev_stage")
     return jev_enabled() and os.getenv(f"AICHECK_JEV_{stage}_ENABLED", "").lower() in {"1", "true", "yes"}
 
@@ -79,6 +85,20 @@ def batch_jev_questions(
     return batches
 
 
+def _post(request: urllib.request.Request, timeout: float) -> Any:
+    for delay in (*RETRY_DELAYS_SECONDS, None):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 400 and b"max_tokens_exceeded" in (exc.read() if exc.fp else b""):
+                raise ValueError("jev_request_overlong") from exc
+            if exc.code not in RETRY_STATUSES or delay is None:
+                raise
+            time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 def ask_jev(state: str, questions: dict[str, dict[str, Any]], *, timeout: float = 15.0,
             observe: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
     if not jev_enabled():
@@ -97,8 +117,7 @@ def ask_jev(state: str, questions: dict[str, dict[str, Any]], *, timeout: float 
         )
         started = time.monotonic()
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                payload = json.load(response)
+            payload = _post(request, timeout)
             if not isinstance(payload, dict) or payload.get("model") != MODEL:
                 raise ValueError("jev_unexpected_model_version")
             answers = payload.get("answers")

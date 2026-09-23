@@ -115,7 +115,7 @@ def main() -> int:
                 print(json.dumps({"event": "result", "nodeId": node,
                                   "status": report["jevDecision"]["status"],
                                   "old": report["actualRuleResult"],
-                                  "new": report["activeResult"]}), flush=True)
+                                  "new": report.get("jevOpinionResult")}), flush=True)
     finally:
         os.environ.pop("AICHECK_JEV_API_KEY", None)
         for name, value in previous.items():

@@ -542,7 +542,71 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(outcome.result, 'passed', '第二意見不得改寫確定性判定')
 }
 
-// Lab 主判定直接顯示 Jev 選擇，同時保留原規則結果供監檢員核對。
+// Jev 只作提示：结论仍是规则结果，Jev 选项、把握值和逐人结果挂在 jevHint 上。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [outcome] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R24-03',
+        result: 'evidence_insufficient',
+        decisionSource: 'rule_engine',
+        jevHint: {
+          choice: 'failed',
+          confidence: 0.9,
+          agreesWithRuleEngine: false,
+          perPerson: [
+            { person: '张三', choice: 'passed', confidence: 0.8 },
+            { person: '李四', choice: 'failed', confidence: 0.9 }
+          ]
+        }
+      },
+      { atomicCheckId: 'AC-R24-04', result: 'passed', jevHint: { choice: 'passed' } }
+    ]
+  })
+  assert.equal(outcome.result, 'evidence_insufficient', 'Jev 提示不得改写规则结论')
+  assert.equal(outcome.decisionSource, 'rule_engine')
+  assert.equal(outcome.jevHint?.choice, 'failed')
+  assert.equal(outcome.jevHint?.agreesWithRuleEngine, false)
+  assert.deepEqual(
+    outcome.jevHint?.perPerson?.map((person) => person.person),
+    ['张三', '李四']
+  )
+}
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [, malformed] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      { atomicCheckId: 'A', result: 'passed' },
+      { atomicCheckId: 'B', result: 'passed', jevHint: { choice: 'passed' } }
+    ]
+  })
+  assert.equal(malformed.jevHint, undefined, '缺把握值的提示不显示')
+}
+
+// Jev 核对规则所用的证书事实：可疑项原样带出，结论仍是规则结果。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [outcome] = workbenchCheckOutcomes({
+    atomicCheckOutcomes: [
+      {
+        atomicCheckId: 'AC-R02-02',
+        result: 'failed',
+        decisionSource: 'rule_engine',
+        jevFactCheck: {
+          status: 'completed',
+          suspects: ['安装（施工）单位许可证·有效期截止日=2024-09-07']
+        }
+      }
+    ]
+  })
+  assert.equal(outcome.result, 'failed', '事实核对不得改写规则结论')
+  assert.deepEqual(outcome.jevFactCheck?.suspects, [
+    '安装（施工）单位许可证·有效期截止日=2024-09-07'
+  ])
+}
+
+// 历史运行（调整方向前）：Lab 主判定曾直接顯示 Jev 選擇，仍按原样读出。
 {
   const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
   const [outcome] = workbenchCheckOutcomes({

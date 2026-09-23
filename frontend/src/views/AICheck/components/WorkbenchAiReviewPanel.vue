@@ -189,6 +189,8 @@ const CHECK_OUTCOME_TONES: Record<string, 'red' | 'orange' | 'gray' | 'green' | 
 const checkOutcomeRank = (outcome: WorkbenchAiCheckOutcome) => {
   if (outcome.decisionSource === 'jev' && outcome.deterministicResult !== outcome.result) return -3
   if (outcome.decisionSource === 'jev_unavailable') return -2
+  if (outcome.jevFactCheck?.suspects.length) return -3
+  if (outcome.jevHint && !outcome.jevHint.agreesWithRuleEngine) return -2
   if (outcome.secondOpinion?.priority === 'disagreement') return -2
   if (outcome.secondOpinion?.priority === 'low_confidence') return -1
   const index = CHECK_OUTCOME_ORDER.indexOf(outcome.result)
@@ -590,6 +592,16 @@ const ruleLabel = (rule: Record<string, unknown>) => {
               >
                 出題／判題未完成 · 待人工核查
               </AuditStatusTag>
+              <AuditStatusTag v-if="outcome.jevFactCheck?.suspects.length" tone="orange" round>
+                Jev 核对：抽取值可疑 · 请先核对原文
+              </AuditStatusTag>
+              <AuditStatusTag
+                v-if="outcome.jevHint && !outcome.jevHint.agreesWithRuleEngine"
+                tone="orange"
+                round
+              >
+                Jev 提示不一致 · 请先核对原文
+              </AuditStatusTag>
               <AuditStatusTag
                 v-if="outcome.secondOpinion"
                 :tone="outcome.secondOpinion.needsHumanReview ? 'orange' : 'green'"
@@ -611,11 +623,18 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                   · Jev 把握值 {{ Math.round(outcome.jevConfidence * 100) }}%</template
                 >
               </small>
+              <small v-if="outcome.jevFactCheck?.suspects.length">
+                原文与抽取值不符：{{ outcome.jevFactCheck.suspects.join('；') }}
+              </small>
+              <small v-if="outcome.jevHint">
+                Jev 看法：{{ checkOutcomeLabel(outcome.jevHint.choice) }} · 把握值
+                {{ Math.round(outcome.jevHint.confidence * 100) }}%（无理由，仅作提示）
+              </small>
               <!-- 依据与证据：通过/不通过/需人工都列，监检才能核对而不是只看一个标签 -->
               <div
                 v-if="
                   outcome.reason ||
-                  outcome.perPerson?.length ||
+                  (outcome.jevHint?.perPerson || outcome.perPerson)?.length ||
                   outcome.checks.length ||
                   outcome.facts.length
                 "
@@ -625,11 +644,14 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                   <span>原因</span>{{ outcome.reason }}
                 </p>
                 <ul
-                  v-if="outcome.perPerson?.length"
+                  v-if="(outcome.jevHint?.perPerson || outcome.perPerson)?.length"
                   class="ai-outcome-checks"
                   aria-label="逐人判定"
                 >
-                  <li v-for="person in outcome.perPerson" :key="person.person">
+                  <li
+                    v-for="person in outcome.jevHint?.perPerson || outcome.perPerson"
+                    :key="person.person"
+                  >
                     <span class="ai-check-label">{{ person.person }}</span>
                     <small
                       >{{ checkOutcomeLabel(person.choice) }} · Jev 把握值

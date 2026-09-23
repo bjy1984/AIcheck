@@ -1,7 +1,10 @@
-"""Node template → Qwen-authored questions → Jev choices on the Lab branch.
+"""Node template → Qwen-authored questions → Jev hints on the Lab branch.
 
 Qwen receives the node template and scoped OCR, never rule outcomes. Jev receives
-the same full OCR and Qwen's validated questions. Neither confirms a human audit.
+the same full OCR and Qwen's validated questions. Jev returns only a choice and a
+confidence, with no reasons, so it never decides a check: rule, platform and
+calculation results stay authoritative and Jev only flags disagreements for a
+human to look at first.
 """
 
 from __future__ import annotations
@@ -24,11 +27,24 @@ from libs.review_orchestrator.jev_client import (
     batch_jev_questions,
     jev_stage_enabled,
 )
+from libs.review_orchestrator.jev_usage_policy import semantic_opinion_allowed
 from libs.review_orchestrator.r19_agent import r19_semantic_questions
 from libs.review_tools.executor import aggregate_atomic_results
 
 _EVIDENCE_GATE_TOOLS = frozenset({"locate_evidence_fragment", "validate_evidence_grounding",
                                   "extract_document_fields", "extract_table_records"})
+# Certificates are checked against registries and licences, dates and numbers are
+# computed. OCR-only Jev cannot answer these, so they never become Jev questions.
+_RULE_OWNED_TOOLS = frozenset({
+    "check_certificate_validity", "check_design_license_scope", "check_installation_license_scope",
+    "decode_welder_qualification", "verify_design_license_seals", "verify_license_or_certificate",
+    "verify_org_license", "verify_welder_on_platform",
+    "check_date_covers", "check_document_set_completeness", "check_pressure_test_parameters",
+    "check_required", "check_sampling_requirement", "check_welder_work_coverage",
+    "check_wps_pqr_coverage", "pipeline_stress_calculation", "straight_pipe_strength_calculation",
+    "strength_calculation",
+})
+_NO_HINT_STATUSES = frozenset({"disabled", "nonformal_run", "no_semantic_checks"})
 QUESTION_PROMPT_VERSION = "jev-node-question-author-v2"
 _QUESTION_KEYS_ORDERED = ("passed", "failed", "evidence_insufficient",
                           "human_review_required", "not_applicable")
@@ -48,15 +64,17 @@ _AUTHOR_SYSTEM = (
 )
 
 
-def _local_evidence_gate_ids(records: list[dict[str, Any]]) -> set[str]:
-    gate_ids = set()
+def _rule_owned_ids(records: list[dict[str, Any]]) -> set[str]:
+    """Checks Jev must not be asked about: evidence gates, registry checks, calculations."""
+    owned = set()
     for record in records:
         for item in record.get("atomicCheckResults") or []:
             tools = {str(tool.get("toolName") or "") for tool in item.get("toolResults") or []
                      if isinstance(tool, dict)}
-            if tools and "validate_evidence_grounding" in tools and tools <= _EVIDENCE_GATE_TOOLS:
-                gate_ids.add(str(item.get("atomicCheckId") or ""))
-    return gate_ids
+            if ((tools and "validate_evidence_grounding" in tools and tools <= _EVIDENCE_GATE_TOOLS)
+                    or tools & _RULE_OWNED_TOOLS):
+                owned.add(str(item.get("atomicCheckId") or ""))
+    return owned
 
 
 def _atomic_results(records: list[dict[str, Any]]) -> dict[str, str]:
@@ -81,7 +99,7 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
         return {"status": "project_not_approved_for_jev"}
     node_id = int(run.get("nodeId") or 0)
     current = _atomic_results(rule_results)
-    evidence_gate_ids = _local_evidence_gate_ids(rule_results)
+    rule_owned_ids = _rule_owned_ids(rule_results)
     if node_id == 19:
         try:
             catalog = r19_semantic_questions(run)
@@ -92,17 +110,22 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
         if len(checks) != 8:
             return {"status": "missing_frozen_checks"}
     else:
+        # Deterministic-rule checks are decided by their frozen tools; asking Jev to
+        # re-judge them means re-computing thresholds, which it gets wrong. Only checks
+        # the pack marks as semantic judgment get a second opinion (jev_usage_policy).
         checks = [(str(item["id"]), str(item["instruction"]))
                   for item in pack.get("atomicChecks") or []
                   if isinstance(item, dict) and str(item.get("nodeId")) == str(node_id)
-                  and str(item.get("id")) in current and str(item.get("id")) not in evidence_gate_ids
+                  and semantic_opinion_allowed(item)
+                  and str(item.get("id")) in current and str(item.get("id")) not in rule_owned_ids
                   and str(item.get("instruction") or "").strip()]
+        rule_owned_ids |= set(current) - {check_id for check_id, _ in checks}
     if len({check_id for check_id, _ in checks}) != len(checks):
         return {"status": "missing_frozen_checks"}
-    if set(current) != {check_id for check_id, _ in checks} | evidence_gate_ids:
+    if set(current) != {check_id for check_id, _ in checks} | rule_owned_ids:
         return {"status": "missing_frozen_checks"}
     if not checks:
-        return {"status": "no_semantic_checks", "protectedAtomicCheckIds": sorted(evidence_gate_ids)}
+        return {"status": "no_semantic_checks", "ruleOwnedAtomicCheckIds": sorted(rule_owned_ids)}
     status, ocr_text = approved_ocr_text(state, run)
     if status != "ready":
         return {"status": status}
@@ -149,7 +172,8 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
     input_hash = hashlib.sha256(json.dumps([ocr_text, template], ensure_ascii=False,
                                           sort_keys=True).encode()).hexdigest()
     return {"status": "ready", "ocrText": ocr_text, "template": template,
-            "checks": checks, "current": current, "protectedAtomicCheckIds": sorted(evidence_gate_ids),
+            "checks": checks, "current": current,
+            "ruleOwnedAtomicCheckIds": sorted(rule_owned_ids - {check_id for check_id, _ in checks}),
             "questionTargets": question_targets, "inputHash": input_hash}
 
 
@@ -209,8 +233,12 @@ def author_node_questions(state: dict[str, Any], run: dict[str, Any],
             raise ValueError("qwen_empty_or_oversized_question_plan")
         questions = _validated_questions(json.loads(raw), {item[0] for item in source["checks"]})
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        # ValueError messages are fixed codes (qwen_question_count_mismatch …); other
+        # exceptions may carry provider text, so only their class name is kept.
         return {**base, "status": "qwen_question_plan_unavailable",
-                "reason": type(exc).__name__, "inputHash": source["inputHash"]}
+                "reason": type(exc).__name__,
+                **({"reasonCode": str(exc)[:80]} if type(exc) is ValueError and str(exc).startswith("qwen_") else {}),
+                "inputHash": source["inputHash"]}
     question_json = json.dumps(questions, ensure_ascii=False, sort_keys=True)
     identifiers = [str(run.get("projectId") or ""), str(run.get("reviewRunId") or "")]
     identifiers.extend(str(item) for item in run.get("inputDocumentVersionIds") or [])
@@ -230,7 +258,7 @@ def decide_node(state: dict[str, Any], run: dict[str, Any], rule_results: list[d
                 pack: dict[str, Any], question_plan: dict[str, Any] | None = None,
                 *, business_facts: dict[str, Any] | None = None) -> dict[str, Any]:
     """Jev chooses among Qwen's validated options; no fixed-question shortcut."""
-    base: dict[str, Any] = {"model": MODEL, "source": "jev", "atomic": []}
+    base: dict[str, Any] = {"model": MODEL, "source": "jev", "role": "advisory", "atomic": []}
     source = _node_inputs(state, run, rule_results, pack, business_facts)
     if source["status"] != "ready":
         return {**base, "status": source["status"]}
@@ -257,7 +285,6 @@ def decide_node(state: dict[str, Any], run: dict[str, Any], rule_results: list[d
                                    "criteria": authored["options"]}
     ocr_text = source["ocrText"]
     current = source["current"]
-    evidence_gate_ids = set(source["protectedAtomicCheckIds"])
     question_text = json.dumps(questions, ensure_ascii=False)
     identifiers = [str(run.get("projectId") or ""), str(run.get("reviewRunId") or "")]
     identifiers.extend(str(item) for item in run.get("inputDocumentVersionIds") or [])
@@ -277,8 +304,9 @@ def decide_node(state: dict[str, Any], run: dict[str, Any], rule_results: list[d
     request_metrics: list[dict[str, Any]] = []
     try:
         answers = ask_jev(ocr_text, questions, observe=request_metrics.append)
-    except (OSError, RuntimeError, ValueError):
-        return {**base, "status": "unavailable", "inputHash": input_hash,
+    except (OSError, RuntimeError, ValueError) as exc:
+        overlong = isinstance(exc, ValueError) and str(exc) == "jev_request_overlong"
+        return {**base, "status": "request_overlong" if overlong else "unavailable", "inputHash": input_hash,
                 "requestBatchCount": len(batches), "requestMetrics": request_metrics}
     if set(answers) != set(questions):
         return {**base, "status": "incomplete_answer", "inputHash": input_hash,
@@ -297,38 +325,52 @@ def decide_node(state: dict[str, Any], run: dict[str, Any], rule_results: list[d
                          **({"perPerson": rows} if rows[0]["person"] else {}),
                          "deterministicResult": current[check_id],
                          "agreesWithRuleEngine": choice == current[check_id]})
-    combined = [{"result": item["choice"]} for item in opinions]
-    combined.extend({"result": current[check_id]} for check_id in sorted(evidence_gate_ids))
     return {**base, "status": "completed", "atomic": opinions,
-            "protectedAtomicCheckIds": sorted(evidence_gate_ids),
+            "ruleOwnedAtomicCheckIds": source["ruleOwnedAtomicCheckIds"],
+            "disagreementAtomicCheckIds": [row["atomicCheckId"] for row in opinions
+                                           if not row["agreesWithRuleEngine"]],
             "inputHash": input_hash, "questionPlanHash": question_plan["questionHash"],
             "questionAuthorModel": question_plan["model"], "requestBatchCount": len(batches),
             "elapsedSeconds": round(time.monotonic() - started, 3), "requestMetrics": request_metrics,
-            "result": aggregate_atomic_results(combined),
-            "requiresHumanConfirmation": True}
+            # Jev's own node-level view, kept for paired evaluation only; never the node result.
+            "opinionResult": aggregate_atomic_results([{"result": row["choice"]} for row in opinions])}
 
 
-def apply_decision(rule_results: list[dict[str, Any]], decision: dict[str, Any]) -> list[dict[str, Any]]:
-    """Make Jev the Lab suggestion source without changing persisted rule facts."""
-    effective = deepcopy(rule_results)
-    if decision.get("status") in {"disabled", "nonformal_run", "no_semantic_checks"}:
-        return effective
-    choices = {row["atomicCheckId"]: row for row in decision.get("atomic") or []}
-    for record in effective:
+def attach_hints(rule_results: list[dict[str, Any]], decision: dict[str, Any]) -> list[dict[str, Any]]:
+    """Put Jev's choice next to each rule result; results themselves never change."""
+    annotated = deepcopy(rule_results)
+    status = str(decision.get("status") or "")
+    if status in _NO_HINT_STATUSES:
+        return annotated
+    choices = ({str(row["atomicCheckId"]): row for row in decision.get("atomic") or []}
+               if status == "completed" else {})
+    for record in annotated:
+        disagreements = []
         for item in record.get("atomicCheckResults") or []:
-            check_id = str(item.get("atomicCheckId") or "")
-            if decision.get("status") == "completed" and check_id in decision.get("protectedAtomicCheckIds", []):
-                item["decisionSource"] = "rule_engine"
+            row = choices.get(str(item.get("atomicCheckId") or ""))
+            if row is None:
                 continue
-            item["deterministicResult"] = item.get("result")
-            if decision.get("status") == "completed" and check_id in choices:
-                item["result"] = choices[check_id]["choice"]
-                item["jevConfidence"] = choices[check_id]["confidence"]
-            else:
-                item["result"] = ("evidence_insufficient" if decision.get("status") in {
-                    "no_ocr_text", "ocr_not_ready", "overlong_document", "ambiguous_ocr_attempt"
-                } else "human_review_required")
-            item["decisionSource"] = "jev" if decision.get("status") == "completed" else "jev_unavailable"
-        record["deterministicResult"] = record.get("result")
-        record["result"] = aggregate_atomic_results(record.get("atomicCheckResults") or [])
-    return effective
+            agrees = row["choice"] == item.get("result")
+            item["jevHint"] = {"choice": row["choice"], "confidence": row["confidence"],
+                               "agreesWithRuleEngine": agrees,
+                               **({"perPerson": row["perPerson"]} if row.get("perPerson") else {})}
+            if not agrees:
+                disagreements.append(str(item["atomicCheckId"]))
+        record["jevHintStatus"] = status
+        record["jevDisagreementAtomicCheckIds"] = disagreements
+    return annotated
+
+
+def jev_hint_summary(decision: dict[str, Any] | None,
+                     fact_check: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Node-level hint for the suggestion card; empty when Jev was not asked."""
+    status = str((decision or {}).get("status") or "")
+    fact_status = str((fact_check or {}).get("status") or "")
+    hint: dict[str, Any] = {}
+    if status and status not in _NO_HINT_STATUSES:
+        hint.update({"status": status,
+                     "disagreementCount": len(decision.get("disagreementAtomicCheckIds") or []),
+                     "opinionResult": decision.get("opinionResult")})
+    if fact_status in {"completed", "partial"}:
+        hint.update({"factCheckStatus": fact_status, "factSuspects": list(fact_check.get("suspects") or [])})
+    return {"jevHint": hint} if hint else {}

@@ -6502,11 +6502,36 @@ def qualification_scope_candidate(
     return None
 
 
+_CN_DATE = r"\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日"
+# 第一个「有效期 + 日期」陈述；「有效期起」是起始日，不算。
+VALIDITY_STATEMENT_RE = re.compile(r"有效期(?:限)?\s*(?:至|止|到)?\s*[:：]?\s*(?:自|从)?\s*" + _CN_DATE)
+# 紧跟在标签后的区间「有效期：A 至 B」。整份 MinerU 文档常只有一个片段，
+# 不锚定在标签上就会拿到合订本里别的证书的区间。
+VALIDITY_RANGE_LABELED_RE = re.compile(
+    r"有效期(?:限)?\s*[:：]?\s*(?:自|从)?\s*(" + _CN_DATE + r")\s*(?:至|到|—|–|-|~|～)\s*(" + _CN_DATE + r")"
+)
+VALIDITY_START_LABEL_RE = re.compile(r"有效期(?:限)?\s*(?:起|自|从)(?!.*(?:至|到|—|–|~|～))")
+
+
 def qualification_valid_until_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
-    labeled = value_from_labeled_text(text_items, ["有效期至", "有效期限至", "有效期"], DATE_CN_RE)
+    # 「有效期：2024年9月7日至2028年9月6日」是区间，截止日是后一个日期；取第一个
+    # 日期会把起始日当成截止日，有效证书被判成过期（R02-02 实例）。只看文件里第一个
+    # 有效期陈述：资质合订本里后面的区间常属于另一张证书（CMA/CNAS/CTC）。
+    joined = "\n".join(text for text, _ in text_items)
+    statement = VALIDITY_STATEMENT_RE.search(joined)
+    match = VALIDITY_RANGE_LABELED_RE.match(joined, statement.start()) if statement else None
+    if match:
+        end = re.sub(r"\s+", "", match.group(2))
+        fragment = next((item_fragment for item, item_fragment in text_items
+                         if end in re.sub(r"\s+", "", item)), text_items[0][1])
+        return {"text": end, "fragment": fragment}
+    # 单独一行的「有效期起/自」是起始日，不能拿来当截止日；整份文档一个片段时不能整段丢掉。
+    until_items = [(text, fragment) for text, fragment in text_items
+                   if "\n" in text.strip() or not VALIDITY_START_LABEL_RE.search(text)]
+    labeled = value_from_labeled_text(until_items, ["有效期至", "有效期限至", "有效期止", "有效期"], DATE_CN_RE)
     if labeled:
         return labeled
-    for text, fragment in text_items:
+    for text, fragment in until_items:
         if "有效期" not in text:
             continue
         match = DATE_CN_RE.search(text)

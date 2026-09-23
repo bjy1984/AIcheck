@@ -457,6 +457,15 @@ export type AiReviewRun = {
     deterministicResult?: string | null
     primaryResult?: string | null
     decisionSource?: 'jev' | 'jev_unavailable' | 'rule_engine'
+    /** Jev 只作提示：未问 Jev 时不下发；disagreementCount 是与规则结论不一致的原子项数。 */
+    jevHint?: {
+      status?: string
+      disagreementCount?: number
+      opinionResult?: string | null
+      /** 证书事实原文核对的可疑项，如「安装（施工）单位许可证·有效期截止日=2024-09-07」。 */
+      factCheckStatus?: string
+      factSuspects?: string[]
+    }
     confidence: number
     manualConfirmItems: string[]
   }
