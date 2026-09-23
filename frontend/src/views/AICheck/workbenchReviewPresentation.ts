@@ -321,6 +321,15 @@ export type WorkbenchAiCheckOutcome = {
   reason: string
   /** 事实与证据原文，按事实分组。 */
   facts: WorkbenchAiGroundedFact[]
+  /** 已完成监检校准后才由后端下发；只供排人工优先级，不覆盖规则结论。 */
+  secondOpinion?: {
+    choice: string
+    confidence: number
+    model: string
+    agreesWithRuleEngine: boolean
+    needsHumanReview: boolean
+    priority: 'disagreement' | 'low_confidence' | 'normal'
+  }
 }
 
 export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome[] => {
@@ -333,6 +342,18 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
       name: String(row.name || row.atomicCheckId || ''),
       result: String(row.result || ''),
       ruleCode: String(row.ruleCode || '') || undefined,
+      ...(row.secondOpinion && typeof row.secondOpinion === 'object'
+        ? { secondOpinion: {
+            choice: String((row.secondOpinion as Record<string, unknown>).choice || ''),
+            confidence: Number((row.secondOpinion as Record<string, unknown>).confidence || 0),
+            model: String((row.secondOpinion as Record<string, unknown>).model || ''),
+            agreesWithRuleEngine: (row.secondOpinion as Record<string, unknown>).agreesWithRuleEngine === true,
+            needsHumanReview: (row.secondOpinion as Record<string, unknown>).needsHumanReview === true,
+            priority: (['disagreement', 'low_confidence', 'normal'].includes(String((row.secondOpinion as Record<string, unknown>).priority))
+              ? String((row.secondOpinion as Record<string, unknown>).priority)
+              : 'normal') as 'disagreement' | 'low_confidence' | 'normal'
+          } }
+        : {}),
       unscoredFacts: (Array.isArray(row.unscoredFacts) ? row.unscoredFacts : [])
         .map((fact) => (fact || {}) as Record<string, unknown>)
         .map((fact) => ({

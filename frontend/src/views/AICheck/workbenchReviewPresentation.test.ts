@@ -518,6 +518,19 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(partialCoverageLabel({ failedEvidenceShardIds: ['A', 'B'] }), '部分分片未完成 2 片')
 }
 
+// Jev 第二意見只影響人工優先級；原規則結果仍原樣保留。
+{
+  const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
+  const [outcome] = workbenchCheckOutcomes({ atomicCheckOutcomes: [{
+    atomicCheckId: 'AC-R25-01', name: '工艺文件', result: 'passed',
+    secondOpinion: { choice: 'evidence_insufficient', confidence: 0.61,
+      model: 'jev-1.13.0', agreesWithRuleEngine: false,
+      needsHumanReview: true, priority: 'disagreement' }
+  }] })
+  assert.equal(outcome.secondOpinion?.priority, 'disagreement')
+  assert.equal(outcome.result, 'passed', '第二意見不得改寫確定性判定')
+}
+
 // 逐项核查结果要带出来，通过项也要——只列问题时，「没报问题」和「压根没查」看起来一样。
 {
   const { workbenchCheckOutcomes, CHECK_OUTCOME_LABELS } = await import(

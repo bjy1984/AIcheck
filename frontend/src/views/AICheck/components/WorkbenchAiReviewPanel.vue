@@ -185,6 +185,8 @@ const CHECK_OUTCOME_TONES: Record<string, 'red' | 'orange' | 'gray' | 'green' | 
 }
 
 const checkOutcomeRank = (outcome: WorkbenchAiCheckOutcome) => {
+  if (outcome.secondOpinion?.priority === 'disagreement') return -2
+  if (outcome.secondOpinion?.priority === 'low_confidence') return -1
   const index = CHECK_OUTCOME_ORDER.indexOf(outcome.result)
   return index < 0 ? CHECK_OUTCOME_ORDER.length : index
 }
@@ -573,6 +575,15 @@ const ruleLabel = (rule: Record<string, unknown>) => {
             <li v-for="outcome in sortedCheckOutcomes" :key="outcome.atomicCheckId">
               <AuditStatusTag :tone="checkOutcomeTone(outcome.result)" round>
                 {{ checkOutcomeLabel(outcome.result) }}
+              </AuditStatusTag>
+              <AuditStatusTag
+                v-if="outcome.secondOpinion"
+                :tone="outcome.secondOpinion.needsHumanReview ? 'orange' : 'green'"
+                round
+              >
+                {{ outcome.secondOpinion.agreesWithRuleEngine
+                  ? outcome.secondOpinion.needsHumanReview ? '第二意見把握較低，建議人工' : '第二意見一致'
+                  : '第二意見分歧，建議人工' }}
               </AuditStatusTag>
               <span>{{ outcome.name }}</span>
               <small>{{ outcome.atomicCheckId }}</small>

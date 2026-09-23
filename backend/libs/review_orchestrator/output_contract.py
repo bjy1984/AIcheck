@@ -8,6 +8,7 @@ TEXT_TOO_LONG 警告（不判失败——截断会把"差在哪"截掉，比长�
 
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -298,6 +299,7 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
     只有显示名按 id 从业务包取，取不到就用 id。
     """
     names = _atomic_check_names(str(run.get("businessPackId") or ""))
+    opinions = _visible_jev_opinions(run)
     seen: set[str] = set()
     outcomes: list[dict[str, Any]] = []
     for record in records:
@@ -326,9 +328,46 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     "checks": _business_checks(atomic),
                     "reason": _outcome_reason(atomic),
                     "facts": _grounded_facts(atomic),
+                    **({"secondOpinion": opinions[check_id]} if check_id in opinions else {}),
                 }
             )
     return outcomes
+
+
+def _visible_jev_opinions(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Release calibrated advice only; raw shadow opinions stay on ReviewRun."""
+    truthy = {"1", "true", "yes"}
+    if os.getenv("AICHECK_JEV_CALIBRATION_APPROVED", "").lower() not in truthy:
+        return {}
+    if os.getenv("AICHECK_JEV_SECOND_OPINION_UI_ENABLED", "").lower() not in truthy:
+        return {}
+    try:
+        enter = float(os.environ["AICHECK_JEV_QUEUE_ENTER_CONFIDENCE"])
+        exit_at = float(os.environ["AICHECK_JEV_QUEUE_EXIT_CONFIDENCE"])
+    except (KeyError, ValueError):
+        return {}
+    if not 0 < enter < exit_at <= 1:
+        return {}
+    snapshot = run.get("jevSecondOpinions") or {}
+    if snapshot.get("status") != "completed" or snapshot.get("model") != "jev-1.13.0":
+        return {}
+    previous = run.get("jevQueuePrevious") or {}
+    visible: dict[str, dict[str, Any]] = {}
+    for item in snapshot.get("atomic") or []:
+        if not isinstance(item, dict) or item.get("model") != "jev-1.13.0":
+            continue
+        check_id = str(item.get("atomicCheckId") or "")
+        confidence = item.get("confidence")
+        if not check_id or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+            continue
+        agrees = item.get("agreesWithRuleEngine") is True
+        queued = (True if not agrees else True if confidence < enter else False if confidence >= exit_at
+                  else bool(previous.get(check_id, True)))
+        visible[check_id] = {"choice": item.get("choice"), "confidence": confidence,
+                             "model": "jev-1.13.0", "agreesWithRuleEngine": agrees,
+                             "needsHumanReview": queued,
+                             "priority": "disagreement" if not agrees else "low_confidence" if queued else "normal"}
+    return visible
 
 
 _EVIDENCE_TOOLS = frozenset({"validate_evidence_grounding", "extract_document_fields", "extract_table_records", "locate_evidence_fragment"})
