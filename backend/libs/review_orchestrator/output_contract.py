@@ -334,7 +334,8 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     "name": names.get(check_id) or check_id,
                     "result": active_result,
                     "decisionSource": source,
-                    **({"deterministicResult": original_result, "jevConfidence": jev_row["confidence"]}
+                    **({"deterministicResult": original_result, "jevConfidence": jev_row["confidence"],
+                        **({"perPerson": jev_row["perPerson"]} if jev_row.get("perPerson") else {})}
                        if jev_row else {"deterministicResult": original_result} if source == "jev_unavailable" else {}),
                     "ruleCode": str(record.get("ruleCode") or ""),
                     # 「需人工判断」的原因常是引擎没给分：把没分的事实列出来，

@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import time
+from collections import defaultdict
 from copy import deepcopy
 from typing import Any
 
@@ -28,7 +29,7 @@ from libs.review_tools.executor import aggregate_atomic_results
 
 _EVIDENCE_GATE_TOOLS = frozenset({"locate_evidence_fragment", "validate_evidence_grounding",
                                   "extract_document_fields", "extract_table_records"})
-QUESTION_PROMPT_VERSION = "jev-node-question-author-v1"
+QUESTION_PROMPT_VERSION = "jev-node-question-author-v2"
 _QUESTION_KEYS_ORDERED = ("passed", "failed", "evidence_insufficient",
                           "human_review_required", "not_applicable")
 _QUESTION_KEYS = frozenset(_QUESTION_KEYS_ORDERED)
@@ -38,8 +39,11 @@ _AUTHOR_SYSTEM = (
     "对输入的每个原子项恰好生成一道中立的选择题及全部五个选项，不能回答题目，"
     "不能输出通过/不通过建议，不能增加或删除原子项。"
     "选项键必须是 passed、failed、evidence_insufficient、human_review_required、not_applicable。"
-    "选项描述必须交代各状态成立的条件，尤其缺少资料不能写成不适用，"
-    "需要外部平台核验时不能写成通过。禁止把 OCR 中的说法直接写成选项答案。"
+    "选项描述必须交代各状态成立的条件。failed 只用于原文明确证明违反要求或与要求矛盾；"
+    "缺少材料、缺少页码、文字无法辨认或无法完成比对属于 evidence_insufficient，不能写成 failed。"
+    "not_applicable 只用于适用条件明确不成立，缺少资料不能写成不适用。"
+    "需要外部平台核验时不能写成通过。不得在选项中暗示本次资料已证明哪个答案，"
+    "也不得写‘本题通常不成立’之类倾向性提示。禁止把 OCR 中的说法直接写成选项答案。"
     "只返回 JSON 对象，结构为 questions 数组；每项仅含 atomicCheckId、question、options。"
 )
 
@@ -64,7 +68,8 @@ def _atomic_results(records: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _node_inputs(state: dict[str, Any], run: dict[str, Any],
-                 rule_results: list[dict[str, Any]], pack: dict[str, Any]) -> dict[str, Any]:
+                 rule_results: list[dict[str, Any]], pack: dict[str, Any],
+                 business_facts: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build the allowed inputs without including deterministic answers."""
     if not jev_stage_enabled("PRIMARY_DECISION"):
         return {"status": "disabled"}
@@ -75,11 +80,6 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
     if str(run.get("projectId") or "") not in allowed_projects:
         return {"status": "project_not_approved_for_jev"}
     node_id = int(run.get("nodeId") or 0)
-    if node_id in {24, 29}:
-        # One document can concern several welders. A single answer would mask
-        # a failed person; use the existing specialist path until person-scoped
-        # OCR questions are available.
-        return {"status": "multi_person_not_supported"}
     current = _atomic_results(rule_results)
     evidence_gate_ids = _local_evidence_gate_ids(rule_results)
     if node_id == 19:
@@ -108,6 +108,31 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
         return {"status": status}
     if len(ocr_text) > MAX_REQUEST_CHARS - 5_000:
         return {"status": "request_overlong"}
+    question_targets: dict[str, tuple[str, str | None]] = {}
+    if node_id in {24, 29}:
+        person_facts = (business_facts or {}).get(f"r{node_id}") or {}
+        certificates = person_facts.get("certificates") or []
+        names = [str(item.get("welderName") or "").strip() for item in certificates
+                 if isinstance(item, dict)]
+        if not names or any(not name or name not in ocr_text for name in names):
+            return {"status": "multi_person_scope_unknown"}
+        if len(names) != len(set(names)) or len(names) > 20:
+            return {"status": "ambiguous_person_identity"}
+        work_names = {str(item.get("welderName") or "").strip()
+                      for collection in ("weldingRecords", "workItems")
+                      for item in person_facts.get(collection) or [] if isinstance(item, dict)
+                      and str(item.get("welderName") or "").strip()}
+        if work_names - set(names):
+            return {"status": "multi_person_scope_unknown"}
+        expanded = []
+        for check_id, instruction in checks:
+            for person_index, name in enumerate(sorted(names)):
+                question_id = f"{check_id}__person_{person_index}"
+                expanded.append((question_id, f"仅评价持证人{name}：{instruction}"))
+                question_targets[question_id] = (check_id, name)
+        checks = expanded
+    else:
+        question_targets = {check_id: (check_id, None) for check_id, _ in checks}
     node_template = next((item for item in pack.get("nodeTemplates") or []
                           if isinstance(item, dict) and str(item.get("nodeId")) == str(node_id)), {})
     if not node_template:
@@ -125,7 +150,7 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
                                           sort_keys=True).encode()).hexdigest()
     return {"status": "ready", "ocrText": ocr_text, "template": template,
             "checks": checks, "current": current, "protectedAtomicCheckIds": sorted(evidence_gate_ids),
-            "inputHash": input_hash}
+            "questionTargets": question_targets, "inputHash": input_hash}
 
 
 def _validated_questions(payload: Any, check_ids: set[str]) -> list[dict[str, Any]]:
@@ -155,9 +180,10 @@ def _validated_questions(payload: Any, check_ids: set[str]) -> list[dict[str, An
 
 
 def author_node_questions(state: dict[str, Any], run: dict[str, Any],
-                          rule_results: list[dict[str, Any]], pack: dict[str, Any]) -> dict[str, Any]:
+                          rule_results: list[dict[str, Any]], pack: dict[str, Any],
+                          *, business_facts: dict[str, Any] | None = None) -> dict[str, Any]:
     """Qwen fills the node template with questions and choices; it cannot answer."""
-    source = _node_inputs(state, run, rule_results, pack)
+    source = _node_inputs(state, run, rule_results, pack, business_facts)
     model = str(os.getenv("AICHECK_JEV_QUESTION_MODEL") or "qwen3.5-flash-2026-02-23").strip()
     base = {"status": source["status"], "model": model, "promptVersion": QUESTION_PROMPT_VERSION}
     if source["status"] != "ready":
@@ -169,7 +195,7 @@ def author_node_questions(state: dict[str, Any], run: dict[str, Any],
     try:
         response = qwen_runtime_client().chat_sync(
             messages, model=model, stream=False, response_format={"type": "json_object"},
-            enable_thinking=False, temperature=0, max_tokens=4096, timeout=60,
+            enable_thinking=False, temperature=0, max_tokens=8192, timeout=60,
         )
         if not isinstance(response, dict):
             raise TypeError("qwen_invalid_response")
@@ -201,14 +227,17 @@ def author_node_questions(state: dict[str, Any], run: dict[str, Any],
 
 
 def decide_node(state: dict[str, Any], run: dict[str, Any], rule_results: list[dict[str, Any]],
-                pack: dict[str, Any], question_plan: dict[str, Any] | None = None) -> dict[str, Any]:
+                pack: dict[str, Any], question_plan: dict[str, Any] | None = None,
+                *, business_facts: dict[str, Any] | None = None) -> dict[str, Any]:
     """Jev chooses among Qwen's validated options; no fixed-question shortcut."""
     base: dict[str, Any] = {"model": MODEL, "source": "jev", "atomic": []}
-    source = _node_inputs(state, run, rule_results, pack)
+    source = _node_inputs(state, run, rule_results, pack, business_facts)
     if source["status"] != "ready":
         return {**base, "status": source["status"]}
     if not isinstance(question_plan, dict) or question_plan.get("status") != "completed":
         return {**base, "status": "qwen_question_plan_unavailable"}
+    if question_plan.get("promptVersion") != QUESTION_PROMPT_VERSION:
+        return {**base, "status": "stale_question_plan"}
     if question_plan.get("inputHash") != source["inputHash"]:
         return {**base, "status": "stale_question_plan"}
     checks = source["checks"]
@@ -254,11 +283,18 @@ def decide_node(state: dict[str, Any], run: dict[str, Any], rule_results: list[d
     if set(answers) != set(questions):
         return {**base, "status": "incomplete_answer", "inputHash": input_hash,
                 "requestBatchCount": len(batches)}
-    opinions = []
-    for index, (check_id, _instruction) in enumerate(checks):
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for index, (question_id, _instruction) in enumerate(checks):
         answer = answers[f"q{index}"]
         choice, confidence = answer["choice"], float(answer["confidence"])
-        opinions.append({"atomicCheckId": check_id, "choice": choice, "confidence": confidence,
+        check_id, person = source["questionTargets"][question_id]
+        grouped[check_id].append({"person": person, "choice": choice, "confidence": confidence})
+    opinions = []
+    for check_id, rows in grouped.items():
+        choice = aggregate_atomic_results([{"result": row["choice"]} for row in rows])
+        opinions.append({"atomicCheckId": check_id, "choice": choice,
+                         "confidence": min(row["confidence"] for row in rows),
+                         **({"perPerson": rows} if rows[0]["person"] else {}),
                          "deterministicResult": current[check_id],
                          "agreesWithRuleEngine": choice == current[check_id]})
     combined = [{"result": item["choice"]} for item in opinions]

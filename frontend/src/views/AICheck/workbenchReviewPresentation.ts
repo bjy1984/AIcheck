@@ -317,6 +317,7 @@ export type WorkbenchAiCheckOutcome = {
   decisionSource?: 'jev' | 'jev_unavailable' | 'rule_engine'
   deterministicResult?: string
   jevConfidence?: number
+  perPerson?: { person: string; choice: string; confidence: number }[]
   /** 引擎没给分、等人核的事实，及其引用的抽取字段；核完落成 fact_corrections 下次就有分。 */
   unscoredFacts: WorkbenchAiUnscoredFact[]
   /** 判定依据：业务工具的逐条检查（通过项也有）。 */
@@ -353,6 +354,19 @@ export const workbenchCheckOutcomes = (source: unknown): WorkbenchAiCheckOutcome
         : {}),
       ...(row.deterministicResult ? { deterministicResult: String(row.deterministicResult) } : {}),
       ...(typeof row.jevConfidence === 'number' ? { jevConfidence: row.jevConfidence } : {}),
+      ...(Array.isArray(row.perPerson)
+        ? {
+            perPerson: row.perPerson
+              .filter((item): item is Record<string, unknown> =>
+                Boolean(item && typeof item === 'object' && !Array.isArray(item))
+              )
+              .map((item) => ({
+                person: String(item.person || ''),
+                choice: String(item.choice || ''),
+                confidence: Number(item.confidence || 0)
+              }))
+          }
+        : {}),
       ...(row.secondOpinion && typeof row.secondOpinion === 'object'
         ? {
             secondOpinion: {

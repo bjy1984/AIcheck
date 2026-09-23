@@ -1837,7 +1837,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         project = context.get("project") or {}
         pack = project.get("businessPackSnapshot") or load_business_pack(
             str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
-        plan = author_node_questions(repo.state, review_run, context.get("ruleResults") or [], pack)
+        plan = author_node_questions(repo.state, review_run, context.get("ruleResults") or [], pack,
+                                     business_facts=context.get("businessFacts"))
         review_run["jevQuestionPlan"] = plan
         return {"status": plan["status"], "questionCount": len(plan.get("questions") or []),
                 "model": plan.get("model")}
@@ -1847,7 +1848,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
         original = context.get("ruleResults") or []
         decision = decide_node(repo.state, review_run, original, pack,
-                               review_run.get("jevQuestionPlan"))
+                               review_run.get("jevQuestionPlan"), business_facts=context.get("businessFacts"))
         review_run["jevDecision"] = decision
         if decision["status"] not in {"disabled", "nonformal_run", "no_semantic_checks"}:
             context["deterministicRuleResults"] = original

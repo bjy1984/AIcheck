@@ -552,7 +552,11 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
         result: 'evidence_insufficient',
         decisionSource: 'jev',
         deterministicResult: 'passed',
-        jevConfidence: 0.83
+        jevConfidence: 0.83,
+        perPerson: [
+          { person: '张三', choice: 'passed', confidence: 0.8 },
+          { person: '李四', choice: 'failed', confidence: 0.9 }
+        ]
       }
     ]
   })
@@ -560,6 +564,13 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(outcome.decisionSource, 'jev')
   assert.equal(outcome.deterministicResult, 'passed')
   assert.equal(outcome.jevConfidence, 0.83)
+  assert.deepEqual(
+    outcome.perPerson?.map((person) => [person.person, person.choice]),
+    [
+      ['张三', 'passed'],
+      ['李四', 'failed']
+    ]
+  )
 }
 
 // 逐项核查结果要带出来，通过项也要——只列问题时，「没报问题」和「压根没查」看起来一样。

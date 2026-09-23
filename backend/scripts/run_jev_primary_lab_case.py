@@ -13,6 +13,7 @@ import getpass
 import json
 import os
 import stat
+import subprocess
 import zlib
 from pathlib import Path
 from unittest.mock import patch
@@ -25,6 +26,34 @@ from libs.review_orchestrator import jev_primary
 from libs.review_orchestrator.execution import run_step
 from libs.review_orchestrator.jev_client import jev_stage_enabled
 from libs.review_rule_snapshot import freeze_effective_rule
+
+_QWEN_SECRET_HOST = "aicheck-prod-new"
+_QWEN_SECRET_PATH = "/home/dev-bjy/aicheck-secrets.env"
+
+
+def _qwen_test_key_from_server() -> str:
+    """Read the DashScope test key into this process without displaying or persisting it."""
+    remote_code = f"""from pathlib import Path
+from urllib.parse import urlsplit
+rows = dict(line.strip().split('=', 1) for line in Path({_QWEN_SECRET_PATH!r}).read_text().splitlines()
+            if '=' in line and not line.lstrip().startswith('#'))
+base = rows.get('AICHECK_LLM_VISION_API_BASE', '').strip('\\"\\\'')
+key = rows.get('AICHECK_LLM_VISION_API_KEY', '').strip('\\"\\\'')
+if urlsplit(base).hostname != 'dashscope.aliyuncs.com' or not key:
+    raise SystemExit(2)
+print(key, end='')
+"""
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+             _QWEN_SECRET_HOST, "python3 -"], input=remote_code, text=True,
+            capture_output=True, timeout=20, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("qwen_server_key_unavailable") from exc
+    if result.returncode or not result.stdout.strip() or "\n" in result.stdout.strip():
+        raise RuntimeError("qwen_server_key_unavailable")
+    return result.stdout.strip()
 
 
 def _private_write(path: Path, value: dict) -> None:
@@ -90,6 +119,11 @@ def replay(snapshot: dict, project_id: str, node_id: int, *, send: bool,
     os.environ["AICHECK_JEV_PRIMARY_DECISION_ENABLED"] = "true"
     os.environ["AICHECK_JEV_ENABLED"] = "true"
     os.environ["AICHECK_JEV_DATA_EGRESS_APPROVED"] = "true"
+    with patch.object(jev_primary, "jev_stage_enabled", return_value=True):
+        question_input = jev_primary._node_inputs(
+            repo.state, run, rules, project["businessPackSnapshot"], context.get("businessFacts"))
+    if send and question_input["status"] != "ready":
+        raise ValueError("question_author_input_not_ready:" + question_input["status"])
     if send and not jev_stage_enabled("PRIMARY_DECISION"):
         raise ValueError("jev_live_gate_disabled:" + json.dumps({
             "keyPresent": bool(os.environ.get("AICHECK_JEV_API_KEY")),
@@ -121,6 +155,8 @@ def replay(snapshot: dict, project_id: str, node_id: int, *, send: bool,
         effective = rules
     return {"schemaVersion": "jev-primary-lab-case-v1", "projectId": project_id,
             "nodeId": node_id, "documentVersionIds": versions, "ocrCharCount": len(ocr_text),
+            "questionAuthorInputStatus": question_input["status"],
+            "plannedQuestionCount": len(question_input.get("checks") or []),
             "questionPlan": question_plan, "inputHash": decision.get("inputHash"),
             "actualRuleResult": rules[0].get("result"),
             "actualRuleAtomic": [{"atomicCheckId": row.get("atomicCheckId"), "result": row.get("result"),
@@ -140,22 +176,46 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--send", action="store_true")
     parser.add_argument("--prompt-key", action="store_true")
+    parser.add_argument("--qwen-key-from-server", action="store_true")
     args = parser.parse_args()
     if stat.S_IMODE(args.snapshot.stat().st_mode) & 0o077:
         parser.error("private_snapshot_permissions_required")
     if args.send and not args.prompt_key:
         parser.error("live replay requires --prompt-key")
+    if args.qwen_key_from_server and not args.send:
+        parser.error("server key retrieval requires --send")
     snapshot = json.loads(zlib.decompress(args.snapshot.read_bytes()))
+    qwen_env_names = ("AICHECK_QWEN_CALL_MODE", "QWEN_API_KEY", "QWEN_API_BASE",
+                      "AICHECK_LLM_API_KEY", "AICHECK_LLM_API_BASE")
+    previous_qwen_env = {name: os.environ.get(name) for name in qwen_env_names}
     if args.prompt_key:
         os.environ["AICHECK_JEV_API_KEY"] = getpass.getpass("Jev test API key: ").strip()
     try:
+        if args.qwen_key_from_server:
+            key = _qwen_test_key_from_server()
+            base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            os.environ["AICHECK_QWEN_CALL_MODE"] = "official_api"
+            os.environ["QWEN_API_KEY"] = key
+            os.environ["QWEN_API_BASE"] = base
+            # Generic official-API settings have precedence in QwenRuntime.
+            # Pin both names to the same provider for this isolated replay.
+            os.environ["AICHECK_LLM_API_KEY"] = key
+            os.environ["AICHECK_LLM_API_BASE"] = base
         report = replay(snapshot, args.project_id, args.node_id, send=args.send,
                         expected_requests=args.expected_requests)
         _private_write(args.output, report)
     finally:
         os.environ.pop("AICHECK_JEV_API_KEY", None)
+        if args.qwen_key_from_server:
+            for name, previous in previous_qwen_env.items():
+                if previous is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = previous
     print(json.dumps({"status": report["jevDecision"]["status"],
                       "nodeId": report["nodeId"], "ocrCharCount": report["ocrCharCount"],
+                      "questionAuthorInputStatus": report["questionAuthorInputStatus"],
+                      "plannedQuestionCount": report["plannedQuestionCount"],
                       "requestCount": report["jevDecision"].get("requestBatchCount"),
                       "actualRuleResult": report["actualRuleResult"],
                       "activeResult": report["activeResult"]}, ensure_ascii=False))

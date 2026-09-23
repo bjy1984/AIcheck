@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from subprocess import CompletedProcess
 
 from libs.review_orchestrator import execution, jev_primary, output_contract
+from scripts import run_jev_primary_lab_case
 
 
 def _case():
@@ -70,6 +72,7 @@ def test_qwen_writes_questions_and_options_before_jev_chooses(monkeypatch):
     monkeypatch.setattr(jev_primary, "ask_jev", answer)
     plan = jev_primary.author_node_questions(state, run, records, pack)
     assert plan["status"] == "completed"
+    assert "缺少材料" in qwen.calls[0][0][0]["content"]
     prompt = qwen.calls[0][0]
     assert "焊接电流为 90A" in prompt[1]["content"]
     assert "焊接工艺卡" in prompt[1]["content"]
@@ -130,6 +133,8 @@ def test_stale_question_plan_and_jev_unavailable_fail_to_human(monkeypatch):
     qwen = _Qwen(_authored())
     _enabled(monkeypatch, qwen)
     plan = jev_primary.author_node_questions(state, run, records, pack)
+    old_prompt_plan = {**plan, "promptVersion": "jev-node-question-author-v1"}
+    assert jev_primary.decide_node(state, run, records, pack, old_prompt_plan)["status"] == "stale_question_plan"
     state["ocr_parse_results"][0]["fragments"][0]["text"] = "焊接电流为 120A"
     assert jev_primary.decide_node(state, run, records, pack, plan)["status"] == "stale_question_plan"
     state["ocr_parse_results"][0]["fragments"][0]["text"] = "焊接电流为 90A"
@@ -165,7 +170,54 @@ def test_primary_does_not_collapse_multiple_people(monkeypatch):
     state, run, records, pack = _case()
     _enabled(monkeypatch)
     run["nodeId"] = 24
-    assert jev_primary.author_node_questions(state, run, records, pack)["status"] == "multi_person_not_supported"
+    pack["atomicChecks"][0]["nodeId"] = 24
+    pack["nodeTemplates"][0]["nodeId"] = 24
+    assert jev_primary.author_node_questions(state, run, records, pack)["status"] == "multi_person_scope_unknown"
+
+
+def test_multiple_people_get_separate_questions_and_worst_result_wins(monkeypatch):
+    state, run, records, pack = _case()
+    _enabled(monkeypatch)
+    run["nodeId"] = 24
+    state["ocr_parse_results"][0]["fragments"][0]["text"] = "张三的证书有效；李四的证书已到期"
+    pack["nodeTemplates"] = [{"nodeId": 24, "name": "焊工资格", "requiredMaterials": []}]
+    pack["atomicChecks"][0]["nodeId"] = 24
+    facts = {"r24": {"certificates": [{"welderName": "张三"}, {"welderName": "李四"}]}}
+    ids = ("AC-1__person_0", "AC-1__person_1")
+    qwen = _Qwen(_authored(ids))
+    monkeypatch.setattr(jev_primary, "qwen_runtime_client", lambda: qwen)
+    plan = jev_primary.author_node_questions(state, run, records, pack, business_facts=facts)
+    assert plan["status"] == "completed"
+    assert len(plan["questions"]) == 2
+    assert "张三" in qwen.calls[0][0][1]["content"]
+    assert "李四" in qwen.calls[0][0][1]["content"]
+
+    def answer(_text, questions, **_kwargs):
+        assert len(questions) == 2
+        return {"q0": {"type": "choice", "choice": "passed", "confidence": 0.8},
+                "q1": {"type": "choice", "choice": "failed", "confidence": 0.9}}
+
+    monkeypatch.setattr(jev_primary, "ask_jev", answer)
+    decision = jev_primary.decide_node(state, run, records, pack, plan, business_facts=facts)
+    assert decision["status"] == "completed"
+    assert decision["atomic"][0]["choice"] == "failed"
+    assert len(decision["atomic"][0]["perPerson"]) == 2
+    assert jev_primary.apply_decision(records, decision)[0]["result"] == "failed"
+    view = output_contract.atomic_check_outcomes(records, {**run, "jevDecision": decision})
+    assert len(view[0]["perPerson"]) == 2
+
+
+def test_unmatched_welding_record_person_blocks_group_answer(monkeypatch):
+    state, run, records, pack = _case()
+    _enabled(monkeypatch)
+    run["nodeId"] = 29
+    state["ocr_parse_results"][0]["fragments"][0]["text"] = "张三和李四的施焊记录"
+    pack["nodeTemplates"][0]["nodeId"] = 29
+    pack["atomicChecks"][0]["nodeId"] = 29
+    facts = {"r29": {"certificates": [{"welderName": "张三"}],
+                     "weldingRecords": [{"welderName": "李四"}]}}
+    assert jev_primary.author_node_questions(state, run, records, pack,
+                                              business_facts=facts)["status"] == "multi_person_scope_unknown"
 
 
 def test_system_evidence_gate_stays_local_while_jev_decides_business_check(monkeypatch):
@@ -194,12 +246,12 @@ def test_graph_requires_qwen_step_before_jev_step(monkeypatch):
     context = {"project": {"businessPackSnapshot": pack}, "ruleResults": records}
     events = []
 
-    def author(_state, _run, _records, _pack):
+    def author(_state, _run, _records, _pack, **_kwargs):
         events.append("qwen")
         return {"status": "completed", "model": "qwen3.5-flash-2026-02-23",
                 "questions": _authored()["questions"]}
 
-    def decide(_state, _run, _records, _pack, question_plan):
+    def decide(_state, _run, _records, _pack, question_plan, **_kwargs):
         assert question_plan == run["jevQuestionPlan"]
         events.append("jev")
         return {"status": "completed", "atomic": [{"atomicCheckId": "AC-1",
@@ -241,3 +293,29 @@ def test_r19_eight_questions_are_authored_then_answered(monkeypatch):
     decision = jev_primary.decide_node(state, run, records, pack, plan)
     assert decision["status"] == "completed"
     assert len(decision["atomic"]) == 8
+
+
+def test_qwen_server_key_is_captured_without_logging(monkeypatch, capsys):
+    def fake_run(command, **kwargs):
+        assert command[-2:] == ["aicheck-prod-new", "python3 -"]
+        assert "AICHECK_LLM_VISION_API_KEY" in kwargs["input"]
+        assert kwargs["capture_output"] is True
+        return CompletedProcess(command, 0, stdout="test-only-secret", stderr="")
+
+    monkeypatch.setattr(run_jev_primary_lab_case.subprocess, "run", fake_run)
+    assert run_jev_primary_lab_case._qwen_test_key_from_server() == "test-only-secret"
+    assert "test-only-secret" not in capsys.readouterr().out
+
+
+def test_qwen_server_key_failure_does_not_expose_secret(monkeypatch):
+    def fake_run(command, **_kwargs):
+        return CompletedProcess(command, 2, stdout="secret-from-bad-host", stderr="error")
+
+    monkeypatch.setattr(run_jev_primary_lab_case.subprocess, "run", fake_run)
+    try:
+        run_jev_primary_lab_case._qwen_test_key_from_server()
+    except RuntimeError as exc:
+        assert str(exc) == "qwen_server_key_unavailable"
+        assert "secret-from-bad-host" not in str(exc)
+    else:
+        raise AssertionError("server key error was accepted")

@@ -588,7 +588,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                 tone="orange"
                 round
               >
-                Jev 未完成 · 待人工核查
+                出題／判題未完成 · 待人工核查
               </AuditStatusTag>
               <AuditStatusTag
                 v-if="outcome.secondOpinion"
@@ -613,12 +613,30 @@ const ruleLabel = (rule: Record<string, unknown>) => {
               </small>
               <!-- 依据与证据：通过/不通过/需人工都列，监检才能核对而不是只看一个标签 -->
               <div
-                v-if="outcome.reason || outcome.checks.length || outcome.facts.length"
+                v-if="
+                  outcome.reason ||
+                  outcome.perPerson?.length ||
+                  outcome.checks.length ||
+                  outcome.facts.length
+                "
                 class="ai-outcome-basis"
               >
                 <p v-if="outcome.reason" class="ai-outcome-reason">
                   <span>原因</span>{{ outcome.reason }}
                 </p>
+                <ul
+                  v-if="outcome.perPerson?.length"
+                  class="ai-outcome-checks"
+                  aria-label="逐人判定"
+                >
+                  <li v-for="person in outcome.perPerson" :key="person.person">
+                    <span class="ai-check-label">{{ person.person }}</span>
+                    <small
+                      >{{ checkOutcomeLabel(person.choice) }} · Jev 把握值
+                      {{ Math.round(person.confidence * 100) }}%</small
+                    >
+                  </li>
+                </ul>
                 <ul v-if="outcome.checks.length" class="ai-outcome-checks" aria-label="判定依据">
                   <li v-for="check in outcome.checks" :key="`${check.tool}:${check.code}`">
                     <i
