@@ -43,7 +43,7 @@ def test_questions_come_from_the_rule_facts_with_a_fixed_template():
     assert texts[0] == ("只看示例管道安装有限公司的安装（施工）单位许可证：它的有效期截止日是否为2024年9月7日？"
                         "起始日、发证日期和其他证书的日期都不是截止日。")
     assert [item["field"] for item in questions["V1"]] == ["validUntil", "validFrom", "certificateNo", "holder"]
-    assert texts[-1].startswith("只看这张安装（施工）单位许可证：它的持证单位或持证人是否为示例管道安装有限公司")
+    assert texts[-1].startswith("只看证件编号为TS3841999-2028的安装（施工）单位许可证：它的持证单位或持证人是否为示例管道安装有限公司")
     assert jev_fact_check.fact_questions(_verification()) == questions, "同样的事实必须得到同样的题目"
 
 

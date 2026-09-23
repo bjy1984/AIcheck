@@ -27,7 +27,7 @@ from libs.review_orchestrator.certificate_facts import CERTIFICATE_NODE_PROFILES
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_usage_policy import LOW_CONFIDENCE
 
-TEMPLATE_VERSION = "jev-fact-check-v3"
+TEMPLATE_VERSION = "jev-fact-check-v4"
 CHOICES = {
     "yes": "原文明确写明这张证书的该项内容就是题目给出的值",
     "no": "原文写明的该项内容与题目给出的值不同，或题目给出的其实是别的日期、别的编号或其他证书的内容",
@@ -137,7 +137,9 @@ def certificate_fact_items(verification: dict[str, Any] | None) -> list[dict[str
             # 同一份资料里可能有几个人的证：除了问持证人本身，都点名是谁的证。
             number = str(cert.get("certificateNo") or "").strip()
             who = f"{holder}（证件编号{number}）" if holder in look_alike and number and key != "certificateNo" else holder
-            target = f"{who}的{kind}" if holder and key != "holder" else f"这张{kind}"
+            # 问持证人时用证号点名：合订本里「这张」指哪一张说不清，换成别人的名字也能答「是」。
+            target = (f"{who}的{kind}" if holder and key != "holder"
+                      else f"证件编号为{number}的{kind}" if key == "holder" and number else f"这张{kind}")
             items.append({
                 "atomicCheckId": (verification or {}).get("atomicCheckId"), "documentVersionIds": versions,
                 "certificateIndex": index, "certificateLabel": kind, "field": key, "value": value,
