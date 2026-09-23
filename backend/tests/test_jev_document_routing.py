@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 from apps.worker import tasks
 from libs import jev_document_routing as routing
+from libs.business_pack import build_project_requirements, build_project_tree
+from libs.db.seed import DEFAULT_BUSINESS_PACK, DEFAULT_MATERIAL_REVIEW_POINTS
 from libs.integrations import task_dispatcher
 
 
@@ -71,6 +73,70 @@ def test_whole_document_routing_records_shadow_disagreement_without_binding(monk
     assert "WPS-01" not in str(result)
     assert repo.state["node_evidence_links"] == []
     assert "bindings" not in repo.state
+
+
+def test_requirement_only_node_69_is_a_shadow_routing_candidate(monkeypatch):
+    repo = source()
+    repo.state["tree_nodes"] = [{"projectId": "P", "nodeId": 69,
+                                 "businessPackId": "engineering_inspection_v1",
+                                 "name": "施工单位质量保证体系实施状况的评价"}]
+    repo.state["requirements"] = [{"projectId": "P", "nodeId": 69,
+                                     "businessPackId": "engineering_inspection_v1",
+                                     "name": "质量保证体系评价工作流记录",
+                                     "note": "报告覆盖当前工程和签发信息"}]
+    monkeypatch.setattr(routing, "jev_stage_enabled", lambda _: True)
+    seen = []
+
+    def fake_ask(_state, questions):
+        seen.extend(questions)
+        return {key: {"type": "choice", "choice": "yes", "confidence": 0.99} for key in questions}
+
+    monkeypatch.setattr(routing, "ask_jev", fake_ask)
+    result = routing.classify_document_node_routing(repo, "P", "D", "V")
+
+    assert "node_69" in seen
+    assert 69 in result["suggestedNodeIds"]
+    assert repo.state["node_evidence_links"] == []
+
+
+def test_requirement_fallback_respects_disabled_points_and_project_boundary():
+    configured = [{"nodeId": 69, "enabled": False, "businessPackId": "engineering_inspection_v1"}]
+    tree = [{"projectId": "P", "nodeId": node, "businessPackId": "engineering_inspection_v1",
+             "name": f"节点 {node}"} for node in (68, 69)]
+    requirements = [{"projectId": project, "nodeId": node,
+                     "businessPackId": "engineering_inspection_v1", "name": f"资料 {node}"}
+                    for project, node in (("P", 68), ("P", 69), ("OTHER", 67))]
+    points = routing.routing_question_points(
+        [], project_id="P", business_pack_id="engineering_inspection_v1",
+        requirements=requirements, tree_nodes=tree, configured_points=configured,
+    )
+    assert [point["nodeId"] for point in points] == [68]
+
+
+def test_requirement_fallback_does_not_mix_installed_pack_versions():
+    points = routing.routing_question_points(
+        [], project_id="P", business_pack_id="engineering_inspection_v1",
+        business_pack_version="2026.09.23",
+        requirements=[{"projectId": "P", "nodeId": 69, "name": "旧版资料",
+                       "businessPackVersion": "2026.08"}],
+        tree_nodes=[{"projectId": "P", "nodeId": 69, "name": "节点 69",
+                     "businessPackVersion": "2026.09.23"}],
+        configured_points=[],
+    )
+    assert points == []
+
+
+def test_default_installed_requirements_cover_all_69_routing_nodes():
+    points = routing.routing_question_points(
+        DEFAULT_MATERIAL_REVIEW_POINTS, project_id="P", business_pack_id=DEFAULT_BUSINESS_PACK["id"],
+        requirements=build_project_requirements(DEFAULT_BUSINESS_PACK, project_id="P"),
+        tree_nodes=build_project_tree("P", DEFAULT_BUSINESS_PACK),
+        configured_points=DEFAULT_MATERIAL_REVIEW_POINTS,
+    )
+    _questions, node_ids, overlong = routing._node_questions(points)
+    assert len(node_ids) == 69
+    assert 69 in node_ids.values()
+    assert overlong == []
 
 
 def test_human_rejection_vetoes_routing_suggestion(monkeypatch):

@@ -65,6 +65,56 @@ def _node_questions(points: list[dict[str, Any]]) -> tuple[dict[str, dict[str, A
     return questions, node_ids, overlong
 
 
+def routing_question_points(
+    points: list[dict[str, Any]], *, project_id: str, business_pack_id: str,
+    requirements: list[dict[str, Any]], tree_nodes: list[dict[str, Any]],
+    configured_points: list[dict[str, Any]], business_pack_version: str = "",
+) -> list[dict[str, Any]]:
+    """Cover nodes with required files but no review point, without reviving disabled points.
+
+    The project tree and requirements are the installed pack snapshot. A point
+    explicitly disabled in admin configuration must stay out of Jev routing.
+    """
+    configured_node_ids = {
+        int(row.get("nodeId") or 0)
+        for row in configured_points
+        if isinstance(row, dict)
+        and str(row.get("businessPackId") or business_pack_id) == business_pack_id
+    }
+    active_nodes = {
+        int(row.get("nodeId") or 0): row
+        for row in tree_nodes
+        if isinstance(row, dict) and str(row.get("projectId") or "") == project_id
+        and str(row.get("businessPackId") or business_pack_id) == business_pack_id
+        and (not business_pack_version or not row.get("businessPackVersion")
+             or str(row["businessPackVersion"]) == business_pack_version)
+    }
+    supplemental: list[dict[str, Any]] = []
+    for requirement in requirements:
+        if not isinstance(requirement, dict) or str(requirement.get("projectId") or "") != project_id:
+            continue
+        if str(requirement.get("businessPackId") or business_pack_id) != business_pack_id:
+            continue
+        if (business_pack_version and requirement.get("businessPackVersion")
+                and str(requirement["businessPackVersion"]) != business_pack_version):
+            continue
+        node_id = int(requirement.get("nodeId") or 0)
+        if node_id not in active_nodes or node_id in configured_node_ids:
+            continue
+        node_version = str(active_nodes[node_id].get("businessPackVersion") or "")
+        requirement_version = str(requirement.get("businessPackVersion") or "")
+        if node_version and requirement_version and node_version != requirement_version:
+            continue
+        supplemental.append({
+            "nodeId": node_id,
+            "nodeName": str(active_nodes[node_id].get("name") or ""),
+            "reviewContent": "仅判断文件能否作为此节点的资料；人工评价结论仍由监检人员作出。",
+            "materialTypeName": str(requirement.get("name") or requirement.get("materialTypeCode") or ""),
+            "fileContent": str(requirement.get("note") or ""),
+        })
+    return [*points, *supplemental]
+
+
 def classify_document_node_routing(
     repo: Any, project_id: str, document_id: str, version_id: str,
 ) -> dict[str, Any]:
@@ -92,7 +142,16 @@ def classify_document_node_routing(
         return {**base, "status": "overlong_document", "overlongDocumentVersionIds": overlong_versions}
     if not states or not states[0]["hasOcrText"]:
         return {**base, "status": "no_ocr_text"}
-    questions, node_ids, overlong_templates = _node_questions(review_points_for_project(repo, project))
+    business_pack_id = str(project.get("businessPackId") or "engineering_inspection_v1")
+    points = routing_question_points(
+        review_points_for_project(repo, project), project_id=project_id,
+        business_pack_id=business_pack_id,
+        business_pack_version=str(project.get("businessPackVersion") or ""),
+        requirements=repo.state.get("requirements") or [],
+        tree_nodes=repo.state.get("tree_nodes") or [],
+        configured_points=(repo.state.get("admin_config") or {}).get("materialReviewPoints") or [],
+    )
+    questions, node_ids, overlong_templates = _node_questions(points)
     if not questions:
         return {**base, "status": "no_templates", "overlongNodeIds": overlong_templates}
     full_state = states[0]["state"]

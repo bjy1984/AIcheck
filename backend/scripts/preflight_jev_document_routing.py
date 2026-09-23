@@ -11,8 +11,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from libs.db.seed import DEFAULT_MATERIAL_REVIEW_POINTS
-from libs.jev_document_routing import MAX_ROUTING_BATCHES, QUESTION_BATCH_SIZE, _node_questions
+from libs.business_pack import build_project_requirements, build_project_tree
+from libs.db.seed import DEFAULT_BUSINESS_PACK, DEFAULT_MATERIAL_REVIEW_POINTS
+from libs.jev_document_routing import (
+    MAX_ROUTING_BATCHES,
+    QUESTION_BATCH_SIZE,
+    _node_questions,
+    routing_question_points,
+)
 from libs.review_orchestrator.jev_client import batch_jev_questions
 from libs.review_orchestrator.jev_state import scoped_document_states
 
@@ -49,7 +55,17 @@ def preflight_file(path: Path, questions: dict[str, dict[str, Any]]) -> dict[str
             "largestBatchQuestions": max(map(len, batches), default=0)}
 
 
-def preflight_directory(ocr_dir: Path, points: list[dict[str, Any]]) -> dict[str, Any]:
+def preflight_directory(ocr_dir: Path, points: list[dict[str, Any]], *,
+                        requirements: list[dict[str, Any]] | None = None,
+                        tree_nodes: list[dict[str, Any]] | None = None,
+                        project_id: str = "EVAL", business_pack_id: str = "engineering_inspection_v1",
+                        business_pack_version: str = "") -> dict[str, Any]:
+    if requirements is not None and tree_nodes is not None:
+        points = routing_question_points(
+            points, project_id=project_id, business_pack_id=business_pack_id,
+            requirements=requirements, tree_nodes=tree_nodes, configured_points=points,
+            business_pack_version=business_pack_version,
+        )
     questions, node_ids, overlong_nodes = _node_questions(points)
     files = [preflight_file(path, questions) for path in sorted(ocr_dir.glob("*.md"))]
     return {
@@ -67,7 +83,13 @@ def main() -> int:
     args = parser.parse_args()
     if not args.ocr_dir.is_dir():
         parser.error("OCR directory does not exist")
-    report = preflight_directory(args.ocr_dir, DEFAULT_MATERIAL_REVIEW_POINTS)
+    report = preflight_directory(
+        args.ocr_dir, DEFAULT_MATERIAL_REVIEW_POINTS,
+        requirements=build_project_requirements(DEFAULT_BUSINESS_PACK, project_id="EVAL"),
+        tree_nodes=build_project_tree("EVAL", DEFAULT_BUSINESS_PACK),
+        project_id="EVAL", business_pack_id=DEFAULT_BUSINESS_PACK["id"],
+        business_pack_version=DEFAULT_BUSINESS_PACK["version"],
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["fileCount"] else 1
 
