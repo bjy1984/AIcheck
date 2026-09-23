@@ -219,3 +219,24 @@ def test_a_full_date_is_not_mistaken_for_a_month_only_date(monkeypatch):
     verification = _verification(valid_until="2027-10-31")
     jev_fact_check.check_certificate_facts(state, _run(), verification)
     assert "有效期截止日是否为2027年10月31日？" in next(iter(asked[0].values()))["instructions"]
+
+
+def _welder_rules():
+    return [{"atomicCheckResults": [{"atomicCheckId": "AC-R24-01", "result": "evidence_insufficient",
+                                     "toolResults": [{"toolName": "extract_welder_certificate"}]}]}]
+
+
+def test_welder_facts_become_questions_and_registry_codes_are_not_asked():
+    facts = {"r24": {"certificates": [
+        {"welderName": "李卫", "welderCertificateNo": "110101199001010011", "validUntil": "2027.04.30",
+         "qualificationCodes": ["GTAW-FeⅡ-6G-3/159-FefS-02/11/12"], "documentVersionId": "V2"},
+        {"welderName": "李卫伍", "welderCertificateNo": "110101199202020022", "documentVersionId": "V2",
+         "qualificationCodes": ["SMAW-FeⅡ-6G(K)-12/159-Fef3J"], "sources": {"qualificationCodes": "cnse_platform"}},
+    ]}}
+    items = jev_fact_check.welder_fact_items(facts, _welder_rules())
+    assert [(item["field"], item["value"]) for item in items] == [
+        ("certificateNo", "110101199001010011"), ("validUntil", "2027-04-30"),
+        ("qualificationCode", "GTAW-FeⅡ-6G-3/159-FefS-02/11/12")]
+    assert items[1]["instructions"].startswith("只看李卫（证件编号110101199001010011）的焊工资格证：它的有效期截止日是否为2027年4月30日")
+    assert all(item["atomicCheckId"] == "AC-R24-01" for item in items)
+    assert jev_fact_check.welder_fact_items(facts, []) == []

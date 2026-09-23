@@ -180,6 +180,50 @@ def design_fact_items(business_facts: dict[str, Any] | None,
     return items
 
 
+_WELDER_TOOL = "extract_welder_certificate"
+
+
+def welder_fact_items(business_facts: dict[str, Any] | None,
+                      rule_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Welder certificate facts nodes 24/29 use: ID number, expiry and qualified item codes."""
+    atomic_id = next((str(item.get("atomicCheckId")) for record in rule_results
+                      for item in record.get("atomicCheckResults") or []
+                      if any(isinstance(tool, dict) and tool.get("toolName") == _WELDER_TOOL
+                             for tool in item.get("toolResults") or [])), None)
+    certificates = [cert for key in ("r24", "r29")
+                    for cert in ((business_facts or {}).get(key) or {}).get("certificates") or [] if isinstance(cert, dict)]
+    names_by_version: dict[str, set[str]] = {}
+    for cert in certificates:
+        if cert.get("welderName") and cert.get("documentVersionId"):
+            names_by_version.setdefault(str(cert["documentVersionId"]), set()).add(str(cert["welderName"]))
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for cert in certificates:
+        version, name = str(cert.get("documentVersionId") or ""), str(cert.get("welderName") or "").strip()
+        number = str(cert.get("welderCertificateNo") or "").strip()
+        # 平台登记补上的代号不是 OCR 抽的，不拿来问原文。
+        if not atomic_id or not version or not name or (cert.get("sources") or {}).get("qualificationCodes") == "cnse_platform":
+            continue
+        look_alike = any(name != other and name in other for other in names_by_version.get(version, set()))
+        who = f"{name}（证件编号{number}）" if look_alike and number else name
+        valid_until = str(cert.get("validUntil") or "").replace(".", "-")
+        facts = [("certificateNo", "证件编号", number, "只看{who}的焊工资格证：它的证件编号是否为{value}？其他焊工的编号不算。"),
+                 ("validUntil", "有效期截止日", valid_until,
+                  "只看{who}的焊工资格证：它的有效期截止日是否为{value}？批准日期和其他焊工的日期都不是截止日。")]
+        facts += [("qualificationCode", "合格项目", str(code),
+                   "只看{who}的焊工资格证：考试合格作业项目中是否写有{value}？只核对原文写明的代号。")
+                  for code in (cert.get("qualificationCodes") or [])[:3] if str(code).strip()]
+        for field, label, value, template in facts:
+            if not value or (version, field, f"{name}:{value}") in seen:
+                continue
+            seen.add((version, field, f"{name}:{value}"))
+            shown = _render("validUntil", value) if field == "validUntil" else value
+            items.append({"atomicCheckId": atomic_id, "documentVersionIds": [version], "certificateLabel": "焊工资格证",
+                          "field": field, "value": value, "suspectLabel": f"焊工资格证·{name}·{label}={value}",
+                          "instructions": template.format(who=who, value=shown)})
+    return items
+
+
 def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
     """Certificate questions grouped by source document (kept for callers of the first version)."""
     return _group(certificate_fact_items(verification))
