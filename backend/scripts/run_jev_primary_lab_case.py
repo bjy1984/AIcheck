@@ -140,7 +140,8 @@ def replay(snapshot: dict, project_id: str, node_id: int, *, send: bool,
             raise ValueError("qwen_question_plan_not_ready:" + str(question_plan.get("status")))
         with patch.object(jev_primary, "ask_jev", side_effect=OSError("preflight_only")):
             preflight = jev_primary.decide_node(repo.state, run, rules,
-                                                 project["businessPackSnapshot"], question_plan)
+                                                 project["businessPackSnapshot"], question_plan,
+                                                 business_facts=context.get("businessFacts"))
         if preflight.get("status") != "unavailable" or preflight.get("requestBatchCount") != expected_requests:
             raise ValueError("request_count_preflight_changed:" + str(preflight.get("status"))
                              + ":" + str(preflight.get("requestBatchCount")))
