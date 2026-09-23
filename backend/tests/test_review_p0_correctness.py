@@ -68,10 +68,12 @@ def review_run() -> dict:
         "ruleSetVersion": "ruleset-v1",
         "kbVersion": "inspection_kb@1.0.0",
         "status": "waiting_human_review",
+        "inputDocumentVersionIds": ["DV-001"],
         "findingDrafts": [finding_draft()],
         "evidenceLinks": [
             {
                 "id": "EV-001",
+                "documentId": "DOC-P0-001",
                 "documentVersionId": "DV-001",
                 "pageNo": 1,
                 "bbox": [10, 20, 100, 40],
@@ -79,6 +81,8 @@ def review_run() -> dict:
             }
         ],
     }
+    repo.state["documents"].append({"id": "DOC-P0-001", "projectId": record["projectId"]})
+    repo.state["versions"].append({"id": "DV-001", "documentId": "DOC-P0-001"})
     repo.state["review_runs"].insert(0, record)
     repo.state["rule_check_results"].append(
         {"id": "RULE-RESULT-001", "reviewRunId": record["reviewRunId"], "ruleCode": "RULE-001"}

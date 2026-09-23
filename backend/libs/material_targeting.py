@@ -1024,6 +1024,40 @@ def upsert_auto_binding(
     return binding
 
 
+def remove_rejected_auto_binding(
+    repo: Any, project_id: str, version_id: str, review_point_id: str,
+) -> None:
+    """A human rejection vetoes the matching system binding, even after recompute."""
+    kept: list[dict[str, Any]] = []
+    for binding in repo.state.get("bindings", []):
+        if (binding.get("source") != "material_targeting"
+                or binding.get("projectId") != project_id
+                or binding.get("documentVersionId") != version_id):
+            kept.append(binding)
+            continue
+        point_ids = [str(item) for item in binding.get("reviewPointIds") or []]
+        requirement_id = str(binding.get("requirementId") or "")
+        if requirement_id and requirement_id not in point_ids:
+            point_ids.append(requirement_id)
+        if review_point_id not in point_ids:
+            kept.append(binding)
+            continue
+        remaining = [item for item in point_ids if item != review_point_id]
+        if remaining:
+            binding["reviewPointIds"] = remaining
+            if str(binding.get("requirementId") or "") == review_point_id:
+                binding["requirementId"] = remaining[0]
+                binding["requirementName"] = next(
+                    (str(point.get("reviewContent") or point.get("materialTypeName") or "")
+                     for point in repo.state.get("admin_config", {}).get("materialReviewPoints", [])
+                     if str(point.get("id") or "") == remaining[0]),
+                    binding.get("requirementName"),
+                )
+            binding["updatedAt"] = server_time()
+            kept.append(binding)
+    repo.state["bindings"] = kept
+
+
 def node_evidence_link_from_match(
     project_id: str,
     point: dict[str, Any],
@@ -1080,6 +1114,7 @@ def node_evidence_link_from_match(
         "confirmedByName": "系统自动打靶",
         "confirmedAt": server_time(),
         "source": "material_targeting",
+        "revision": 1,
         "createdAt": server_time(),
     }
 
@@ -1154,6 +1189,7 @@ def run_material_targeting(
                 "rejectedAt",
                 "manualComment",
                 "manualUpdatedAt",
+                "revision",
             ]
             if item.get(key) is not None
         }
@@ -1163,6 +1199,16 @@ def run_material_targeting(
         and item.get("source") == "material_targeting"
         and item.get("id")
     }
+    rejected_points = {
+        str(item.get("reviewPointId") or "")
+        for item in repo.state.get("node_evidence_links", [])
+        if item.get("projectId") == project_id
+        and item.get("documentVersionId") == version_id
+        and item.get("source") == "material_targeting"
+        and item.get("manualStatus") == MANUAL_REJECTED
+    }
+    for point_id in rejected_points:
+        remove_rejected_auto_binding(repo, project_id, str(version_id), point_id)
     repo.state["node_evidence_links"] = [
         item
         for item in repo.state.get("node_evidence_links", [])
@@ -1170,6 +1216,7 @@ def run_material_targeting(
             item.get("projectId") == project_id
             and item.get("documentVersionId") == version_id
             and item.get("source") == "material_targeting"
+            and item.get("manualStatus") != MANUAL_REJECTED
         )
     ]
 
@@ -1183,6 +1230,8 @@ def run_material_targeting(
     touched_nodes: set[int] = set()
     for candidate in candidates:
         point = candidate.pop("reviewPoint")
+        if str(point.get("id") or "") in rejected_points:
+            continue
         if (
             candidate["supportStatus"] == UNMATCHED_STATUS
             or not candidate.get("evidenceFacts")
@@ -1191,6 +1240,7 @@ def run_material_targeting(
         link = node_evidence_link_from_match(project_id, point, document, str(version_id), candidate)
         if link["id"] in previous_manual_state:
             link.update(previous_manual_state[link["id"]])
+            link["revision"] = int(link.get("revision") or 0) + 1
         repo.state.setdefault("node_evidence_links", []).insert(0, link)
         created_links.append(link)
         touched_nodes.add(int(point.get("nodeId") or 0))
@@ -1267,6 +1317,7 @@ def set_node_evidence_link_manual_status(
     *,
     actor_name: str = "",
     comment: str = "",
+    expected_revision: int | None = None,
 ) -> dict[str, Any] | None:
     if manual_status not in MANUAL_STATUS_LABELS:
         return None
@@ -1282,6 +1333,9 @@ def set_node_evidence_link_manual_status(
     )
     if not link:
         return None
+    revision = int(link.get("revision") or 0)
+    if expected_revision is not None and expected_revision != revision:
+        raise ValueError("evidence_link_revision_conflict")
     now = server_time()
     link["manualStatus"] = manual_status
     link["manualStatusLabel"] = MANUAL_STATUS_LABELS[manual_status]
@@ -1300,6 +1354,12 @@ def set_node_evidence_link_manual_status(
         link["rejectedAt"] = now
         link.pop("confirmedByName", None)
         link.pop("confirmedAt", None)
+        if link.get("source") == "material_targeting":
+            remove_rejected_auto_binding(
+                repo, project_id, str(link.get("documentVersionId") or ""),
+                str(link.get("reviewPointId") or ""),
+            )
+    link["revision"] = revision + 1
     return repo.clone(link)
 
 

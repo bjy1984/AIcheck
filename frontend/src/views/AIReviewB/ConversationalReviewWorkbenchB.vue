@@ -1590,7 +1590,8 @@ const confirmEvidence = async (evidence: EvidenceLink) => {
   actionLoading.value = true
   try {
     await confirmNodeEvidenceLinkApi(activeProjectId.value, activeNodeId.value, evidence.id, {
-      comment: '在 AI 复核 B 版工作台确认'
+      comment: '在 AI 复核 B 版工作台确认',
+      expectedRevision: evidence.revision ?? 0
     })
     ElMessage.success('证据已确认')
     await refreshLiveState()

@@ -3787,7 +3787,7 @@ export const confirmNodeEvidenceLinkApi = (
   projectId: string,
   nodeId: number,
   evidenceLinkId: string,
-  payload: { comment?: string } = {},
+  payload: { comment?: string; expectedRevision?: number } = {},
   options?: MutationHeaderOptions
 ): Promise<IResponse<NodeEvidenceDecisionPayload>> => {
   return request.post({
@@ -3844,7 +3844,7 @@ export const rejectNodeEvidenceLinkApi = (
   projectId: string,
   nodeId: number,
   evidenceLinkId: string,
-  payload: { comment?: string; reasonCode?: string } = {},
+  payload: { comment?: string; reasonCode?: string; expectedRevision?: number } = {},
   options?: MutationHeaderOptions
 ): Promise<IResponse<NodeEvidenceDecisionPayload>> => {
   return request.post({

@@ -4,13 +4,11 @@ import hashlib
 import json
 import logging
 import os
-import re
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from libs.audit_runtime import (
-    audit_runtime_config,
     audit_runtime_for_run,
     audit_runtime_public_config,
 )
@@ -74,6 +72,9 @@ from libs.review_orchestrator.design_facts import DESIGN_FACT_NODES, build_desig
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
     truncation_requirements,
+)
+from libs.review_orchestrator.evidence_ref_validation import (
+    validate_review_evidence_refs,
 )
 from libs.review_orchestrator.failure_policy import (
     NON_RETRYABLE_REVIEW_REASONS,  # noqa: F401 -- public compatibility re-export
@@ -139,7 +140,11 @@ from libs.review_orchestrator.rule_result_digest import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.task_queues import review_task_queues
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
-from libs.review_page_scope import existing_scoped_run, prompt_grounding, task_page_ranges
+from libs.review_page_scope import (
+    existing_scoped_run,
+    prompt_grounding,
+    task_page_ranges,
+)
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.review_tools.condition_execution import (
@@ -1918,6 +1923,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             drafts,
             context.get("evidenceLinks") or [],
             audit_runtime=audit_runtime,
+            review_run=review_run,
+            source_state=repo.state,
         )
         mismatched_indexes = {
             int(failure.get("index"))
@@ -2697,140 +2704,6 @@ def validate_review_schema(drafts: list[dict[str, Any]]) -> dict[str, Any]:
         failures=failures,
         warnings=warnings,
         metrics={"findingCount": len(drafts)},
-    )
-
-
-def validate_bbox(value: Any) -> bool:
-    if not isinstance(value, list | tuple) or len(value) != 4:
-        return False
-    try:
-        x1, y1, x2, y2 = [float(item) for item in value]
-    except (TypeError, ValueError):
-        return False
-    return x2 >= x1 and y2 >= y1 and x1 >= 0 and y1 >= 0
-
-
-def normalize_claim_text(value: Any) -> str:
-    text = str(value or "").upper()
-    return re.sub(r"[\s\u3000:：/／\\\-_.，。,、()（）\[\]【】]+", "", text)
-
-
-def extract_claim_tokens(draft: dict[str, Any]) -> list[str]:
-    text = "\n".join(
-        str(draft.get(key) or "")
-        for key in ["title", "description", "opinionDraft", "resultText", "suggestedAction"]
-    )
-    patterns = [
-        r"\b[A-Z]{1,6}\s*/?\s*T?\s*\d{2,6}(?:\.\d+)?(?:-\d{4})?\b",
-        r"\bTS[A-Z0-9\-]{6,}\b",
-        r"\bA\d{6,}\b",
-        r"\b\d{4}[年\-/.]\d{1,2}[月\-/.]\d{1,2}日?\b",
-        r"\b\d+(?:\.\d+)?\s*(?:%|MPA|MM|℃|级|类)\b",
-        r"[\u4e00-\u9fa5]{2,30}(?:公司|院|中心|厂|集团|有限责任公司)",
-    ]
-    tokens: list[str] = []
-    for pattern in patterns:
-        for match in re.findall(pattern, text, flags=re.IGNORECASE):
-            token = match if isinstance(match, str) else "".join(match)
-            normalized = normalize_claim_text(token)
-            if normalized and normalized not in tokens:
-                tokens.append(normalized)
-    return tokens[:20]
-
-
-def evidence_text_corpus(evidence_links: list[dict[str, Any]], refs: list[dict[str, Any]]) -> str:
-    ref_ids = {str(ref.get("evidenceLinkId")) for ref in refs if isinstance(ref, dict) and ref.get("evidenceLinkId")}
-    rows = [
-        item
-        for item in evidence_links
-        if isinstance(item, dict) and (not ref_ids or str(item.get("id") or "") in ref_ids)
-    ]
-    values: list[str] = []
-    for row in rows:
-        for key in ["quotedText", "fieldName", "fieldValue", "fileName", "standardCode", "reportNo", "conclusion"]:
-            if row.get(key):
-                values.append(str(row.get(key)))
-        for item in row.get("matchedEvidenceItems") or []:
-            values.append(str(item))
-    return normalize_claim_text("\n".join(values))
-
-
-def validate_review_evidence_refs(
-    drafts: list[dict[str, Any]],
-    evidence_links: list[dict[str, Any]],
-    *,
-    audit_runtime: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    runtime = audit_runtime or audit_runtime_config()
-    if runtime.get("requireEvidenceRefs") is False:
-        warnings = []
-        for draft_index, draft in enumerate(drafts):
-            if draft.get("evidenceRefs"):
-                warnings.append(
-                    {
-                        "code": "PURE_LLM_EVIDENCE_REFS_IGNORED",
-                        "index": draft_index,
-                        "message": "Pure LLM mode does not require evidenceRefs; OCR/page/bbox evidence was not loaded.",
-                    }
-                )
-        warnings.append(
-            {
-                "code": "PURE_LLM_REVIEW_ADVISORY_ONLY",
-                "message": "Evidence validation is advisory because auditInputMode does not require OCR evidence.",
-            }
-        )
-        return validation_payload(
-            passed=True,
-            checked=0,
-            warnings=warnings,
-            metrics={
-                "evidenceRefCount": 0,
-                "availableEvidenceLinks": len(evidence_links),
-                "auditInputMode": runtime.get("mode"),
-                "evidenceValidationMode": runtime.get("evidenceValidationMode"),
-            },
-        )
-    failures: list[dict[str, Any]] = []
-    warnings: list[dict[str, Any]] = []
-    evidence_ids = {str(item.get("id")) for item in evidence_links if isinstance(item, dict) and item.get("id")}
-    checked_refs = 0
-    for draft_index, draft in enumerate(drafts):
-        refs = draft.get("evidenceRefs") if isinstance(draft.get("evidenceRefs"), list) else []
-        if not refs:
-            warnings.append({"code": "NO_EVIDENCE_REFS", "index": draft_index, "message": "Finding has no direct evidence references."})
-            continue
-        claim_tokens = extract_claim_tokens(draft)
-        if claim_tokens:
-            corpus = evidence_text_corpus(evidence_links, refs)
-            missing_tokens = [token for token in claim_tokens if token not in corpus]
-            if missing_tokens:
-                failures.append(
-                    {
-                        "code": "CLAIM_TO_EVIDENCE_MISMATCH",
-                        "index": draft_index,
-                        "missingTokens": missing_tokens[:10],
-                        "message": "Finding contains explicit numbers/dates/certificates/standards/entities not found in cited evidence text.",
-                    }
-                )
-        for ref_index, ref in enumerate(refs):
-            checked_refs += 1
-            if not isinstance(ref, dict):
-                failures.append({"code": "EVIDENCE_REF_NOT_OBJECT", "index": draft_index, "refIndex": ref_index})
-                continue
-            evidence_link_id = ref.get("evidenceLinkId")
-            if evidence_link_id and str(evidence_link_id) not in evidence_ids:
-                failures.append({"code": "EVIDENCE_LINK_NOT_FOUND", "index": draft_index, "refIndex": ref_index, "evidenceLinkId": evidence_link_id})
-            has_position = bool(ref.get("documentVersionId")) and ref.get("pageNo") is not None and validate_bbox(ref.get("bbox"))
-            if not evidence_link_id and not has_position:
-                failures.append({"code": "EVIDENCE_REF_MISSING_POSITION", "index": draft_index, "refIndex": ref_index})
-            if ref.get("bbox") is not None and not validate_bbox(ref.get("bbox")):
-                failures.append({"code": "EVIDENCE_REF_BAD_BBOX", "index": draft_index, "refIndex": ref_index, "bbox": ref.get("bbox")})
-    return validation_payload(
-        passed=not failures,
-        checked=checked_refs,
-        failures=failures,
-        warnings=warnings,
-        metrics={"evidenceRefCount": checked_refs, "availableEvidenceLinks": len(evidence_ids)},
     )
 
 
@@ -3773,6 +3646,8 @@ def confirmed_findings_for_human_decision(
             [corrected],
             evidence_links,
             audit_runtime=audit_runtime_for_run(review_run),
+            review_run=review_run,
+            source_state=repo.state,
         )
         if not evidence_validation.get("passed"):
             return [], {

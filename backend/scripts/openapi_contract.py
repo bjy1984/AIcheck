@@ -14,6 +14,33 @@ FRONTEND_OPERATION_MAP_PATH = ROOT / "frontend" / "src" / "api" / "aicheck" / "g
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
 
 
+class OpenApiContractError(ValueError):
+    """A hand-maintained operation cannot be safely consumed by API clients."""
+
+
+def validate_operation(path: str, method: str, operation: dict[str, Any]) -> None:
+    request_body = operation.get("requestBody")
+    if isinstance(request_body, dict) and "$ref" not in request_body:
+        content = request_body.get("content") or {}
+        if not isinstance(content, dict) or not content or any(
+            not isinstance(media, dict) or not isinstance(media.get("schema"), dict)
+            for media in content.values()
+        ):
+            raise OpenApiContractError(f"{method.upper()} {path}: requestBody must declare a schema")
+    responses = operation.get("responses")
+    if not isinstance(responses, dict) or not responses:
+        raise OpenApiContractError(f"{method.upper()} {path}: responses must be declared")
+    for status, response in responses.items():
+        if not isinstance(response, dict):
+            raise OpenApiContractError(f"{method.upper()} {path}: response {status} must be an object")
+        if "$ref" in response:
+            continue
+        content = response.get("content") or {}
+        if any(not isinstance(media, dict) or not isinstance(media.get("schema"), dict)
+               for media in content.values()):
+            raise OpenApiContractError(f"{method.upper()} {path}: response {status} must declare a schema")
+
+
 def _json_pointer(document: Any, pointer: str) -> Any:
     current = document
     for raw_part in pointer.lstrip("/").split("/"):
@@ -30,7 +57,7 @@ def _resolve_path_item(reference: str) -> dict[str, Any]:
     document = yaml.safe_load(source.read_text(encoding="utf-8"))
     resolved = _json_pointer(document, pointer)
     if not isinstance(resolved, dict):
-        raise ValueError(f"OpenAPI path reference does not resolve to an object: {reference}")
+        raise TypeError(f"OpenAPI path reference does not resolve to an object: {reference}")
     return resolved
 
 
@@ -38,7 +65,7 @@ def build_contract_index() -> dict[str, Any]:
     entrypoint = yaml.safe_load(ENTRYPOINT_PATH.read_text(encoding="utf-8"))
     paths = entrypoint.get("paths") if isinstance(entrypoint, dict) else None
     if not isinstance(paths, dict):
-        raise ValueError("OpenAPI entrypoint is missing a paths object")
+        raise TypeError("OpenAPI entrypoint is missing a paths object")
 
     operations: list[dict[str, Any]] = []
     seen_operation_ids: set[str] = set()
@@ -52,6 +79,7 @@ def build_contract_index() -> dict[str, Any]:
             operation = path_item[method]
             if not isinstance(operation, dict) or not operation.get("operationId"):
                 continue
+            validate_operation(path, method, operation)
             operation_id = str(operation["operationId"])
             if operation_id in seen_operation_ids:
                 raise ValueError(f"Duplicate operationId: {operation_id}")

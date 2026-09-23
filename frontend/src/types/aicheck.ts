@@ -291,6 +291,7 @@ export type NodeFileBinding = {
 
 export type EvidenceLink = {
   id: string
+  revision?: number
   projectId?: string
   objectType?:
     | 'documentVersion'

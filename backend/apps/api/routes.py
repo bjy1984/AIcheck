@@ -33,6 +33,7 @@ from fastapi.responses import (
 )
 
 from apps.api import document_access_policy, feedback_capture, upload_session_workflow
+from apps.api.evidence_decision import apply_manual_evidence_decision
 from apps.api.idempotency_scope import replay_authorization_digests
 from apps.api.office_preview_routes import router as office_preview_router
 from apps.api.project_analysis_views import (
@@ -221,7 +222,6 @@ from libs.material_targeting import (
     recompute_project_material_targeting,  # noqa: F401 -- public re-export and monkeypatch compatibility
     review_points_for_project,
     run_material_targeting,
-    set_node_evidence_link_manual_status,
     targeting_input_versions_for_node,
 )
 from libs.model_usage import normalize_model_usage
@@ -255,6 +255,7 @@ from libs.ocr_structured_view import build_ocr_structured_view
 from libs.project_analysis.domain import (
     project_analysis_status_view,  # noqa: F401 -- public re-export and monkeypatch compatibility
 )
+from libs.project_dates import apply_construction_dates, construction_dates_from_body
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
 from libs.raw_vault import (
     capture_agent_turn,
@@ -310,7 +311,6 @@ from libs.review_orchestrator.llm_tool_schemas import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
-from libs.project_dates import apply_construction_dates, construction_dates_from_body
 from libs.rule_scope import same_rule_scope
 from libs.rule_version_helpers import rule_version_sort_key
 from libs.runtime_database_scope import runtime_database_scope
@@ -7350,21 +7350,20 @@ def update_node_evidence_manual_status(
         return guard
     if not repo.node(project_id, node_id):
         return fail(errors.NOT_FOUND, request)
-    actor = getattr(request.state, "auth_user", None) or {}
-    actor_name = str(body.get("actorName") or actor.get("name") or actor.get("username") or "").strip()
-    link = set_node_evidence_link_manual_status(
-        repo,
-        project_id,
-        node_id,
-        evidence_link_id,
-        manual_status,
-        actor_name=actor_name,
-        comment=str(body.get("comment") or ""),
-    )
+    try:
+        link = apply_manual_evidence_decision(
+            repo, project_id, node_id, evidence_link_id, manual_status,
+            body, getattr(request.state, "auth_user", None) or {},
+        )
+    except ValueError as exc:
+        if str(exc) == "invalid_evidence_revision":
+            return fail(errors.VALIDATION_ERROR, request, message="证据修订号无效。")
+        if str(exc) == "evidence_link_revision_conflict":
+            return fail(errors.CONFLICT, request, message="证据已更新，请刷新后重试。", http_status=409)
+        raise
     if not link:
         return fail(errors.NOT_FOUND, request)
-    audit_action = "确认证据" if manual_status == "confirmed" else "不采用证据"
-    audit_id = repo.add_audit(audit_action, "NodeEvidenceLink", evidence_link_id)
+    audit_id = repo.add_audit("确认证据" if manual_status == "confirmed" else "不采用证据", "NodeEvidenceLink", evidence_link_id)
     return ok(
         {
             "evidenceLink": link,

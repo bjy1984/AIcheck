@@ -158,7 +158,7 @@ export const useWorkbenchReviewActions = (ctx: WorkbenchReviewActionsContext) =>
         ctx.activeProjectId.value,
         ctx.activeNodeId.value,
         evidence.id,
-        { comment: '监检人员确认采用该证据。' },
+        { comment: '监检人员确认采用该证据。', expectedRevision: evidence.revision ?? 0 },
         { etag: ctx.etag() }
       )
       if (!res) {
@@ -190,7 +190,8 @@ export const useWorkbenchReviewActions = (ctx: WorkbenchReviewActionsContext) =>
         evidence.id,
         {
           comment: reason.note ? `${reason.label}：${reason.note}` : reason.label,
-          reasonCode: reason.code
+          reasonCode: reason.code,
+          expectedRevision: evidence.revision ?? 0
         },
         { etag: ctx.etag() }
       )
