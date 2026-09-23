@@ -12,16 +12,12 @@ from copy import deepcopy
 import pytest
 
 from libs.review_tools.installation_domain_rules import (
-    evaluate_r56_accessory_documents,
-    evaluate_r56_accessory_installation,
-    evaluate_r57_safety_valve_calibration,
-    evaluate_r58_emergency_valve_test,
-    evaluate_r46_cathodic_protection,
     evaluate_r10_comparison_table,
     evaluate_r10_compliance_declaration,
     evaluate_r10_standard_adoption,
     evaluate_r43_material_certificate,
     evaluate_r44_coating_construction,
+    evaluate_r46_cathodic_protection,
     evaluate_r47_static_grounding,
     evaluate_r48_weld_layout,
     evaluate_r49_crossing_construction,
@@ -31,6 +27,10 @@ from libs.review_tools.installation_domain_rules import (
     evaluate_r53_installation_connections,
     evaluate_r54_compensator,
     evaluate_r55_supports,
+    evaluate_r56_accessory_documents,
+    evaluate_r56_accessory_installation,
+    evaluate_r57_safety_valve_calibration,
+    evaluate_r58_emergency_valve_test,
     frozen_installation_rules,
 )
 
@@ -1020,13 +1020,13 @@ def test_composite_nodes_read_tables_with_the_runs_real_node_id():
     """2026-09-11 线上：节点 56 的复核在加载上下文就死，
     错误码 r561_review_identity_incomplete_or_wrong_node——拿合成键 561 去问
     read_ndt_tables，而它断言 run["nodeId"] 必须等于传入值。R10/R53/R56 都中招。"""
+    from libs.review_document_scope import freeze_document_scope
     from libs.review_orchestrator.installation_domain_facts import (
         COMPOSITE_NODE_IDS,
         build_r10_business_facts,
         build_r53_business_facts,
         build_r56_business_facts,
     )
-    from libs.review_document_scope import freeze_document_scope
 
     assert COMPOSITE_NODE_IDS == {101: 10, 102: 10, 103: 10, 530: 53, 561: 56, 562: 56}
     state = {"documents": [], "versions": [], "ocr_parse_results": []}

@@ -259,9 +259,6 @@
  "scripts/offline_vectorize_rules.py": {
   "BLE001": 1
  },
- "scripts/openapi_contract.py": {
-  "TRY004": 2
- },
  "scripts/publish_atomic_check_bindings.py": {
   "TRY004": 1
  },

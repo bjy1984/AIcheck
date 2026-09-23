@@ -12,7 +12,6 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack, contextmanager
-from copy import deepcopy
 
 import httpx
 from test_review_handoff_api import (  # noqa: F401 - 复用 autouse 播种夹具

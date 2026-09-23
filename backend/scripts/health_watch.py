@@ -189,10 +189,10 @@ def recent_model_success(attempts: list, now: datetime, hours: float = 6.0) -> b
         if not isinstance(row, dict) or row.get("status") != "success":
             continue
         try:
-            at = datetime.strptime(str(row.get("createdAt") or ""), "%Y-%m-%d %H:%M:%S")
+            at = datetime.strptime(str(row.get("createdAt") or ""), "%Y-%m-%d %H:%M:%S").replace(tzinfo=SERVER_TZ)
         except ValueError:
             continue
-        if (now - at.replace(tzinfo=SERVER_TZ)).total_seconds() <= hours * 3600:
+        if (now - at).total_seconds() <= hours * 3600:
             return True
     return False
 

@@ -4,9 +4,6 @@ from libs.review_orchestrator.installation_domain_facts import (
     build_r43_business_facts,
     build_r44_business_facts,
     build_r46_business_facts,
-    build_r56_business_facts,
-    build_r57_business_facts,
-    build_r58_business_facts,
     build_r47_business_facts,
     build_r48_business_facts,
     build_r49_business_facts,
@@ -15,6 +12,9 @@ from libs.review_orchestrator.installation_domain_facts import (
     build_r53_business_facts,
     build_r54_business_facts,
     build_r55_business_facts,
+    build_r56_business_facts,
+    build_r57_business_facts,
+    build_r58_business_facts,
 )
 from libs.review_orchestrator.leak_test_facts import (
     build_r64_business_facts,
@@ -35,7 +35,6 @@ from libs.review_orchestrator.r20_r23_facts import (
     build_r23_business_facts,
 )
 from libs.review_orchestrator.r24_r34_facts import (
-    build_r24_business_facts,
     build_r25_business_facts,
     build_r26_business_facts,
     build_r27_business_facts,

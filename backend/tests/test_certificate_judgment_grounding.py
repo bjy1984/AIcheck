@@ -13,7 +13,10 @@ execution.load_ocr_result 把 evidenceFacts 建成空列表，validate_evidence_
 """
 from __future__ import annotations
 
-from libs.review_orchestrator.certificate_facts import build_certificate_facts, merge_certificate_facts
+from libs.review_orchestrator.certificate_facts import (
+    build_certificate_facts,
+    merge_certificate_facts,
+)
 from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
 
 

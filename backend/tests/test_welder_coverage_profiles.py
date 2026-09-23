@@ -148,7 +148,10 @@ def test_代号只校形状不够_OCR坏码不能报解码成功():
     CTAF/PTAV/SHAV 不是表 A-1 里的任何方法，FetS/FefBJ 不是表 A-3 里的任何填充金属，
     SFC 不是表 A-4 里的任何位置。形状完好、内容全错——假通过比不判更贵。
     """
-    from libs.review_orchestrator.deterministic_tools import decode_welder_code, decode_welder_qualification
+    from libs.review_orchestrator.deterministic_tools import (
+        decode_welder_code,
+        decode_welder_qualification,
+    )
 
     bad = decode_welder_code("CTAF-Fe II-6G-3/57-FetS-02/11/12")
     assert bad["parseStatus"] == "unsupported"

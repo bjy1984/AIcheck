@@ -136,8 +136,8 @@ def _table_cell_rows(table: dict[str, Any]) -> list[list[str]]:
         return [[text for _, text in sorted(rows[index])] for index in sorted(rows)]
     html = str(table.get("html") or "")
     output: list[list[str]] = []
-    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.S):
-        texts = [re.sub(r"<[^>]+>", "", cell).strip() for cell in re.findall(r"<td[^>]*>(.*?)</td>", row_html, flags=re.S)]
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.DOTALL):
+        texts = [re.sub(r"<[^>]+>", "", cell).strip() for cell in re.findall(r"<td[^>]*>(.*?)</td>", row_html, flags=re.DOTALL)]
         if any(texts):
             output.append(texts)
     return output

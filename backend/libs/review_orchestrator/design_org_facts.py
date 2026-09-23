@@ -24,7 +24,11 @@ import re
 from typing import Any
 
 from libs.review_input_data import selected_parse_results
-from libs.review_orchestrator.certificate_facts import _documents_by_version, _evidence, _confidence_unavailable
+from libs.review_orchestrator.certificate_facts import (
+    _confidence_unavailable,
+    _documents_by_version,
+    _evidence,
+)
 
 FACT_PATHS = {"titleBlockOrganization": "designDocument.titleBlockOrganization",
               "designSealOrganization": "designDocument.designSealOrganization"}

@@ -73,7 +73,7 @@ def build_fixture(state: dict[str, Any], review_run_id: str) -> dict[str, Any]:
     # The scope must be the one frozen when the run executed. Re-freezing it now
     # would describe today's documents, not the ones the run actually read.
     if not isinstance(run.get("documentScopeSnapshot"), dict):
-        raise ValueError("export_run_has_no_frozen_document_scope")
+        raise TypeError("export_run_has_no_frozen_document_scope")
     versions = run.get("inputDocumentVersionIds")
     if not isinstance(versions, list):
         raise TypeError("export_run_document_scope_missing")

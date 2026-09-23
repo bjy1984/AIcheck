@@ -105,9 +105,9 @@ def test_unknown_method_flag_stays_insufficient_instead_of_being_waived():
 
 def test_austenitic_stainless_water_flush_has_a_chloride_ceiling():
     """7.9.2：冲洗奥氏体不锈钢管道时，水中氯离子含量不应超过 50 mg/L。"""
-    base = dict(medium__airBlowing=False, medium__waterFlush=True,
-                medium__austeniticStainlessWaterFlush=True,
-                pressure__notExceedingDesignPressure=None, acceptance__waterDrained=True)
+    base = {"medium__airBlowing": False, "medium__waterFlush": True,
+                "medium__austeniticStainlessWaterFlush": True,
+                "pressure__notExceedingDesignPressure": None, "acceptance__waterDrained": True}
     over = run(complete(**base, medium__chlorideMgPerL=63))
     assert over["result"] == "failed"
     assert "blowingcleaning_water_chloride_within_limit" in codes(over, "failed")
@@ -118,12 +118,12 @@ def test_austenitic_stainless_water_flush_has_a_chloride_ceiling():
 
 def test_steam_blowing_requires_preheat_cycle_and_thermal_service():
     """7.9.4.1 与 7.9.1.5 d)：非热力管道不准许采用蒸汽吹扫。"""
-    base = dict(medium__airBlowing=False, medium__steamBlowing=True,
-                pressure__notExceedingDesignPressure=None,
-                plan__thermalPipelineConfirmed=True,
-                sequence__preheatDrainAndDisplacementChecked=True,
-                sequence__heatCoolReheatCycle=True,
-                safety__temporaryLineAndSilencerCompliant=True)
+    base = {"medium__airBlowing": False, "medium__steamBlowing": True,
+                "pressure__notExceedingDesignPressure": None,
+                "plan__thermalPipelineConfirmed": True,
+                "sequence__preheatDrainAndDisplacementChecked": True,
+                "sequence__heatCoolReheatCycle": True,
+                "safety__temporaryLineAndSilencerCompliant": True}
     assert run(complete(**base))["result"] == "passed"
 
     non_thermal = run(complete(**{**base, "plan__thermalPipelineConfirmed": False}))
@@ -136,11 +136,11 @@ def test_steam_blowing_requires_preheat_cycle_and_thermal_service():
 
 
 def test_chemical_cleaning_requires_a_qualified_formula_and_compliant_waste_disposal():
-    base = dict(medium__airBlowing=False, medium__chemicalCleaning=True,
-                pressure__notExceedingDesignPressure=None,
-                safety__protectiveEquipmentProvided=True,
-                plan__cleaningSolutionFormulaQualified=True,
-                acceptance__wasteDisposalCompliant=True)
+    base = {"medium__airBlowing": False, "medium__chemicalCleaning": True,
+                "pressure__notExceedingDesignPressure": None,
+                "safety__protectiveEquipmentProvided": True,
+                "plan__cleaningSolutionFormulaQualified": True,
+                "acceptance__wasteDisposalCompliant": True}
     assert run(complete(**base))["result"] == "passed"
 
     unqualified = run(complete(**{**base, "plan__cleaningSolutionFormulaQualified": False}))

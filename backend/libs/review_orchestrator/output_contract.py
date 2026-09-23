@@ -8,11 +8,14 @@ TEXT_TOO_LONG 警告（不判失败——截断会把"差在哪"截掉，比长�
 
 from __future__ import annotations
 
+import logging
 import os
 from copy import deepcopy
 from typing import Any
 
 from libs.review_orchestrator.approval_view import recorded_approval_checks
+
+logger = logging.getLogger(__name__)
 
 TITLE_MAX_CHARS = 30
 DESCRIPTION_MAX_CHARS = 150
@@ -240,8 +243,8 @@ def store_generated_findings(review_run, drafts, *, complete, hash_payload):
         from libs.db.repository import repo
 
         attach_clause_details(repo.state, drafts)
-    except Exception:  # noqa: BLE001 -- 条款补全失败只是界面少一块，不能让审查落库失败
-        pass
+    except Exception:  # 条款补全失败只是界面少一块，不能让审查落库失败
+        logger.warning("条款详情补全失败，保留原始发现", exc_info=True)
     review_run["findingDrafts"] = deepcopy(drafts)
     if complete:
         review_run["findingRetention"] = "complete"
@@ -449,7 +452,7 @@ def _atomic_check_names(business_pack_id: str) -> dict[str, str]:
         from libs.business_pack.loader import DEFAULT_BUSINESS_PACK_ID, load_business_pack
 
         pack = load_business_pack(business_pack_id or DEFAULT_BUSINESS_PACK_ID)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- 业务包读取失败只影响显示名，调用方回退到原子项 ID
         return {}
     return {
         str(check.get("id")): str(check.get("name") or "")
