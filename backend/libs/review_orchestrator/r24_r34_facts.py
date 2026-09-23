@@ -4,6 +4,13 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from libs.ocr.welder_certificate_tool import TOOL_NAME as WELDER_TOOL_NAME
+from libs.ocr.welder_certificate_tool import (
+    extract_welder_certificate_from_ocr_result,
+    split_welder_cards,
+    welder_certificate_ocr_fields,
+    welder_certificate_ocr_tables,
+)
 from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.jev_tables import business_rows
 from libs.review_orchestrator.material_facts import (
@@ -94,8 +101,12 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
         for target, accepted_kinds in config.items():
             if kind not in accepted_kinds:
                 continue
-            records = _extract_records(state, parse_result, node.upper(), kind,
-                                       classifications=review_run.get("jevTableClassifications"))
+            if kind == "welder_certificate":
+                records = _welder_card_records(state, parse_result, node.upper(),
+                                               review_run.get("jevTableClassifications"))
+            else:
+                records = _extract_records(state, parse_result, node.upper(), kind,
+                                           classifications=review_run.get("jevTableClassifications"))
             facts[target].extend(records)
     for target, records in facts.items():
         facts[target] = deduplicate(records, "recordId")
@@ -221,8 +232,53 @@ def _overlay_platform_welder_codes(
             cert["platformEvidence"] = platform_evidence[-1]
 
 
+# 焊工证抽取器产出的字段：已落库的旧 OCR 结果里这几项是旧版抽取器算的
+# （2026-09-23 本地快照：批准日 2027.04.30、有效期 2027.04.20），一律按原文重抽。
+_WELDER_FIELD_CODES = frozenset({"welder_name", "welder_certificate_no", "welder_archive_no", "issuing_authority",
+                                 "welder_operation_item_code", "approval_date", "valid_until"})
+
+
+def _fresh_welder_parse(parse_result: dict[str, Any], fragments: list[dict[str, Any]], *,
+                        keep_stored: bool) -> dict[str, Any]:
+    """焊工字段和抽取器生成的合格项目表按原文重算；其余已落库的字段与表格按需保留。"""
+    extraction = extract_welder_certificate_from_ocr_result({"fragments": fragments})
+    fields = [item for item in parse_result.get("fields") or []
+              if isinstance(item, dict) and item.get("fieldCode") not in _WELDER_FIELD_CODES] if keep_stored else []
+    tables = [item for item in parse_result.get("tables") or []
+              if isinstance(item, dict) and item.get("extractionMethod") != WELDER_TOOL_NAME] if keep_stored else []
+    return {**parse_result, "fragments": fragments, "fields": [*fields, *welder_certificate_ocr_fields(extraction)],
+            "tables": [*tables, *welder_certificate_ocr_tables(extraction)]}
+
+
+def _welder_card_records(state: dict[str, Any], parse_result: dict[str, Any], namespace: str,
+                         classifications: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """几个焊工的证合订成一份时，每人一段、只用自己那段抽姓名证号项目。
+
+    整份文件层面的 OCR 字段是对合订本整体抽的，会把甲的姓名配上乙的身份证号
+    （2026-09-23 本地快照：李卫伍的记录带着赵相军的证号），名单表的行也认不出属于谁，
+    所以分段时两样都不继承；各人的合格项目由公示平台按各自证号补。不足两段时照旧按整份处理，
+    但焊工字段按原文重抽，不用旧版抽取器落库的值。
+    """
+    fragments = [item for item in parse_result.get("fragments") or [] if isinstance(item, dict)]
+    segments = split_welder_cards(fragments) if fragments else []
+    if len(segments) < 2:
+        refreshed = _fresh_welder_parse(parse_result, fragments, keep_stored=True) if fragments else parse_result
+        records = _extract_records(state, refreshed, namespace, "welder_certificate", classifications=classifications)
+    else:
+        records = []
+        for index, segment in enumerate(segments, 1):
+            records.extend(_extract_records(state, _fresh_welder_parse(parse_result, segment, keep_stored=False),
+                                            namespace, "welder_certificate", segment=index))
+    # 焊工证抽取器给的 0.78 是启发分数，不是 OCR 置信度；引擎声明不报分时，证据按「未评分」交人工。
+    if "provider_confidence_unavailable" in ((parse_result.get("quality") or {}).get("reasons") or []):
+        for record in records:
+            if isinstance(record.get("evidence"), dict):
+                record["evidence"]["confidenceUnavailable"] = True
+    return records
+
+
 def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namespace: str, kind: str,
-                     *, classifications: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                     *, classifications: dict[str, Any] | None = None, segment: int | None = None) -> list[dict[str, Any]]:
     common, evidence_items = _common_document_fields(state, parse_result)
     document_values = _field_values(parse_result)
     rows = business_rows(parse_result, classifications,
@@ -230,7 +286,9 @@ def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namesp
     output: list[dict[str, Any]] = []
     for index, row in enumerate(rows, 1):
         values = {**document_values, **_normalized_business_row(row)}
-        record_id = f"{namespace}-" + stable_payload_hash({"documentVersionId": common["documentVersionId"], "kind": kind, "row": index})[7:19].upper()
+        scope = {"documentVersionId": common["documentVersionId"], "kind": kind, "row": index,
+                 **({"segment": segment} if segment is not None else {})}
+        record_id = f"{namespace}-" + stable_payload_hash(scope)[7:19].upper()
         evidence = _record_evidence(evidence_items, common["documentVersionId"], f"{namespace}EV-{record_id[-12:]}", _value(values, "documentNo", "recordNo", "weldNo", "证书编号", "记录编号") or kind, row=row if row else None, fallback_page=common.get("pageNo") or 1)
         record = _mapped(values, kind)
         # 证据要带文件名与 documentId：界面上「第 1 页」不说是哪份文件，点也点不开。

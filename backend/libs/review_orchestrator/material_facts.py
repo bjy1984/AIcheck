@@ -259,6 +259,8 @@ def build_material_judgment(records_by_type: list[tuple[str, list[dict[str, Any]
                     # 平台核到的证书要能在界面上高亮出来。
                     "platformVerified": any(ref.get("source") == "cnse_platform" for ref in refs),
                     "confidence": evidence.get("confidence") or record.get("ocrConfidence"),
+                    # 引擎不报分的证据只交人工，不拿抽取器的启发分数冒充 OCR 置信度。
+                    **({"confidenceUnavailable": True} if evidence.get("confidenceUnavailable") else {}),
                     "conflicted": bool(record.get("conflicted")),
                 }
             )
