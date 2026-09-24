@@ -117,10 +117,18 @@ def evaluate_frozen_domains(tool_name, arguments, *, rule_version, scope_fields,
             add(f"{prefix}_applicability_unknown", "evidence_insufficient", refs, actual=applicable)
             continue
         evaluated_domains.append(domain_name)
+        # 事实来源若声明了「本表能抽出哪些栏」（extractedPaths），没列在里面的必填栏缺了，
+        # 只说明还没从别的文件抽取，判「未抽取」交人工，不能当成资料没写判不符合。
+        extracted = row.get("extractedPaths") if isinstance(row.get("extractedPaths"), list) else None
         for path in spec.get("requiredPaths") or []:
             actual = read_path(row, path)
-            add(f"{prefix}_{safe_code(path)}", "passed" if is_present(actual) else "failed",
-                refs, actual=actual, expected="specified")
+            if is_present(actual):
+                add(f"{prefix}_{safe_code(path)}", "passed", refs, actual=actual, expected="specified")
+            elif extracted is not None and path not in extracted:
+                add(f"{prefix}_{safe_code(path)}_not_extracted", "evidence_insufficient", refs,
+                    actual=None, expected="specified")
+            else:
+                add(f"{prefix}_{safe_code(path)}", "failed", refs, actual=actual, expected="specified")
         for index, rule in enumerate(spec.get("checks") or [], 1):
             code = f"{prefix}_{safe_code(rule.get('code') or index)}"
             actual_path = str(rule.get("actualPath") or "").strip()

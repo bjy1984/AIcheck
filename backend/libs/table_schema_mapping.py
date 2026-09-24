@@ -132,7 +132,27 @@ def _parse_labelled(value: Any, field: dict[str, Any]) -> Any:
     return tail or None
 
 
-_PARSERS = {"text": _parse_text, "number": _parse_number, "percent": _parse_percent, "labelled": _parse_labelled}
+def _parse_keyword(value: Any, field: dict[str, Any]) -> Any:
+    """栏里逐字写了宣告的关键词之一 → True；写了别的 → False；没写或「/」→ 不出现。
+
+    只用来从原文写明的值判断某条判据适用与否（例如吹洗介质写「洁净水」→ 水冲洗适用）。
+    """
+    text = _parse_text(value, field)
+    if text is None:
+        return None
+    return any(str(word) in text for word in field.get("keywords") or [])
+
+
+def _parse_filled(value: Any, _field: dict[str, Any]) -> Any:
+    """栏里写了内容 → True；明确写「/」（本项不做）→ False；空着 → 不出现。"""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text not in _BLANK_MARKS
+
+
+_PARSERS = {"text": _parse_text, "number": _parse_number, "percent": _parse_percent, "labelled": _parse_labelled,
+            "keyword": _parse_keyword, "filled": _parse_filled}
 
 
 def _assign(target: dict[str, Any], path: str, value: Any) -> None:
