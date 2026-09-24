@@ -103,3 +103,12 @@ def test_欠费402也算供应商故障要切备胎() -> None:
 
     assert breaker.is_provider_fault(IntegrationServiceError("Qwen official API", "chat.completions", status_code=402))
     assert not breaker.is_provider_fault(IntegrationServiceError("Qwen official API", "chat.completions", status_code=400))
+
+
+def test_欠费402一次就熔断_冷却拉长(fake_redis, monkeypatch) -> None:
+    host = "api.deepseek.com"
+    breaker.record_failure(host, IntegrationServiceError("Qwen official API", "chat.completions", status_code=402))
+    assert fake_redis.ttl(f"llm:breaker:{host}:open") == 1800
+    with pytest.raises(IntegrationServiceError) as exc_info:
+        breaker.ensure_closed(host)
+    assert exc_info.value.reason == "LLM_CIRCUIT_OPEN"

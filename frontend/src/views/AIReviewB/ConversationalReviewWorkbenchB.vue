@@ -2,7 +2,7 @@
 import { workstationNavigation, filterWorkstationNodes } from './workstationNavigation'
 import ReviewNodeOverview from './components/ReviewNodeOverview.vue'
 import { cloneDocumentSelectionVersions, documentSelectionPayload } from './documentPageSelection'
-import { runObjectCandidates } from './objectSelection'
+import { runObjectCandidates, runReviewedObjectIds } from './objectSelection'
 import ReviewDecisionSummary from './components/ReviewDecisionSummary.vue'
 import { needsAttention, overviewResult } from './workstationOverview'
 import ReviewWorkstationTools from './ReviewWorkstationTools.vue'
@@ -2107,6 +2107,7 @@ onBeforeUnmount(() => {
           :run-id="activeRunId"
           :selection="reviewDocumentSelection"
           :object-candidates="runObjectCandidates(activeRun)"
+          :reviewed-object-ids="runReviewedObjectIds(activeRun)"
           :project-etag="workspace?.project.etag"
           :documents-disabled="actionLoading || workspace?.permissions.canManageEvidence !== true"
           @change="reviewDocumentSelection = $event"

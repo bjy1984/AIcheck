@@ -121,3 +121,101 @@ def test_备胎模型名可用环境变量覆盖(monkeypatch):
     monkeypatch.setenv("AICHECK_LLM_FALLBACK_MODEL_PROJECT_REVIEW", "qwen3.8-max")
     fallback = qwen_runtime.fallback_provider({"yamlOfficialModels": {"projectReview": "qwen3.7-plus"}})
     assert fallback["models"]["projectReview"] == "qwen3.8-max"
+
+
+def _rate_limited() -> IntegrationServiceError:
+    return IntegrationServiceError("Qwen official API", "chat.completions", status_code=429)
+
+
+def test_限流429先在主供应商上退避重试_过了就不转移(monkeypatch):
+    """2026-09-24 灰度：Token Plan 按分钟限流，一次 429 就转去欠费的备胎，30 个分片落空。"""
+    client = _client(monkeypatch)
+    calls: list[object] = []
+    slept: list[float] = []
+    monkeypatch.setenv("AICHECK_LLM_RATE_LIMIT_BACKOFF_SECONDS", "5")
+    monkeypatch.setattr(qwen_runtime.time, "sleep", slept.append)
+
+    def fake_official(messages, role_or_model, _provider=None, **kwargs):
+        calls.append(_provider)
+        if len(calls) < 3:
+            raise _rate_limited()
+        return {"id": "RESP-PRIMARY"}
+
+    monkeypatch.setattr(client, "_official_chat_sync", fake_official)
+    result = client.chat_sync([{"role": "user", "content": "x"}], model="project-review-large")
+
+    assert result["id"] == "RESP-PRIMARY" and "providerFailover" not in result
+    assert calls == [None, None, None]  # 三次都打主供应商
+    assert len(slept) == 2 and 4 <= slept[0] <= 6 and 8 <= slept[1] <= 12  # 5s、10s，带抖动
+
+
+def test_限流重试用尽才转移_重试期间不计熔断(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setenv("AICHECK_LLM_RATE_LIMIT_RETRIES", "2")
+    failures: list[int] = []
+    monkeypatch.setattr(llm_circuit_breaker, "record_failure", lambda host, exc: failures.append(exc.status_code))
+    providers: list[object] = []
+
+    def fake_official(messages, role_or_model, _provider=None, **kwargs):
+        providers.append(_provider)
+        if _provider is None:
+            raise _rate_limited()
+        return {"id": "RESP-FB"}
+
+    monkeypatch.setattr(client, "_official_chat_sync", fake_official)
+    result = client.chat_sync([{"role": "user", "content": "x"}], model="project-review-large")
+
+    assert providers[:3] == [None, None, None] and providers[3] is not None
+    assert result["providerFailover"]["from"] == "DeepSeek"
+    assert failures == [429], "一次调用只记一次主供应商故障，重试不把它熔断"
+
+
+def test_备胎欠费402时报主供应商的真实原因(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setenv("AICHECK_LLM_RATE_LIMIT_RETRIES", "0")
+
+    def fake_official(messages, role_or_model, _provider=None, **kwargs):
+        if _provider is None:
+            raise _rate_limited()
+        raise IntegrationServiceError("Qwen official API", "chat.completions", status_code=402)
+
+    monkeypatch.setattr(client, "_official_chat_sync", fake_official)
+    with pytest.raises(IntegrationServiceError) as exc_info:
+        client.chat_sync([{"role": "user", "content": "x"}], model="project-review-large")
+    assert exc_info.value.status_code == 429
+
+
+def test_备胎熔断时不转移_报主供应商原错误(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setenv("AICHECK_LLM_RATE_LIMIT_RETRIES", "0")
+
+    def fallback_open(host):
+        if host == "dashscope.example":
+            raise IntegrationServiceError("LLM circuit breaker", host, reason="LLM_CIRCUIT_OPEN")
+
+    monkeypatch.setattr(llm_circuit_breaker, "ensure_closed", fallback_open)
+    providers: list[object] = []
+
+    def fake_official(messages, role_or_model, _provider=None, **kwargs):
+        providers.append(_provider)
+        raise _rate_limited()
+
+    monkeypatch.setattr(client, "_official_chat_sync", fake_official)
+    with pytest.raises(IntegrationServiceError) as exc_info:
+        client.chat_sync([{"role": "user", "content": "x"}], model="project-review-large")
+    assert exc_info.value.status_code == 429
+    assert providers == [None], "备胎熔断中就别再打它"
+
+
+def test_非限流错误不重试(monkeypatch):
+    client = _client(monkeypatch, fallback_configured=False)
+    calls: list[object] = []
+
+    def fake_official(messages, role_or_model, _provider=None, **kwargs):
+        calls.append(_provider)
+        raise _provider_fault()
+
+    monkeypatch.setattr(client, "_official_chat_sync", fake_official)
+    with pytest.raises(IntegrationServiceError):
+        client.chat_sync([{"role": "user", "content": "x"}], model="project-review-large")
+    assert len(calls) == 1

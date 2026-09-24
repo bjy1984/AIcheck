@@ -27,6 +27,9 @@ os.environ.setdefault("AICHECK_OCR_DEFAULT_PROVIDER", "local")
 # TS1844171-2028，拿回 1.0 的证据把「引擎没给分」的断言掀翻——测试变成了看网络脸色。
 # 专门测这条链路的用例自行 setenv 打开并打桩查询函数。
 os.environ.setdefault("AICHECK_CERT_PLATFORM_VERIFY", "off")
+# 模型 429 会退避重试（生产默认 5s 起）。测试里打桩的 429 不该让套件真的睡几十秒；
+# 重试次数照旧，只把等待归零。专门验退避的用例自行 setenv。
+os.environ.setdefault("AICHECK_LLM_RATE_LIMIT_BACKOFF_SECONDS", "0")
 
 from libs.security.session import security_sessions
 
