@@ -9,7 +9,10 @@ import pytest
 
 from libs.ocr.text_line_tables import text_line_tables
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
-from libs.review_orchestrator.r14_facts import _extract_pipeline_characteristics, _pipeline_table_signature
+from libs.review_orchestrator.r14_facts import (
+    _extract_pipeline_characteristics,
+    _pipeline_table_signature,
+)
 
 DESIGN_NOTE = """管道特性表
 管线号 管道名称 管道规格(mm) 介质 改造起止点 设计参数 工作参数 内外防护 试压 气密 无损检测 清洗吹扫介质 管道长度(m) 管道类别 材质
