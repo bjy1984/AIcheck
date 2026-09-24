@@ -319,6 +319,8 @@ DOMAIN_FACT_LABELS: dict[tuple[str, str], str] = {
     ("leakTestMethod", "report.result"): "泄漏性试验结论",
     ("blowingCleaning", "medium.name"): "吹洗介质",
     ("blowingCleaning", "acceptance.conclusion"): "吹洗鉴定",
+    ("coatingConstruction", "coating.coatingType"): "防腐面层名称",
+    ("supports", "support.type"): "结构型式、型号、规格",
 }
 
 
@@ -331,7 +333,7 @@ def _read_path(row: dict[str, Any], path: str) -> Any:
 
 def domain_record_fact_items(business_facts: dict[str, Any] | None,
                              rule_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """R47／R66／R67／R68 施工记录（选定对象后）上抽出的值，请 Jev 对原文核一遍。"""
+    """R44／R47／R55／R66／R67／R68 施工记录（选定对象后）上抽出的值，请 Jev 对原文核一遍。"""
     atomic_id = next((str(item.get("atomicCheckId")) for record in rule_results
                       for item in record.get("atomicCheckResults") or []
                       if any(isinstance(tool, dict) and str(tool.get("toolName") or "") not in _EVIDENCE_GATE_ONLY
@@ -357,7 +359,8 @@ def domain_record_fact_items(business_facts: dict[str, Any] | None,
                         "certificateLabel": namespace.upper(), "field": str(path), "value": text,
                         "plausible": _plausible_field_value(text),
                         "suspectLabel": f"{namespace.upper()}·{object_id}·{label}={text[:40]}",
-                        "instructions": f"只看这份资料：管线{object_id}的{label}是否写为{text}？"
+                        # 支吊架的对象号是「管线号/管架编号」：说成「支架」，别让 Jev 以为是整条管线。
+                        "instructions": f"只看这份资料：{'支架' if '/' in object_id else '管线'}{object_id}的{label}是否写为{text}？"
                                         "只核对原文写明的内容，表头和栏目名称不算。",
                     })
     return items
