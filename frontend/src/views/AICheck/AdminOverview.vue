@@ -67,6 +67,8 @@ import {
   getAdminConfigOverviewApi,
   getAdminIntegrationContractApi,
   getAdminProjectDetailApi,
+  listReviewPluginsApi,
+  updateProjectReviewPluginsApi,
   getKnowledgeRuleVersionDiffApi,
   getAuditLogsApi,
   listAdminProjectsApi,
@@ -132,6 +134,7 @@ import {
   missingWizardMemberMessage,
   userBelongsToOrganization
 } from './utils/projectWizardMembers'
+import { explicitJevSetting, reviewPluginPatch } from './reviewPlugins'
 
 const emptyOverview = (): AdminConfigOverviewPayload => ({
   metrics: [],
@@ -635,6 +638,11 @@ const projectWizardForm = reactive({
     owner: ''
   } as Record<ProjectWizardMemberRole, string>
 })
+
+// 审查插件（Jev）：只在管理员动过开关时随保存发出，见 reviewPlugins.ts
+const jevSettingInitial = ref<boolean | undefined>(undefined)
+const jevEnabled = ref(false)
+const jevDeploymentAvailable = ref<boolean | null>(null)
 
 const projectEditForm = reactive({
   id: '',
@@ -2197,8 +2205,18 @@ const openProjectEditDialog = (row: Project) => {
   projectEditForm.plannedConstructionEnd = row.plannedConstructionEnd || ''
   projectEditForm.status = row.status
   projectEditForm.etag = row.etag || ''
+  jevSettingInitial.value = explicitJevSetting(row)
+  jevEnabled.value = jevSettingInitial.value === true
   projectOperationError.value = ''
   projectEditVisible.value = true
+  void listReviewPluginsApi()
+    .then((res) => {
+      const jev = res?.data?.items?.find((item) => item.id === 'jev')
+      jevDeploymentAvailable.value = jev ? jev.deploymentAvailable : null
+    })
+    .catch(() => {
+      jevDeploymentAvailable.value = null
+    })
 }
 
 const handleSaveProjectEdit = async () => {
@@ -2232,6 +2250,22 @@ const handleSaveProjectEdit = async () => {
         buildOperationFailureMessage('项目保存')
       )
       return
+    }
+    // 插件开关是单独的管理员操作（涉及资料外发），只在动过开关时才发。
+    const pluginPatch = reviewPluginPatch(jevSettingInitial.value, jevEnabled.value)
+    if (pluginPatch.reviewPlugins) {
+      const pluginRes = await updateProjectReviewPluginsApi(
+        projectEditForm.id,
+        pluginPatch.reviewPlugins,
+        { etag: res.data?.project?.etag || projectEditForm.etag }
+      )
+      if (!pluginRes) {
+        projectOperationError.value = getRequestErrorMessage(
+          undefined,
+          buildOperationFailureMessage('Jev 插件开关保存')
+        )
+        return
+      }
     }
     ElMessage.success('项目已保存')
     projectEditVisible.value = false
@@ -5586,6 +5620,24 @@ onMounted(() => {
               </ElFormItem>
             </ElCol>
           </ElRow>
+          <ElFormItem label="Jev 加强">
+            <div class="review-plugin-setting">
+              <ElSwitch v-model="jevEnabled" />
+              <span class="review-plugin-setting__hint">
+                外部模型，只给逐项分歧提示和事实核对，不改审查结论；开启后本工程新建审查的 OCR
+                正文会送到外部服务。只影响之后新建的审查。
+              </span>
+              <span
+                v-if="jevDeploymentAvailable === false"
+                class="review-plugin-setting__hint review-plugin-setting__hint--warning"
+              >
+                本部署尚未开通 Jev（缺少密钥或出境批准），开关会保存，但开通前不生效。
+              </span>
+              <span v-else-if="jevSettingInitial === undefined" class="review-plugin-setting__hint">
+                本工程未单独设置，沿用部署的原白名单；不动开关就保持原样。
+              </span>
+            </div>
+          </ElFormItem>
           <ElFormItem label="状态">
             <ElSelect v-model="projectEditForm.status">
               <ElOption label="草稿/立项中" value="草稿/立项中" />
@@ -7608,5 +7660,22 @@ onMounted(() => {
   .rule-diff-summary {
     grid-template-columns: 1fr;
   }
+}
+
+.review-plugin-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.review-plugin-setting__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
+.review-plugin-setting__hint--warning {
+  color: var(--el-color-warning-dark-2);
 }
 </style>

@@ -3227,6 +3227,32 @@ export const updateAdminProjectApi = (
   })
 }
 
+export type ReviewPluginCatalogItem = {
+  id: 'jev'
+  label: string
+  /** 本部署能不能用（密钥、出境批准、总开关都到位）；不能用时工程开关存下但不生效 */
+  deploymentAvailable: boolean
+}
+
+export const listReviewPluginsApi = (): Promise<
+  IResponse<{ items: ReviewPluginCatalogItem[] }>
+> => {
+  return request.get({ url: '/api/review-plugins' })
+}
+
+/** 按工程开关审查插件：只有系统管理员可调，只影响之后新建的审查 */
+export const updateProjectReviewPluginsApi = (
+  projectId: string,
+  reviewPlugins: NonNullable<Project['reviewPlugins']>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ project: Project; auditLogId: string }>> => {
+  return request.put({
+    url: `/api/projects/${projectId}/review-plugins`,
+    data: { reviewPlugins },
+    headers: mutationHeaders(options)
+  })
+}
+
 export const deleteAdminProjectApi = (
   projectId: string,
   options?: MutationHeaderOptions

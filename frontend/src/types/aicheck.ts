@@ -91,6 +91,8 @@ export type Project = {
   /** 施工起止（ISO 日期）。证书有效期是否覆盖施工期全靠它；2026-09-11 前没有录入口。 */
   constructionStart?: string | null
   plannedConstructionEnd?: string | null
+  /** 审查插件（Jev 等）按工程选用；只影响之后新建的审查。没写表示沿用部署的旧白名单。 */
+  reviewPlugins?: { jev?: { enabled: boolean } }
   businessPackId?: string
   businessPackVersion?: string
   domainType?: string
