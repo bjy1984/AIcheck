@@ -43,6 +43,21 @@ def load_snapshot(path: Path) -> dict[str, Any]:
     snapshot = json.loads(zlib.decompress(path.read_bytes()))
     if snapshot.get("source") != "read_only_seven_project_ocr_snapshot":
         raise ValueError("approved_seven_project_snapshot_required")
+    return restore_version_tenants(snapshot)
+
+
+def restore_version_tenants(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Give each version its document's tenant, as the database row has it.
+
+    Snapshots exported before 2026-09-24 kept only id/documentId for versions.
+    Every fact builder that checks the version tenant (all R35+ nodes, through
+    source_coverage and ndt_table_facts) then rejected every source as
+    "missing or ambiguous", so nothing after R34 was ever extracted.
+    """
+    tenants = {str(row.get("id")): row.get("tenantId") for row in snapshot.get("documents") or []}
+    for version in snapshot.get("versions") or []:
+        if version.get("tenantId") is None and tenants.get(str(version.get("documentId"))):
+            version["tenantId"] = tenants[str(version.get("documentId"))]
     return snapshot
 
 

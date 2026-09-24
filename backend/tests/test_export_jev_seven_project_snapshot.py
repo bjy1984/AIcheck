@@ -23,7 +23,7 @@ def _state():
                 for project_id in PROJECT_IDS]
     documents = [{"id": f"D-{index}", "projectId": project_id, "currentVersionId": f"V-{index}"}
                  for index, project_id in enumerate(PROJECT_IDS)]
-    versions = [{"id": f"V-{index}", "documentId": f"D-{index}"}
+    versions = [{"id": f"V-{index}", "documentId": f"D-{index}", "tenantId": "TENANT-DEFAULT"}
                 for index in range(7)]
     parses = [{"documentVersionId": f"V-{index}",
                "fragments": [{"pageNo": 1, "text": f"approved OCR {index}"}]}
@@ -49,6 +49,8 @@ def test_snapshot_filters_foreign_and_historical_data_then_preflights(tmp_path):
     assert len(snapshot["ocr_parse_results"]) == 7
     assert "FOREIGN" not in json.dumps(snapshot)
     assert "STALE" not in json.dumps(snapshot)
+    # 版本行要带租户：R35 以后的来源检查按版本租户过滤，缺了就一条都读不到。
+    assert {row["tenantId"] for row in snapshot["versions"]} == {"TENANT-DEFAULT"}
     assert preflight_project_corpus(snapshot, expected_project_count=7)["readyCount"] == 7
     output = tmp_path / "private.json.zlib"
     _private_write(output, zlib.compress(json.dumps(snapshot).encode()))

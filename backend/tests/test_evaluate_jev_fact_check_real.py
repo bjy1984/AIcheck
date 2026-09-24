@@ -50,3 +50,27 @@ def test_score_reports_catches_false_alarms_and_intervals():
     assert report["wrongFlaggedAsSuspect"].startswith("1/2 ")
     assert report["correctFlaggedAsSuspect"].startswith("0/1 ")
     assert report["unanswered"] == {"request_overlong": 1}
+
+
+def test_snapshot_versions_get_their_document_tenant_so_r35_and_later_sources_are_readable():
+    from libs.review_orchestrator.source_coverage import selected_source_issues
+
+    snapshot = {"documents": [{"id": "D", "projectId": "P", "tenantId": "TENANT-DEFAULT", "fileName": "记录.pdf"}],
+                "versions": [{"id": "V", "documentId": "D"}],
+                "ocr_parse_results": [{"id": "O", "documentVersionId": "V", "tenantId": "TENANT-DEFAULT",
+                                       "status": "success", "fragments": [{"pageNo": 1, "text": "静电接地测试记录"}]}]}
+    run = {"projectId": "P", "tenantId": "TENANT-DEFAULT", "nodeId": 47, "inputDocumentVersionIds": ["V"]}
+    # 旧快照的版本行没有 tenantId：R35 以后每个来源都被当成"缺失或含糊"。
+    assert [issue["code"] for issue in selected_source_issues(snapshot, run, node_id=47)] == [
+        "r47_selected_source_missing_or_ambiguous"]
+    probe.restore_version_tenants(snapshot)
+    assert snapshot["versions"][0]["tenantId"] == "TENANT-DEFAULT"
+    assert selected_source_issues(snapshot, run, node_id=47) == []
+
+
+def test_restoring_tenants_never_overrides_a_recorded_version_tenant():
+    snapshot = {"documents": [{"id": "D", "tenantId": "TENANT-A"}],
+                "versions": [{"id": "V", "documentId": "D", "tenantId": "TENANT-B"}, {"id": "W", "documentId": "X"}]}
+    probe.restore_version_tenants(snapshot)
+    assert snapshot["versions"] == [{"id": "V", "documentId": "D", "tenantId": "TENANT-B"},
+                                    {"id": "W", "documentId": "X"}]

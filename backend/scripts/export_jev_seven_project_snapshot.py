@@ -39,7 +39,7 @@ def build_snapshot(state: dict[str, Any], project_ids: tuple[str, ...] = PROJECT
     current_ids = {str(row.get("currentVersionId") or "") for row in documents}
     if not documents or "" in document_ids | current_ids or len(document_ids) != len(documents):
         raise ValueError("project_documents_invalid")
-    versions = [{key: row[key] for key in ("id", "documentVersionId", "documentId") if key in row}
+    versions = [{key: row[key] for key in ("id", "documentVersionId", "documentId", "tenantId") if key in row}
                 for row in state.get("versions") or []
                 if str(row.get("id") or row.get("documentVersionId") or "") in current_ids]
     if len(versions) != len(current_ids):
