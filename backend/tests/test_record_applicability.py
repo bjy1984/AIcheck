@@ -146,3 +146,23 @@ def test_a_record_line_number_with_its_nominal_diameter_matches_the_design_line(
     assert (domain.get("applicable") is True) is matched
     if matched:
         assert domain["applicabilityBasis"]["pipelineId"] == design
+
+
+@pytest.mark.parametrize(("pipeline", "domains", "reason"), [
+    ({"leakTestRequired": True}, (("r66", "leakTestConditions"), ("r67", "leakTestMethod")), "design_leak_test_required"),
+    ({"mediumProperty": "有毒"}, (("r66", "leakTestConditions"),), "medium_toxic"),
+    ({"mediumProperty": "可燃"}, (("r47", "staticGrounding"),), "medium_flammable"),
+])
+def test_the_design_table_columns_decide_applicability(pipeline, domains, reason):
+    facts = {namespace: {key: {"domains": [{"objectId": "A01-PL-02", "domain": key}]}} for namespace, key in domains}
+    facts["project"] = {"pipelines": [{"pipelineId": "A01-PL-02", "source": {"pageNo": 32}, **pipeline}]}
+    for namespace, key in domains:
+        domain = apply_record_applicability(facts)[namespace][key]["domains"][0]
+        assert domain["applicable"] is True and domain["applicabilityBasis"]["reason"] == reason
+
+
+@pytest.mark.parametrize("pipeline", [{"leakTestRequired": False}, {"mediumProperty": "腐蚀"}, {"leakTestRequired": None}])
+def test_a_design_that_does_not_require_it_still_never_declares_not_applicable(pipeline):
+    facts = {"r66": {"leakTestConditions": {"domains": [{"objectId": "A01-PL-02", "domain": "leakTestConditions"}]}},
+             "project": {"pipelines": [{"pipelineId": "A01-PL-02", **pipeline}]}}
+    assert "applicable" not in apply_record_applicability(facts)["r66"]["leakTestConditions"]["domains"][0]

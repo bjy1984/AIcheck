@@ -156,3 +156,54 @@ def test_a_cell_wrapped_onto_two_lines_is_read_whole_not_cut():
 def test_an_html_pipeline_table_is_read_as_rows_not_as_a_drawing_title_block():
     state = _state_with([{"pageNo": 1, "text": DRAWING_HTML}])
     assert [item["pipelineId"] for item in build_project_pipelines(state, "P")] == ["NG-01"]
+
+
+# ECD202 施工圖第 32 頁：表名夾在圖簽行、「管道等级」是材料等級、備註欄空（OCR 原文節錄）。
+TANK_AREA = """广东政和工程有限公司 资质等级 甲级 建设单位 珠海海瑞德制药有限公司 图名DWG NAME 管道特性表 设计分项 2 / 2
+项目名称PROJ. 珠海海瑞德制药有限公司增资扩产项目 图号DWG NO. HZ026Y-112-02-S301 设计阶段PHASE 施工图
+管段号 外径x壁厚(mm) 管道等级 压力管道类别 介质 工作参数 设计参数 绝热及防腐 试压要求 焊缝检测要求 泄漏试验要求 吹扫清洗介质 备注
+名称 相态 特性 起点 终点 温度°C 表压MPa 温度°C 表压MPa 代号 厚度mm 是否防腐 试压介质 试验压力MPa 检验比例% 合格等级
+A01-PL-02 Φ89x3.0 M1E GC2 甲醇 液态 可燃 LP7101 ST7101 常温 0.25 60 0.275 - - - 水 0.413 RT10% III级 √ 水
+A02-PL-02 Φ89x3.0 M1E GC2 正庚烷 液态 可燃 LP7103 ST7102 常温 0.25 60 0.275 - - - 水 0.413 RT10% III级 √ 水"""
+
+TANK_AREA_HTML = (
+    '<table><tr><td>图名</td><td>管道特性表</td></tr>'
+    '<tr><td rowspan="2">管段号</td><td rowspan="2">外径x壁厚(mm)</td><td rowspan="2">管道等级</td>'
+    '<td rowspan="2">压力管道类别</td><td colspan="5">介质</td><td colspan="2">工作参数</td><td colspan="2">设计参数</td>'
+    '<td colspan="2">绝热及防腐</td><td colspan="2">试压要求</td><td colspan="2">焊缝检测要求</td><td>泄漏试验要求</td>'
+    '<td rowspan="2">吹扫清洗介质</td><td rowspan="2">备注</td><td></td></tr>'
+    '<tr><td>名称</td><td>相态</td><td>特性</td><td>起点</td><td>终点</td><td>温度°C</td><td>表压MPa</td><td>温度°C</td>'
+    '<td>表压MPa</td><td>代号</td><td>厚度mm</td><td>是否防腐</td><td>试压介质</td><td>试验压力MPa</td><td>检验比例%</td>'
+    '<td>合格等级</td><td></td></tr>'
+    '<tr><td>A01-PL-02</td><td>Φ89x3.0</td><td>M1E</td><td>GC2</td><td>甲醇</td><td>液态</td><td>可燃</td><td>LP7101</td>'
+    '<td>ST7101</td><td>常温</td><td>0.25</td><td>60</td><td>0.275</td><td>-</td><td>-</td><td>-</td><td>水</td>'
+    '<td>0.413</td><td>RT10%</td><td>III级</td><td>√</td><td>水</td><td></td><td></td></tr></table>')
+
+
+def test_a_drawing_table_whose_title_sits_in_the_title_block_is_read_by_its_headers():
+    (table,) = text_line_tables(_parse(TANK_AREA, page=32), _pipeline_table_signature())
+    first = table["normalizedRows"][0]
+    assert (first["管线号"], first["管道材料等级"], first["管道级别"], first["介质"], first["介质特性"]) == (
+        "A01-PL-02", "M1E", "GC2", "甲醇", "可燃")
+    assert (first["设计压力"], first["试验压力MPa"], first["泄漏试验要求"], first["清洗吹扫介质"]) == ("0.275", "0.413", "√", "水")
+    assert "备注" not in first, "空着的结尾栏不出现，也不把别的值挪进去"
+    assert len(table["normalizedRows"]) == 2
+
+
+def test_the_same_drawing_table_as_html_with_padding_cells_gives_the_same_row():
+    (table,) = text_line_tables(_parse(TANK_AREA_HTML, page=1), _pipeline_table_signature())
+    row = table["normalizedRows"][0]
+    assert (row["管线号"], row["管道级别"], row["介质特性"], row["泄漏试验要求"]) == ("A01-PL-02", "GC2", "可燃", "√")
+    assert "备注" not in row, "行尾空着的备注与补位格一样不出现，与按行文字版一致"
+
+
+def test_headers_alone_without_the_table_name_on_the_page_are_not_read():
+    assert text_line_tables(_parse(TANK_AREA.replace("管道特性表", "管道数据"), page=32), _pipeline_table_signature()) == []
+
+
+def test_material_class_is_not_taken_as_the_pipeline_grade_and_marks_become_flags():
+    pipelines = {item["pipelineId"]: item for item in build_project_pipelines(
+        _state_with([{"pageNo": 32, "text": TANK_AREA}]), "P")}
+    first = pipelines["A01-PL-02"]
+    assert (first["pipelineGrade"], first["mediumProperty"], first["leakTestRequired"]) == ("GC2", "可燃", True)
+    assert first["designPressureMPa"] == 0.275 and first["minimumTestPressureMPa"] == 0.413
