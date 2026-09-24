@@ -127,3 +127,22 @@ def test_keyword_flags_come_only_from_what_the_cell_says(value, expected):
 def test_a_slash_in_the_chemical_cleaning_column_means_not_done(value, expected):
     mapped = map_row({"化学清洗介质": value}, _signature("blowing_cleaning_domains"))
     assert (mapped.get("medium") or {}).get("chemicalCleaning") == expected
+
+
+@pytest.mark.parametrize(("record", "design", "specification", "matched"), [
+    ("PL8303-100", "PL8303", "100", True),       # 去掉公称直径后对上，公称直径一致
+    ("PL8303-100", "PL8303", "DN100", True),
+    ("PL8303-100", "PL8303", None, True),        # 设计没写公称直径：按确认的口径去掉再比
+    ("PL8303-100", "PL8303", "Φ108X8", True),   # 外径×壁厚不是公称直径，不拿来挡
+    ("PL8303-100", "PL8303", "150", False),      # 公称直径不同：不是同一条
+    ("PL8303-100", "PL8306", "100", False),
+    ("PL8303-100", "PL8303-100", "100", True),   # 原样对得上就直接用
+])
+def test_a_record_line_number_with_its_nominal_diameter_matches_the_design_line(record, design, specification, matched):
+    facts = {"r66": {"leakTestConditions": {"domains": [{"objectId": record, "domain": "leakTestConditions"}]}},
+             "project": {"pipelines": [{"pipelineId": design, "specification": specification,
+                                        "mediumToxicity": "中度危害", "source": {"pageNo": 4}}]}}
+    domain = apply_record_applicability(facts)["r66"]["leakTestConditions"]["domains"][0]
+    assert (domain.get("applicable") is True) is matched
+    if matched:
+        assert domain["applicabilityBasis"]["pipelineId"] == design

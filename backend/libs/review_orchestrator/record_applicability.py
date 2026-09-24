@@ -21,6 +21,28 @@ def _key(value: Any) -> str:
     return re.sub(r"[\s\-－_]", "", str(value or "")).upper()
 
 
+_DN_RE = re.compile(r"^\s*(?:DN)?\s*(\d{2,4})\s*$", re.IGNORECASE)
+_DN_SUFFIX_RE = re.compile(r"^(?P<line>.+?)[-－_](?P<dn>\d{2,4})$")
+
+
+def _matching_pipeline(object_id: Any, by_line: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """記錄上的管線號對到設計管線：先原樣比；對不上再去掉結尾的公稱直徑（PL8303-100 → PL8303）。
+
+    2026-09-24 業務確認「-100」是公稱直徑。設計資料若寫了公稱直徑且與去掉的數不同，
+    就不是同一條，不配對——寧可判不了，也不把別的管線的依據套過來。
+    """
+    exact = by_line.get(_key(object_id))
+    if exact is not None:
+        return exact
+    match = _DN_SUFFIX_RE.match(str(object_id or "").strip())
+    pipeline = by_line.get(_key(match.group("line"))) if match else None
+    if pipeline is None:
+        return None
+    # 只拿乾淨的公稱直徑（「100」「DN100」）來核；「Φ108X8」是外徑×壁厚，不是公稱直徑，不拿來擋。
+    diameter = _DN_RE.match(str(pipeline.get("specification") or ""))
+    return pipeline if not diameter or diameter.group(1) == match.group("dn") else None
+
+
 def _leak_basis(pipeline: dict[str, Any]) -> str | None:
     flags = medium_hazard_flags(toxicity=pipeline.get("mediumToxicity"), leak_hazard=pipeline.get("leakHazard"),
                                 medium=pipeline.get("medium"))
@@ -55,7 +77,7 @@ def apply_record_applicability(facts: Any) -> Any:
         for domain in (block or {}).get("domains") or []:
             if not isinstance(domain, dict) or "applicable" in domain:
                 continue
-            pipeline = by_line.get(_key(domain.get("objectId")))
+            pipeline = _matching_pipeline(domain.get("objectId"), by_line)
             basis = decide(pipeline) if pipeline else None
             if basis:
                 domain["applicable"] = True
