@@ -724,6 +724,8 @@ const REASON_FRAMES: Array<[string, (stem: string) => string]> = [
   ['_not_found', (stem) => `未找到${stem}`],
   ['_not_met', (stem) => `${stem}不满足`],
   ['_not_indexed', (stem) => `${stem}未建索引`],
+  // 必填栏要从别的文件（方案、校验证书等）抽取、目前还没抽：不是资料没写，交人工核对
+  ['_not_extracted', (stem) => `${stem}尚未抽取，需人工核对`],
   ['_unresolved', (stem) => `${stem}未定`],
   ['_unknown', (stem) => `${stem}情况不明`],
   ['_undecidable', (stem) => `${stem}无法判定`],

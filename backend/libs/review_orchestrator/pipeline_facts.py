@@ -60,6 +60,8 @@ def _pipeline_from_characteristic(item: dict[str, Any]) -> dict[str, Any]:
     # 有毒 → Ⅲ 级、泄漏危害性 → Ⅱ 级，都比缺省的 Ⅳ 级严，对应的体积检测比例也更高。
     pipeline["mediumToxicity"] = _value(row, "mediumToxicity", "toxicity", "毒性程度", "介质毒性")
     pipeline["leakHazard"] = _value(row, "leakHazard", "泄漏危害性", "泄漏危害")
+    # 火灾危险性（甲／乙／丙类）只照设计资料写的取，决定静电接地是否适用；不按介质名称猜。
+    pipeline["fireHazard"] = _value(row, "fireHazard", "火灾危险性", "火灾危险类别", "火灾危险性类别")
     pipeline["weldingMethod"] = _value(row, "weldingMethod", "焊接方法")
     pipeline["ndtRatio"] = _value(row, "ndtRatio", "检测比例", "无损检测比例")
     pipeline["source"] = {

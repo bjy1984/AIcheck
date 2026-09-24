@@ -41,3 +41,9 @@ assert.deepEqual(
   [],
   `这些原因码还没翻译，请在 auditLabels 的 REASON_WORDS / REASON_STEMS 里补：\n${untranslated.join('\n')}`
 )
+
+// 「未抽取」框架：必填栏要从别的文件抽取而尚未抽取时的原因码后缀
+assert.ok(
+  friendlyCheckReason('r68_plan_method_not_extracted').endsWith('尚未抽取，需人工核对'),
+  friendlyCheckReason('r68_plan_method_not_extracted')
+)

@@ -108,6 +108,8 @@ signatures:
     - {name: 化学清洗方法, label: 方法}
     - {name: 化学清洗鉴定, label: 鉴定, occurrence: 2}
   objectIdColumns: [管线号]
+  # 2026-09-24 业务确认：交了吹扫与清洗检查记录即适用，逐项核对这张记录。
+  applicableWhen: table_present
   fields:
   # 只取吹洗那一套。判據只有一個介質欄與一個結論欄；若在吹洗是「/」時改取化學清洗，
   # 兩欄可能各取自不同的方法，拼出一條表上不存在的記錄。化學清洗的記錄等真實樣本再補。
@@ -117,6 +119,23 @@ signatures:
   - path: acceptance.conclusion
     columns: [吹洗鉴定]
     parse: text
+  # 判据的检查项按吹洗介质分支；只看原文逐字写的介质（2026-09-24 业务确认），写的不是这几种就不出现。
+  - path: medium.waterFlush
+    columns: [吹洗介质]
+    parse: keyword
+    keywords: [水]
+  - path: medium.airBlowing
+    columns: [吹洗介质]
+    parse: keyword
+    keywords: [空气]
+  - path: medium.steamBlowing
+    columns: [吹洗介质]
+    parse: keyword
+    keywords: [蒸汽]
+  # 化学清洗三栏写「/」＝本管线不做化学清洗。
+  - path: medium.chemicalCleaning
+    columns: [化学清洗介质]
+    parse: filled
 
 # 第 17 頁的壓力試驗和泄漏性試驗記錄是橫向表格直著掃描的（文字豎排），form_tables
 # 會試兩個旋轉方向，只接受表頭順序對得上的那一個。同一張表供 R66、R67 兩條規則讀，

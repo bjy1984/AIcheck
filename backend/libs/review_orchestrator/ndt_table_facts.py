@@ -90,6 +90,8 @@ def _mapped_payload(row: dict[str, Any], signature: dict[str, Any], run: dict[st
         **({"applicable": True}
            if signature.get("domain") and signature.get("applicableWhen") == "table_present"
            else {}),
+        # 这张表按签名能抽出的栏：判据据此区分「表上没写」与「要从别的文件抽、还没抽」。
+        "extractedPaths": sorted({str(field["path"]) for field in signature.get("fields") or []}),
         **map_row(row, signature),
     }
 

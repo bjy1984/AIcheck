@@ -130,6 +130,7 @@ from libs.review_orchestrator.r20_r23_facts import (
     build_r23_business_facts,
 )
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
+from libs.review_orchestrator.record_applicability import apply_record_applicability
 from libs.review_orchestrator.retry_policy import has_review_retry_consumer
 from libs.review_orchestrator.rule_result_digest import (
     compact_rule_results,
@@ -1531,6 +1532,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             context["businessFacts"] = builder(repo.state, review_run)
         context["businessFacts"] = merge_certificate_facts(repo.state, review_run, context.get("businessFacts"))
         context["businessFacts"] = merge_project_pipelines(repo.state, review_run, context.get("businessFacts"))  # P11 N-02：逐管线事实
+        context["businessFacts"] = apply_record_applicability(context.get("businessFacts"))  # 施工记录按设计管线定适用
         if candidates := collect_object_candidates(context.get("businessFacts")):  # 多对象待监检员选定
             review_run["objectCandidates"] = candidates
         applied_corrections = apply_node_fact_corrections(
