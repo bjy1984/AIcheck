@@ -87,6 +87,8 @@ def _latest_parse_result(repo: Any, document_version_id: str | None) -> dict[str
         item
         for item in repo.state.get("ocr_parse_results", [])
         if str(item.get("documentVersionId") or "") == str(document_version_id)
+        # 流水线中间阶段（结构/印章/融合）只是候选，与审查读取口径一致（review_input_data）。
+        and not item.get("pipelineStage")
     ]
     if not matches:
         return None

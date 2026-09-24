@@ -76,10 +76,18 @@ def _renderings(field: str, value: str) -> list[str]:
     return [compact]
 
 
+def _read_scope(review_run: dict[str, Any], versions: list[str]) -> dict[str, Any]:
+    """冻结了资料范围的运行原样交去校验（范围与页范围都按它），只从中取 versions 这几份；
+    不改写它的版本清单。只带工程身份、没有冻结范围的离线标注脚本才以 versions 作范围。"""
+    if review_run.get("inputDocumentVersionIds"):
+        return review_run
+    return {**review_run, "inputDocumentVersionIds": versions}
+
+
 def locate_value(state: dict[str, Any], review_run: dict[str, Any], versions: list[str],
                  field: str, value: str) -> dict[str, Any] | None:
     """First page and surrounding words where the value is literally written; None if it is nowhere."""
-    parses = latest_selected_parses(state, {**review_run, "inputDocumentVersionIds": versions}, set(versions))
+    parses = latest_selected_parses(state, _read_scope(review_run, versions), set(versions))
     needles = [item for item in _renderings(field, value) if item]
     fragments = [(version_id, fragment) for version_id in versions
                  for fragment in (parses.get(version_id) or {}).get("fragments") or [] if isinstance(fragment, dict)]
@@ -373,7 +381,7 @@ def _ask_page_windows(state: dict[str, Any], review_run: dict[str, Any], version
     A fact whose value is written nowhere in a long document is not sent; that alone
     marks it suspect. Every answer records which pages it was judged on.
     """
-    parses = latest_selected_parses(state, {**review_run, "inputDocumentVersionIds": versions}, set(versions))
+    parses = latest_selected_parses(state, _read_scope(review_run, versions), set(versions))
     windows: dict[tuple[str, tuple[int, ...]], list[int]] = {}
     output: list[dict[str, Any]] = []
     for index, (item, row) in enumerate(zip(group, rows, strict=True)):
@@ -440,7 +448,8 @@ def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[d
     statuses: set[str] = {"completed"} if local and not grouped else set()
     for group_key, group in sorted(grouped.items()):
         versions = group[0]["documentVersionIds"]
-        status, text = approved_ocr_text(state, {**review_run, "inputDocumentVersionIds": versions})
+        # 冻结的运行原样交去校验；只按来源资料取子集，否则多资料运行每组都会判成范围不符。
+        status, text = approved_ocr_text(state, review_run, versions=versions)
         rows = [{key: item[key] for key in ("atomicCheckId", "certificateLabel", "field", "value", "suspectLabel")
                  if key in item} | {"documentVersionId": group_key} for item in group]
         if status == "ready":

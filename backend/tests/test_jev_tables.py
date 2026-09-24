@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from libs.review_orchestrator import jev_tables
 from libs.review_orchestrator.r24_r34_facts import _extract_records, build_r25_business_facts
+
+
+@pytest.fixture(autouse=True)
+def approved_test_project(monkeypatch):
+    monkeypatch.setenv("AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS", "P")
 
 
 def _source():
@@ -65,6 +72,21 @@ def test_disabled_classifier_does_not_call_network(monkeypatch):
     monkeypatch.setattr(jev_tables, "jev_stage_enabled", lambda _: False)
     monkeypatch.setattr(jev_tables, "ask_jev", lambda *_: 1 / 0)
     assert jev_tables.classify_review_tables(state, run)["status"] == "disabled"
+
+
+@pytest.mark.parametrize("allowed", ["", "OTHER", " OTHER , P2 "])
+def test_unapproved_project_sends_nothing_and_keeps_fixed_parser(monkeypatch, allowed):
+    state, run, _table = _source()
+    monkeypatch.setenv("AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS", allowed)
+    monkeypatch.setattr(jev_tables, "jev_stage_enabled", lambda _: True)
+    monkeypatch.setattr(jev_tables, "ask_jev", lambda *_: 1 / 0)
+    monkeypatch.setattr(jev_tables, "scoped_document_states", lambda *_: 1 / 0)
+    result = jev_tables.classify_review_tables(state, run)
+    assert result["status"] == "project_not_approved_for_jev"
+    assert result["tables"] == {} and result["overlongDocumentVersionIds"] == []
+    # 与未开启时一样：没有预测，固定解析原样给出两行。
+    run["jevTableClassifications"] = result
+    assert len(build_r25_business_facts(state, run)["r25"]["pqrItems"]) == 2
 
 
 def test_classifier_ignores_stale_table_when_same_version_was_reparsed(monkeypatch):

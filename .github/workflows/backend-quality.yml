@@ -96,13 +96,15 @@ jobs:
       - name: Run backend suite with real PostgreSQL
         run: pytest -q
 
+      # Docker Hub 不再提供 minio/minio（2026-09-24 起 pull access denied）；同一版本改从
+      # MinIO 官方的 quay.io 仓库拉取，并按 digest 固定，标签被改指也拉不到别的镜像。
       - name: Start isolated MinIO with object lock support
         run: >-
           docker run -d --name aicheck-test-minio
           -p 9000:9000
           -e MINIO_ROOT_USER=aicheck-ci
           -e MINIO_ROOT_PASSWORD=AicheckCiMinioSecret-2026
-          minio/minio:RELEASE.2025-04-22T22-12-26Z
+          quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
           server /data --address :9000
 
       - name: Wait for MinIO readiness

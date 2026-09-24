@@ -339,7 +339,9 @@ def _mapped(v: dict[str, Any], kind: str) -> dict[str, Any]:
         "weldNo": _v(v, "weldNo", "jointNo", "焊缝编号", "焊口号"),
         "welderName": _v(v, "welderName", "name", "焊工姓名"),
         "welderCertificateNo": _v(v, "welderCertificateNo", "welderCertificateNo", "certificateNo", "焊工证号", "证书编号"),
-        "qualificationCodes": _list(_v(v, "qualificationCodes", "qualifiedItems", "welderOperationItemCode", "合格项目", "项目代号")),
+        # 行级的 operationItemCode 排在整份文件的 welder_operation_item_code 之前：后者只是第一项，
+        # 一张证多个合格项目时每行都拿它，合并后只剩第一项（2026-09-23 评审指出）。
+        "qualificationCodes": _list(_v(v, "qualificationCodes", "qualifiedItems", "operationItemCode", "welderOperationItemCode", "合格项目", "项目代号")),
         "validFrom": _v(v, "validFrom", "有效期起"),
         "validUntil": _v(v, "validUntil", "expiryDate", "有效期止", "有效期"),
         "personIdentityMatched": _bool(_v(v, "personIdentityMatched", "人证相符")),

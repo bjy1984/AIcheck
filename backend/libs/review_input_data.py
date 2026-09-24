@@ -62,6 +62,9 @@ def _latest_by_version(
         version_id = str(parse.get("documentVersionId") or "")
         if not version_id or (requested is not None and version_id not in requested):
             continue
+        if parse.get("pipelineStage"):
+            # 流水线中间阶段（结构/印章/融合）只是候选；权威结果由 finalize 另存且不带该标记。
+            continue
         previous = latest.get(version_id)
         stamp = str(parse.get("finishedAt") or parse.get("updatedAt") or parse.get("createdAt") or "")
         if previous is None:

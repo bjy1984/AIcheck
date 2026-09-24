@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from typing import Any
 
 from libs.review_input_data import latest_selected_parses
@@ -59,6 +60,12 @@ def classify_review_tables(state: dict[str, Any], review_run: dict[str, Any]) ->
         return {"model": MODEL, "status": "not_applicable", "tables": {}, "overlongDocumentVersionIds": []}
     if not jev_stage_enabled("TABLE_CLASSIFICATION"):
         return {"model": MODEL, "status": "disabled", "tables": {}, "overlongDocumentVersionIds": []}
+    # 与事实核对、主判定同一份审查运行白名单：未批准外呼的工程不组装、不外发，按固定解析处理。
+    allowed = {item.strip() for item in os.getenv("AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS", "").split(",")
+               if item.strip()}
+    if str(review_run.get("projectId") or "") not in allowed:
+        return {"model": MODEL, "status": "project_not_approved_for_jev", "tables": {},
+                "overlongDocumentVersionIds": []}
     document_states, conflicts, overlong = scoped_document_states(state, review_run, [])
     state_by_version = {row["documentVersionId"]: row["state"] for row in document_states if row["hasOcrText"]}
     output: dict[str, Any] = {"model": MODEL, "status": "completed", "tables": {},
