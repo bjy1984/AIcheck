@@ -128,3 +128,15 @@ def test_material_review_asset_is_packaged_and_versioned() -> None:
     codes = {item["materialTypeCode"] for item in asset["items"]}
     assert {"wps", "pqr", "welding_process_card", "platform_verification", "pmi_report"} <= codes
     assert status["ready"] is True
+
+
+def test_a_newer_shadow_pipeline_stage_does_not_replace_the_baseline_readiness() -> None:
+    baseline = parse_result(fragments=[{"text": "检测报告编号 UT-001", "bbox": [10, 20, 110, 48]}])
+    # 影子模式下的结构阶段更晚落库、且失败：它只是候选，不能让就绪状态变成失败或空。
+    stage = {**parse_result(fragments=[], status="failed"), "id": "PARSE-STAGE", "parseResultId": "PARSE-STAGE",
+             "pipelineStage": "structure", "finishedAt": "2026-07-10 12:05:00"}
+
+    readiness = build_document_ocr_readiness(FakeRepo([baseline, stage]), document())
+
+    assert readiness["status"] == "ready"
+    assert readiness["fragmentCount"] == 1

@@ -6525,9 +6525,11 @@ def qualification_valid_until_candidate(text_items: list[tuple[str, dict[str, An
         fragment = next((item_fragment for item, item_fragment in text_items
                          if end in re.sub(r"\s+", "", item)), text_items[0][1])
         return {"text": end, "fragment": fragment}
-    # 单独一行的「有效期起/自」是起始日，不能拿来当截止日；整份文档一个片段时不能整段丢掉。
-    until_items = [(text, fragment) for text, fragment in text_items
-                   if "\n" in text.strip() or not VALIDITY_START_LABEL_RE.search(text)]
+    # 「有效期起/自」那一行是起始日，不能拿来当截止日；整份文档一个片段时只去掉那一行，
+    # 不能整段丢掉，也不能整段保留（否则下面的「有效期」标签会把起始日当截止日）。
+    until_items = [(kept, fragment) for text, fragment in text_items
+                   if (kept := "\n".join(line for line in text.split("\n")
+                                         if not VALIDITY_START_LABEL_RE.search(line))).strip()]
     labeled = value_from_labeled_text(until_items, ["有效期至", "有效期限至", "有效期止", "有效期"], DATE_CN_RE)
     if labeled:
         return labeled
@@ -6840,10 +6842,13 @@ def table_text(table: dict[str, Any]) -> str:
     return " ".join(values)
 
 
-MANUFACTURER_LABEL_RE = re.compile(r"(?:生产厂家|制造单位|制造厂|生产单位|供方|供货单位|厂家)\s*[:：]?\s*"
+# 只认生产／制造标签；「供方／供货单位」可能是经销商，材料事实里另记为 dealerName，不能冒充制造单位。
+MANUFACTURER_LABEL_RE = re.compile(r"(?:生产厂家|制造单位|制造厂|生产单位|厂家)\s*[:：]?\s*"
                                    r"([一-龥（）()·]{2,40}(?:有限公司|有限责任公司|集团公司|厂))")
 # 需方、收货、建设、施工、监理等是别的当事方，不是制造单位（2026-09-23 本地快照：需方单位被当成生产厂家）。
 OTHER_PARTY_RE = re.compile(r"(?:需方|收货|订货|购货|使用|建设|施工|监理|检验|检测)(?:单位|方)?\s*[:：]")
+# 供方／经销方那一行也不能在无标签兜底里被当成第一个公司名取走。
+SUPPLIER_PARTY_RE = re.compile(r"(?:供方|供货|供应|经销|经营|销售)(?:单位|商|方)?\s*[:：]")
 COMPANY_RE = re.compile(r"[一-龥（）()·]{2,40}(?:有限公司|有限责任公司|集团公司)")
 
 
@@ -6855,7 +6860,7 @@ def quality_certificate_manufacturer(text_items: list[tuple[str, dict[str, Any]]
             return {"text": labeled.group(1), "fragment": fragment}
     # 没有标签时才退回第一个公司名；整张表、多行正文和别的当事方那行都不算。
     for text, fragment in text_items[:30]:
-        if "\n" in text.strip() or len(text) > 80 or OTHER_PARTY_RE.search(text):
+        if "\n" in text.strip() or len(text) > 80 or OTHER_PARTY_RE.search(text) or SUPPLIER_PARTY_RE.search(text):
             continue
         if any(token in text for token in ["项目", "单位名称", "业务范围"]):
             continue
