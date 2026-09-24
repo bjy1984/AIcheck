@@ -76,3 +76,14 @@ def test_a_document_title_is_not_a_procedure_number():
     records = _extract_records(state, state["ocr_parse_results"][0], "R25", "pqr")
     assert records and not any(record.get("reportNo") or record.get("pqrNo") for record in records)
     assert records[0].get("wpsNo") == "WPS2024-02"
+
+
+def test_every_qualified_item_on_one_card_survives_the_merge():
+    # 平台关着时，一张证上的多个合格项目全靠抽取器生成的表；
+    # 原来每行都继承整份文件的首项代号，合并后只剩第一项。
+    first, second = "GTAW-FeⅡ-6G-3/159-FefS-02/11/12", "SMAW-FeⅡ-6G(K)-12/159-Fef3J"
+    fragments = ["姓名 赵俊祥", "证件编号 510602197603143578", "作业项目代号 批准日期 有效日期",
+                 f"{first} 2024.11.13 2028.10.31", f"{second} 2023.02.17 2027.02.16"]
+    facts = build_r24_business_facts(_state(["\n".join(fragments)]), _run())["r24"]
+    assert [item.get("qualificationCodes") for item in facts["certificates"]] == [[first, second]]
+    assert facts["qualificationCodes"] == [first, second]

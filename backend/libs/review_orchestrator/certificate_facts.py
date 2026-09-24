@@ -511,28 +511,48 @@ def _extract_certificates(
                         "design_license", "installation_license", "ndt_agency_approval"
                     })
     _reconcile_validity_range(record, text, parse_result, version_id, file_name, protected=human_corrected)
-    _reconcile_certificate_number(record, text, profile["certificateType"], protected=human_corrected)
+    _reconcile_certificate_number(record, text, profile["certificateType"], protected=human_corrected,
+                                  parse_result=parse_result, version_id=version_id, file_name=file_name)
     if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
         return []
     return [record]
 
 
 def _reconcile_certificate_number(record: dict[str, Any], text: str, certificate_type: str, *,
-                                  protected: set[str]) -> None:
-    """编号类别位与证书类型不符时，改用原文里唯一一个类别位相符的编号；多个或没有就不猜，只记警告。"""
+                                  protected: set[str], parse_result: dict[str, Any] | None = None,
+                                  version_id: str = "", file_name: str = "") -> None:
+    """编号类别位与证书类型不符时，改用原文里唯一一个类别位相符的编号；多个或没有就不猜，只记警告。
+
+    换了编号就要换证据：原字段引的是另一张证的号（TS1…），留着它，grounding 会拿那个
+    高置信字段替新编号作证，界面也会指着 TS1 那一处说「这是 TS3 的出处」。
+    """
     expected = _EXPECTED_NUMBER_PREFIX.get(certificate_type)
     number = re.sub(r"\s+", "", str(record.get("certificateNo") or "")).upper()
     if not expected or not number or number.startswith(expected) or "certificateNo" in protected:
         return
-    candidates = {f"TS{match.group(1)}{match.group(2)}-{match.group(3)}" for match in _TS_NUMBER_RE.finditer(text)
-                  if f"TS{match.group(1)}" == expected}
+    candidates: dict[str, re.Match[str]] = {}
+    for match in _TS_NUMBER_RE.finditer(text):
+        if f"TS{match.group(1)}" == expected:
+            candidates.setdefault(f"TS{match.group(1)}{match.group(2)}-{match.group(3)}", match)
     if len(candidates) != 1:
         record.setdefault("extractionWarnings", []).append(
             "certificate_no_type_mismatch" if not candidates else "certificate_no_ambiguous")
         return
+    replacement, match = next(iter(candidates.items()))
     record.setdefault("replacedByNumberType", {})["certificateNo"] = record["certificateNo"]
-    record["certificateNo"] = candidates.pop()
+    record["certificateNo"] = replacement
     record.setdefault("sources", {})["certificateNo"] = "ocr_text_number_type"
+    record["evidence"] = [
+        item for item in record.get("evidence") or []
+        if not (isinstance(item, dict) and number in re.sub(r"\s+", "", str(item.get("quotedText") or "")).upper())
+    ]
+    parse_result = parse_result or {}
+    page_no, quoted, fragment_confidence = _locate_text(parse_result, match.group(0))
+    # 新编号落不到具体片段（跨片段拼出来的）就给 0 分：宁可交人工，也不让别的字段替它作证。
+    record["evidence"].append(_evidence(
+        version_id, file_name, page_no, None, quoted,
+        confidence=fragment_confidence if page_no is not None else 0.0,
+        confidence_unavailable=page_no is not None and _confidence_unavailable(parse_result)))
 
 
 def _reconcile_validity_range(
@@ -1104,6 +1124,8 @@ def certificate_evidence_links(verification: dict[str, Any] | None) -> list[dict
                     "quotedText": ref.get("quotedText"),
                     "bbox": ref.get("bbox"),
                     "confidence": 1.0,
+                    # 公示平台登记记录没有页码与 bbox：带上来源与登记页地址，锚定守卫据此认它。
+                    **{key: ref[key] for key in ("source", "sourceUrl") if ref.get(key)},
                 }
             )
     return links
