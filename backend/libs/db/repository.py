@@ -301,6 +301,8 @@ class InMemoryRepository:
         self._tenant_idempotency_baselines: dict[str, dict[str, str]] = {}
         self._tenant_pgvector_baseline_ids: dict[str, set[str]] = {}
         self._loaded_tenants: set[str] = set()
+        # 被失败请求复原丢弃了内存状态、还没重新加载的租户，见 restore_tenant_runtime。
+        self._tenants_awaiting_reload: set[str] = set()
         self.state = runtime_initial_state() if seed else {key: [] for key in STATE_COLLECTIONS}
         self._persistence_baseline: dict[tuple[str, str], str] = {}
         self._singleton_baseline: dict[str, str] = {}
@@ -472,6 +474,10 @@ class InMemoryRepository:
 
     def mark_tenant_loaded(self, tenant_id: str | None = None) -> None:
         self._loaded_tenants.add(str(tenant_id or configured_tenant_id()))
+        self._tenants_awaiting_reload.discard(str(tenant_id or configured_tenant_id()))
+
+    def tenant_awaits_reload(self, tenant_id: str | None = None) -> bool:
+        return str(tenant_id or configured_tenant_id()) in self._tenants_awaiting_reload
 
     def invalidate_tenant(self, tenant_id: str | None = None) -> None:
         self._loaded_tenants.discard(str(tenant_id or configured_tenant_id()))
@@ -497,6 +503,11 @@ class InMemoryRepository:
         if snapshot.get("state") is None:
             self.reset()
             self._loaded_tenants.discard(tenant_id)
+            # 此刻内存是种子/空骨架、基线全空，与库里对不上：必须整份重载后才能再写。
+            # 认证请求靠 tenant_is_loaded 自然会重载；关掉认证时没有那条路，
+            # 只能靠这个标记（「从没加载过」和「被丢弃了」不能混为一谈——
+            # 前者是测试和本地开发手工摆好的内存状态，重载反而会把它冲掉）。
+            self._tenants_awaiting_reload.add(tenant_id)
             return
         self.state = self.clone(snapshot["state"])
         self._persistence_baseline = dict(snapshot.get("persistenceBaseline") or {})

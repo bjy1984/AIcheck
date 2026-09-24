@@ -313,14 +313,7 @@ async def handle_request(
         claims = predecoded_claims
         if claims is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), errors.AUTH_REQUIRED.reason)
-        claimed_tenant = str(claims.get("tid") or "")
-        if not repo.tenant_is_loaded(claimed_tenant):
-            if postgres_persistence_configured() or repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
-                # N-5：这里原先无参调用 load_state()，即一律按 configured_tenant_id()
-                # 加载，随后却把 claims.tid 标记为已加载。多租户部署重启后，
-                # 非 configured 租户的数据在库里存在却永不加载——对使用方等同于数据丢失。
-                load_state(tenant_id=claimed_tenant or None)
-            repo.mark_tenant_loaded(claimed_tenant)
+        ensure_request_tenant_loaded(str(claims.get("tid") or ""))
         user_record = user_record_by_username(claims.get("sub"), tenant_id=str(claims.get("tid") or ""))
         if user_record is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), "AUTH_USER_NOT_FOUND")
@@ -365,6 +358,13 @@ async def handle_request(
                 fail(errors.PASSWORD_CHANGE_REQUIRED, request, http_status=403),
                 errors.PASSWORD_CHANGE_REQUIRED.reason,
             )
+    elif not authentication_enforced() and repo.tenant_awaits_reload(tenant_id or None):
+        # 持久化模式下失败的写请求会把仓库复原成未加载（restore_failed_request_state
+        # → reset：state 回到种子、基线清空）。认证请求上面那条分支会重载；关掉认证时
+        # 没有 claims，若这里也不管，下一次写就把种子记录（如 audit_logs/AUD-001）
+        # 当成新插入，撞上库里的同 id 行 → 40906，而且重读也救不回来——读接口只
+        # 增量刷新自己用到的那几个集合。2026-09-24 CI 的交接跨进程用例就红在这里。
+        ensure_request_tenant_loaded(str(tenant_id or configured_tenant_id()))
     admin_read_error = inferred_admin_read_error(request)
     if admin_read_error is not None:
         return audit_rejected_request(request, admin_read_error, errors.FORBIDDEN.reason)
@@ -522,6 +522,17 @@ async def handle_request(
                 reset_request_tenant_id(persistence_tenant_token)
     finally:
         reset_request_audit_context(audit_context_token)
+
+
+def ensure_request_tenant_loaded(tenant_id: str) -> None:
+    if repo.tenant_is_loaded(tenant_id):
+        return
+    if postgres_persistence_configured() or repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
+        # N-5：这里原先无参调用 load_state()，即一律按 configured_tenant_id()
+        # 加载，随后却把 claims.tid 标记为已加载。多租户部署重启后，
+        # 非 configured 租户的数据在库里存在却永不加载——对使用方等同于数据丢失。
+        load_state(tenant_id=tenant_id or None)
+    repo.mark_tenant_loaded(tenant_id)
 
 
 def restore_failed_request_state(request: Request) -> None:

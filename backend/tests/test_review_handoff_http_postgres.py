@@ -160,7 +160,12 @@ def test_two_http_processes_reject_stale_verification_and_refresh_source(isolate
                 current = client.get(endpoint).json()['data']
                 assert current['verifications'] == saved['verifications']
                 assert current['verification']['status'] == 'verified'
-            revised = clients[1].post(endpoint + '/verifications', json={
+            # 更正一定从并发里输掉的那个进程发：输掉的请求会把该进程复原成
+            # 未加载状态（基线清空），重读后能否写成功正是要测的东西。
+            # 原先固定用 clients[1]，只有它恰好输掉时才测到——2026-09-24 CI
+            # 就是这样一半概率红在这里（audit_logs/AUD-001 被当成新插入）。
+            loser = max(index for index, item in enumerate(responses) if item['code'] != 0)
+            revised = clients[loser].post(endpoint + '/verifications', json={
                 **body, 'expectedPreviousId': saved['verifications'][0]['id'],
                 'outcome': 'rejected', 'objectMatchConfirmed': False,
                 'note': 'synthetic correction after reread',
