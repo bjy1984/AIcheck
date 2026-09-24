@@ -64,3 +64,15 @@ def test_heuristic_score_does_not_stand_in_for_missing_ocr_confidence():
     state["ocr_parse_results"][0]["quality"] = {"reasons": ["provider_confidence_unavailable"]}
     judgment = build_r24_business_facts(state, _run())["judgment"]
     assert judgment["claimedFacts"] and all(fact.get("confidenceUnavailable") for fact in judgment["claimedFacts"])
+
+
+def test_a_document_title_is_not_a_procedure_number():
+    # 本地快照：PQR/报告编号抽成了「焊接工艺评定任务书」。
+    from libs.review_orchestrator.r24_r34_facts import _extract_records
+
+    state = _state(["焊接工艺评定任务书"], [
+        {"fieldCode": "reportNo", "fieldName": "报告编号", "fieldValue": "焊接工艺评定任务书", "pageNo": 1},
+        {"fieldCode": "wpsNo", "fieldName": "WPS编号", "fieldValue": "WPS2024-02", "pageNo": 1}])
+    records = _extract_records(state, state["ocr_parse_results"][0], "R25", "pqr")
+    assert records and not any(record.get("reportNo") or record.get("pqrNo") for record in records)
+    assert records[0].get("wpsNo") == "WPS2024-02"

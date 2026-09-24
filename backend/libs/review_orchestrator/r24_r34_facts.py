@@ -250,6 +250,9 @@ def _fresh_welder_parse(parse_result: dict[str, Any], fragments: list[dict[str, 
             "tables": [*tables, *welder_certificate_ocr_tables(extraction)]}
 
 
+_NUMBER_FIELDS = ("documentNo", "reportNo", "recordNo", "wpsNo", "pqrNo", "qualificationReportNo")
+
+
 def _welder_card_records(state: dict[str, Any], parse_result: dict[str, Any], namespace: str,
                          classifications: dict[str, Any] | None) -> list[dict[str, Any]]:
     """几个焊工的证合订成一份时，每人一段、只用自己那段抽姓名证号项目。
@@ -291,6 +294,10 @@ def _extract_records(state: dict[str, Any], parse_result: dict[str, Any], namesp
         record_id = f"{namespace}-" + stable_payload_hash(scope)[7:19].upper()
         evidence = _record_evidence(evidence_items, common["documentVersionId"], f"{namespace}EV-{record_id[-12:]}", _value(values, "documentNo", "recordNo", "weldNo", "证书编号", "记录编号") or kind, row=row if row else None, fallback_page=common.get("pageNo") or 1)
         record = _mapped(values, kind)
+        # 编号不含数字就不是编号（2026-09-23 本地快照：PQR 编号抽成了「焊接工艺评定任务书」）。
+        for key in _NUMBER_FIELDS:
+            if record.get(key) is not None and not re.search(r"\d", str(record[key])):
+                record[key] = None
         # 证据要带文件名与 documentId：界面上「第 1 页」不说是哪份文件，点也点不开。
         evidence.setdefault("fileName", common.get("fileName"))
         evidence.setdefault("documentId", common.get("documentId"))

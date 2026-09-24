@@ -231,8 +231,13 @@ def welder_fact_items(business_facts: dict[str, Any] | None,
 RECORD_FACT_FIELDS: tuple[tuple[str, str], ...] = (
     ("certificateNo", "证书编号"), ("reportNo", "报告编号"), ("manufacturerName", "制造单位"),
     ("productName", "产品名称"), ("material", "材质"),
+    # 焊接工艺与施工记录（R25–R34）：工艺文件编号、母材与焊材。
+    ("wpsNo", "焊接工艺规程（WPS）编号"), ("pqrNo", "焊接工艺评定（PQR）编号"),
+    ("materialGrade", "母材牌号"), ("fillerMetal", "焊接材料"),
 )
-_RECORD_NODES = frozenset(f"r{number}" for number in range(12, 24))
+# 焊工证（r24/r29 的 certificates）由 welder_fact_items 按人核对，这里不重复。
+_RECORD_NODES = frozenset({*(f"r{number}" for number in range(12, 24)), *(f"r{number}" for number in range(25, 35))})
+_SKIPPED_COLLECTIONS = frozenset({("r29", "certificates")})
 _MAX_FIELD_CHARS = 60
 
 
@@ -254,7 +259,9 @@ def record_fact_items(business_facts: dict[str, Any] | None,
     for namespace, facts in sorted((business_facts or {}).items()):
         if namespace not in _RECORD_NODES or not isinstance(facts, dict) or not atomic_id:
             continue
-        for records in facts.values():
+        for collection, records in facts.items():
+            if (namespace, collection) in _SKIPPED_COLLECTIONS:
+                continue
             for record in records if isinstance(records, list) else []:
                 version = str((record or {}).get("documentVersionId") or "") if isinstance(record, dict) else ""
                 if not version:
@@ -267,9 +274,12 @@ def record_fact_items(business_facts: dict[str, Any] | None,
                         continue
                     seen.add((version, field, value))
                     target = f"{subject}的{label}" if subject and field != "productName" else label
+                    number_field = field in {"certificateNo", "reportNo", "wpsNo", "pqrNo"}
                     items.append({
                         "atomicCheckId": atomic_id, "documentVersionIds": [version], "certificateLabel": namespace.upper(),
-                        "field": field, "value": value, "plausible": _plausible_field_value(value),
+                        "field": field, "value": value,
+                        # 编号不含数字就不是编号，本地直接标可疑。
+                        "plausible": _plausible_field_value(value) and (not number_field or bool(re.search(r"\d", value))),
                         "suspectLabel": f"{namespace.upper()}·{label}={value[:40]}",
                         "instructions": f"只看这份资料：{target}是否写为{value}？只核对原文写明的内容，表头和栏目名称不算。",
                     })

@@ -277,3 +277,10 @@ def test_html_fragments_and_header_rows_are_not_field_values():
     assert not jev_fact_check._plausible_field_value("监督检验证书编号 产品质量证明书编号")
     assert jev_fact_check._plausible_field_value("TSX71101001120240462")
     assert jev_fact_check._plausible_field_value("福建宁德正上管业科技有限公司")
+
+
+def test_a_number_field_without_digits_is_flagged_locally():
+    facts = {"r25": {"pqrItems": [{"documentVersionId": "V1", "pqrNo": "焊接工艺评定任务书", "wpsNo": "WPS2024-02"}]},
+             "r29": {"certificates": [{"documentVersionId": "V1", "certificateNo": "X"}]}}
+    items = jev_fact_check.record_fact_items(facts, _record_rules())
+    assert [(item["field"], item["plausible"]) for item in items] == [("wpsNo", True), ("pqrNo", False)]
