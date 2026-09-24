@@ -240,3 +240,40 @@ def test_welder_facts_become_questions_and_registry_codes_are_not_asked():
     assert items[1]["instructions"].startswith("只看李卫（证件编号110101199001010011）的焊工资格证：它的有效期截止日是否为2027年4月30日")
     assert all(item["atomicCheckId"] == "AC-R24-01" for item in items)
     assert jev_fact_check.welder_fact_items(facts, []) == []
+
+
+def _record_rules():
+    return [{"atomicCheckResults": [
+        {"atomicCheckId": "AC-R16-01", "result": "evidence_insufficient",
+         "toolResults": [{"toolName": "resolve_r16_product_standard_profile"}]},
+        {"atomicCheckId": "AC-R16-07", "result": "passed",
+         "toolResults": [{"toolName": "locate_evidence_fragment"}, {"toolName": "validate_evidence_grounding"}]}]}]
+
+
+def test_material_record_facts_are_asked_and_table_text_is_flagged_locally(monkeypatch):
+    # 本地快照：R16 的「证书编号」抽成了表头，「制造单位」装进了整张表。
+    facts = {"r16": {"qualityCertificates": [
+        {"documentVersionId": "V1", "productName": "不锈钢无缝钢管", "certificateNo": "20260213951",
+         "manufacturerName": "序号 元件名称 材质/标准\n1 不锈钢无缝钢管 福建宁德正上管业科技有限公司"},
+        {"documentVersionId": "V1", "productName": "不锈钢无缝钢管", "certificateNo": "20260213951"},
+    ]}, "r24": {"certificates": [{"documentVersionId": "V1", "certificateNo": "X"}]}}
+    items = jev_fact_check.record_fact_items(facts, _record_rules())
+    assert [(item["field"], item["plausible"]) for item in items] == [
+        ("certificateNo", True), ("manufacturerName", False), ("productName", True)]
+    assert all(item["atomicCheckId"] == "AC-R16-01" for item in items)
+    assert items[0]["instructions"] == ("只看这份资料：不锈钢无缝钢管的证书编号是否写为20260213951？"
+                                        "只核对原文写明的内容，表头和栏目名称不算。")
+    _enabled(monkeypatch)
+    asked = []
+    monkeypatch.setattr(jev_fact_check, "ask_jev", lambda _text, questions, **_kw: asked.append(questions) or {
+        key: {"type": "choice", "choice": "yes", "confidence": 0.95} for key in questions})
+    result = jev_fact_check.check_facts(_state(), _run(), items)
+    assert len(next(iter(asked))) == 2, "表格文字不送 Jev"
+    assert result["suspects"] == ["R16·制造单位=序号 元件名称 材质/标准\n1 不锈钢无缝钢管 福建宁德正上管业科技有限公司（抽取值不像单一字段，未送 Jev）"]
+
+
+def test_html_fragments_and_header_rows_are_not_field_values():
+    assert not jev_fact_check._plausible_field_value("</td><td>公称压力</td>")
+    assert not jev_fact_check._plausible_field_value("监督检验证书编号 产品质量证明书编号")
+    assert jev_fact_check._plausible_field_value("TSX71101001120240462")
+    assert jev_fact_check._plausible_field_value("福建宁德正上管业科技有限公司")

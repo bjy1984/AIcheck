@@ -115,6 +115,7 @@ DESIGN_FACT_FIELDS: tuple[tuple[str, str, str, str], ...] = (
     ("leakTest", "acceptanceCriteria", "泄漏试验", "合格标准"),
 )
 _DESIGN_TOOL = "evaluate_design_special_requirements"
+_EVIDENCE_GATE_ONLY = frozenset({"locate_evidence_fragment", "validate_evidence_grounding"})
 
 
 def certificate_fact_items(verification: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -224,6 +225,57 @@ def welder_fact_items(business_facts: dict[str, Any] | None,
     return items
 
 
+# 材料／元件类节点（R12–R23）记录上的标识性事实：编号、制造单位、产品、材质。
+# 2026-09-23 本地快照：R16 的「证书编号」抽成了表头「监督检验证书编号 产品质量证明书编号」，
+# 「制造单位」装进了整张表，R13 的产品名带着「（品种）」标签残留。
+RECORD_FACT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("certificateNo", "证书编号"), ("reportNo", "报告编号"), ("manufacturerName", "制造单位"),
+    ("productName", "产品名称"), ("material", "材质"),
+)
+_RECORD_NODES = frozenset(f"r{number}" for number in range(12, 24))
+_MAX_FIELD_CHARS = 60
+
+
+def _plausible_field_value(value: str) -> bool:
+    """一个字段值不该是一段表格或多行正文。"""
+    return (0 < len(value) <= _MAX_FIELD_CHARS and "\n" not in value and "|" not in value
+            and not re.search(r"</?\w+[^>]*>", value) and len(re.findall(r"编号|名称|规格|材质", value)) < 2)
+
+
+def record_fact_items(business_facts: dict[str, Any] | None,
+                      rule_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Identifying facts on material and component records (nodes 12–23)."""
+    atomic_id = next((str(item.get("atomicCheckId")) for record in rule_results
+                      for item in record.get("atomicCheckResults") or []
+                      if any(isinstance(tool, dict) and str(tool.get("toolName") or "") not in _EVIDENCE_GATE_ONLY
+                             for tool in item.get("toolResults") or [])), None)
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for namespace, facts in sorted((business_facts or {}).items()):
+        if namespace not in _RECORD_NODES or not isinstance(facts, dict) or not atomic_id:
+            continue
+        for records in facts.values():
+            for record in records if isinstance(records, list) else []:
+                version = str((record or {}).get("documentVersionId") or "") if isinstance(record, dict) else ""
+                if not version:
+                    continue
+                subject = str(record.get("productName") or record.get("componentType") or "").strip()
+                subject = subject if _plausible_field_value(subject) else ""
+                for field, label in RECORD_FACT_FIELDS:
+                    value = str(record.get(field) or "").strip()
+                    if not value or (version, field, value) in seen:
+                        continue
+                    seen.add((version, field, value))
+                    target = f"{subject}的{label}" if subject and field != "productName" else label
+                    items.append({
+                        "atomicCheckId": atomic_id, "documentVersionIds": [version], "certificateLabel": namespace.upper(),
+                        "field": field, "value": value, "plausible": _plausible_field_value(value),
+                        "suspectLabel": f"{namespace.upper()}·{label}={value[:40]}",
+                        "instructions": f"只看这份资料：{target}是否写为{value}？只核对原文写明的内容，表头和栏目名称不算。",
+                    })
+    return items
+
+
 def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
     """Certificate questions grouped by source document (kept for callers of the first version)."""
     return _group(certificate_fact_items(verification))
@@ -265,11 +317,16 @@ def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[d
                if item.strip()}
     if str(review_run.get("projectId") or "") not in allowed:
         return {**base, "status": "project_not_approved_for_jev"}
-    grouped = _group(items)
-    if not grouped:
+    # 一眼就不像单一字段的抽取值（整张表、多行正文）本地直接标可疑，不用问 Jev。
+    local = [{key: item[key] for key in ("atomicCheckId", "certificateLabel", "field", "value") if key in item}
+             | {"documentVersionId": "|".join(item["documentVersionIds"]), "status": "implausible_value",
+                "suspect": True, "suspectLabel": item["suspectLabel"] + "（抽取值不像单一字段，未送 Jev）"}
+             for item in items if item.get("plausible") is False]
+    grouped = _group([item for item in items if item.get("plausible") is not False])
+    if not grouped and not local:
         return {**base, "status": "no_certificate_facts"}
-    facts: list[dict[str, Any]] = []
-    statuses: set[str] = set()
+    facts: list[dict[str, Any]] = list(local)
+    statuses: set[str] = {"completed"} if local and not grouped else set()
     for group_key, group in sorted(grouped.items()):
         versions = group[0]["documentVersionIds"]
         status, text = approved_ocr_text(state, {**review_run, "inputDocumentVersionIds": versions})

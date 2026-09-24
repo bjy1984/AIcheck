@@ -85,6 +85,7 @@ from libs.review_orchestrator.jev_fact_check import (
     certificate_fact_items,
     check_facts,
     design_fact_items,
+    record_fact_items,
     welder_fact_items,
 )
 from libs.review_orchestrator.jev_primary import (
@@ -1863,7 +1864,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         fact_check = check_facts(repo.state, review_run,
                                  certificate_fact_items(context.get("certificateVerification"))
                                  + design_fact_items(context.get("businessFacts"), original)
-                                 + welder_fact_items(context.get("businessFacts"), original))
+                                 + welder_fact_items(context.get("businessFacts"), original)
+                                 + record_fact_items(context.get("businessFacts"), original))
         review_run["jevFactCheck"] = fact_check
         return {"status": decision["status"], "decisionCount": len(decision["atomic"]),
                 "disagreementCount": len(decision.get("disagreementAtomicCheckIds") or []),
