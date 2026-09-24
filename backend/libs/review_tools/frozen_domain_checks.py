@@ -144,6 +144,11 @@ def evaluate_frozen_domains(tool_name, arguments, *, rule_version, scope_fields,
                     add(code, "evidence_insufficient", refs, actual=flag, expected="known_applicability")
                     continue
             actual = read_path(row, actual_path)
+            if actual is None and extracted is not None and actual_path not in extracted:
+                # 判据要的实测值不在这张记录表上（要从别的文件抽、还没抽）：未抽取，交人工，
+                # 不能拿空值去比成「不符合」。
+                add(f"{code}_not_extracted", "evidence_insufficient", refs, expected=rule.get("expected"))
+                continue
             if rule.get("operator") == "equals" and isinstance(rule.get("expected"), bool) and actual is None:
                 add(code, "evidence_insufficient", refs, expected=rule.get("expected"))
                 continue

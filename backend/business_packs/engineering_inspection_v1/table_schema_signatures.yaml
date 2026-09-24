@@ -191,6 +191,106 @@ signatures:
     columns: [泄漏性试验结论]
     parse: text
 
+# 同一本交工資料的另兩張記錄表（2026-09-24 業務確認：交了記錄即適用，同 R68）。
+- businessSchema: support_domains
+  domain: supports
+  objectType: pipe_support
+  sourceRuleIds: [R55]
+  evidence: >-
+    七項目快照 GDLNG 交工資料 20260623104730.pdf 第 15 頁「表A.0.9管道支吊架的安装记录」
+    掃描件，片段逐字：管线编号 管架编号 | 结构型式、型号、规格 | 坐标位移值偏差（mm）：允许值
+    实测值 | 管道标高偏差（mm）：允许值 实测值 | 弹簧：调整值 | 备注；兩條管線各 5 列
+    （PS-1、PS-2、PS-3~8、PS-9、PS-10）。
+  form:
+    title: 'A\.?0\.9管道支吊架的安装记录'
+    rowKey: 管线编号
+    rowKeyPattern: '^[A-Z]{1,5}-?\d'
+    columns:
+    - {name: 管线编号, label: 管线编号}
+    - {name: 管架编号, label: 管架编号}
+    - {name: 结构型式, label: 结构型式、型号、规格}
+    - {name: 坐标允许值, label: 允许值, occurrence: 1}
+    - {name: 坐标实测值, label: 实测值, occurrence: 1}
+    - {name: 标高允许值, label: 允许值, occurrence: 2}
+    - {name: 标高实测值, label: 实测值, occurrence: 2}
+    - {name: 弹簧调整值, label: 调整值}
+    - {name: 备注, label: 备注}
+  # 每個支架一個對象（業務確認）：管線號＋管架編號，監檢員在候選清單裡選。
+  objectIdJoin: [管线编号, 管架编号]
+  applicableWhen: table_present
+  fields:
+  # 表上只寫結構型式；支架位置、檢查結論要從別的文件來，不對映（判「未抽取」交人工）。
+  - path: support.type
+    columns: [结构型式]
+    parse: text
+- businessSchema: installation_connection_domains
+  domain: installationConnections
+  objectType: pipeline
+  sourceRuleIds: [R53]
+  evidence: >-
+    同一本交工資料第 14 頁「表A.0.6管道安装记录」掃描件（逆時針 90° 豎排），片段逐字：
+    序号 | 管线编号 | 管道等级 | 管道规格 | 焊接连接：转动口数 固定口数 | 法兰连接：压力等级
+    垫片材质 | 其他连接形式：机械接口 | 最大安全偏差（MIN）：坐标 标高 平直度 铅垂度 坡度；
+    兩條管線 PL-8303-100、PL-8306-100，法兰压力等级 PN16、缠绕垫片。
+  form:
+    title: 'A\.?0\.6管道安装记录'
+    rowKey: 管线编号
+    rowKeyPattern: '^[A-Z]{1,5}-?\d'
+    columns:
+    - {name: 序号, label: 序号}
+    - {name: 管线编号, label: 管线编号}
+    - {name: 管道等级, label: 管道等级}
+    - {name: 管道规格, label: 管道规格}
+    - {name: 转动口数, label: 转动口数}
+    - {name: 固定口数, label: 固定口数}
+    - {name: 法兰压力等级, label: 压力等级}
+    - {name: 垫片材质, label: 垫片材质}
+    - {name: 机械接口, label: 机械接口}
+    - {name: 坐标偏差, label: 坐标}
+    - {name: 标高偏差, label: 标高}
+    - {name: 平直度, label: 平直度}
+    - {name: 铅垂度, label: 铅垂度}
+    - {name: 坡度, label: 坡度}
+  objectIdColumns: [管线编号]
+  applicableWhen: table_present
+  fields:
+  # 法兰连接栏写了压力等级 = 有法兰接头：只用来决定法兰那几条判据适用（原文写明的值）。
+  - path: installation.flangeJointPresent
+    columns: [法兰压力等级]
+    parse: filled
+
+- businessSchema: coating_construction_domains
+  domain: coatingConstruction
+  objectType: pipeline
+  sourceRuleIds: [R44]
+  evidence: >-
+    同一本交工資料第 19 頁「管道防腐施工及验收记录」掃描件（逆時針 90° 豎排），片段逐字：
+    管线号 | 基层表面处理：处理方法 检查结果（等级） | 隔离层：名称 层数或厚度 检验结果 |
+    防腐面层：名称 层数或厚度 检验结果 | 质量评定；兩條管線 PL8303-100、PL8306-100，
+    喷砂除锈 St3.0级、环氧富锌底漆 二层/80μm、丙烯酸聚氨脂面漆 二层/80μm、合格。
+  form:
+    title: '管道防腐施工及验收记录'
+    rowKey: 管线号
+    rowKeyPattern: '^[A-Z]{1,5}-?\d'
+    columns:
+    - {name: 管线号, label: 管线号}
+    - {name: 表面处理方法, label: 处理方法}
+    - {name: 表面处理等级, label: 检查结果}
+    - {name: 隔离层名称, label: 名称, occurrence: 1}
+    - {name: 隔离层层数或厚度, label: 层数或厚度, occurrence: 1}
+    - {name: 隔离层检验结果, label: 检验结果, occurrence: 1}
+    - {name: 面层名称, label: 名称, occurrence: 2}
+    - {name: 面层层数或厚度, label: 层数或厚度, occurrence: 2}
+    - {name: 面层检验结果, label: 检验结果, occurrence: 2}
+    - {name: 质量评定, label: 质量评定}
+  objectIdColumns: [管线号]
+  applicableWhen: table_present
+  fields:
+  # 判据的「涂层类型」取防腐面层的名称（表上逐字写的面漆）；记录编号表上没有，判「未抽取」。
+  - path: coating.coatingType
+    columns: [面层名称]
+    parse: text
+
 # 設計文件的「管道特性表」：MinerU 把整頁輸出成一段文字（表名、兩層表頭、每條管線一行），
 # 由 libs/ocr/text_line_tables.py 按行重建，供 R14 管道特性與各節點的逐管線事實讀取。
 # 只收表頭逐字吻合、格數完全對上的行；葉子欄名沿用 R14 抽取已有的別名。

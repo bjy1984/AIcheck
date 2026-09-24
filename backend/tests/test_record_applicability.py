@@ -44,7 +44,8 @@ def test_a_blowing_record_is_applicable_and_reads_only_the_branches_its_medium_n
     assert results["blowingcleaning_air_pressure_not_exceeding_design"] == "not_applicable"
     assert results["blowingcleaning_steam_heat_cool_reheat_cycle"] == "not_applicable"
     assert results["blowingcleaning_chemical_waste_disposal_compliant"] == "not_applicable"
-    assert results["blowingcleaning_water_drained_after_flush"] == "evidence_insufficient"
+    # 水冲洗适用，但「冲洗后是否排净」表上没写：未抽取，交人工。
+    assert results["blowingcleaning_water_drained_after_flush_not_extracted"] == "evidence_insufficient"
 
 
 def _domains_spec():
@@ -166,3 +167,20 @@ def test_a_design_that_does_not_require_it_still_never_declares_not_applicable(p
     facts = {"r66": {"leakTestConditions": {"domains": [{"objectId": "A01-PL-02", "domain": "leakTestConditions"}]}},
              "project": {"pipelines": [{"pipelineId": "A01-PL-02", **pipeline}]}}
     assert "applicable" not in apply_record_applicability(facts)["r66"]["leakTestConditions"]["domains"][0]
+
+
+
+def test_a_check_value_the_record_cannot_carry_is_not_extracted_instead_of_failed():
+    spec = {"domains": {"d": {"requiredPaths": [], "checks": [
+        {"code": "limit", "actualPath": "m.elsewhere", "operator": "lte", "expected": 1, "standardRef": "S"},
+        {"code": "own", "actualPath": "m.written", "operator": "lte", "expected": 1, "standardRef": "S"}]}}}
+    scope = {"projectId": "P", "objectType": "pipeline", "objectId": "L1", "recordVersionId": "V"}
+    ref = {"documentVersionId": "V", "pageNo": 1, "quotedText": "L1"}
+    results = {item["code"]: item["result"] for item in evaluate_frozen_domains(
+        "t", {"projectId": "P", "scope": scope, "standardRules": spec,
+              "domains": [{**scope, "domain": "d", "applicable": True, "evidenceRefs": [ref],
+                           "extractedPaths": ["m.written"]}]},
+        rule_version="v", scope_fields=tuple(scope), version_field="recordVersionId",
+        code_prefix="t")["facts"]["processChecks"]}
+    # 表上本可带的实测值没写 → 仍按原判据；表上带不了的 → 未抽取，不是不符合。
+    assert results == {"d_limit_not_extracted": "evidence_insufficient", "d_own": "failed"}
