@@ -9,13 +9,15 @@
 - 欄位：簽名按左到右列出表頭字樣；同名的表頭（兩個「材质」）用 occurrence 指第幾個。
   任何一欄在頁上找不到表頭，整張表不重建——少一欄就可能把值放錯欄。
 - 列：只收「行鍵」欄有值且符合 rowKeyPattern 的列；表尾的簽字、日期落不進行鍵欄，
-  自然被排除。沒有行鍵的續行一律不併，寧可少讀，不把別處的字併進來。
+  自然被排除。沒有行鍵的行只在緊貼某條數據行（折行的儲存格）時併回那一行，
+  離得遠的一律不收，不把別處的字併進來。
 - 儲存格：OCR 常把相鄰兩格認成一個片段（「0.2 洁净水」「2 PL8306-100」）。片段先按
   空白與「|」切成詞，按字寬估每個詞的橫向位置，再歸到最近的表頭。
 - 引文：html 的每一格都是 OCR 原字，只做切分與拼接，不改寫、不正規化。
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -176,14 +178,27 @@ def _reconstruct(fragments: list[dict[str, Any]], title: dict[str, Any], form: d
         return None
     body_top = max(anchor["y1"] for anchor in anchors)
     key_pattern = re.compile(form["rowKeyPattern"])
-    rows, confidences, kept = [], [], []
+    keyed: list[list[dict[str, Any]]] = []
+    loose: list[list[dict[str, Any]]] = []
     for line in _rows([token for token in tokens if _middle(token) > body_top]):
+        key = " ".join(token["text"] for token in line if _nearest(anchors, token)["name"] == form["rowKey"])
+        (keyed if key_pattern.search(key) else loose).append(line)
+    # 折行的儲存格（「四区交／换站」）第二行沒有行鍵：緊貼某條數據行（間距不超過半個行高）的，
+    # 併回那一行；否則丟掉那半格會把「四区交换站」讀成「四区交」——那不是少讀，是讀錯。
+    # 離得遠的（表尾簽字、日期）照舊不收。
+    for line in loose:
+        height = max(max(token["y1"] - token["y0"] for token in line), 1.0)
+        gaps = [(max(min(item["y0"] for item in row) - max(token["y1"] for token in line),
+                      min(token["y0"] for token in line) - max(item["y1"] for item in row), 0.0), index)
+                for index, row in enumerate(keyed)]
+        gap, index = min(gaps, default=(math.inf, -1))
+        if gap <= 0.5 * height:
+            keyed[index] = [*keyed[index], *line]
+    rows, confidences, kept = [], [], []
+    for line in keyed:
         cells: dict[str, list[dict[str, Any]]] = {}
-        for token in sorted(line, key=_centre):
+        for token in sorted(line, key=lambda item: (item["y0"], _centre(item))):
             cells.setdefault(_nearest(anchors, token)["name"], []).append(token)
-        key = " ".join(token["text"] for token in cells.get(form["rowKey"], []))
-        if not key_pattern.search(key):
-            continue
         rows.append({name: " ".join(token["text"] for token in items) for name, items in cells.items()})
         kept.extend(line)
         scores = [token["confidence"] for token in line if isinstance(token["confidence"], (int, float))]
