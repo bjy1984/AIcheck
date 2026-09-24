@@ -28285,7 +28285,7 @@ def create_admin_user(
             return org_error
         user = build_admin_user_record({**body, "password": password}, org=org)
         user["authVersion"] = 1
-        user["mustChangePassword"] = False
+        user["mustChangePassword"] = password == DEFAULT_INITIAL_PASSWORD  # 预设初始密码人人可知：首次登录必须先改
         repo.state["users"].insert(0, user)
         upsert_admin_config_user(user)
         bump_singleton_revision(repo.state["admin_config"])

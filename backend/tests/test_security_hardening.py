@@ -192,7 +192,8 @@ def test_admin_user_creation_requires_strong_password() -> None:
     assert payload(response)["data"]["field"] == "password"
 
 
-def test_admin_user_creation_default_password_skips_forced_change() -> None:
+def test_admin_user_created_with_the_default_password_must_change_it_first() -> None:
+    """预设初始密码写在代码里、人人可知：这类账号首次登录必须先改密码（2026-09-24 确认）。"""
     response = client.post(
         "/api/admin/users",
         headers={"If-Match": "*", "Idempotency-Key": "default-pw-user"},
@@ -200,6 +201,18 @@ def test_admin_user_creation_default_password_skips_forced_change() -> None:
     )
     body = payload(response)
     assert body["code"] == 0
+    assert body["data"]["user"]["mustChangePassword"] is True
+
+
+def test_admin_user_created_with_an_explicit_strong_password_is_not_forced_to_change() -> None:
+    response = client.post(
+        "/api/admin/users",
+        headers={"If-Match": "*", "Idempotency-Key": "explicit-pw-user"},
+        json={"username": "explicit-pw-user", "name": "Explicit", "role": "admin",
+              "password": "Qz7!explicit-Initial-42"},
+    )
+    body = payload(response)
+    assert body["code"] == 0, body
     assert body["data"]["user"]["mustChangePassword"] is False
 
 
