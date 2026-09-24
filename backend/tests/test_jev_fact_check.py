@@ -84,7 +84,10 @@ def test_gates_and_failures_never_raise(monkeypatch):
     monkeypatch.setattr(jev_fact_check, "ask_jev",
                         lambda *_a, **_k: (_ for _ in ()).throw(ValueError("jev_request_overlong")))
     result = jev_fact_check.check_certificate_facts(_state(), _run(), _verification())
-    assert result["status"] == "request_overlong" and result["suspects"] == []
+    # 超长时退到按页提问；仍然超长的记 request_overlong，原文里根本找不到的值本地标可疑。
+    assert result["status"] == "partial"
+    assert {row["field"]: row["status"] for row in result["facts"]}["validUntil"] == "request_overlong"
+    assert all(label.endswith("（长文件中找不到这个值，未送 Jev）") for label in result["suspects"])
     monkeypatch.setattr(jev_fact_check, "ask_jev", lambda *_a, **_k: (_ for _ in ()).throw(OSError("offline")))
     assert jev_fact_check.check_certificate_facts(_state(), _run(), _verification())["status"] == "unavailable"
 
@@ -293,3 +296,40 @@ def test_conclusion_words_are_checked_and_a_bare_label_is_flagged_locally():
     items = jev_fact_check.record_fact_items(facts, _record_rules())
     assert [(item["value"], item["plausible"]) for item in items] == [("合格", True), ("Conclusion", False)]
     assert items[0]["instructions"].startswith("只看这份资料：检验结论是否写为合格？")
+
+
+def test_long_documents_are_asked_page_by_page(monkeypatch):
+    _enabled(monkeypatch)
+    state = _state()
+    pages = [{"pageNo": number, "text": f"第{number}页 施工记录正文"} for number in range(1, 9)]
+    pages[5]["text"] = "特种设备生产许可证 有效期：2024年9月7日至2028年9月6日"
+    state["ocr_parse_results"][0]["fragments"] = pages
+    monkeypatch.setattr(jev_fact_check, "approved_ocr_text", lambda *_a, **_k: ("overlong_document", ""))
+    sent = []
+    monkeypatch.setattr(jev_fact_check, "ask_jev", lambda text, questions, **_kw: sent.append(text) or {
+        key: {"type": "choice", "choice": "yes", "confidence": 0.9} for key in questions})
+    verification = _verification(valid_until="2028-09-06")
+    verification["certificates"][0].update(validFrom=None, certificateNo=None, holder=None)
+    result = jev_fact_check.check_certificate_facts(state, _run(), verification)
+    assert result["status"] == "completed" and result["suspects"] == []
+    assert len(sent) == 1 and "[第6页]" in sent[0] and "[第5页]" in sent[0] and "[第7页]" in sent[0]
+    assert "[第2页]" not in sent[0]
+    assert result["facts"][0]["pageWindow"] == [5, 6, 7]
+
+
+def test_a_single_giant_page_is_asked_on_an_excerpt_around_the_value(monkeypatch):
+    # MinerU 常把整份文件放在一个「页」里：按页也切不小，就以抽取值为中心取节选并注明。
+    _enabled(monkeypatch)
+    state = _state()
+    state["ocr_parse_results"][0]["fragments"] = [{"pageNo": 1, "text": (
+        "施工记录正文。" * 5_000 + "特种设备生产许可证 有效期：2024年9月7日至2028年9月6日" + "附录正文。" * 5_000)}]
+    monkeypatch.setattr(jev_fact_check, "approved_ocr_text", lambda *_a, **_k: ("overlong_document", ""))
+    sent = []
+    monkeypatch.setattr(jev_fact_check, "ask_jev", lambda text, questions, **_kw: sent.append(text) or {
+        key: {"type": "choice", "choice": "yes", "confidence": 0.9} for key in questions})
+    verification = _verification(valid_until="2028-09-06")
+    verification["certificates"][0].update(validFrom=None, certificateNo=None, holder=None)
+    result = jev_fact_check.check_certificate_facts(state, _run(), verification)
+    assert result["status"] == "completed"
+    assert sent[0].startswith("[第1页，节选]") and "2028年9月6日" in sent[0] and len(sent[0]) < 20_000
+    assert result["facts"][0]["excerptOnly"] is True

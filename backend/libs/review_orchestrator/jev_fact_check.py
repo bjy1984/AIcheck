@@ -24,7 +24,14 @@ from typing import Any
 from libs.jev_evaluation_input import approved_ocr_text
 from libs.review_input_data import latest_selected_parses
 from libs.review_orchestrator.certificate_facts import CERTIFICATE_NODE_PROFILES
-from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
+from libs.review_orchestrator.jev_client import (
+    MAX_ESTIMATED_INPUT_TOKENS,
+    MAX_REQUEST_CHARS,
+    MODEL,
+    ask_jev,
+    estimated_input_tokens,
+    jev_stage_enabled,
+)
 from libs.review_orchestrator.jev_usage_policy import LOW_CONFIDENCE
 
 TEMPLATE_VERSION = "jev-fact-check-v4"
@@ -324,6 +331,92 @@ def _as_written(state: dict[str, Any], review_run: dict[str, Any], versions: lis
     return item["instructions"].replace(_render(item["field"], item["value"]), matched, 1)
 
 
+def _ask_group(state: dict[str, Any], review_run: dict[str, Any], versions: list[str],
+               group: list[dict[str, Any]], rows: list[dict[str, Any]], text: str,
+               *, page_window: list[int] | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """Ask Jev one request for these facts against this text; return (status, fact rows)."""
+    questions = {f"f{index}": {"type": "choice", "instructions": _as_written(state, review_run, versions, item),
+                               "criteria": CHOICES}
+                 for index, item in enumerate(group)}
+    try:
+        answers = ask_jev(text, questions)
+    except (OSError, RuntimeError, ValueError) as exc:
+        code = "request_overlong" if str(exc) == "jev_request_overlong" else "unavailable"
+        return code, [{**row, "status": code} for row in rows]
+    output = []
+    for index, row in enumerate(rows):
+        answer = answers[f"f{index}"]
+        choice, confidence = answer["choice"], float(answer["confidence"])
+        suspect = choice == "no" and confidence >= LOW_CONFIDENCE
+        # 可疑项附上本地找到的原文位置，监检一眼能核；原文里根本找不到这个值本身就是线索。
+        located = locate_value(state, review_run, versions, row["field"], row["value"]) if suspect else None
+        where = (f"（原文第{located['pageNo']}页：「{located['quote']}」）" if located
+                 else "（原文中找不到这个值）") if suspect else ""
+        output.append({**row, "status": "completed", "choice": choice, "confidence": confidence,
+                       "suspect": suspect, "lowConfidence": confidence < LOW_CONFIDENCE,
+                       **({"pageWindow": page_window} if page_window else {}),
+                       **({"located": located} if located else {}),
+                       **({"suspectLabel": row["suspectLabel"] + where} if suspect else {})})
+    return "completed", output
+
+
+# 按页送时留出题目与选项的余量；单页仍超就以抽取值为中心各取这么多字。
+_WINDOW_TOKEN_BUDGET = MAX_ESTIMATED_INPUT_TOKENS - 4_000
+_WINDOW_CHAR_BUDGET = MAX_REQUEST_CHARS - 6_000
+_EXCERPT_CHARS = 8_000
+
+
+def _ask_page_windows(state: dict[str, Any], review_run: dict[str, Any], versions: list[str],
+                      group: list[dict[str, Any]], rows: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """Ask about each fact against only the page it is written on and the pages either side.
+
+    A fact whose value is written nowhere in a long document is not sent; that alone
+    marks it suspect. Every answer records which pages it was judged on.
+    """
+    parses = latest_selected_parses(state, {**review_run, "inputDocumentVersionIds": versions}, set(versions))
+    windows: dict[tuple[str, tuple[int, ...]], list[int]] = {}
+    output: list[dict[str, Any]] = []
+    for index, (item, row) in enumerate(zip(group, rows, strict=True)):
+        located = locate_value(state, review_run, versions, item["field"], item["value"])
+        page = (located or {}).get("pageNo")
+        if not located or not isinstance(page, int):
+            output.append({**row, "status": "not_found_in_long_document", "suspect": True,
+                           "suspectLabel": row["suspectLabel"] + "（长文件中找不到这个值，未送 Jev）"})
+            continue
+        windows.setdefault((located["documentVersionId"], (page - 1, page, page + 1)), []).append(index)
+    statuses = {"completed"} if output else set()
+    for (version, pages), indexes in sorted(windows.items()):
+        fragments = [fragment for fragment in (parses.get(version) or {}).get("fragments") or []
+                     if isinstance(fragment, dict) and fragment.get("pageNo") in pages]
+        text = "\n".join(f"[第{fragment.get('pageNo')}页]\n{str(fragment.get('text') or '').strip()}"
+                         for fragment in fragments if str(fragment.get("text") or "").strip())
+        page_window = sorted({page for page in pages if page > 0})
+        # 字符与 token 两道上限都要看：HTML 表格字符多、token 少，只看 token 会超字符上限。
+        if len(text) <= _WINDOW_CHAR_BUDGET and estimated_input_tokens(text) <= _WINDOW_TOKEN_BUDGET:
+            status, answered = _ask_group(state, review_run, versions, [group[i] for i in indexes],
+                                          [rows[i] for i in indexes], text, page_window=page_window)
+            statuses.add(status)
+            output.extend(answered)
+            continue
+        # 整份文件只有一个「页」（MinerU 常这样）时按页也切不小：以抽取值为中心各取一段节选，答案注明是节选。
+        body = re.sub(r"\s+", "", text)
+        for index in indexes:
+            item = group[index]
+            located = locate_value(state, review_run, versions, item["field"], item["value"]) or {}
+            at = body.find(str(located.get("matched") or ""))
+            excerpt = body[max(at - _EXCERPT_CHARS, 0): at + _EXCERPT_CHARS] if at >= 0 else ""
+            if not excerpt:
+                output.append({**rows[index], "status": "request_overlong"})
+                statuses.add("request_overlong")
+                continue
+            status, answered = _ask_group(state, review_run, versions, [item], [rows[index]],
+                                          f"[第{located.get('pageNo')}页，节选]\n{excerpt}", page_window=page_window)
+            statuses.add(status)
+            output.extend({**row, "excerptOnly": True} for row in answered)
+    return ("completed" if statuses == {"completed"} else "partial" if "completed" in statuses
+            else min(statuses) if statuses else "not_found_in_long_document"), output
+
+
 def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
     """Ask Jev whether each fact is what the source documents state; mark confident "no" as suspect."""
     base: dict[str, Any] = {"model": MODEL, "templateVersion": TEMPLATE_VERSION, "facts": []}
@@ -350,33 +443,15 @@ def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[d
         status, text = approved_ocr_text(state, {**review_run, "inputDocumentVersionIds": versions})
         rows = [{key: item[key] for key in ("atomicCheckId", "certificateLabel", "field", "value", "suspectLabel")
                  if key in item} | {"documentVersionId": group_key} for item in group]
-        if status != "ready":
-            statuses.add(status)
-            facts.extend({**row, "status": status} for row in rows)
-            continue
-        questions = {f"f{index}": {"type": "choice", "instructions": _as_written(state, review_run, versions, item),
-                                   "criteria": CHOICES}
-                     for index, item in enumerate(group)}
-        try:
-            answers = ask_jev(text, questions)
-        except (OSError, RuntimeError, ValueError) as exc:
-            code = "request_overlong" if str(exc) == "jev_request_overlong" else "unavailable"
-            statuses.add(code)
-            facts.extend({**row, "status": code} for row in rows)
-            continue
-        statuses.add("completed")
-        for index, row in enumerate(rows):
-            answer = answers[f"f{index}"]
-            choice, confidence = answer["choice"], float(answer["confidence"])
-            suspect = choice == "no" and confidence >= LOW_CONFIDENCE
-            # 可疑项附上本地找到的原文位置，监检一眼能核；原文里根本找不到这个值本身就是线索。
-            located = locate_value(state, review_run, versions, row["field"], row["value"]) if suspect else None
-            where = (f"（原文第{located['pageNo']}页：「{located['quote']}」）" if located
-                     else "（原文中找不到这个值）") if suspect else ""
-            facts.append({**row, "status": "completed", "choice": choice, "confidence": confidence,
-                          "suspect": suspect, "lowConfidence": confidence < LOW_CONFIDENCE,
-                          **({"located": located} if located else {}),
-                          **({"suspectLabel": row["suspectLabel"] + where} if suspect else {})})
+        if status == "ready":
+            status, answered = _ask_group(state, review_run, versions, group, rows, text)
+        else:
+            answered = [{**row, "status": status} for row in rows]
+        if status in {"overlong_document", "request_overlong"}:
+            # 整份太长：只送抽取值所在那一页和前后各一页（资格合订本、施工记录常有几十页）。
+            status, answered = _ask_page_windows(state, review_run, versions, group, rows)
+        statuses.add(status)
+        facts.extend(answered)
     questions_hash = hashlib.sha256(json.dumps(
         {key: [item["instructions"] for item in group] for key, group in sorted(grouped.items())},
         ensure_ascii=False, sort_keys=True).encode()).hexdigest()

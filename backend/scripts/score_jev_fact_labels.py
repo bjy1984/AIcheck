@@ -113,7 +113,7 @@ def collect_jev(key: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, dict
         # 本地直接标记的条目排在前面，顺序与输入不同：按条目编号（放在 atomicCheckId 里）对回去。
         for fact in outcome.get("facts") or []:
             answers[str(fact.get("atomicCheckId"))] = {name: fact.get(name) for name in (
-                "status", "choice", "confidence", "suspect", "lowConfidence")}
+                "status", "choice", "confidence", "suspect", "lowConfidence", "pageWindow", "excerptOnly")}
     print()
     return answers
 
