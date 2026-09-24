@@ -40,3 +40,7 @@ VITE_USE_ONLINE_ICON=false
 
 # 是否隐藏全局设置按钮
 VITE_HIDE_GLOBAL_SETTING=false
+
+# Lab 工位工具区（选文件、工程规则、交接、审查对象）。后端另有同名能力开关与权限校验，
+# 这个开关只决定界面是否渲染。关掉后重新构建即可回退。
+VITE_AICHECK_WORKSTATIONS_ENABLED=true
