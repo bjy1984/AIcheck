@@ -112,6 +112,16 @@ def record_failure(host: str, exc: Exception) -> None:
     threshold = _int_env("AICHECK_LLM_BREAKER_THRESHOLD", 5)
     window = _int_env("AICHECK_LLM_BREAKER_WINDOW_SECONDS", 120)
     cooldown = _int_env("AICHECK_LLM_BREAKER_COOLDOWN_SECONDS", 60)
+    if getattr(exc, "status_code", None) == 402:
+        # 欠费不会一分钟后自己好：一次就熔断、冷却拉长。否则每个分片都先撞一次 402，
+        # 2026-09-24 灰度里 DeepSeek 备胎 15 分钟被打了 5 次 402，全部白等。
+        payment_cooldown = _int_env("AICHECK_LLM_BREAKER_PAYMENT_COOLDOWN_SECONDS", 1800)
+        try:
+            client.set(f"llm:breaker:{host}:open", "1", ex=payment_cooldown)
+            LOGGER.warning("LLM 断路器熔断：%s 返回 402（余额不足），冷却 %ss", host, payment_cooldown)
+        except Exception:  # noqa: BLE001 -- optional Redis breaker failure must not replace the model request outcome
+            return
+        return
     try:
         key = f"llm:breaker:{host}:failures"
         count = client.incr(key)

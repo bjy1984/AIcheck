@@ -46,6 +46,7 @@ from apps.api.review_input_selection import (
     selected_input_evidence_links,
 )
 from apps.api.review_session_evidence import refresh_review_session_evidence_fingerprint
+from apps.api.review_session_follow import follow_new_review_run
 from apps.api.rule_mutation_validation import rule_project_mutation_error
 from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
 from apps.api.upload_session_workflow import (
@@ -9561,8 +9562,8 @@ def ai_recheck(
         if dispatch.get("workflowId"):
             run["workflowId"] = dispatch.get("workflowId")
         review_run_id = str(run.get("reviewRunId") or "")
-        if review_run_id:
-            request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+        if review_run_id:  # 工作区跟到刚发起的运行，见 review_session_follow
+            request.state.scoped_flush_records = follow_new_review_run(active_review_session(request, project_id, node_id), review_run_id)
         return ok(
             {
                 "runId": run_id,

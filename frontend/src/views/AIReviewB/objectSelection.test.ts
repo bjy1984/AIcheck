@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
-import { objectCandidateLabel, runObjectCandidates, selectionWithObject } from './objectSelection'
+import {
+  objectCandidateLabel,
+  runObjectCandidates,
+  runReviewedObjectIds,
+  selectionWithObject
+} from './objectSelection'
 import { documentSelectionPayload } from './documentPageSelection'
 
 const candidates = [
@@ -9,6 +14,9 @@ const candidates = [
 ]
 assert.deepEqual(runObjectCandidates({ objectCandidates: candidates }), candidates)
 assert.deepEqual(runObjectCandidates(null), [])
+assert.deepEqual(runReviewedObjectIds({ selectedObjectIds: ['PL8303-100'] }), ['PL8303-100'])
+assert.deepEqual(runReviewedObjectIds({ selectedObjectIds: [''] }), [])
+assert.deepEqual(runReviewedObjectIds(undefined), [])
 assert.equal(objectCandidateLabel(candidates[0]), 'PL8303-100（第 16 页）')
 assert.equal(objectCandidateLabel(candidates[1]), 'PL8306-100')
 

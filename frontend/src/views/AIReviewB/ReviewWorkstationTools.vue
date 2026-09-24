@@ -19,6 +19,8 @@ const props = defineProps<{
   selection: ReviewDocumentSelection | null
   /** 上次审查发现记录表有多个对象时的候选 */
   objectCandidates?: ReviewObjectCandidate[]
+  /** 当前显示的这次结果只审了哪些对象 */
+  reviewedObjectIds?: string[]
   documentsDisabled: boolean
 }>()
 const emit = defineEmits<{
@@ -93,6 +95,9 @@ const chooseObject = (objectId: string) => {
         @click="emit('change', { ...selection, conditionObjectMapping: undefined })"
         >移除对象选择</ElButton
       >
+    </p>
+    <p v-if="reviewedObjectIds?.length" role="status" class="workstation-tools__hint">
+      当前结果只审了对象：{{ reviewedObjectIds.join('、') }}。记录表上的其他对象需另行选择后发起。
     </p>
     <div
       v-if="(objectCandidates?.length || 0) > 1 && !selection?.selectedObjectIds?.length"

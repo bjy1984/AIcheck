@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -207,6 +209,20 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
 def qwen_runtime_config(path: Path | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
     source = env if env is not None else os.environ
     config = load_qwen_runtime_config(path or CONFIG_PATH)
@@ -372,12 +388,33 @@ class QwenRuntimeClient:
         host = llm_circuit_breaker.breaker_host(self.config)
         try:
             llm_circuit_breaker.ensure_closed(host)
-            result = self._chat_sync_dispatch(messages, model=model, **kwargs)
+            result = self._dispatch_with_rate_limit_retry(messages, model, **kwargs)
         except Exception as exc:  # noqa: BLE001 -- model boundary records breaker failure before explicit failover
             llm_circuit_breaker.record_failure(host, exc)
             return self._failover_chat_sync(messages, model, exc, **kwargs)
         llm_circuit_breaker.record_success(host)
         return result
+
+    def _dispatch_with_rate_limit_retry(self, messages: list[dict[str, Any]], model: str, **kwargs: Any) -> dict[str, Any]:
+        """429 是限流，等一会儿就能过：先在主供应商上退避重试，再谈转移。
+
+        2026-09-24 灰度：Token Plan 按分钟限流，一次 429 就转去备胎，备胎欠费 402，
+        一次复核 30 个证据分片落空、节点 review_incomplete。重试期间不计熔断——
+        否则重试本身就把主供应商熔断，所有调用都被推给备胎。
+        429 发生在响应开始之前，串流还没吐字，重试不会重复输出。
+        """
+        retries = max(0, _int_env("AICHECK_LLM_RATE_LIMIT_RETRIES", 3))
+        base_delay = max(0.0, _float_env("AICHECK_LLM_RATE_LIMIT_BACKOFF_SECONDS", 5.0))
+        for attempt in range(retries + 1):
+            try:
+                return self._chat_sync_dispatch(messages, model=model, **kwargs)
+            except IntegrationServiceError as exc:
+                if exc.status_code != 429 or attempt >= retries:
+                    raise
+                delay = min(60.0, base_delay * (2**attempt)) * random.uniform(0.8, 1.2)
+                LOGGER.warning("LLM 限流（429），%.1fs 后第 %s 次重试（role=%s）", delay, attempt + 1, model)
+                time.sleep(delay)
+        raise AssertionError("unreachable")
 
     def _failover_chat_sync(
         self, messages: list[dict[str, Any]], model: str, primary_exc: Exception, **kwargs: Any
@@ -400,7 +437,12 @@ class QwenRuntimeClient:
         if not fallback:
             raise primary_exc
         fallback_host = str(fallback["baseUrl"]).split("//", 1)[-1].split("/", 1)[0].split(":", 1)[0]
-        llm_circuit_breaker.ensure_closed(fallback_host)  # 备胎也熔断 → 快速失败
+        try:
+            llm_circuit_breaker.ensure_closed(fallback_host)  # 备胎也熔断 → 快速失败
+        except IntegrationServiceError:
+            # 报主供应商的真实原因（限流/5xx），不报「备胎熔断」——后者让人去查错地方。
+            LOGGER.warning("备用供应商 %s 熔断中，不转移；按主供应商原错误失败", fallback["label"])
+            raise primary_exc from None
         LOGGER.warning(
             "LLM 主供应商故障（%s），降级到备用供应商 %s（role=%s）",
             primary_exc,
@@ -413,6 +455,9 @@ class QwenRuntimeClient:
             )
         except Exception as fallback_exc:
             llm_circuit_breaker.record_failure(fallback_host, fallback_exc)
+            if getattr(fallback_exc, "status_code", None) == 402:
+                LOGGER.warning("备用供应商 %s 余额不足（402），按主供应商原错误失败", fallback["label"])
+                raise primary_exc from fallback_exc
             raise
         llm_circuit_breaker.record_success(fallback_host)
         result["providerFailover"] = {
