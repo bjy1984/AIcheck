@@ -203,7 +203,6 @@ type TableSortState = {
 type TableState = PaginationState & TableSortState
 
 const DEFAULT_PIPELINE_BUSINESS_PACK_ID = 'engineering_inspection_v1'
-const DEFAULT_INITIAL_PASSWORD = 'anyuekeji.123'
 const PIPELINE_TYPE_ORDER = ['GA类', 'GB类', 'GC类']
 
 const createPagination = (pageSize = 10): PaginationState => ({
@@ -2417,7 +2416,8 @@ const openUserDialog = (row?: AdminUser) => {
     userForm.status = row.status
     userForm.etag = row.etag || ''
   } else {
-    userForm.password = DEFAULT_INITIAL_PASSWORD
+    // 预设初始密码只留在后端；这里留空，不把它打包进前端、也不明文显示。
+    userForm.password = ''
   }
   userDialogVisible.value = true
 }
@@ -2438,10 +2438,8 @@ const handleSaveUser = async () => {
     ElMessage.warning('该角色必须绑定组织')
     return
   }
-  const initialPassword =
-    userDialogMode.value === 'create'
-      ? userForm.password.trim() || DEFAULT_INITIAL_PASSWORD
-      : userForm.password.trim()
+  // 新增时留空：后端用预设初始密码建账号，并要求首次登录先改密。
+  const initialPassword = userForm.password.trim()
   if (initialPassword) {
     const classes = [
       /[a-z]/.test(initialPassword),
@@ -2470,7 +2468,7 @@ const handleSaveUser = async () => {
       orgName: org?.name,
       isOrgLeader: userForm.isOrgLeader,
       status: userForm.status,
-      password: userDialogMode.value === 'create' ? initialPassword : initialPassword || undefined
+      password: initialPassword || undefined
     }
     const res =
       userDialogMode.value === 'create'
@@ -5692,7 +5690,7 @@ onMounted(() => {
               autocomplete="new-password"
               :placeholder="
                 userDialogMode === 'create'
-                  ? `默认 ${DEFAULT_INITIAL_PASSWORD}；可修改`
+                  ? '留空则使用系统默认初始密码，用户首次登录须改密'
                   : '留空则不修改；填写后用户须首次改密'
               "
             />
