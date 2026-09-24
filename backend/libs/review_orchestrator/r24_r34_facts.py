@@ -12,7 +12,6 @@ from libs.ocr.welder_certificate_tool import (
     welder_certificate_ocr_tables,
 )
 from libs.review_input_data import latest_usable_selected_parses
-from libs.review_orchestrator.jev_tables import business_rows
 from libs.review_orchestrator.material_facts import (
     build_material_judgment,
     deduplicate,
@@ -26,6 +25,7 @@ from libs.review_orchestrator.r13_facts import (
     _value,
     is_placeholder,
 )
+from libs.review_orchestrator.table_rows import business_rows
 
 NODE_CONFIG: dict[str, dict[str, tuple[str, ...]]] = {
     "r24": {"certificates": ("welder_certificate",), "workItems": ("welding_record",)},

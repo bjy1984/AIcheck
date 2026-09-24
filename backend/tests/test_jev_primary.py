@@ -5,6 +5,7 @@ from copy import deepcopy
 from subprocess import CompletedProcess
 
 from libs.review_orchestrator import execution, jev_primary, output_contract
+from libs.review_plugins import jev as jev_plugin
 from scripts import run_jev_primary_lab_case
 
 
@@ -251,8 +252,9 @@ def test_graph_requires_qwen_step_before_jev_step(monkeypatch):
         return {"status": "completed", "atomic": [{"atomicCheckId": "AC-1",
                 "choice": "passed", "confidence": 0.8}], "ruleOwnedAtomicCheckIds": []}
 
-    monkeypatch.setattr(execution, "author_node_questions", author)
-    monkeypatch.setattr(execution, "decide_node", decide)
+    monkeypatch.setattr(jev_plugin, "author_node_questions", author)
+    monkeypatch.setattr(jev_plugin, "decide_node", decide)
+    run["reviewPluginSnapshot"] = {"jev": {"enabled": True, "source": "project_setting"}}
     execution.run_step(run, "qwen_compose_jev_questions", context)
     execution.run_step(run, "jev_decision", context)
     assert events == ["qwen", "jev"]

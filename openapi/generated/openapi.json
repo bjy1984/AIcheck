@@ -26640,6 +26640,102 @@
         "summary": "Verify Handoff"
       }
     },
+    "/api/projects/{project_id}/review-plugins": {
+      "put": {
+        "operationId": "update_project_review_plugins_api_projects__project_id__review_plugins_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Project Review Plugins"
+      }
+    },
     "/api/projects/{project_id}/review-runs/{run_id}/handoff-dependencies": {
       "get": {
         "operationId": "get_handoff_dependencies_api_projects__project_id__review_runs__run_id__handoff_dependencies_get",
@@ -28327,6 +28423,23 @@
           }
         },
         "summary": "Submit Registration"
+      }
+    },
+    "/api/review-plugins": {
+      "get": {
+        "description": "可選的審查插件，以及本部署能不能用（只有布林值，不含金鑰或內部設定）。",
+        "operationId": "list_review_plugins_api_review_plugins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Review Plugins"
       }
     },
     "/api/review-runs/{review_run_id}": {
@@ -50826,6 +50939,102 @@
         "summary": "Verify Handoff"
       }
     },
+    "/projects/{project_id}/review-plugins": {
+      "put": {
+        "operationId": "update_project_review_plugins_projects__project_id__review_plugins_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Project Review Plugins"
+      }
+    },
     "/projects/{project_id}/review-runs/{run_id}/handoff-dependencies": {
       "get": {
         "operationId": "get_handoff_dependencies_projects__project_id__review_runs__run_id__handoff_dependencies_get",
@@ -52513,6 +52722,23 @@
           }
         },
         "summary": "Submit Registration"
+      }
+    },
+    "/review-plugins": {
+      "get": {
+        "description": "可選的審查插件，以及本部署能不能用（只有布林值，不含金鑰或內部設定）。",
+        "operationId": "list_review_plugins_review_plugins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Review Plugins"
       }
     },
     "/review-runs/{review_run_id}": {

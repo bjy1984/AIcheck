@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from collections import defaultdict
 from copy import deepcopy
@@ -30,6 +29,7 @@ from libs.review_orchestrator.jev_client import (
 )
 from libs.review_orchestrator.jev_usage_policy import semantic_opinion_allowed
 from libs.review_orchestrator.r19_agent import r19_semantic_questions
+from libs.review_plugins.settings import run_plugin_enabled
 from libs.review_tools.executor import aggregate_atomic_results
 
 _EVIDENCE_GATE_TOOLS = frozenset({"locate_evidence_fragment", "validate_evidence_grounding",
@@ -110,9 +110,8 @@ def _node_inputs(state: dict[str, Any], run: dict[str, Any],
         return {"status": "disabled"}
     if str(run.get("reviewMode") or "formal") != "formal" or run.get("advisoryOnly"):
         return {"status": "nonformal_run"}
-    allowed_projects = {item.strip() for item in os.getenv("AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS", "").split(",")
-                        if item.strip()}
-    if str(run.get("projectId") or "") not in allowed_projects:
+    # 这次审查选用了 Jev 插件（建立时冻结）才外发；没有快照的旧审查沿用原白名单。
+    if not run_plugin_enabled(run, "jev"):
         return {"status": "project_not_approved_for_jev"}
     node_id = int(run.get("nodeId") or 0)
     current = _atomic_results(rule_results)

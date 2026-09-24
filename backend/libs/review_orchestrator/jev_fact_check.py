@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from datetime import date
 from typing import Any
@@ -33,6 +32,7 @@ from libs.review_orchestrator.jev_client import (
     jev_stage_enabled,
 )
 from libs.review_orchestrator.jev_usage_policy import LOW_CONFIDENCE
+from libs.review_plugins.settings import run_plugin_enabled
 
 TEMPLATE_VERSION = "jev-fact-check-v4"
 CHOICES = {
@@ -432,9 +432,8 @@ def check_facts(state: dict[str, Any], review_run: dict[str, Any], items: list[d
         return {**base, "status": "disabled"}
     if str(review_run.get("reviewMode") or "formal") != "formal" or review_run.get("advisoryOnly"):
         return {**base, "status": "nonformal_run"}
-    allowed = {item.strip() for item in os.getenv("AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS", "").split(",")
-               if item.strip()}
-    if str(review_run.get("projectId") or "") not in allowed:
+    # 这次审查选用了 Jev 插件（建立时冻结）才外发；没有快照的旧审查沿用原白名单。
+    if not run_plugin_enabled(review_run, "jev"):
         return {**base, "status": "project_not_approved_for_jev"}
     # 一眼就不像单一字段的抽取值（整张表、多行正文）本地直接标可疑，不用问 Jev。
     local = [{key: item[key] for key in ("atomicCheckId", "certificateLabel", "field", "value") if key in item}

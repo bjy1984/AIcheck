@@ -21,6 +21,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("PUT", r"/projects/[^/]+$", "admin:config"),
     ("DELETE", r"/projects/[^/]+$", "admin:config"),
     ("POST", r"/projects/[^/]+/business-pack/apply$", "admin:config"),
+    # 审查插件（Jev 等）按工程开关：涉及资料外发，只归系统配置权限。
+    ("PUT", r"/projects/[^/]+/review-plugins$", "admin:config"),
     ("POST", r"/projects/[^/]+/participants$", "admin:config"),
     ("PATCH", r"/projects/[^/]+/participants/[^/]+$", "admin:config"),
     ("POST", r"/projects/[^/]+/members$", "project:authorize-member"),
