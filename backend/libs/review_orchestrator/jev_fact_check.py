@@ -234,6 +234,8 @@ RECORD_FACT_FIELDS: tuple[tuple[str, str], ...] = (
     # 焊接工艺与施工记录（R25–R34）：工艺文件编号、母材与焊材。
     ("wpsNo", "焊接工艺规程（WPS）编号"), ("pqrNo", "焊接工艺评定（PQR）编号"),
     ("materialGrade", "母材牌号"), ("fillerMetal", "焊接材料"),
+    # 「合格」「无泄漏」这类结论字直接决定判定（正则盘点里最多的一类），核对它确实写在这份资料上。
+    ("conclusion", "检验结论"),
 )
 # 焊工证（r24/r29 的 certificates）由 welder_fact_items 按人核对，这里不重复。
 _RECORD_NODES = frozenset({*(f"r{number}" for number in range(12, 24)), *(f"r{number}" for number in range(25, 35))})
@@ -241,9 +243,14 @@ _SKIPPED_COLLECTIONS = frozenset({("r29", "certificates")})
 _MAX_FIELD_CHARS = 60
 
 
+# 值就是栏目名本身（本地快照 R16：检验结论＝「Conclusion」）。
+_LABEL_ONLY_VALUES = frozenset({"conclusion", "remarks", "result", "结论", "检验结论", "试验结论", "备注", "结果"})
+
+
 def _plausible_field_value(value: str) -> bool:
-    """一个字段值不该是一段表格或多行正文。"""
+    """一个字段值不该是一段表格、多行正文或栏目名本身。"""
     return (0 < len(value) <= _MAX_FIELD_CHARS and "\n" not in value and "|" not in value
+            and value.strip().strip(":：").lower() not in _LABEL_ONLY_VALUES
             and not re.search(r"</?\w+[^>]*>", value) and len(re.findall(r"编号|名称|规格|材质", value)) < 2)
 
 

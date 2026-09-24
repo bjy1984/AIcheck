@@ -284,3 +284,12 @@ def test_a_number_field_without_digits_is_flagged_locally():
              "r29": {"certificates": [{"documentVersionId": "V1", "certificateNo": "X"}]}}
     items = jev_fact_check.record_fact_items(facts, _record_rules())
     assert [(item["field"], item["plausible"]) for item in items] == [("wpsNo", True), ("pqrNo", False)]
+
+
+def test_conclusion_words_are_checked_and_a_bare_label_is_flagged_locally():
+    facts = {"r16": {"qualityCertificates": [
+        {"documentVersionId": "V1", "conclusion": "合格"},
+        {"documentVersionId": "V2", "conclusion": "Conclusion"}]}}
+    items = jev_fact_check.record_fact_items(facts, _record_rules())
+    assert [(item["value"], item["plausible"]) for item in items] == [("合格", True), ("Conclusion", False)]
+    assert items[0]["instructions"].startswith("只看这份资料：检验结论是否写为合格？")
