@@ -294,7 +294,13 @@ def _extract_records(
     signatures = _signature_facts(parse_result)
     table_test_items, table_test_results = _test_facts(parse_result)
     for index, row in enumerate(source_records, 1):
-        merged = {**common, **_normalized_business_row(row)}
+        row_values = _normalized_business_row(row)
+        merged = {**common, **row_values}
+
+        def row_first(*keys: str, _row: dict[str, Any] = row_values, _merged: dict[str, Any] = merged) -> Any:
+            # 同一概念表格行上有值就用行上的：文档级的值属于整份资料，行上的才是这一条。
+            return _value(_row, *keys) or _value(_merged, *keys)
+
         trace_key = {
             "documentVersionId": common["documentVersionId"],
             "recordKind": record_kind,
@@ -321,18 +327,19 @@ def _extract_records(
             "certificateId": record_id if record_kind == "quality_certificate" else None,
             "reportId": record_id if "retest" in record_kind or "ndt" in record_kind else None,
             "recordKind": record_kind,
-            "certificateNo": _value(merged, "certificateNo", "certificate_no", "qualityCertificateNo", "证书编号", "质保书编号"),
+            "certificateNo": row_first("certificateNo", "certificate_no", "qualityCertificateNo", "证书编号", "质保书编号",
+                                       "产品质量证明书编号", "质量证明书编号"),
             "recordNo": _value(merged, "recordNo", "record_no", "验收记录编号", "见证记录编号"),
-            "reportNo": _value(merged, "reportNo", "report_no", "报告编号", "复验报告编号", "检测报告编号"),
-            "manufacturerName": _value(merged, "manufacturerName", "manufacturer", "制造单位", "生产单位"),
+            "reportNo": row_first("reportNo", "report_no", "报告编号", "复验报告编号", "检测报告编号"),
+            "manufacturerName": row_first("manufacturerName", "manufacturer", "制造单位", "生产单位", "生产厂家", "厂家"),
             "dealerName": _value(merged, "dealerName", "businessOperator", "经营单位", "供货单位", "经销单位"),
-            "productName": _value(merged, "productName", "product_name", "componentType", "产品名称", "元件名称", "品名"),
-            "componentType": _value(merged, "componentType", "productName", "元件类型", "产品名称"),
-            "specification": _value(merged, "specification", "规格", "规格型号", "型号"),
-            "materialGrade": _value(merged, "materialGrade", "material", "grade", "材质", "材料牌号", "牌号"),
+            "productName": row_first("productName", "product_name", "componentType", "产品名称", "元件名称", "品名"),
+            "componentType": row_first("componentType", "productName", "元件类型", "产品名称", "元件名称"),
+            "specification": row_first("specification", "规格", "规格型号", "型号", "规格/炉批号"),
+            "materialGrade": row_first("materialGrade", "material", "grade", "材质", "材料牌号", "牌号", "材质/标准"),
             "standardRef": _value(merged, "standardRef", "standardNo", "acceptanceStandard", "执行标准", "标准号", "验收标准"),
             "deliveryCondition": _value(merged, "deliveryCondition", "supplyCondition", "交货状态", "供货状态"),
-            "batchNo": _value(merged, "batchNo", "batch_no", "lotNo", "批号", "批次号", "炉批号"),
+            "batchNo": row_first("batchNo", "batch_no", "lotNo", "批号", "批次号", "炉批号"),
             "heatNo": _value(merged, "heatNo", "heat_no", "炉号"),
             "serialNo": _value(merged, "serialNo", "serial_no", "产品编号", "出厂编号"),
             "sampleNo": _value(merged, "sampleNo", "sample_no", "样品编号", "试样编号"),

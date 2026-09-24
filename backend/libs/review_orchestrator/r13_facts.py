@@ -198,6 +198,45 @@ def _extract_type_test_reports(state: dict[str, Any], parse_result: dict[str, An
     return output
 
 
+# 文档级「身份」字段不该是表头或整张表：按标签截文字时，表头那一行「证书编号」后面
+# 截到的是其余栏目名（2026-09-23 本地快照 R16：证书编号＝「监督检验证书编号 产品质量证明书编号」，
+# 生产厂家＝整张核查记录表），合并时还会压过表格行里正确的值。
+_IDENTITY_KEYS = frozenset({
+    "certificateNo", "certificate_no", "reportNo", "report_no", "productName", "product_name", "componentType",
+    "manufacturerName", "manufacturer", "testOrganization", "batchNo", "batch_no", "serialNo", "specification",
+    "specificationScope", "materialGrade", "material",
+})
+_COLUMN_WORDS = re.compile(r"编号|名称|规格|材质|厂家|批号|标准")
+_MARKUP = re.compile(r"</?\w+[^>]*>")
+
+
+_NUMBER_KEYS = frozenset({"certificateNo", "certificate_no", "reportNo", "report_no", "batchNo", "batch_no", "serialNo"})
+
+
+def _first_cell(value: Any, *, number: bool) -> str | None:
+    """HTML 表格片段里常藏着真值（「</td><td>ST2026051706G002</td>…」）：取第一个非空单元格。
+
+    只救编号类（要带数字、只含编号字符）：名称类分不清是值还是栏目名（「公称压力」），宁可不要。
+    """
+    text = str(value or "")
+    if not number or not _MARKUP.search(text):
+        return None
+    cells = [cell.strip() for cell in _MARKUP.split(text) if cell.strip()]
+    first = cells[0] if cells else ""
+    if not first or len(first) > 60 or _COLUMN_WORDS.search(first):
+        return None
+    return first if re.search(r"\d", first) and re.fullmatch(r"[A-Za-z0-9\-—/.]+", first) else None
+
+
+_OTHER_PARTY = re.compile(r"(?:需方|收货|订货|购货|使用|建设|施工|监理|检验|检测)(?:单位|方)?\s*[:：]")
+_MANUFACTURER_KEYS = frozenset({"manufacturerName", "manufacturer"})
+
+
+def _looks_like_table_text(value: Any) -> bool:
+    text = str(value or "")
+    return bool(_MARKUP.search(text)) or len(_COLUMN_WORDS.findall(text)) >= 2
+
+
 def _common_document_fields(
     state: dict[str, Any],
     parse_result: dict[str, Any],
@@ -234,6 +273,15 @@ def _common_document_fields(
     ):
         if not _value(common, labels[-1]):
             common[labels[-1]] = _labeled_value(text, labels[:-1])
+    for key in [key for key in common if key in _IDENTITY_KEYS and _looks_like_table_text(common[key])]:
+        salvaged = _first_cell(common[key], number=key in _NUMBER_KEYS)
+        if salvaged:
+            common[key] = salvaged
+        else:
+            common.pop(key)
+    # 已落库的旧 OCR 字段里，「生产厂家」有时是需方单位这类别的当事方。
+    for key in [key for key in common if key in _MANUFACTURER_KEYS and _OTHER_PARTY.search(str(common[key]))]:
+        common.pop(key)
     return common, items
 
 
@@ -420,9 +468,12 @@ def _present(value: Any) -> bool:
 def _labeled_value(text: str, labels: tuple[str, ...]) -> str | None:
     for line in text.splitlines():
         for label in labels:
-            if label not in line:
+            # 标签后面要跟冒号、空白、括号或「名称」；「制造单位有责任保证…」是句子，不是标签。
+            if not re.search(rf"{re.escape(label)}(?=\s|[：:（(]|名称|全称)", line):
                 continue
             value = re.sub(rf"^.*?{re.escape(label)}\s*[：:]?\s*", "", line).strip()
+            # 「产品名称（品种） 无缝钢管」「制造单位名称 某公司」：标签后面的限定词和「名称」也是标签。
+            value = re.sub(r"^(?:[（(][^）)]{1,6}[）)]|名称|全称)\s*[：:]?\s*", "", value).strip()
             if value and value != line.strip():
                 return value[:1000]
     return None
