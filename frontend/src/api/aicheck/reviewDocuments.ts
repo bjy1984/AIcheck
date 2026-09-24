@@ -10,6 +10,10 @@ export type ReviewDocument = DocumentAsset & {
     model: string
     documentVersionId: string
     nodeScores?: Array<{ nodeId: number; choice: 'yes' | 'no' | 'uncertain'; confidence: number }>
+    /** 后端认可的建议：选「是」、把握值够，且没被监检员否决过 */
+    suggestedNodeIds?: number[]
+    /** 监检员已判定不属于的节点：原始分数只留作审计，不再提示 */
+    humanRejectedNodeIds?: number[]
   }
 }
 
