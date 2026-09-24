@@ -85,28 +85,6 @@ def test_部署脚本用的是仓库里的这份生成器():
     assert "cp deploy/build_runtime_env.py" in script
 
 
-def test_备用供应商是DeepSeek且模型名显式覆盖(tmp_path: pathlib.Path):
-    """通义故障时切 DeepSeek；模型名不覆盖的话备胎会拿通义默认值去打 DeepSeek，直接 400。"""
-    env = _build(
-        tmp_path,
-        {
-            "AICHECK_POSTGRES_PASSWORD": "pw",
-            "DEEPSEEK_API_KEY": "sk-deepseek",
-            "AICHECK_LLM_VISION_API_KEY": "sk-dashscope",
-        },
-    )
-    assert env["AICHECK_LLM_FALLBACK_API_BASE"] == "https://api.deepseek.com"
-    assert env["AICHECK_LLM_FALLBACK_API_KEY"] == "sk-deepseek"
-    assert env["AICHECK_LLM_FALLBACK_MODEL_REVIEW"] == "deepseek-v4-pro"
-    assert env["AICHECK_LLM_FALLBACK_MODEL_PROJECT_REVIEW"] == "deepseek-v4-pro"
-    assert env["AICHECK_LLM_FALLBACK_MODEL_COMPARE_FAST"] == "deepseek-v4-flash"
-    # 主供应商已是 DashScope，一键分析角色不再需要单独的地址密钥
-    assert "AICHECK_LLM_PROJECT_REVIEW_API_BASE" not in env
-
-    without_key = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-d"})
-    assert "AICHECK_LLM_FALLBACK_API_BASE" not in without_key
-
-
 TOKEN_PLAN = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 DASHSCOPE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
@@ -176,3 +154,30 @@ def test_生产开启工位模式(tmp_path: pathlib.Path):
     """没有它，新运行不冻结文件范围，验收 fixture 一份都导不出。"""
     env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-dashscope"})
     assert env["AICHECK_WORKSTATIONS_ENABLED"] == "true"
+
+
+def test_备用供应商是通义按量计费_不再用DeepSeek(tmp_path: pathlib.Path):
+    """2026-09-24：Token Plan 限流 429 转 DeepSeek 又 402 欠费；用户要求只用通义。"""
+    env = _build(tmp_path, {
+        "AICHECK_POSTGRES_PASSWORD": "pw",
+        "AICHECK_LLM_VISION_API_BASE": DASHSCOPE,
+        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
+        "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
+        "DEEPSEEK_API_KEY": "sk-deepseek",
+    })
+    assert env["AICHECK_LLM_FALLBACK_API_BASE"] == DASHSCOPE
+    assert env["AICHECK_LLM_FALLBACK_API_KEY"] == "sk-ws-payg"
+    assert "sk-deepseek" not in env.values()
+    # 逐角色与主供应商同名；视觉不走文本备胎
+    for role in ("REVIEW", "DEFAULT", "PROJECT_REVIEW", "COMPARE_FAST", "DOCUMENT_CLASSIFIER"):
+        assert env[f"AICHECK_LLM_FALLBACK_MODEL_{role}"] == env[f"AICHECK_LLM_MODEL_{role}"]
+    assert "AICHECK_LLM_FALLBACK_MODEL_VISION" not in env
+
+
+def test_主供应商已是按量或没有按量密钥时不配备胎(tmp_path: pathlib.Path):
+    payg_primary = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
+                                     "DEEPSEEK_API_KEY": "sk-deepseek"})
+    assert "AICHECK_LLM_FALLBACK_API_BASE" not in payg_primary
+    token_plan_only = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
+                                        "AICHECK_EMBEDDING_API_KEY": "sk-sp-wrong-kind"})
+    assert "AICHECK_LLM_FALLBACK_API_BASE" not in token_plan_only
