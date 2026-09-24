@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from typing import Any
 
+from libs.ocr.text_line_tables import text_line_tables
 from libs.regulatory_tables import product_inspection_rules
 from libs.review_input_data import current_selected_parse_results
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
@@ -18,6 +20,7 @@ from libs.review_orchestrator.r13_facts import (
     _unique_records,
     _value,
 )
+from libs.table_schema_mapping import load_signatures
 
 R14_NODE_ID = 14
 
@@ -215,13 +218,20 @@ def _extract_title_block_pipeline(state: dict[str, Any], parse_result: dict[str,
     }
 
 
+@lru_cache(maxsize=1)
+def _pipeline_table_signature() -> dict[str, Any] | None:
+    return next((item for item in load_signatures() if item.get("businessSchema") == "pipeline_characteristics"), None)
+
+
 def _extract_pipeline_characteristics(
     state: dict[str, Any],
     parse_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
     version_id = str(parse_result.get("documentVersionId") or "")
     output: list[dict[str, Any]] = []
-    for table in parse_result.get("tables") or []:
+    # 设计文件的管道特性表常被 OCR 输出成按行排的文字、没有表格：按签名逐字认表头、按格数重建。
+    text_tables = text_line_tables(parse_result, _pipeline_table_signature()) if _pipeline_table_signature() else []
+    for table in [*(parse_result.get("tables") or []), *text_tables]:
         if not isinstance(table, dict):
             continue
         hints = " ".join(
