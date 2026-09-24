@@ -1,0 +1,3918 @@
+{
+  "schemaVersion": 1,
+  "projectLabel": "珠海恒基达鑫国际化工仓储股份有限公司一、二期装车站新增两套卸车系统项目",
+  "reviewedAt": "2026-09-22",
+  "nodes": [
+    "R12",
+    "R13",
+    "R16",
+    "R26"
+  ],
+  "installedSkill": "/Users/mac/.agents/skills/aicheck-inspection/SKILL.md",
+  "ruleSource": {
+    "path": "/Users/mac/.agents/skills/aicheck-inspection/references/business-nodes-v3.md",
+    "sha256": "160ed6a20420d63329c4bded09053a468a0b3e3187d8dc9d7774deff8a814d6e",
+    "version": "v3",
+    "normativeTextVerified": false
+  },
+  "execution": "已完成本组全部输入页视觉阅读、字段取证及33条方法的覆盖记录；四节点均为部分核查，待资料/依据/人工确认",
+  "services": {
+    "backendOCR": false,
+    "engineeringUpload": false,
+    "officialRegistryQuery": false,
+    "standardTextQuery": false,
+    "note": "主任务告知本地MCP rules可用、后端connection未配置；本组没有调用或宣称远程标准/证件核验"
+  },
+  "readCoverage": {
+    "selectedPdfPages": 21,
+    "selectedImagePages": 6,
+    "supplementalHighResolutionCropSourcePages": 1,
+    "pdfUnreadPages": [],
+    "imageUnreadPages": [],
+    "importantLimit": "已阅页不等于每个模糊字符均已识别；D7只读表格裁切，表头未重复读；印章真实性/材料实体未核验"
+  },
+  "files": [
+    {
+      "id": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "path": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "pageCount": 7,
+      "readPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality1-1.png"
+        },
+        {
+          "physicalPage": 2,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality1-2.png"
+        },
+        {
+          "physicalPage": 3,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality1-3.png"
+        },
+        {
+          "physicalPage": 4,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality1-4.png"
+        },
+        {
+          "physicalPage": 5,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality1-5.png"
+        },
+        {
+          "physicalPage": 6,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality1-6.png"
+        },
+        {
+          "physicalPage": 7,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality1-7.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "path": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "pageCount": 12,
+      "readPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-01.png"
+        },
+        {
+          "physicalPage": 2,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-02.png"
+        },
+        {
+          "physicalPage": 3,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-03.png"
+        },
+        {
+          "physicalPage": 4,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-04.png"
+        },
+        {
+          "physicalPage": 5,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-05.png"
+        },
+        {
+          "physicalPage": 6,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-06.png"
+        },
+        {
+          "physicalPage": 7,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-07.png"
+        },
+        {
+          "physicalPage": 8,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-08.png"
+        },
+        {
+          "physicalPage": 9,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-09.png"
+        },
+        {
+          "physicalPage": 10,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-10.png"
+        },
+        {
+          "physicalPage": 11,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-11.png"
+        },
+        {
+          "physicalPage": 12,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/quality2-12.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "L1",
+      "fileName": "特种设备制造许可证-河北广浩.pdf",
+      "path": "/Users/mac/Documents/AIcheck/Scan/特种设备制造许可证-河北广浩.pdf",
+      "sha256": "edabb139b703f5a0aefed27a4b2ddeb5a76f3d1091da96c6cc570c4476c2a294",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/license-guanghao-1.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "L2",
+      "fileName": "特种设备制造许可证-烟台鲁宝.pdf",
+      "path": "/Users/mac/Documents/AIcheck/Scan/特种设备制造许可证-烟台鲁宝.pdf",
+      "sha256": "92161b9276eaa8708072e6fe2f1bc7649f608c99ef9acdace8c356012a72a464",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": 0,
+          "visualReview": "已阅整页，关键字段另作有限转录；不是全量逐字识别",
+          "renderPath": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/license-lubao-1.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "D1",
+      "fileName": "管道特性表.png",
+      "path": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png",
+      "sha256": "2afaad383121c55ecbbcca0ee91a3bf377201ef0bdbc2bb9f0b16f15515922aa",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": null,
+          "visualReview": "已阅整图及材料表主要行",
+          "renderPath": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "D2",
+      "fileName": "管道安装材料表.png",
+      "path": "/Users/mac/Documents/AIcheck/Scan/管道安装材料表.png",
+      "sha256": "02cb47f1c84e2e4ba8148b0b2d57af4c66616bf588059012bffd2fbfaf4c9a96",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": null,
+          "visualReview": "已阅整图及材料表主要行",
+          "renderPath": "/Users/mac/Documents/AIcheck/Scan/管道安装材料表.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "D3",
+      "fileName": "综合材料表part1.png",
+      "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part1.png",
+      "sha256": "b1dde6c1c271fa4c1045005c9ac461c694f157ae204a7f4f9e09bee356819e56",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": null,
+          "visualReview": "已阅整图及材料表主要行",
+          "renderPath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part1.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "D4",
+      "fileName": "综合材料表part2.png",
+      "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part2.png",
+      "sha256": "8948a38bbdf70b4dc29db6b150c842497b4858ed70c5c05f605a4a7f1426fc37",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": null,
+          "visualReview": "已阅整图及材料表主要行",
+          "renderPath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part2.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "D5",
+      "fileName": "综合材料表part3.png",
+      "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part3.png",
+      "sha256": "3760782d9d449acee833e443bfd2a1ada34c269d369ee13deb2738414c839864",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": null,
+          "visualReview": "已阅整图及材料表主要行",
+          "renderPath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part3.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "D6",
+      "fileName": "综合材料表part4.png",
+      "path": "/Users/mac/Documents/AIcheck/Scan/综合材料表part4.png",
+      "sha256": "32ccf3985b395975f94a356e67019a7b0395aecbe3fff37acf5cb5d953d61e98",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": null,
+          "visualReview": "已阅整图及材料表主要行",
+          "renderPath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part4.png"
+        }
+      ],
+      "role": "本次材料组输入"
+    },
+    {
+      "id": "D7",
+      "fileName": "png/IMG_6508.png",
+      "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6508.png",
+      "sha256": "1786c3d08f8f594b1d26617ad0c629937a9c344139d8570a19296be909fff97c",
+      "pageCount": 1,
+      "readPages": [
+        1
+      ],
+      "unreadPages": [],
+      "unreadOrUnresolvedContent": [
+        "扫描印章真实性、低清字符及空白条件项不能仅凭图像作规范性结论"
+      ],
+      "pages": [
+        {
+          "physicalPage": 1,
+          "textLength": null,
+          "visualReview": "已阅主要表格裁切，标题栏未在高清源重复复核",
+          "renderPath": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6508.png"
+        }
+      ],
+      "role": "高清源补充核对D2；仅表格裁切，非另一版本"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E-L1",
+      "fileId": "L1",
+      "fileName": "特种设备制造许可证-河北广浩.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/特种设备制造许可证-河北广浩.pdf",
+      "sha256": "edabb139b703f5a0aefed27a4b2ddeb5a76f3d1091da96c6cc570c4476c2a294",
+      "physicalPage": 1,
+      "location": "许可证主体、许可范围表、有效期栏",
+      "quote": "河北广浩管件有限公司；TS2710504-2022；有效期至2022年9月29日",
+      "fields": {
+        "manufacturer": "河北广浩管件有限公司",
+        "licenseNo": "TS2710504-2022",
+        "validUntil": "2022-09-29",
+        "scope": [
+          {
+            "product": "非焊接管件（无缝管件）",
+            "grade": "A(1)(3)级",
+            "restriction": "包括工厂预制弯管"
+          },
+          {
+            "product": "焊接管件（有缝管件）",
+            "grade": "B1级"
+          },
+          {
+            "product": "锻制管件",
+            "grade": "B级"
+          },
+          {
+            "product": "钢制锻造法兰",
+            "grade": "B级",
+            "restriction": "限锻制法兰"
+          }
+        ]
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "发证日期被章遮挡，不确认为有效期起始日",
+        "许可级别数值范围及当年许可政策未核实",
+        "未查询官方登记"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-L2",
+      "fileId": "L2",
+      "fileName": "特种设备制造许可证-烟台鲁宝.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/特种设备制造许可证-烟台鲁宝.pdf",
+      "sha256": "92161b9276eaa8708072e6fe2f1bc7649f608c99ef9acdace8c356012a72a464",
+      "physicalPage": 1,
+      "location": "许可证主体、许可范围表、有效期栏",
+      "quote": "烟台鲁宝钢管有限责任公司；TS2710692-2023；无缝钢管；有效期至2023年3月26日",
+      "fields": {
+        "manufacturer": "烟台鲁宝钢管有限责任公司",
+        "licenseNo": "TS2710692-2023",
+        "validUntil": "2023-03-26",
+        "scope": [
+          {
+            "product": "压力管道管子/无缝钢管",
+            "grade": "A1、A2(1)(2)、B(1)(2)级"
+          }
+        ]
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "发证日期受章遮挡",
+        "未查询官方登记",
+        "只核对纸面与质证主体/编号，不证明真伪"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-P1",
+      "fileId": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "physicalPage": 1,
+      "location": "钢管证书页眉、规格/状态栏及化学成分唯一炉号行",
+      "quote": "GB/T 8163-2018；20；Φ108.00mm×5.00mm；热轧态；BGSQG1910220001600",
+      "fields": {
+        "manufacturer": "烟台鲁宝钢管有限责任公司",
+        "certificateNo": "BGSQG1910220001600",
+        "licenseNo": "TS2710692-2023",
+        "standard": "GB/T 8163-2018",
+        "grade": "20",
+        "makingMethod": "热轧无缝",
+        "deliveryCondition": "热轧态 As-Rolled",
+        "dimensionMm": [
+          108,
+          5
+        ],
+        "pieces": 78,
+        "issueDate": "2020-12-05",
+        "manufactureDate": null,
+        "heatNo": "20103593",
+        "chemistryPercent": {
+          "C": 0.19,
+          "Si": 0.23,
+          "Mn": 0.54,
+          "P": 0.016,
+          "S": 0.007,
+          "Cr": 0.01,
+          "Ni": 0.01,
+          "Cu": 0.01
+        },
+        "documentPrintedChemistryLimitsPercent": {
+          "C": [
+            0.17,
+            0.23
+          ],
+          "Si": [
+            0.17,
+            0.37
+          ],
+          "Mn": [
+            0.35,
+            0.65
+          ],
+          "P": {
+            "max": 0.03
+          },
+          "S": {
+            "max": 0.03
+          },
+          "Cr": {
+            "max": 0.25
+          },
+          "Ni": {
+            "max": 0.3
+          },
+          "Cu": {
+            "max": 0.2
+          }
+        },
+        "certificateTypePrinted": "EN 10204 3.1 / ISO 10474 3.1B"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "化学成分按页面倍率行归一化；原标准正文及版本效力未核实",
+        "签发日不等于制造日",
+        "批次与工程领料/实物尚未唯一绑定",
+        "可见红蓝章图样，不能确认原件或复印件签章效力"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-P2",
+      "fileId": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "physicalPage": 2,
+      "location": "拉伸试验第1、2行；PAGE 2 OF 3",
+      "quote": "炉号20103593；批号120060501；屈服265/261；抗拉458/459；伸长28.5/28.0",
+      "fields": {
+        "heatNo": "20103593",
+        "lotNo": "120060501",
+        "rows": [
+          {
+            "row": 1,
+            "yieldMPa": 265,
+            "tensileMPa": 458,
+            "elongationPercent": 28.5
+          },
+          {
+            "row": 2,
+            "yieldMPa": 261,
+            "tensileMPa": 459,
+            "elongationPercent": 28.0
+          }
+        ],
+        "documentPrintedLimits": {
+          "yieldMinMPa": 245,
+          "tensileRangeMPa": [
+            410,
+            530
+          ],
+          "elongationMinPercent": 20
+        },
+        "printedInternalComparison": "两行数值均落在证书所列范围；不等于已核实标准符合性"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "冲击/硬度表格空白，不能未核实适用条件就判缺必做项"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-P3",
+      "fileId": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "physicalPage": 3,
+      "location": "无损检验表、压扁、外观尺寸栏；PAGE 3 OF 3",
+      "quote": "检验结果：合格/PASSED；压扁合格；外观尺寸合格",
+      "fields": {
+        "NDTReferencePrinted": "GB/T 12606",
+        "NDTResult": "合格",
+        "flattening": "合格",
+        "visualAndDimensions": "合格"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "无损检验方式/年号/等级需按原页及执行标准复核",
+        "不能因未见液压值直接判缺项，需核实替代条件"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-B1",
+      "fileId": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "physicalPage": 4,
+      "location": "弯头产品表唯一行及性能表",
+      "quote": "90°弯头；Φ108*5 R=3D；30；GB/T12459-2017；检验合格",
+      "fields": {
+        "manufacturer": "河北广浩管件有限公司",
+        "product": "90°弯头",
+        "dimension": "Φ108*5 R=3D",
+        "quantity": 30,
+        "grade": "20#",
+        "standard": "GB/T12459-2017",
+        "documentDate": "2021-01-28",
+        "heatOrLotNo": null,
+        "chemistryPercent": {
+          "C": 0.19,
+          "Mn": 0.44,
+          "Si": 0.21,
+          "S": 0.009,
+          "P": 0.019
+        },
+        "yieldMPa": 330,
+        "tensileMPa": 430,
+        "elongationPercent": 25,
+        "conclusionPrinted": "检验合格",
+        "stampVisible": "质检专用章、检-2"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "未见可读炉批号、交货状态、成形方式；不得把空白冲击等直接认定必检缺项"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-W1",
+      "fileId": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "physicalPage": 5,
+      "location": "聚力质证主体、批号/日期、化学/熔敷金属性能表",
+      "quote": "JL-J50；2.0mm；141663；2020.04；GB/T 8110 ER50-6；NB/T 47018.3",
+      "fields": {
+        "manufacturer": "山东聚力焊接材料有限公司",
+        "tradeMark": "JL-J50",
+        "model": "ER50-6",
+        "diameterMm": 2.0,
+        "batchNo": "141663",
+        "manufactureDate": "2020-04",
+        "issueDate": "2020-04",
+        "certificateNo": "20040460",
+        "standardsPrinted": [
+          "AWS A5.18 ER70S-6",
+          "GB/T 8110 ER50-6",
+          "NB/T 47018.3"
+        ],
+        "chemistryPercent": {
+          "C": 0.082,
+          "Mn": 1.44,
+          "Si": 0.84,
+          "P": 0.013,
+          "S": 0.01,
+          "Cu": 0.112,
+          "Ni": 0.01,
+          "Cr": 0.017,
+          "Mo": 0.011,
+          "V": 0.008
+        },
+        "documentPrintedChemistryLimitsPercent": {
+          "C": [
+            0.06,
+            0.15
+          ],
+          "Mn": [
+            1.4,
+            1.85
+          ],
+          "Si": [
+            0.8,
+            1.15
+          ],
+          "P": {
+            "max": 0.025
+          },
+          "S": {
+            "max": 0.015
+          },
+          "Cu": {
+            "max": 0.5
+          },
+          "Ni": {
+            "max": 0.15
+          },
+          "Cr": {
+            "max": 0.15
+          },
+          "Mo": {
+            "max": 0.15
+          },
+          "V": {
+            "max": 0.03
+          }
+        },
+        "mechanical": {
+          "tensileMPa": 572,
+          "yieldMPa": 458,
+          "elongationPercent": 27,
+          "impact": [
+            {
+              "tempC": -30,
+              "joules": 120
+            },
+            {
+              "tempC": -40,
+              "joules": 95
+            }
+          ],
+          "state": "AW 焊态"
+        },
+        "documentPrintedMechanicalMinimum": {
+          "tensileMPa": 500,
+          "yieldMPa": 420,
+          "elongationPercent": 22,
+          "impactJAtMinus30": 54,
+          "impactJAtMinus40": 27
+        },
+        "shelfLife": null,
+        "stampVisible": "制造单位质检专用章及另一印章"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "标准年号未在该页列明",
+        "库存期限、实物标签及验收/烘干/领用批次对应未纳入本组输入",
+        "性能与证书自列要求比较无显见超限；外部标准限值未核实"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-W2",
+      "fileId": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "physicalPage": 6,
+      "location": "金桥质证表头、化学/性能表、底部出证日期",
+      "quote": "J40.50 (J422)；E4303；GB/T 5117-2012",
+      "fields": {
+        "manufacturer": "天津市金桥焊材集团有限公司",
+        "tradeMark": "J40.50 (J422)",
+        "model": "E4303",
+        "diameterMm": 2.5,
+        "batchNo": "19052419",
+        "certificateNo": "890000237278",
+        "issueDate": "2019-05-24",
+        "manufactureDate": null,
+        "standard": "GB/T 5117-2012",
+        "chemistryPercent": {
+          "C": 0.078,
+          "S": 0.012,
+          "Mn": 0.31,
+          "Si": 0.16,
+          "P": 0.023,
+          "Cr": 0.022,
+          "Ni": 0.015,
+          "Mo": 0.006,
+          "V": 0.006
+        },
+        "documentPrintedChemistryLimitsPercent": {
+          "C": {
+            "max": 0.2
+          },
+          "S": {
+            "max": 0.035
+          },
+          "Mn": {
+            "max": 1.2
+          },
+          "Si": {
+            "max": 1.0
+          },
+          "P": {
+            "max": 0.04
+          },
+          "Cr": {
+            "max": 0.2
+          },
+          "Ni": {
+            "max": 0.3
+          },
+          "Mo": {
+            "max": 0.3
+          },
+          "V": {
+            "max": 0.08
+          }
+        },
+        "mechanical": {
+          "yieldMPa": 393,
+          "tensileMPa": 470,
+          "elongationPercent": 26.5,
+          "impactTemperatureC": -20,
+          "impactJ": [
+            60,
+            62,
+            56
+          ]
+        },
+        "documentPrintedMechanicalMinimum": {
+          "yieldMPa": 330,
+          "tensileMPa": 430,
+          "elongationPercent": 20,
+          "impactJ": 27
+        },
+        "shelfLife": null
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "生产日期未明确，底部为出证日期",
+        "试样热处理状态/库存期限未见可确认记录",
+        "原件与经销商复印章效力需人工核查"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-W3",
+      "fileId": "F1",
+      "fileName": "产品质量证明part1.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part1.pdf",
+      "sha256": "6948f2e4eaa2bdabd0e43d218cf81d0773cf2a21b077dc0e42166e335823a8b7",
+      "physicalPage": 7,
+      "location": "金桥质证表头、化学/性能表、底部出证日期",
+      "quote": "J40.50 (J422)；E4303；GB/T 5117-2012",
+      "fields": {
+        "manufacturer": "天津市金桥焊材集团有限公司",
+        "tradeMark": "J40.50 (J422)",
+        "model": "E4303",
+        "diameterMm": 3.2,
+        "batchNo": null,
+        "certificateNo": "890000264376",
+        "issueDate": "2020-09-01",
+        "manufactureDate": null,
+        "standard": "GB/T 5117-2012",
+        "chemistryPercent": {
+          "C": 0.073,
+          "S": 0.016,
+          "Mn": 0.31,
+          "Si": 0.14,
+          "P": 0.024,
+          "Cr": 0.022,
+          "Ni": 0.014,
+          "Mo": 0.006,
+          "V": 0.005
+        },
+        "documentPrintedChemistryLimitsPercent": {
+          "C": {
+            "max": 0.2
+          },
+          "S": {
+            "max": 0.035
+          },
+          "Mn": {
+            "max": 1.2
+          },
+          "Si": {
+            "max": 1.0
+          },
+          "P": {
+            "max": 0.04
+          },
+          "Cr": {
+            "max": 0.2
+          },
+          "Ni": {
+            "max": 0.3
+          },
+          "Mo": {
+            "max": 0.3
+          },
+          "V": {
+            "max": 0.08
+          }
+        },
+        "mechanical": {
+          "yieldMPa": 411,
+          "tensileMPa": 490,
+          "elongationPercent": 27,
+          "impactTemperatureC": -20,
+          "impactJ": [
+            78,
+            83,
+            80
+          ]
+        },
+        "documentPrintedMechanicalMinimum": {
+          "yieldMPa": 330,
+          "tensileMPa": 430,
+          "elongationPercent": 20,
+          "impactJ": 27
+        },
+        "shelfLife": null
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "生产日期未明确，底部为出证日期",
+        "试样热处理状态/库存期限未见可确认记录",
+        "原件与经销商复印章效力需人工核查",
+        "批号初读20082186但低清不能确认，未用作确定性匹配字段"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-F1",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 1,
+      "location": "法兰唯一产品行及日期栏",
+      "quote": "对焊法兰；WN100(B)-16 RF S=5；14；HG/T20592-2009",
+      "fields": {
+        "manufacturer": "河北广浩管件有限公司",
+        "product": "对焊法兰",
+        "dimension": "WN100(B)-16 RF S=5",
+        "quantity": 14,
+        "grade": "20#",
+        "standard": "HG/T20592-2009",
+        "documentDate": "2021-03-18",
+        "heatOrLotNo": null,
+        "chemistryPercent": {
+          "C": 0.19,
+          "Mn": 0.42,
+          "Si": 0.26,
+          "S": 0.011,
+          "P": 0.018
+        },
+        "yieldMPa": 335,
+        "tensileMPa": 435,
+        "elongationPercent": 26,
+        "conclusionPrinted": "检验合格"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "无可读炉批号",
+        "锻造方式/交货状态未在该页明确"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-F2",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 2,
+      "location": "编号与产品表3行",
+      "quote": "编号20210110019；法兰 WN25(B) PN16 RF；等径三通 Φ108*5；同心大小头 Φ108*57*5*4",
+      "fields": {
+        "manufacturer": "河北广浩管件有限公司",
+        "certificateNo": "20210110019",
+        "documentDate": "2021-01-10",
+        "grade": "20#",
+        "products": [
+          {
+            "row": 1,
+            "name": "法兰",
+            "spec": "WN25(B) PN16 RF",
+            "quantity": 4,
+            "standardPrinted": "HG20592-2009"
+          },
+          {
+            "row": 2,
+            "name": "等径三通",
+            "spec": "Φ108*5",
+            "quantity": 2,
+            "standardPrinted": "GB/T12459-2017"
+          },
+          {
+            "row": 3,
+            "name": "同心大小头",
+            "spec": "Φ108*57*5*4",
+            "quantity": 2,
+            "standardPrinted": "GB/T12459-2017"
+          }
+        ],
+        "heatOrLotNo": null,
+        "chemistryPercent": {
+          "C": 0.19,
+          "Mn": 0.42,
+          "Si": 0.21,
+          "S": 0.011,
+          "P": 0.017
+        },
+        "yieldMPa": 275,
+        "tensileMPa": 435,
+        "elongationPercent": 27
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "证明编号不能自动充当炉批号",
+        "一页列3种产品却未逐项分配炉号，批次唯一性待证",
+        "HG20592与设计HG/T20592原文差别需文件澄清，不自动认定材料代用"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-V1",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 3,
+      "location": "产品质量证明书产品栏、压力试验表及页脚",
+      "quote": "TS2734027-2022；出厂日期2021年04月15日；检验合格准予出厂",
+      "fields": {
+        "manufacturer": "安徽铜都流体科技股份有限公司",
+        "licenseNoPrinted": "TS2734027-2022",
+        "product": "球阀",
+        "model": "Q941F-16C DN100",
+        "quantity": 2,
+        "exitDate": "2021-04-15",
+        "bodyAndCoverMaterial": "WCB",
+        "stemMaterial": "20Cr13",
+        "boltGrade": "8.8级",
+        "manufactureStandard": "GB/T12237-2007",
+        "testStandard": "GB/T13927-2008",
+        "tests": {
+          "shellPressureMPa": 2.4,
+          "shellSeconds": 60,
+          "liquidSealPressureMPa": 1.76,
+          "liquidSealSeconds": 60,
+          "gasSealPressureMPa": 0.6,
+          "gasSealSeconds": 60,
+          "result": "合格/无泄漏"
+        },
+        "uniqueProductOrBatchNo": null
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "只有质证印刷TS号，制造许可证原件未纳入本组范围",
+        "未给唯一产品号/批号",
+        "仅有品保部印章图样，真实性未核验"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-VC1",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 4,
+      "location": "出厂检验报告13项勾选及页脚",
+      "quote": "物料编码 /；日期2021-04-15；此批产品合格，准予出厂",
+      "fields": {
+        "model": "Q941F-16C DN100",
+        "quantity": 2,
+        "materialCode": "/",
+        "date": "2021-04-15",
+        "conclusionPrinted": "合格，准予出厂",
+        "uncheckedRows": [
+          3
+        ]
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "未勾选项不自动等于不合格，应核实是否适用",
+        "勾选批次一致性不代替具体批号及实物证据"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-V2",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 5,
+      "location": "产品质量证明书产品栏、压力试验表及页脚",
+      "quote": "TS2734027-2022；出厂日期2021年04月15日；检验合格准予出厂",
+      "fields": {
+        "manufacturer": "安徽铜都流体科技股份有限公司",
+        "licenseNoPrinted": "TS2734027-2022",
+        "product": "球阀",
+        "model": "Q41F-16C DN100",
+        "quantity": 4,
+        "exitDate": "2021-04-15",
+        "bodyAndCoverMaterial": "WCB",
+        "stemMaterial": "20Cr13",
+        "boltGrade": "8.8级",
+        "manufactureStandard": "GB/T12237-2007",
+        "testStandard": "GB/T13927-2008",
+        "tests": {
+          "shellPressureMPa": 2.4,
+          "shellSeconds": 60,
+          "liquidSealPressureMPa": 1.76,
+          "liquidSealSeconds": 60,
+          "gasSealPressureMPa": 0.6,
+          "gasSealSeconds": 60,
+          "result": "合格/无泄漏"
+        },
+        "uniqueProductOrBatchNo": null
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "只有质证印刷TS号，制造许可证原件未纳入本组范围",
+        "未给唯一产品号/批号",
+        "仅有品保部印章图样，真实性未核验"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-VC2",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 6,
+      "location": "出厂检验报告13项勾选及页脚",
+      "quote": "物料编码 /；日期2021-04-15；此批产品合格，准予出厂",
+      "fields": {
+        "model": "Q41F-16C DN100",
+        "quantity": 4,
+        "materialCode": "/",
+        "date": "2021-04-15",
+        "conclusionPrinted": "合格，准予出厂",
+        "uncheckedRows": [
+          3,
+          4
+        ]
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "未勾选项不自动等于不合格，应核实是否适用",
+        "勾选批次一致性不代替具体批号及实物证据"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-V3",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 7,
+      "location": "产品质量证明书产品栏、压力试验表及页脚",
+      "quote": "TS2734027-2022；出厂日期2021年04月15日；检验合格准予出厂",
+      "fields": {
+        "manufacturer": "安徽铜都流体科技股份有限公司",
+        "licenseNoPrinted": "TS2734027-2022",
+        "product": "闸阀",
+        "model": "Z41H-16C DN100",
+        "quantity": 4,
+        "exitDate": "2021-04-15",
+        "bodyAndCoverMaterial": "WCB",
+        "stemMaterial": "20Cr13",
+        "boltGrade": "8.8级",
+        "manufactureStandard": "GB/T12234-2007",
+        "testStandard": "GB/T13927-2008",
+        "tests": {
+          "shellPressureMPa": 2.4,
+          "shellSeconds": 60,
+          "liquidSealPressureMPa": 1.76,
+          "liquidSealSeconds": 60,
+          "gasSealPressureMPa": 0.6,
+          "gasSealSeconds": 60,
+          "result": "合格/无泄漏"
+        },
+        "uniqueProductOrBatchNo": null
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "只有质证印刷TS号，制造许可证原件未纳入本组范围",
+        "未给唯一产品号/批号",
+        "仅有品保部印章图样，真实性未核验"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-VC3",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 8,
+      "location": "出厂检验报告13项勾选及页脚",
+      "quote": "物料编码 /；日期2021-04-15；此批产品合格，准予出厂",
+      "fields": {
+        "model": "Z41H-16C DN100",
+        "quantity": 4,
+        "materialCode": "/",
+        "date": "2021-04-15",
+        "conclusionPrinted": "合格，准予出厂",
+        "uncheckedRows": []
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "未勾选项不自动等于不合格，应核实是否适用",
+        "勾选批次一致性不代替具体批号及实物证据"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-C9",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 9,
+      "location": "JOTUN COA产品名称及日期栏",
+      "quote": "环氧富锌底漆6BT组份A",
+      "fields": {
+        "product": "环氧富锌底漆6BT组份A",
+        "productionDate": "2021-04-03",
+        "batchNo": "2466982-1-*-1:2",
+        "fourNodeRole": "已阅并分类为防腐涂料，不作为焊材MTC或管道元件型式报告"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "防腐产品性能不在此次R12/R13/R16/R26逐项审查内"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-C10",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 10,
+      "location": "JOTUN COA产品名称及日期栏",
+      "quote": "环氧富锌底漆6BT组份B",
+      "fields": {
+        "product": "环氧富锌底漆6BT组份B",
+        "productionDate": "2021-04-03",
+        "batchNo": "2466997-1-*-1:2",
+        "fourNodeRole": "已阅并分类为防腐涂料，不作为焊材MTC或管道元件型式报告"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "防腐产品性能不在此次R12/R13/R16/R26逐项审查内"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-C11",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 11,
+      "location": "JOTUN COA产品名称及日期栏",
+      "quote": "丙烯酸聚氨酯面漆组份A",
+      "fields": {
+        "product": "丙烯酸聚氨酯面漆组份A",
+        "productionDate": "2021-04-08",
+        "batchNo": "W8880824-2-3-1",
+        "fourNodeRole": "已阅并分类为防腐涂料，不作为焊材MTC或管道元件型式报告"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "防腐产品性能不在此次R12/R13/R16/R26逐项审查内"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-C12",
+      "fileId": "F2",
+      "fileName": "产品质量证明part2.pdf",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/产品质量证明part2.pdf",
+      "sha256": "f2198c82a4386c334da8dd8933ee95435d68d07409db4534d08ca642852f8c92",
+      "physicalPage": 12,
+      "location": "JOTUN COA产品名称及日期栏",
+      "quote": "丙烯酸聚氨酯面漆组份B",
+      "fields": {
+        "product": "丙烯酸聚氨酯面漆组份B",
+        "productionDate": "2021-04-02",
+        "batchNo": "2466517-1-*-1:2",
+        "fourNodeRole": "已阅并分类为防腐涂料，不作为焊材MTC或管道元件型式报告"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "防腐产品性能不在此次R12/R13/R16/R26逐项审查内"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-D1",
+      "fileId": "D1",
+      "fileName": "管道特性表.png",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png",
+      "sha256": "2afaad383121c55ecbbcca0ee91a3bf377201ef0bdbc2bb9f0b16f15515922aa",
+      "physicalPage": 1,
+      "location": "管道特性表第3、4、7、8行与标题栏",
+      "quote": "PL8303、PL8306；GC2；Φ108×4；设计压力0.55MPa；设计温度50℃",
+      "fields": {
+        "drawing": "QX201903S-13-Y-07",
+        "revision": "2",
+        "date": "2021.3",
+        "primaryLines": [
+          "PL8303",
+          "PL8306"
+        ],
+        "primaryDimension": "Φ108×4",
+        "additionalGC2Dimension": "Φ89×4",
+        "designPressureMPa": 0.55,
+        "designTemperatureC": 50,
+        "pipeClass": "M1B",
+        "medium": "化工品（丙醇）"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "主线具体材料与质证批次尚未绑定",
+        "图纸版次效力/变更批准由设计组另审"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-D2",
+      "fileId": "D2",
+      "fileName": "管道安装材料表.png",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/管道安装材料表.png",
+      "sha256": "02cb47f1c84e2e4ba8148b0b2d57af4c66616bf588059012bffd2fbfaf4c9a96",
+      "physicalPage": 1,
+      "location": "管道安装材料表PL8303、PL8306行",
+      "quote": "Φ108×4；20#；Q41H-16C；Q941H-16C",
+      "fields": {
+        "drawing": "QX201903S-13-Y-06",
+        "primaryLines": [
+          "PL8303",
+          "PL8306"
+        ],
+        "pipeGrade": "20#",
+        "pipeDimension": "Φ108×4",
+        "ballValveModel": "Q41H-16C",
+        "electricBallValveModel": "Q941H-16C",
+        "globeValveModel": "J41H-16C",
+        "checkValveModel": "H44H-16C"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "关键文字使用D7高清源裁切复核；原PNG缩小字较难读"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-D7",
+      "fileId": "D7",
+      "fileName": "png/IMG_6508.png",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6508.png",
+      "sha256": "1786c3d08f8f594b1d26617ad0c629937a9c344139d8570a19296be909fff97c",
+      "physicalPage": 1,
+      "location": "高清管道安装材料表左/右表格裁切，PL8303和PL8306行",
+      "quote": "Φ108×4；20#；Q41H-16C；Q941H-16C；J41H-16C；H44H-16C",
+      "fields": {
+        "cropPaths": [
+          "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/installation-left-detail.png",
+          "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/pages/material/installation-right-detail.png"
+        ],
+        "sourceDimensions": [
+          5712,
+          3213
+        ],
+        "cropBoxes": [
+          [
+            920,
+            420,
+            2610,
+            2430
+          ],
+          [
+            2610,
+            420,
+            4770,
+            2430
+          ]
+        ],
+        "confirmedForLines": [
+          "PL8303",
+          "PL8306"
+        ],
+        "pipe": "Φ108×4/20#",
+        "valves": [
+          "Q41H-16C DN100/DN25",
+          "Q941H-16C DN100",
+          "J41H-16C DN100/DN25",
+          "H44H-16C DN100"
+        ]
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "本高清源仅复核表格裁切，未单独做整图全部内容审查"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-D3",
+      "fileId": "D3",
+      "fileName": "综合材料表part1.png",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part1.png",
+      "sha256": "b1dde6c1c271fa4c1045005c9ac461c694f157ae204a7f4f9e09bee356819e56",
+      "physicalPage": 1,
+      "location": "综合材料表第1/4页：管子1-4、阀门1-7",
+      "quote": "无缝钢管 Φ108×4 GB/T8163-2018 20#；球阀Q41H-16C；防爆电动球阀Q941H-16C",
+      "fields": {
+        "drawing": "QX201903S-13-Y-09",
+        "revision": "2",
+        "date": "2021.3",
+        "pipe108QuantityM": 200,
+        "ballValveSpecial": "防火型、全通径",
+        "electricBallValveSpecial": "防火型、全通径"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "没有制造商/炉批号栏，不能直接构成设计—实物批次对应"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-D4",
+      "fileId": "D4",
+      "fileName": "综合材料表part2.png",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part2.png",
+      "sha256": "8948a38bbdf70b4dc29db6b150c842497b4858ed70c5c05f605a4a7f1426fc37",
+      "physicalPage": 1,
+      "location": "综合材料表第2/4页：法兰、垫片、螺栓螺母",
+      "quote": "HG/T20592-2009；HG/T20610-2009；HG/T20613-2009",
+      "fields": {
+        "flangeMaterial": "20#",
+        "boltNutMaterial": "35CrMo/30CrMo",
+        "pressureDesignation": "16",
+        "gasketThicknessMm": 3
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "细小材料字需结合原件复核；免许可范围依据未核实"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-D5",
+      "fileId": "D5",
+      "fileName": "综合材料表part3.png",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part3.png",
+      "sha256": "3760782d9d449acee833e443bfd2a1ada34c269d369ee13deb2738414c839864",
+      "physicalPage": 1,
+      "location": "综合材料表第3/4页：管件1-6、特殊件1-4",
+      "quote": "GB/T12459-2017；20#；R(C)100X80Ⅱ-Sch.40；压力表YB-150",
+      "fields": {
+        "fittingGrade": "20#",
+        "fittingStandard": "GB/T12459-2017",
+        "specialItems": [
+          "复合软管DN100 PN16 L=6000",
+          "防雨型防爆阻火器DN50 PN16 ZHQ型 CS/304",
+          "Y型过滤器DN100 PN16 CS/304",
+          "压力表YB-150"
+        ]
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "特殊件许可/型式试验归类需核实，不能就近归类或自动免许可"
+      ],
+      "readStatus": "已阅"
+    },
+    {
+      "id": "E-D6",
+      "fileId": "D6",
+      "fileName": "综合材料表part4.png",
+      "sourcePath": "/Users/mac/Documents/AIcheck/Scan/综合材料表part4.png",
+      "sha256": "32ccf3985b395975f94a356e67019a7b0395aecbe3fff37acf5cb5d953d61e98",
+      "physicalPage": 1,
+      "location": "综合材料表第4/4页管架材料1-6",
+      "quote": "槽钢、角钢、钢板、U型管卡、膨胀螺栓、镀锌扁钢；Q235A",
+      "fields": {
+        "classification": "支承/静电接地材料线索，未当作承压管材或焊材"
+      },
+      "recognitionMethod": "Codex视觉读取本地原件/Poppler渲染；未调用后台OCR",
+      "uncertainty": [
+        "本次不扩展支吊架/防腐节点；免许可法律结论未作"
+      ],
+      "readStatus": "已阅"
+    }
+  ],
+  "sharedComponentInventory": [
+    {
+      "id": "P1",
+      "designEvidence": "E-D3",
+      "designSection": "管子",
+      "designRow": 1,
+      "name": "无缝钢管",
+      "designSpec": "Φ108×4",
+      "material": "20#",
+      "quantity": 200,
+      "unit": "m",
+      "standardOrModel": "GB/T8163-2018",
+      "candidateQualityEvidence": [
+        "E-P1",
+        "E-P2",
+        "E-P3"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "烟台鲁宝（候选，未证实该批用于本项）"
+    },
+    {
+      "id": "P2",
+      "designEvidence": "E-D3",
+      "designSection": "管子",
+      "designRow": 2,
+      "name": "无缝钢管",
+      "designSpec": "Φ89×4",
+      "material": "20#",
+      "quantity": 1,
+      "unit": "m",
+      "standardOrModel": "GB/T8163-2018",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "P3",
+      "designEvidence": "E-D3",
+      "designSection": "管子",
+      "designRow": 3,
+      "name": "无缝钢管",
+      "designSpec": "Φ57×3.5",
+      "material": "20#",
+      "quantity": 6,
+      "unit": "m",
+      "standardOrModel": "GB/T8163-2018",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "P4",
+      "designEvidence": "E-D3",
+      "designSection": "管子",
+      "designRow": 4,
+      "name": "无缝钢管",
+      "designSpec": "Φ32×3",
+      "material": "20#",
+      "quantity": 2,
+      "unit": "m",
+      "standardOrModel": "GB/T8163-2018",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "V1",
+      "designEvidence": "E-D3",
+      "designSection": "阀门",
+      "designRow": 1,
+      "name": "球阀",
+      "designSpec": "DN100 PN16",
+      "material": "WCB",
+      "quantity": 12,
+      "unit": "只",
+      "standardOrModel": "Q41H-16C",
+      "candidateQualityEvidence": [
+        "E-V2"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "安徽铜都（候选且型号不同）"
+    },
+    {
+      "id": "V2",
+      "designEvidence": "E-D3",
+      "designSection": "阀门",
+      "designRow": 2,
+      "name": "球阀",
+      "designSpec": "DN50 PN16",
+      "material": "WCB",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "Q41H-16C",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "V3",
+      "designEvidence": "E-D3",
+      "designSection": "阀门",
+      "designRow": 3,
+      "name": "球阀",
+      "designSpec": "DN25 PN16",
+      "material": "WCB",
+      "quantity": 6,
+      "unit": "只",
+      "standardOrModel": "Q41H-16C",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "V4",
+      "designEvidence": "E-D3",
+      "designSection": "阀门",
+      "designRow": 4,
+      "name": "截止阀",
+      "designSpec": "DN100 PN16",
+      "material": "WCB",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "J41H-16C",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "V5",
+      "designEvidence": "E-D3",
+      "designSection": "阀门",
+      "designRow": 5,
+      "name": "截止阀",
+      "designSpec": "DN25 PN16",
+      "material": "WCB",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "J41H-16C",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "V6",
+      "designEvidence": "E-D3",
+      "designSection": "阀门",
+      "designRow": 6,
+      "name": "止回阀",
+      "designSpec": "DN100 PN16",
+      "material": "WCB",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "H44H-16C",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "V7",
+      "designEvidence": "E-D3",
+      "designSection": "阀门",
+      "designRow": 7,
+      "name": "防爆电动球阀",
+      "designSpec": "DN100 PN16",
+      "material": "WCB",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "Q941H-16C",
+      "candidateQualityEvidence": [
+        "E-V1"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "安徽铜都（候选且型号不同）"
+    },
+    {
+      "id": "F1",
+      "designEvidence": "E-D4",
+      "designSection": "法兰",
+      "designRow": 1,
+      "name": "带颈对焊法兰",
+      "designSpec": "WN100-16 RF(B)",
+      "material": "20#",
+      "quantity": 38,
+      "unit": "片",
+      "standardOrModel": "HG/T20592-2009",
+      "candidateQualityEvidence": [
+        "E-F1"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "河北广浩（候选，未证实该批用于本项）"
+    },
+    {
+      "id": "F2",
+      "designEvidence": "E-D4",
+      "designSection": "法兰",
+      "designRow": 2,
+      "name": "带颈对焊法兰",
+      "designSpec": "WN80-16 RF(B)",
+      "material": "20#",
+      "quantity": 8,
+      "unit": "片",
+      "standardOrModel": "HG/T20592-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "F3",
+      "designEvidence": "E-D4",
+      "designSection": "法兰",
+      "designRow": 3,
+      "name": "带颈对焊法兰",
+      "designSpec": "WN50-16 RF(B)",
+      "material": "20#",
+      "quantity": 8,
+      "unit": "片",
+      "standardOrModel": "HG/T20592-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "F4",
+      "designEvidence": "E-D4",
+      "designSection": "法兰",
+      "designRow": 4,
+      "name": "带颈对焊法兰",
+      "designSpec": "WN25-16 RF(B)",
+      "material": "20#",
+      "quantity": 20,
+      "unit": "片",
+      "standardOrModel": "HG/T20592-2009",
+      "candidateQualityEvidence": [
+        "E-F2"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "河北广浩（候选，未证实该批用于本项）"
+    },
+    {
+      "id": "F5",
+      "designEvidence": "E-D4",
+      "designSection": "法兰",
+      "designRow": 5,
+      "name": "法兰盖",
+      "designSpec": "BL100-16 RF(B)",
+      "material": "20#",
+      "quantity": 4,
+      "unit": "片",
+      "standardOrModel": "HG/T20592-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "F6",
+      "designEvidence": "E-D4",
+      "designSection": "法兰",
+      "designRow": 6,
+      "name": "法兰盖",
+      "designSpec": "BL25-16 RF(B)",
+      "material": "20#",
+      "quantity": 10,
+      "unit": "片",
+      "standardOrModel": "HG/T20592-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "G1",
+      "designEvidence": "E-D4",
+      "designSection": "垫片",
+      "designRow": 1,
+      "name": "缠绕垫",
+      "designSpec": "RF100-16 T=3.0",
+      "material": "未明确",
+      "quantity": 56,
+      "unit": "个",
+      "standardOrModel": "HG/T20610-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "G2",
+      "designEvidence": "E-D4",
+      "designSection": "垫片",
+      "designRow": 2,
+      "name": "缠绕垫",
+      "designSpec": "RF80-16 T=3.0",
+      "material": "未明确",
+      "quantity": 8,
+      "unit": "个",
+      "standardOrModel": "HG/T20610-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "G3",
+      "designEvidence": "E-D4",
+      "designSection": "垫片",
+      "designRow": 3,
+      "name": "缠绕垫",
+      "designSpec": "RF50-16 T=3.0",
+      "material": "未明确",
+      "quantity": 8,
+      "unit": "个",
+      "standardOrModel": "HG/T20610-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "G4",
+      "designEvidence": "E-D4",
+      "designSection": "垫片",
+      "designRow": 4,
+      "name": "缠绕垫",
+      "designSpec": "RF25-16 T=3.0",
+      "material": "未明确",
+      "quantity": 30,
+      "unit": "个",
+      "standardOrModel": "HG/T20610-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "B1",
+      "designEvidence": "E-D4",
+      "designSection": "螺栓/螺母",
+      "designRow": 1,
+      "name": "螺纹螺栓/II型六角螺母",
+      "designSpec": "M16×90",
+      "material": "35CrMo/30CrMo",
+      "quantity": 420,
+      "unit": "个",
+      "standardOrModel": "HG/T20613-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "B2",
+      "designEvidence": "E-D4",
+      "designSection": "螺栓/螺母",
+      "designRow": 2,
+      "name": "螺纹螺栓/II型六角螺母",
+      "designSpec": "M16×85",
+      "material": "35CrMo/30CrMo",
+      "quantity": 32,
+      "unit": "个",
+      "standardOrModel": "HG/T20613-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "B3",
+      "designEvidence": "E-D4",
+      "designSection": "螺栓/螺母",
+      "designRow": 3,
+      "name": "螺纹螺栓/II型六角螺母",
+      "designSpec": "M12×75",
+      "material": "35CrMo/30CrMo",
+      "quantity": 120,
+      "unit": "个",
+      "standardOrModel": "HG/T20613-2009",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "T1",
+      "designEvidence": "E-D5",
+      "designSection": "管件",
+      "designRow": 1,
+      "name": "90°无缝长半径弯头",
+      "designSpec": "90E(L)100Ⅱ-Sch.40",
+      "material": "20#",
+      "quantity": 38,
+      "unit": "只",
+      "standardOrModel": "GB/T12459-2017",
+      "candidateQualityEvidence": [
+        "E-B1"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "河北广浩（候选，未证实该批用于本项）"
+    },
+    {
+      "id": "T2",
+      "designEvidence": "E-D5",
+      "designSection": "管件",
+      "designRow": 2,
+      "name": "90°无缝长半径弯头",
+      "designSpec": "90E(L)25Ⅱ-Sch.40",
+      "material": "20#",
+      "quantity": 8,
+      "unit": "只",
+      "standardOrModel": "GB/T12459-2017",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "T3",
+      "designEvidence": "E-D5",
+      "designSection": "管件",
+      "designRow": 3,
+      "name": "135°无缝长半径弯头",
+      "designSpec": "135E(L)100Ⅱ-Sch.40",
+      "material": "20#",
+      "quantity": 4,
+      "unit": "只",
+      "standardOrModel": "GB/T12459-2017",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "T4",
+      "designEvidence": "E-D5",
+      "designSection": "管件",
+      "designRow": 4,
+      "name": "等径三通",
+      "designSpec": "T(S)100Ⅱ-Sch.40",
+      "material": "20#",
+      "quantity": 4,
+      "unit": "只",
+      "standardOrModel": "GB/T12459-2017",
+      "candidateQualityEvidence": [
+        "E-F2"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "河北广浩（候选，未证实该批用于本项）"
+    },
+    {
+      "id": "T5",
+      "designEvidence": "E-D5",
+      "designSection": "管件",
+      "designRow": 5,
+      "name": "同心异径管",
+      "designSpec": "R(C)100×80Ⅱ-Sch.40",
+      "material": "20#",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "GB/T12459-2017",
+      "candidateQualityEvidence": [
+        "E-F2"
+      ],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "候选质证与设计逐字段核对；实际批次/实物链未闭环",
+      "manufacturer": "河北广浩（候选，未证实该批用于本项）"
+    },
+    {
+      "id": "T6",
+      "designEvidence": "E-D5",
+      "designSection": "管件",
+      "designRow": 6,
+      "name": "偏心异径管",
+      "designSpec": "R(E)100×80Ⅱ-Sch.40",
+      "material": "20#",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "GB/T12459-2017",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "S1",
+      "designEvidence": "E-D5",
+      "designSection": "特殊件",
+      "designRow": 1,
+      "name": "复合软管",
+      "designSpec": "DN100 PN16 L=6000",
+      "material": "专用塑料",
+      "quantity": 2,
+      "unit": "根",
+      "standardOrModel": "未在该行给标准号",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "S2",
+      "designEvidence": "E-D5",
+      "designSection": "特殊件",
+      "designRow": 2,
+      "name": "防雨型防爆阻火器",
+      "designSpec": "DN50 PN16 ZHQ型",
+      "material": "CS/304",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "未在该行给标准号",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "S3",
+      "designEvidence": "E-D5",
+      "designSection": "特殊件",
+      "designRow": 3,
+      "name": "Y型过滤器",
+      "designSpec": "DN100 PN16",
+      "material": "CS/304",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "未在该行给标准号",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    },
+    {
+      "id": "S4",
+      "designEvidence": "E-D5",
+      "designSection": "特殊件",
+      "designRow": 4,
+      "name": "压力表",
+      "designSpec": "YB-150",
+      "material": "未明确",
+      "quantity": 2,
+      "unit": "只",
+      "standardOrModel": "未在该行给标准号",
+      "candidateQualityEvidence": [],
+      "confirmedInstalledBatch": null,
+      "R12": "证据不足：许可归类/完整范围/制造日期/官方核验未闭环",
+      "R13": "证据不足：适用性及监检/型式试验报告覆盖未核实",
+      "R16": "本次输入未建立此项唯一质证对应，不等于工程不存在",
+      "manufacturer": null
+    }
+  ],
+  "otherQualityObjects": [
+    {
+      "evidence": "E-V3",
+      "name": "Z41H-16C DN100闸阀4台",
+      "relation": "设计列表未建立对应，不自动当作截止阀替代"
+    },
+    {
+      "evidence": [
+        "E-W1",
+        "E-W2",
+        "E-W3"
+      ],
+      "relation": "R26焊材对象，不混为R13元件型式证"
+    },
+    {
+      "evidence": [
+        "E-C9",
+        "E-C10",
+        "E-C11",
+        "E-C12"
+      ],
+      "relation": "防腐涂料已阅分类，不是R26焊材"
+    }
+  ],
+  "crossNodeConstraints": [
+    "未纳入或未匹配不等于工程没有",
+    "证书日期早于有效期截止日只证明截止端比较，不能单独证明制造日期覆盖",
+    "证书自列限值比较不等于标准原文核实",
+    "2019-2021资料不能直接依2025版本作历史不符合",
+    "原件签章真实性、官方登记、材料实物与批次未核验",
+    "实际已安装对象及设计变更效力由关联节点进一步确认"
+  ],
+  "crossGroupEvidence": {
+    "sourceReport": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/evidence-welding.json",
+    "sourceReportSha256": "a53914c62f03942f9a14bf20c2beb7893369953c931cbbae8a16ad9bff7a53b9",
+    "readResponsibility": "焊接组本次逐页视觉核对；本材料组仅读取其可追溯证据记录，不计入本组已阅页数",
+    "files": {
+      "C": {
+        "filename": "贵州化工交工资料.pdf",
+        "path": "/Users/mac/Documents/AIcheck/Scan/贵州化工交工资料.pdf",
+        "sha256": "515b8a3f5e0894a9aa52d49b485184bfb9e9d09cb53dd05c2156f0d3227050ba",
+        "physical_page_count": 24,
+        "text_characters": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "visual_reviewed_physical_pages": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "unreviewed_physical_pages": [],
+        "review_depth": "全部页逐页目视；证书项目、姓名、焊接记录和关键参数另放大/旋转复核。非R24/R25内容仅查找相关证据，不等于已审其全部业务节点。"
+      },
+      "S": {
+        "filename": "贵州化工施工方案.pdf",
+        "path": "/Users/mac/Documents/AIcheck/Scan/贵州化工施工方案.pdf",
+        "sha256": "5b3755ecfc9475d98e3b83639c255dbf02b8cbca991704be8b1963132b16fd7e",
+        "physical_page_count": 19,
+        "text_characters": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "visual_reviewed_physical_pages": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "unreviewed_physical_pages": [],
+        "review_depth": "全部页逐页目视；证书项目、姓名、焊接记录和关键参数另放大/旋转复核。非R24/R25内容仅查找相关证据，不等于已审其全部业务节点。"
+      },
+      "P": {
+        "filename": "焊接工艺评定报告.pdf",
+        "path": "/Users/mac/Documents/AIcheck/Scan/焊接工艺评定报告.pdf",
+        "sha256": "054bba04f19061bf330969da896100964e76aa547e638786fefd98dd7b3e3b5b",
+        "physical_page_count": 12,
+        "text_characters": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "visual_reviewed_physical_pages": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "unreviewed_physical_pages": [],
+        "review_depth": "全部页逐页目视；证书项目、姓名、焊接记录和关键参数另放大/旋转复核。非R24/R25内容仅查找相关证据，不等于已审其全部业务节点。"
+      }
+    },
+    "evidence": [
+      {
+        "id": "C10-13",
+        "file_key": "C",
+        "source_filename": "贵州化工交工资料.pdf",
+        "source_sha256": "515b8a3f5e0894a9aa52d49b485184bfb9e9d09cb53dd05c2156f0d3227050ba",
+        "physical_pages": [
+          10,
+          11,
+          12,
+          13
+        ],
+        "location": "表A.0.5全部79行；印刷8、9、10、11页",
+        "short_original_excerpt": "赵传辉/Z2；廖柏鑫/L1；GTAW/SMAW；JL-J50/Φ2.0；E4303/Φ3.2",
+        "fields": {
+          "line_welder_map": {
+            "PL8306": "赵传辉/Z2",
+            "PL8303": "廖柏鑫/L1"
+          },
+          "record_counts": {
+            "PL8306": 36,
+            "PL8303": 43
+          },
+          "welding_dates": [
+            "2021-03-24",
+            "2021-03-28"
+          ],
+          "fillet_each_line": {
+            "weld_id": "1",
+            "material": "20",
+            "spec_raw": "Φ57*3.5",
+            "method": "SMAW",
+            "filler": "E4303/Φ3.2",
+            "position_raw": "转动"
+          },
+          "butt_others": {
+            "material": "20",
+            "spec_raw": "Φ108*5",
+            "method": "GTAW/SMAW",
+            "filler": "JL-J50/Φ2.0、E4303/Φ3.2",
+            "position_raw": "固定或转动"
+          },
+          "preheat_raw": "/",
+          "interpass_raw": "/",
+          "postheat_raw": "/"
+        },
+        "uncertainties": [
+          "未提供每种方法实际焊缝金属厚度、实际焊接电流/电压/速度、实际焊接位置方向、根部保护与衬垫构造。",
+          "A/B/C/D/E作为原始焊缝编号保留，不自动替换成数字。",
+          "记录未列独立焊工实名名册或身份证号，姓名一致不等于人证身份完全核实。"
+        ],
+        "basis": "Codex本次目视原页；不是直接采用辅助OCR"
+      },
+      {
+        "id": "S07-09",
+        "file_key": "S",
+        "source_filename": "贵州化工施工方案.pdf",
+        "source_sha256": "5b3755ecfc9475d98e3b83639c255dbf02b8cbca991704be8b1963132b16fd7e",
+        "physical_pages": [
+          7,
+          8,
+          9
+        ],
+        "location": "6.1、6.2焊材选用表及6.3方法表；印刷5–7页",
+        "short_original_excerpt": "A106、A105、20#；TIG50；Φ2.0；J422",
+        "fields": {
+          "planned_filler_for_20": {
+            "GTAW": "TIG50/Φ2.0",
+            "SMAW": "J422"
+          },
+          "method_for_DN_gt_50": "氩弧焊打底、手工电弧焊中间层及面层",
+          "groove_3_5_to_13mm": {
+            "type": "V",
+            "gap_mm": "0–2",
+            "root_face_mm": "0–2",
+            "angle_deg": "65±5"
+          },
+          "argon_purity_percent_min": 99.9
+        },
+        "uncertainties": [
+          "施工方案是通用要求，未注明工程正式WPS编号及依据PQR。"
+        ],
+        "basis": "Codex本次目视原页；不是直接采用辅助OCR"
+      },
+      {
+        "id": "S11-12",
+        "file_key": "S",
+        "source_filename": "贵州化工施工方案.pdf",
+        "source_sha256": "5b3755ecfc9475d98e3b83639c255dbf02b8cbca991704be8b1963132b16fd7e",
+        "physical_pages": [
+          11,
+          12
+        ],
+        "location": "工艺参数表及根部保护文字；印刷9–10页",
+        "short_original_excerpt": "焊件厚度>3.0、DN>65：焊丝2.5，110–130A，10–20V；氩气10–12L/min",
+        "fields": {
+          "GTAW_gt_3_DN_gt_65": {
+            "wire_mm": 2.5,
+            "current_A": "110–130",
+            "voltage_V": "10–20",
+            "polarity": "直流正接",
+            "argon_L_min": "10–12"
+          },
+          "SMAW_5_to_10": {
+            "rod_mm": 3.2,
+            "current_A": "90–110",
+            "voltage_V": "24–26",
+            "speed_m_h": "10–12",
+            "polarity": "直流反接"
+          },
+          "stainless_backing_gas_text": "不锈钢管道焊接全部采用氩弧焊打底；打底焊接时管道内应充氩保护"
+        },
+        "uncertainties": [
+          "方案焊材选用表TIG50/2.0与参数表2.5存在适用表间差异；3–5及5–10厚度档在5mm边界重叠，不能默选一档。",
+          "不锈钢文字是通用方案条款，不能据此扩大本次20钢实际管线范围。"
+        ],
+        "basis": "Codex本次目视原页；不是直接采用辅助OCR"
+      },
+      {
+        "id": "P07-09",
+        "file_key": "P",
+        "source_filename": "焊接工艺评定报告.pdf",
+        "source_sha256": "054bba04f19061bf330969da896100964e76aa547e638786fefd98dd7b3e3b5b",
+        "physical_pages": [
+          7,
+          8,
+          9
+        ],
+        "location": "HP2014-11封面；预焊接工艺规程(续)WPS-2；PQR-2续一",
+        "short_original_excerpt": "预焊接工艺规程(续)；WPS-2；焊接工艺评定报告(续一)；PQR-2",
+        "fields": {
+          "cover_PQR_number": "HP2014-11",
+          "owner": "贵州化工建设公司",
+          "cover_date": "2014-11-29",
+          "pWPS_id": "WPS-2",
+          "PQR_page_id": "PQR-2",
+          "position": "5G向上",
+          "methods": [
+            "GTAW",
+            "SMAW"
+          ],
+          "pWPS_filler": [
+            {
+              "method": "GTAW",
+              "grade": "JTT-50",
+              "diameter_mm": 2.0,
+              "polarity": "DC-",
+              "current_A": "110–130",
+              "voltage_V": "20–22"
+            },
+            {
+              "method": "SMAW",
+              "grade": "J427",
+              "diameter_mm": 3.2,
+              "polarity": "DC+",
+              "current_A": "95–110",
+              "voltage_V": "22–24"
+            }
+          ],
+          "pWPS_total_current_A": "90–130",
+          "gas": "纯氩",
+          "gas_flow_L_min": "9–10",
+          "back_gas_raw": "/",
+          "preheat_raw": "/",
+          "interpass_raw": "/",
+          "postweld_heat_treatment_raw": "/",
+          "speed_raw": "/",
+          "compile_review_approve_marks_visible": true,
+          "approve_date_raw": "空白",
+          "tensile_MPa": [
+            509,
+            514.9
+          ],
+          "bend_result": "完好"
+        },
+        "uncertainties": [
+          "pWPS不能直接当正式WPS；封面HP2014-11、续页PQR-2/WPS-2之间的正式编号关系缺主表证明。",
+          "审批栏可见手写但人员姓名、职务资格及批准日期未完整证实。",
+          "“/”保留原值，不自动解释为已确认不适用。"
+        ],
+        "basis": "Codex本次目视原页；不是直接采用辅助OCR"
+      },
+      {
+        "id": "P10-12",
+        "file_key": "P",
+        "source_filename": "焊接工艺评定报告.pdf",
+        "source_sha256": "054bba04f19061bf330969da896100964e76aa547e638786fefd98dd7b3e3b5b",
+        "physical_pages": [
+          10,
+          11,
+          12
+        ],
+        "location": "HP2014-11施焊及外观记录、RT续页及L360质证附件",
+        "short_original_excerpt": "母材20 δ=6.5；母材L360 δ=6.3；GTAW+SMAW；焊工钢印3531",
+        "fields": {
+          "PQR_number": "HP2014-11",
+          "test_materials": [
+            {
+              "grade": "20",
+              "thickness_mm": 6.5
+            },
+            {
+              "grade": "L360",
+              "thickness_mm": 6.3
+            }
+          ],
+          "test_diameter_mm": 323.9,
+          "welding_date": "2014-11-22",
+          "test_welder_stamp": "3531",
+          "position": "5G",
+          "groove": "V",
+          "layers": 3,
+          "weld_rows": [
+            {
+              "layer": 1,
+              "filler": "JTT-50",
+              "diameter_mm": 2.0,
+              "polarity": "直流正接",
+              "current_A": 123,
+              "voltage_V": "20–22",
+              "front_argon_L_min": 9
+            },
+            {
+              "layer": 2,
+              "filler": "J427",
+              "diameter_mm": 3.2,
+              "polarity": "直流反接",
+              "current_A": 102,
+              "voltage_V": "22–24"
+            },
+            {
+              "layer": 3,
+              "filler": "J427",
+              "diameter_mm": 3.2,
+              "polarity": "直流反接",
+              "current_A": 102,
+              "voltage_V": "22–24"
+            }
+          ],
+          "speed_raw": "/",
+          "preheat_raw": "/",
+          "interpass_raw": "/",
+          "appearance": "合格",
+          "RT_result": "B1-3气孔Φ1×2、II；其他五张I",
+          "L360_certificate_spec": "Φ323.9×6.3"
+        },
+        "uncertainties": [
+          "总试件厚度可读，但按GTAW/SMAW分方法的实测焊缝金属厚度未载明。",
+          "不能从3层示意图自行量算各方法焊缝金属厚度。",
+          "2011版完整表7/表8、重要因素表及母材分组的权威原文未取得，不用2023版直接回溯2021工程。"
+        ],
+        "basis": "Codex本次目视原页；不是直接采用辅助OCR"
+      }
+    ]
+  },
+  "methodChecks": [
+    {
+      "node": "R12",
+      "method": 1,
+      "methodTitle": "取证与共用元件清单",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "建立34行管子、阀门、法兰、垫片、紧固件、管件和特殊件索引；取得河北广浩、烟台鲁宝纸面许可证；安徽铜都只有质证印刷TS2734027-2022。设计表没有制造商/炉批号。",
+      "requirementOrBasis": "随包业务节点v3为检查方法；标准正文/历史适用性尚未在本材料组核实，不能将其当作已核实法规原文。",
+      "evidenceRefs": [
+        "E-L1",
+        "E-L2",
+        "E-P1",
+        "E-V1",
+        "E-D3",
+        "E-D4",
+        "E-D5"
+      ],
+      "issueAndNextStep": "补每批实际采购/到货元件清单、全部制造商许可证及实物身份；候选质证不自动等于已装实物。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R12",
+      "method": 2,
+      "methodTitle": "平台核实",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "未执行",
+      "result": "证据不足",
+      "actual": "未执行全国特种设备公示平台查询；无两侧字段比对结果。",
+      "requirementOrBasis": "v3 R12方法2；本次明确不做外部登记。",
+      "evidenceRefs": [
+        "E-L1",
+        "E-L2"
+      ],
+      "issueAndNextStep": "授权条件内可由人工另到官方平台按许可证号/制造商核实主体、范围、有效期；本组不声称真实性已核验。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R12",
+      "method": 3,
+      "methodTitle": "许可范围覆盖",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "鲁宝纸面无缝钢管；广浩含无缝管件A(1)(3)、有缝B1、锻制管件B、锻造法兰B；与候选产品类别有文本关联。DN/PN限制、锻造事实、阀门完整许可及特殊件归类未闭环。",
+      "requirementOrBasis": "v3 R12方法3；41号公告/TSG07历史适用与级别边界未核实。",
+      "evidenceRefs": [
+        "E-L1",
+        "E-L2",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1",
+        "E-D5"
+      ],
+      "issueAndNextStep": "逐类补级别参数/附加条件与成形方式；按实际制造年份核实许可政策，不以类别近似判覆盖。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R12",
+      "method": 4,
+      "methodTitle": "制造日期与有效期",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "广浩截止2022-09-29，证件所配候选质证日期2021-01-10、01-28、03-18；鲁宝截止2023-03-26，钢管质证签发2020-12-05；日期均早于截止端，但钢管签发日非制造日，部分表头日期性质未明确，许可起始日被章遮挡。",
+      "requirementOrBasis": "v3 R12方法4：以制造/出厂基准日期核对；不是按当前2026年是否到期判断历史合法性。",
+      "evidenceRefs": [
+        "E-L1",
+        "E-L2",
+        "E-P1",
+        "E-B1",
+        "E-F1",
+        "E-F2"
+      ],
+      "issueAndNextStep": "补制造/出厂日期与换证/延续依据（若适用）；安徽铜都阀门出厂2021-04-15仍缺完整许可有效期。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R12",
+      "method": 5,
+      "methodTitle": "免许可甄别",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "垫片、紧固件、软管、阻火器、过滤器、压力表均显式列入索引；支架材料/涂料另作范围分类，没有据“无证”判不符合。",
+      "requirementOrBasis": "v3 R12方法5；免许可具体历史条款未核实。",
+      "evidenceRefs": [
+        "E-D4",
+        "E-D5",
+        "E-D6",
+        "E-C9",
+        "E-C10",
+        "E-C11",
+        "E-C12"
+      ],
+      "issueAndNextStep": "请监检人员逐项确认属于许可、免许可或其他管理范围并补条款；不能凭名称就近归类。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R12",
+      "method": 6,
+      "methodTitle": "逐制造单位输出",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "已完成",
+      "result": "证据不足",
+      "actual": "制造单位与缺口表已输出：河北广浩、烟台鲁宝、安徽铜都，及实际制造商待确认的设计元件。",
+      "requirementOrBasis": "v3 R12方法6；本报告为辅助意见。",
+      "evidenceRefs": [
+        "E-L1",
+        "E-L2",
+        "E-V1"
+      ],
+      "issueAndNextStep": "按表补原件/日期/类别参数/官方比对后复审，当前不形成R12符合。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R13",
+      "method": 1,
+      "methodTitle": "逐项分类",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "34行清单覆盖无缝管、管件、法兰、阀门和特殊件等；未将“本次无监检报告”或“未列入候选”当成不需要。",
+      "requirementOrBasis": "v3 R13方法1；TSGD7006-2020 1.2.1及2021年第41号公告注三四与工程制造日期适用待核实。",
+      "evidenceRefs": [
+        "E-D3",
+        "E-D4",
+        "E-D5"
+      ],
+      "issueAndNextStep": "先取得实际批次/制造日期/产品工艺，再按当期条款逐行确认监检、型式试验、免除或待定。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R13",
+      "method": 2,
+      "methodTitle": "制造监检证书逐批对应",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "本组已阅四PDF21页及设计图，未在这些页中识别到独立制造监督检验证书；现有质证检验合格章、阀门出厂报告不能替代监检证。",
+      "requirementOrBasis": "v3 R13方法2；需先完成是否需制造监检的适用性判断。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1",
+        "E-V2",
+        "E-V3"
+      ],
+      "issueAndNextStep": "对确认需监检批次补制造单位、产品、批号、机构、结论；与R16及实物对应。此为范围内证据不足，非工程缺证事实。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R13",
+      "method": 3,
+      "methodTitle": "型式试验范围",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "本次输入未建立管件、法兰、阀门/特殊件与型式试验报告的对应；无可用于DN、PN、材料、结构、工艺五维覆盖的报告。",
+      "requirementOrBasis": "v3 R13方法3；许可范围和出厂试验不等同型式试验范围。",
+      "evidenceRefs": [
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1",
+        "E-V2",
+        "E-V3",
+        "E-D5"
+      ],
+      "issueAndNextStep": "补适用产品型式报告及附件，逐维匹配本批实际产品；暂不宣称覆盖/不需要。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R13",
+      "method": 4,
+      "methodTitle": "平台核验与边界",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "未执行",
+      "result": "证据不足",
+      "actual": "没有执行公示平台或外部登记查询；没有报告编号真实性/状态结果。",
+      "requirementOrBasis": "v3 R13方法4应保留人工查询边界；查询为空不能直接等同伪造。",
+      "evidenceRefs": [],
+      "issueAndNextStep": "先取得报告编号/产品类别，再由授权人工查询并记录条件与结果；不把服务未配置视为证书失效。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R13",
+      "method": 5,
+      "methodTitle": "境外元件甄别",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "已识别质证制造商为境内主体；特殊件等未唯一映射厂商。不能由现有国内证书推出整个工程无境外元件。",
+      "requirementOrBasis": "v3 R13方法5。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-B1",
+        "E-F1",
+        "E-V1",
+        "E-D5"
+      ],
+      "issueAndNextStep": "补完整供应商/原产地清单；如有境外元件按R15交叉引用，不在此节点重复正式判断。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R13",
+      "method": 6,
+      "methodTitle": "按元件输出",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "已完成",
+      "result": "证据不足",
+      "actual": "34行索引均保留R13状态，未有充分证据确认某项不需要；证书号/覆盖维度缺项可追溯。",
+      "requirementOrBasis": "v3 R13方法6。",
+      "evidenceRefs": [
+        "E-D3",
+        "E-D4",
+        "E-D5"
+      ],
+      "issueAndNextStep": "依据后续适用性、证书和平台结果更新覆盖/不覆盖/不需要/证据不足。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 1,
+      "methodTitle": "形式与检验章",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "需人工核查",
+      "actual": "钢管自载EN10204 3.1/ISO10474 3.1B；质证可见制造单位/经销商等印章图像。部分广浩为“合格证”，原件或复印件及经办负责人章效力无法由扫描确认。",
+      "requirementOrBasis": "v3 R16方法1；GB/T2102版本/证书形式及历史要求待核实。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1"
+      ],
+      "issueAndNextStep": "核验原件与实际复印传递链，若适用补经营单位及经办负责人章；不因图像有章宣称真实。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 2,
+      "methodTitle": "唯一批次对应",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "钢管有炉20103593、批120060501；广浩弯头/法兰页未给可读炉批；20210110019一页三品种；阀门物料编码为/，缺产品序列/批号。",
+      "requirementOrBasis": "v3 R16方法2。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-P2",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-VC1",
+        "E-VC2",
+        "E-VC3"
+      ],
+      "issueAndNextStep": "补分批到货清单、证书分配表、实物标识照片/移植记录，不将证明编号自动作为炉号。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 3,
+      "methodTitle": "与设计一致",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "明确字段差异：设计Φ108×4 vs钢管质证Φ108×5；Q41H/Q941H-16C vsQ41F/Q941F-16C；设计100×80异径管与候选Φ108×57质证不同，且关联待证。阀门Z41H闸阀未找到设计对应，不能直接认定替代J41H截止阀。",
+      "requirementOrBasis": "v3 R16方法3；先确认实际安装对象及有效设计版本，标准不同需关联R22；本次无已核实代用批准。",
+      "evidenceRefs": [
+        "E-D1",
+        "E-D2",
+        "E-D3",
+        "E-D5",
+        "E-P1",
+        "E-V1",
+        "E-V2",
+        "E-V3",
+        "E-F2"
+      ],
+      "issueAndNextStep": "补设计变更/材料代用书面批准、实际领料/安装台账；更厚不自动等于符合，型号文字不同不直接等于实物已错用。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 4,
+      "methodTitle": "标准/牌号/规格合法性",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "资料列GB/T8163-2018/20、GB/T12459-2017/20#、HG/T20592-2009/20#、阀GB/T12237-2007或12234-2007/13927-2008；签发/出厂在2020-2021。",
+      "requirementOrBasis": "v3 R16方法4；上述历史标准原文、牌号表、规格范围、实施/废止/过渡证据未核实。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1",
+        "E-V3"
+      ],
+      "issueAndNextStep": "按签发及制造日核对旧版适用/过渡，不能用2025版本回溯判不符合；HG20592印法与HG/T20592需澄清。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 5,
+      "methodTitle": "内容齐全",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "钢管三页含化学、两行拉伸、NDT、压扁/外观及热轧态；广浩含化学/拉伸但炉批、交货状态/成形细节未明；阀门含材质与压力试验，缺逐件追溯及材料理化关联。",
+      "requirementOrBasis": "v3 R16方法5；特殊项目是否必须需设计/合同及当期标准确认。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-P2",
+        "E-P3",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1",
+        "E-V2",
+        "E-V3"
+      ],
+      "issueAndNextStep": "补欠缺识别字段及所适用特殊检验/出厂要求，不将空白列一律当必检缺项。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 6,
+      "methodTitle": "必做/选做项目",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "本案主钢管20/GB/T8163-2018/Φ108×5；有NDT及压扁，未记录冲击数值。没有依据把Q345/Q390或其他标准的条件直接套给20钢。",
+      "requirementOrBasis": "v3 R16方法6；具体执行标准必做、条件项及替代规则尚待原文核实。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-P2",
+        "E-P3"
+      ],
+      "issueAndNextStep": "取得GB/T8163-2018正文及合同特殊要求后判必做项；其他管件/阀门按各自标准核查。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 7,
+      "methodTitle": "验收限值与档位",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "主钢管已取材质20、外径108/厚5、热轧态；证书自列化学范围及拉伸245/410–530/20%。Q345等级、不锈钢厚度档、焊管交货档和硬度档不应机械套入本例。",
+      "requirementOrBasis": "v3 R16方法7(1)至(5)均已考虑；只掌握证书自载限值，不是原标准条款核实。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-P2",
+        "E-B1",
+        "E-F1",
+        "E-F2"
+      ],
+      "issueAndNextStep": "确认当期标准表号/条款、取样方向、交货状态/试样条件；细化管件不同产品适用限值。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 8,
+      "methodTitle": "检验适用条件",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "能取得主钢管厚度5mm及20牌号；其他品种按清单有尺寸但实物未唯一映射。没有据缺冲击/硬度记录直接判不符合。",
+      "requirementOrBasis": "v3 R16方法8(1)至(3)；是否触发温度、外径、壁厚、合同条件须按当期执行标准原文核实。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-P2",
+        "E-D3",
+        "E-D4",
+        "E-D5"
+      ],
+      "issueAndNextStep": "先把每批尺寸/牌号与条件逐项相交；尺寸不明者标待补，不能静默免检。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 9,
+      "methodTitle": "逐元素/逐性能数值",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "已录钢管8元素、2拉伸行，广浩3页各5元素与3项力学。钢管按证书自列范围数值未见超限；广浩证书未列明确限值。数值和倍率留在JSON。",
+      "requirementOrBasis": "v3 R16方法9(1)至(6)：限值未经原文核实不判不符合；没有推算未载试样尺寸或降低要求。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-P2",
+        "E-B1",
+        "E-F1",
+        "E-F2"
+      ],
+      "issueAndNextStep": "用确认的标准限值复算各批；小尺寸冲击、热挤压放宽等条件本组不自行假定。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 10,
+      "methodTitle": "交货状态/质量等级",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "钢管为热轧无缝/热轧态；广浩管件/法兰交货状态未明确；材质20不是应凭空补B/D等级的牌号。",
+      "requirementOrBasis": "v3 R16方法10；执行标准交货状态条款未核实。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-B1",
+        "E-F1",
+        "E-F2"
+      ],
+      "issueAndNextStep": "补管件状态/热处理与制造记录，按实际牌号及标准核对；不把冷拔正火规则套给热轧管。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 11,
+      "methodTitle": "复验",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "主线20碳钢；表中还见35CrMo/30CrMo紧固件及CS/304特殊件，实际批次/材质未闭环；本组输入未见与这些批次绑定的复验结果。",
+      "requirementOrBasis": "v3 R16方法11；2025规范复验比例不直接回溯2021工程，历史适用和设计要求待核实。",
+      "evidenceRefs": [
+        "E-D3",
+        "E-D4",
+        "E-D5"
+      ],
+      "issueAndNextStep": "明确本工程当期必须复验的对象及比例后提供报告；不能把通用材料表中CS/304直接当主线不锈钢或已证实欠复验。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 12,
+      "methodTitle": "实物追溯",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "设计行—质量证明—实际元件炉批/标志移植三方链未建立；焊接记录显示108×5但不能取代钢管炉批记录。",
+      "requirementOrBasis": "v3 R16方法12。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-P2",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1",
+        "W-C10-13"
+      ],
+      "issueAndNextStep": "补验收、领用、标志移植及实物标识并按34行清单建立唯一关系。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R16",
+      "method": 13,
+      "methodTitle": "按批次输出",
+      "object": "R12/R13/R16共用34行元件索引",
+      "executionStatus": "已完成",
+      "result": "预警",
+      "actual": "已输出各候选批/证的字段差异、证据不足和数值来源，未给标准阈值合格判定。",
+      "requirementOrBasis": "v3 R16方法13。",
+      "evidenceRefs": [
+        "E-P1",
+        "E-B1",
+        "E-F1",
+        "E-F2",
+        "E-V1",
+        "E-V2",
+        "E-V3"
+      ],
+      "issueAndNextStep": "补齐有效设计、标准及批次链后再更新；当前R16为部分核查，预警+证据不足。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 1,
+      "methodTitle": "完整性",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "JL-J50有制造月2020.04、型号、批141663、化学/熔敷性能/AW/印章，但标准年号与库存期未列；E4303两证有型号、规格、性能和GB/T5117-2012、出证日期，生产日期/试样热处理状态未明确；3.2批号低清。",
+      "requirementOrBasis": "v3 R26方法1及工作见证；不能由出证日期或批号推造生产日期。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3"
+      ],
+      "issueAndNextStep": "补原始可读MTC/生产日期/试样状态/相关说明，核验章与复印传递效力。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 2,
+      "methodTitle": "型号与匹配",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "施工记录使用JL-J50/2.0与E4303/3.2，与现有MTC牌号/规格能作候选关联；方案写TIG50/J422，已阅pWPS写JTT-50/J427。E4303的MTC也标J422，但J427不能未经等效依据直接视同E4303。",
+      "requirementOrBasis": "v3 R26方法2；母材20及焊材性能下限需按当期标准核实；pWPS不是正式WPS。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3",
+        "W-C10-13",
+        "W-S07-09",
+        "W-P07-09",
+        "W-P10-12"
+      ],
+      "issueAndNextStep": "补本工程正式WPS、填充材料型号等效/分类依据和适用PQR；把商品名、产品型号、类别号分别处理。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 3,
+      "methodTitle": "焊材类别与母材组别",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "已阅pWPS/工艺附件未给可确认FeT/FeS/FeMSG类别号；母材20；商品名JL-J50/JTT-50/J427/J422及型号E4303/ER50-6不直接当类别代号。",
+      "requirementOrBasis": "v3 R26方法3(1)至(3)全部考虑；2023表2-4不直接用于2021历史判定，父级组别/未列组别不能补造。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3",
+        "W-P07-09"
+      ],
+      "issueAndNextStep": "补适用旧版分类表原文、正式WPS类别和母材组别；缺类别时本项不作配套/不配套肯定判断。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 4,
+      "methodTitle": "表外填充金属与归类",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "JL-J50证书列GB/T8110、NB/T47018.3但无年号；E4303列GB/T5117-2012；正式WPS类别、适用历史表及归类报告未建立，不能只因标准名不同直接要求重新评定。",
+      "requirementOrBasis": "v3 R26方法4/附录B.3为核查线索；历史版本适用待核实。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3",
+        "W-P07-09",
+        "W-P10-12"
+      ],
+      "issueAndNextStep": "适用时补归类报告八项：标准/技术条件、原始条件、工艺性能、焊接性、使用业绩/来源、结论及数据来源、归类陈述、归入类别；或分别评定依据。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 5,
+      "methodTitle": "逐元素/性能限值",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "JL-J50的10元素及Rm572/Re458/A27/冲击120J(-30℃)、95J(-40℃)；E4303两证9元素及470/393/26.5、490/411/27，-20℃冲击60/62/56与78/83/80J。按证书自列范围逐值比较未见超限。",
+      "requirementOrBasis": "v3 R26方法5；标准号+型号的原文阈值、冲击试样/温度/热处理条件未完整核实，不把自列值当标准已验证。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3"
+      ],
+      "issueAndNextStep": "取得GB/T5117-2012及本批GB/T8110/NB/T47018.3具体年份正文；低氢型适用性先确认，不能给E4303无条件索扩散氢。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 6,
+      "methodTitle": "库存有效期",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "使用日期由交工原页为2021-03-24至28；JL-J50制造2020.04；E4303证书出证2019-05-24、2020-09-01但未明确生产日。三份MTC均未给可确认库存期限。",
+      "requirementOrBasis": "v3 R26方法6；无制造商说明/管理文件就不能编默认期限，也不能按当前日期判当年已超期。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3",
+        "W-C10-13"
+      ],
+      "issueAndNextStep": "补生产日期、制造方库存说明/管理文件及适用复验；取得依据后才能计算当年使用是否超期。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 7,
+      "methodTitle": "批号追溯",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "MTC141663、19052419及低清3.2批号；交工p10-13只列焊材牌号规格未列批号。验收、烘干、领用及焊口批次映射未在本组建立。",
+      "requirementOrBasis": "v3 R26方法7。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3",
+        "W-C10-13"
+      ],
+      "issueAndNextStep": "补批号清楚原证、实物标签、验收/烘干/领用台账到焊口/焊工的记录；不能用牌号一致替代批次一致。",
+      "officialConclusion": false
+    },
+    {
+      "node": "R26",
+      "method": 8,
+      "methodTitle": "按型号与批号输出",
+      "object": "E-W1/W2/W3三份焊材证书与跨组工艺/施焊记录",
+      "executionStatus": "已完成",
+      "result": "预警",
+      "actual": "按三份MTC输出型号、规格、批号、性能、库存及追溯状态，并记录与方案/pWPS差异。",
+      "requirementOrBasis": "v3 R26方法8。",
+      "evidenceRefs": [
+        "E-W1",
+        "E-W2",
+        "E-W3",
+        "W-C10-13",
+        "W-P07-09"
+      ],
+      "issueAndNextStep": "当前为部分核查、预警+证据不足；等待正式WPS、批次链及标准后形成监检人员确认意见。",
+      "officialConclusion": false
+    }
+  ],
+  "numericChecks": [
+    {
+      "evidence": "E-P1",
+      "field": "C",
+      "actualPercent": 0.19,
+      "printedLimit": [
+        0.17,
+        0.23
+      ],
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P1",
+      "field": "Si",
+      "actualPercent": 0.23,
+      "printedLimit": [
+        0.17,
+        0.37
+      ],
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P1",
+      "field": "Mn",
+      "actualPercent": 0.54,
+      "printedLimit": [
+        0.35,
+        0.65
+      ],
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P1",
+      "field": "P",
+      "actualPercent": 0.016,
+      "printedLimit": {
+        "max": 0.03
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P1",
+      "field": "S",
+      "actualPercent": 0.007,
+      "printedLimit": {
+        "max": 0.03
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P1",
+      "field": "Cr",
+      "actualPercent": 0.01,
+      "printedLimit": {
+        "max": 0.25
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P1",
+      "field": "Ni",
+      "actualPercent": 0.01,
+      "printedLimit": {
+        "max": 0.3
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P1",
+      "field": "Cu",
+      "actualPercent": 0.01,
+      "printedLimit": {
+        "max": 0.2
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P2",
+      "row": 1,
+      "actual": {
+        "row": 1,
+        "yieldMPa": 265,
+        "tensileMPa": 458,
+        "elongationPercent": 28.5
+      },
+      "printedLimit": {
+        "yieldMinMPa": 245,
+        "tensileRangeMPa": [
+          410,
+          530
+        ],
+        "elongationMinPercent": 20
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-P2",
+      "row": 2,
+      "actual": {
+        "row": 2,
+        "yieldMPa": 261,
+        "tensileMPa": 459,
+        "elongationPercent": 28.0
+      },
+      "printedLimit": {
+        "yieldMinMPa": 245,
+        "tensileRangeMPa": [
+          410,
+          530
+        ],
+        "elongationMinPercent": 20
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-B1",
+      "field": "C",
+      "actualPercent": 0.19,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-B1",
+      "field": "Mn",
+      "actualPercent": 0.44,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-B1",
+      "field": "Si",
+      "actualPercent": 0.21,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-B1",
+      "field": "S",
+      "actualPercent": 0.009,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-B1",
+      "field": "P",
+      "actualPercent": 0.019,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "C",
+      "actualPercent": 0.082,
+      "printedLimit": [
+        0.06,
+        0.15
+      ],
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "Mn",
+      "actualPercent": 1.44,
+      "printedLimit": [
+        1.4,
+        1.85
+      ],
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "Si",
+      "actualPercent": 0.84,
+      "printedLimit": [
+        0.8,
+        1.15
+      ],
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "P",
+      "actualPercent": 0.013,
+      "printedLimit": {
+        "max": 0.025
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "S",
+      "actualPercent": 0.01,
+      "printedLimit": {
+        "max": 0.015
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "Cu",
+      "actualPercent": 0.112,
+      "printedLimit": {
+        "max": 0.5
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "Ni",
+      "actualPercent": 0.01,
+      "printedLimit": {
+        "max": 0.15
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "Cr",
+      "actualPercent": 0.017,
+      "printedLimit": {
+        "max": 0.15
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "Mo",
+      "actualPercent": 0.011,
+      "printedLimit": {
+        "max": 0.15
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "V",
+      "actualPercent": 0.008,
+      "printedLimit": {
+        "max": 0.03
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W1",
+      "field": "mechanical",
+      "actual": {
+        "tensileMPa": 572,
+        "yieldMPa": 458,
+        "elongationPercent": 27,
+        "impact": [
+          {
+            "tempC": -30,
+            "joules": 120
+          },
+          {
+            "tempC": -40,
+            "joules": 95
+          }
+        ],
+        "state": "AW 焊态"
+      },
+      "printedLimit": {
+        "tensileMPa": 500,
+        "yieldMPa": 420,
+        "elongationPercent": 22,
+        "impactJAtMinus30": 54,
+        "impactJAtMinus40": 27
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "C",
+      "actualPercent": 0.078,
+      "printedLimit": {
+        "max": 0.2
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "S",
+      "actualPercent": 0.012,
+      "printedLimit": {
+        "max": 0.035
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "Mn",
+      "actualPercent": 0.31,
+      "printedLimit": {
+        "max": 1.2
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "Si",
+      "actualPercent": 0.16,
+      "printedLimit": {
+        "max": 1.0
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "P",
+      "actualPercent": 0.023,
+      "printedLimit": {
+        "max": 0.04
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "Cr",
+      "actualPercent": 0.022,
+      "printedLimit": {
+        "max": 0.2
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "Ni",
+      "actualPercent": 0.015,
+      "printedLimit": {
+        "max": 0.3
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "Mo",
+      "actualPercent": 0.006,
+      "printedLimit": {
+        "max": 0.3
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "V",
+      "actualPercent": 0.006,
+      "printedLimit": {
+        "max": 0.08
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W2",
+      "field": "mechanical",
+      "actual": {
+        "yieldMPa": 393,
+        "tensileMPa": 470,
+        "elongationPercent": 26.5,
+        "impactTemperatureC": -20,
+        "impactJ": [
+          60,
+          62,
+          56
+        ]
+      },
+      "printedLimit": {
+        "yieldMPa": 330,
+        "tensileMPa": 430,
+        "elongationPercent": 20,
+        "impactJ": 27
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "C",
+      "actualPercent": 0.073,
+      "printedLimit": {
+        "max": 0.2
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "S",
+      "actualPercent": 0.016,
+      "printedLimit": {
+        "max": 0.035
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "Mn",
+      "actualPercent": 0.31,
+      "printedLimit": {
+        "max": 1.2
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "Si",
+      "actualPercent": 0.14,
+      "printedLimit": {
+        "max": 1.0
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "P",
+      "actualPercent": 0.024,
+      "printedLimit": {
+        "max": 0.04
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "Cr",
+      "actualPercent": 0.022,
+      "printedLimit": {
+        "max": 0.2
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "Ni",
+      "actualPercent": 0.014,
+      "printedLimit": {
+        "max": 0.3
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "Mo",
+      "actualPercent": 0.006,
+      "printedLimit": {
+        "max": 0.3
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "V",
+      "actualPercent": 0.005,
+      "printedLimit": {
+        "max": 0.08
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-W3",
+      "field": "mechanical",
+      "actual": {
+        "yieldMPa": 411,
+        "tensileMPa": 490,
+        "elongationPercent": 27,
+        "impactTemperatureC": -20,
+        "impactJ": [
+          78,
+          83,
+          80
+        ]
+      },
+      "printedLimit": {
+        "yieldMPa": 330,
+        "tensileMPa": 430,
+        "elongationPercent": 20,
+        "impactJ": 27
+      },
+      "result": "在证书自列范围内",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F1",
+      "field": "C",
+      "actualPercent": 0.19,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F1",
+      "field": "Mn",
+      "actualPercent": 0.42,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F1",
+      "field": "Si",
+      "actualPercent": 0.26,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F1",
+      "field": "S",
+      "actualPercent": 0.011,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F1",
+      "field": "P",
+      "actualPercent": 0.018,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F2",
+      "field": "C",
+      "actualPercent": 0.19,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F2",
+      "field": "Mn",
+      "actualPercent": 0.42,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F2",
+      "field": "Si",
+      "actualPercent": 0.21,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F2",
+      "field": "S",
+      "actualPercent": 0.011,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    },
+    {
+      "evidence": "E-F2",
+      "field": "P",
+      "actualPercent": 0.017,
+      "printedLimit": null,
+      "result": "未比较：标准限值未核实且该证书未列限值",
+      "normativeComparison": "未完成"
+    }
+  ],
+  "nodeSummary": [
+    {
+      "node": "R12",
+      "methodCount": 6,
+      "coverage": "全部方法已列入，部分核查完成，待资料/依据/人工确认",
+      "result": "证据不足",
+      "formalPass": false
+    },
+    {
+      "node": "R13",
+      "methodCount": 6,
+      "coverage": "全部方法已列入，部分核查完成，待资料/依据/人工确认",
+      "result": "证据不足",
+      "formalPass": false
+    },
+    {
+      "node": "R16",
+      "methodCount": 13,
+      "coverage": "全部方法已列入，部分核查完成，待资料/依据/人工确认",
+      "result": "预警+证据不足",
+      "formalPass": false
+    },
+    {
+      "node": "R26",
+      "methodCount": 8,
+      "coverage": "全部方法已列入，部分核查完成，待资料/依据/人工确认",
+      "result": "预警+证据不足",
+      "formalPass": false
+    }
+  ],
+  "findings": [
+    {
+      "id": "M01",
+      "type": "预警/原页明确字段差异",
+      "nodes": [
+        "R16"
+      ],
+      "evidence": [
+        "E-D1",
+        "E-D2",
+        "E-D3",
+        "E-P1"
+      ],
+      "issue": "设计108×4与候选质证108×5；实际安装及批准变更待核",
+      "doNotInfer": "不能认为更厚自动符合，也不能尚未确认使用就判安装不符合"
+    },
+    {
+      "id": "M02",
+      "type": "预警/原页明确型号差异",
+      "nodes": [
+        "R16"
+      ],
+      "evidence": [
+        "E-D2",
+        "E-D3",
+        "E-V1",
+        "E-V2"
+      ],
+      "issue": "设计Q41H/Q941H-16C与候选MTC Q41F/Q941F-16C，防火/全通径要求未形成对应证明",
+      "doNotInfer": "不能由型号字母自行推导所有结构/性能，再未核实就判正式不符合"
+    },
+    {
+      "id": "M03",
+      "type": "预警/候选对应未明",
+      "nodes": [
+        "R16"
+      ],
+      "evidence": [
+        "E-D5",
+        "E-F2",
+        "E-V3"
+      ],
+      "issue": "设计异径管100×80与候选Φ108×57不一致，闸阀Z41H未建立设计行对应",
+      "doNotInfer": "不自动把闸阀当截止阀替代，也不凭局部质证数量判工程短缺"
+    },
+    {
+      "id": "M04",
+      "type": "预警/工艺焊材关系待核",
+      "nodes": [
+        "R26"
+      ],
+      "evidence": [
+        "E-W1",
+        "E-W3",
+        "W-C10-13",
+        "W-S07-09",
+        "W-P07-09"
+      ],
+      "issue": "实际记录JL-J50/E4303，方案TIG50/J422，pWPS JTT-50/J427；正式WPS和等效归类缺闭环"
+    },
+    {
+      "id": "M05",
+      "type": "证据不足/核验与证书范围",
+      "nodes": [
+        "R12",
+        "R13"
+      ],
+      "issue": "外部登记未执行，许可级别与历史适用未核实，型式/制造监检证未在本次输入建立对应"
+    },
+    {
+      "id": "M06",
+      "type": "证据不足/实物批次及有效期",
+      "nodes": [
+        "R16",
+        "R26"
+      ],
+      "issue": "材料实物标志链、焊材批号到焊口、库存期限及部分生产日未形成证据闭环"
+    }
+  ]
+}

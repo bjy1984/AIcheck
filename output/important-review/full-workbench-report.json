@@ -1,0 +1,27 @@
+{
+  "liveProviders": true,
+  "ocr": [
+    {
+      "versionId": "DV-ABCA90B3-V1",
+      "status": "success",
+      "fragments": 14
+    },
+    {
+      "versionId": "DV-E0C595B9-V1",
+      "status": "success",
+      "fragments": 14
+    }
+  ],
+  "reviews": [
+    {
+      "nodeId": 4,
+      "status": "waiting_human_review",
+      "errorCode": null,
+      "llmCalled": true,
+      "skillFrozen": true,
+      "findingCount": 3
+    }
+  ],
+  "errors": [],
+  "failedApi": []
+}

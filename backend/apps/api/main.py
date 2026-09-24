@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any
@@ -24,6 +25,8 @@ from apps.api.cnse_routes import router as cnse_router
 from apps.api.document_category_routes import document_category_router
 from apps.api.feedback_metrics_routes import feedback_metrics_router
 from apps.api.idempotency_scope import authorization_membership_snapshot
+from apps.api.important_review_routes import important_review_router
+from apps.api.inspection_service_routes import inspection_service_router
 from apps.api.knowledge_admin_routes import knowledge_admin_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
 from apps.api.org_delegation_routes import org_delegation_router
@@ -251,7 +254,7 @@ async def attach_operation_id(request: Request, call_next):
     mutation_lock = None
     mutation_lock_acquired = False
     try:
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not is_ephemeral_inspection_request(request):
             mutation_lock = tenant_mutation_lock(tenant_id)
             await mutation_lock.acquire()
             mutation_lock_acquired = True
@@ -374,6 +377,19 @@ async def handle_request(
     action_error = inferred_action_error(request)
     if action_error is not None:
         return audit_rejected_request(request, action_error, "ACTION_DENIED")
+    if is_ephemeral_inspection_request(request):
+        # Intentionally before mutation snapshots/idempotency: even a supplied
+        # Idempotency-Key must never persist identity input or response bodies.
+        started, status = time.monotonic(), 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        finally:
+            logger.info("inspection_service operation=%s status=%s duration_ms=%s",
+                        canonical_path(request.url.path).rsplit("/", 1)[-1], status,
+                        round((time.monotonic() - started) * 1000))
     cached_idempotency = await idempotency_replay_response(request)
     if cached_idempotency is not None:
         return cached_idempotency
@@ -560,7 +576,17 @@ def auth_required_for_path(request: Request) -> bool:
     return not request.url.path.startswith(public_prefixes)
 
 
+def is_ephemeral_inspection_request(request: Request) -> bool:
+    return canonical_path(request.url.path) in {
+        "/inspection-services/capabilities", "/inspection-services/rules",
+        "/inspection-services/certificate-validity",
+        "/inspection-services/certificate-registry",
+    }
+
+
 def idempotency_scope(request: Request) -> str | None:
+    if is_ephemeral_inspection_request(request):
+        return None
     key = request.headers.get("Idempotency-Key")
     if not key or request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
@@ -863,6 +889,8 @@ def audit_failed_mutation(request: Request, payload: dict[str, Any], http_status
 
 
 def audit_scope(request: Request) -> str | None:
+    if is_ephemeral_inspection_request(request):
+        return None
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
     normalized_path = canonical_path(request.url.path)
@@ -1448,6 +1476,10 @@ app.include_router(router)
 app.include_router(router, prefix="/api")
 # 一键审查拆在独立模块：routes.py 的行数棘轮卡在上限，往里加会触发棘轮，
 # 抬高上限则等于把这条约束取消掉。新端点一律挂在这里。
+app.include_router(important_review_router)
+app.include_router(important_review_router, prefix="/api")
+app.include_router(inspection_service_router)
+app.include_router(inspection_service_router, prefix="/api")
 app.include_router(batch_review_router)
 app.include_router(batch_review_router, prefix="/api")
 app.include_router(auto_review_router)

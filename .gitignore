@@ -43,6 +43,12 @@ output/**/*.inspect.ndjson
 output/knowledge_uploads/
 output/document_uploads/
 
+# Inspection test renders and machine-specific connection notes stay local.
+output/skills/**/pages/
+output/skills/**/*.png
+output/skills/本机连接说明.md
+output/important-review/*.png
+
 # Local QA and project-analysis replay artifacts.
 audit-reports/2026-08-29-contractor-file-list-analysis/
 audit-reports/2026-08-29-upload-ocr-vector-targeting/

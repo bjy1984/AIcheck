@@ -1,4 +1,4 @@
-export type InspectionWorkspaceView = 'ai' | 'list'
+export type InspectionWorkspaceView = 'ai' | 'important' | 'list'
 
 export const resolveInspectionWorkspaceView = (value: unknown): InspectionWorkspaceView =>
-  value === 'ai' ? 'ai' : 'list'
+  value === 'important' ? 'important' : value === 'ai' ? 'ai' : 'list'

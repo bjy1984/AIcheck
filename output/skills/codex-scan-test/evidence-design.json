@@ -1,0 +1,1954 @@
+{
+  "reportType": "实际本地资料辅助审查",
+  "projectLabel": "珠海恒基达鑫一、二期装车站新增两套卸车系统项目",
+  "reviewedAt": "2026-09-22",
+  "ruleVersion": "160ed6a20420d63329c4bded09053a468a0b3e3187d8dc9d7774deff8a814d6e",
+  "installedSkill": "/Users/mac/.agents/skills/aicheck-inspection/SKILL.md",
+  "nodes": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "methodCount": 40,
+  "execution": {
+    "host": "当前Codex会话视觉读取，不是独立CLI模型试跑成功",
+    "rules": "实际调用已安装aicheck_client本地rules，节点4～9成功",
+    "mcp": "本任务主审报告connection缺配置；本设计子审查未调用后台",
+    "web": "仅标准编号查询官方公开元数据，未传工程名称、文件、OCR或证件标识",
+    "serverOcr": false,
+    "documentUpload": false,
+    "envRead": false
+  },
+  "scopeLimitations": [
+    "本组实际逐页读取的14个主文件见files；材料表/设备表由协作审查组核查，未在此冒称本组逐页复读",
+    "无有效版确认、设计变更/施工图审查见证本体，应力分析/完整计算书和全部历史规范正文",
+    "未完成当前官方登记/签字原件真实性核验；没有给正式符合/不符合结论",
+    "网页标准状态核验只是元数据，不能替代条文、过渡期和具体适用条件"
+  ],
+  "files": [
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/工艺图纸目录.png",
+      "relativePath": "Scan/工艺图纸目录.png",
+      "sha256": "2dd2959c694c436463f1701a3a2ccc40f7708ca578fc822b01c2d0077387478f",
+      "bytes": 2866661,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part1.png",
+      "relativePath": "Scan/工艺设计说明书part1.png",
+      "sha256": "36a61c25c68ab2e233ff97a260d7ddf7961df756d726d788c28c43ab44d3fdc7",
+      "bytes": 2926999,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part2.png",
+      "relativePath": "Scan/工艺设计说明书part2.png",
+      "sha256": "7eed3a3a03905bc9a5b4c8dfac69a164880cf1e4969e2885cdfdc91153715f42",
+      "bytes": 2972397,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part3.png",
+      "relativePath": "Scan/工艺设计说明书part3.png",
+      "sha256": "2e5838256940951d87987e3bb8435bea03acd936b4c1d30855fbced8de2a031c",
+      "bytes": 2910033,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part4.png",
+      "relativePath": "Scan/工艺设计说明书part4.png",
+      "sha256": "33eebec391d85d53b68fe9bd865efea7ef031199ab11f0275cafd929cc14b4fd",
+      "bytes": 2892554,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part5.png",
+      "relativePath": "Scan/工艺设计说明书part5.png",
+      "sha256": "2d66c230dee4bf3de5955463852d9b7f1ee9b8d4412c7dec136d19d2a3bba096",
+      "bytes": 2866617,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part6.png",
+      "relativePath": "Scan/工艺设计说明书part6.png",
+      "sha256": "53daab8098edb8f65241c4708f60104c7b10127364aa469320886fbc8105a770",
+      "bytes": 2761711,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/压力管道强度计算书.png",
+      "relativePath": "Scan/压力管道强度计算书.png",
+      "sha256": "56bb88f3cf385fd6a503148dc7626106d1f1730fbfa201baee0e751e8dbcd6f2",
+      "bytes": 2940362,
+      "primary": true,
+      "dimensions": [
+        1012,
+        1800
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png",
+      "relativePath": "Scan/管道特性表.png",
+      "sha256": "2afaad383121c55ecbbcca0ee91a3bf377201ef0bdbc2bb9f0b16f15515922aa",
+      "bytes": 2892118,
+      "primary": true,
+      "dimensions": [
+        1800,
+        1012
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/管道及仪表流程图.png",
+      "relativePath": "Scan/管道及仪表流程图.png",
+      "sha256": "3fe482e603555cb13399c04d860a656a347583f49ce904bf6752715dd35b7e4a",
+      "bytes": 2488719,
+      "primary": true,
+      "dimensions": [
+        1800,
+        1012
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/卸车台配管平面图.png",
+      "relativePath": "Scan/卸车台配管平面图.png",
+      "sha256": "f370620493759ad7a88c8cd7d0b2fa8220b1bb83a5fa3d80a406a7e90bfba6c5",
+      "bytes": 2770747,
+      "primary": true,
+      "dimensions": [
+        1800,
+        1012
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/设备及管道油漆保温一览表.png",
+      "relativePath": "Scan/设备及管道油漆保温一览表.png",
+      "sha256": "a3d696f5e58157f5300b64e0cb6c50074ee1df7b79f3b63de59ef7cfeb5c61ac",
+      "bytes": 2921658,
+      "primary": true,
+      "dimensions": [
+        1800,
+        1012
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/特种设备设计资质.png",
+      "relativePath": "Scan/特种设备设计资质.png",
+      "sha256": "f14bcda780af8182253e3912c346204eb0e3efa1edbafc94a71efbd508e724e4",
+      "bytes": 1133965,
+      "primary": true,
+      "dimensions": [
+        1058,
+        1487
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+      "relativePath": "Scan/射线检测报告.pdf",
+      "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+      "bytes": 2837594,
+      "primary": true,
+      "pageCount": 5,
+      "pageTextLengths": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "reviewedPages": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reviewMode": "Codex当前会话原页视觉读取；PDF逐页渲染"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6509.png",
+      "relativePath": "Scan/png/IMG_6509.png",
+      "sha256": "97feff3aa0300406bed324bf5f98a66164153730315aa5d4b964f7e815d84fbf",
+      "bytes": 19244305,
+      "primary": false,
+      "dimensions": [
+        5712,
+        3213
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "局部原分辨率裁图复核"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6511.png",
+      "relativePath": "Scan/png/IMG_6511.png",
+      "sha256": "41252e8928a918bc3cae024292160318393af64fea7140c944394697b144b04b",
+      "bytes": 20478693,
+      "primary": false,
+      "dimensions": [
+        3213,
+        5712
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "局部原分辨率裁图复核"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6514.png",
+      "relativePath": "Scan/png/IMG_6514.png",
+      "sha256": "d2083278cce74bf86b0ffe378cecc3942f0fb4121fe36c719d7e09fb8bcad3ff",
+      "bytes": 19938716,
+      "primary": false,
+      "dimensions": [
+        3213,
+        5712
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "局部原分辨率裁图复核"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6524.png",
+      "relativePath": "Scan/png/IMG_6524.png",
+      "sha256": "1e56202b632cc43ef01eb48a7eb1e9e098cedb16cec06dbb13cca85b239bb6c3",
+      "bytes": 17108224,
+      "primary": false,
+      "dimensions": [
+        5712,
+        3213
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "整张印章/图签照片视觉复核"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6528.png",
+      "relativePath": "Scan/png/IMG_6528.png",
+      "sha256": "c4712d0edced6228a1b0563f6f1905faa561fbeb1eb97a98e3fe3a4978a4c2a3",
+      "bytes": 9248409,
+      "primary": false,
+      "dimensions": [
+        4032,
+        2268
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "局部原分辨率裁图复核"
+    },
+    {
+      "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6529.png",
+      "relativePath": "Scan/png/IMG_6529.png",
+      "sha256": "5090a20d4cfa4cca2a02283d74932c30afe0222e1cbf963b9bfbd03c448e080d",
+      "bytes": 10287910,
+      "primary": false,
+      "dimensions": [
+        4032,
+        2268
+      ],
+      "pageCount": 1,
+      "reviewedPages": [
+        1
+      ],
+      "reviewMode": "局部原分辨率裁图复核"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "DES-01",
+      "fileName": "工艺图纸目录.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/工艺图纸目录.png",
+      "sha256": "2dd2959c694c436463f1701a3a2ccc40f7708ca578fc822b01c2d0077387478f",
+      "physicalPage": 1,
+      "locator": "页首图签、目录第1至10行",
+      "shortQuote": "版次2；目录Rev均1；总张数18",
+      "fields": {
+        "drawingNo": "QX201903S-13-Y-00",
+        "titleRevision": "2",
+        "listedRevision": "1",
+        "date": "2021.3",
+        "listedFiles": 10,
+        "listedSheets": 18,
+        "designOrganization": "广东星燃石化设计院有限公司"
+      },
+      "uncertainty": "扫描/照片不能证明原件签章真实性；未自动认定为当前有效版",
+      "actuallyViewed": true,
+      "highResolutionSource": {
+        "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6514.png",
+        "sha256": "d2083278cce74bf86b0ffe378cecc3942f0fb4121fe36c719d7e09fb8bcad3ff"
+      }
+    },
+    {
+      "id": "DES-02",
+      "fileName": "工艺设计说明书part1.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part1.png",
+      "sha256": "36a61c25c68ab2e233ff97a260d7ddf7961df756d726d788c28c43ab44d3fdc7",
+      "physicalPage": 1,
+      "locator": "图签及设计内容",
+      "shortQuote": "QX201903S-13-Y-01；2021.3；共6页；版次2",
+      "fields": {
+        "project": "珠海恒基达鑫国际化工仓储股份有限公司一、二期装车站新增两套卸车系统项目",
+        "projectNo": "QX201903S",
+        "date": "2021.3",
+        "revision": "2",
+        "scope": "新增两套卸车系统；两根卸车管线送至四区交换站"
+      },
+      "uncertainty": "六张分文件有连续正文，但每张“第 页”未填，以下以part1..6文件序标识，不冒称印刷页码",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-03",
+      "fileName": "工艺设计说明书part2.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part2.png",
+      "sha256": "7eed3a3a03905bc9a5b4c8dfac69a164880cf1e4969e2885cdfdc91153715f42",
+      "physicalPage": 1,
+      "locator": "4工艺说明及5标准规范",
+      "shortQuote": "HG/T20553-2011；GB/T8163-2018；TSG D0001-2009；SG 07-2019",
+      "fields": {
+        "pipeMaterialStandard": "GB/T 8163-2018",
+        "flangeSeries": "HG/T 20592-2009 B系列",
+        "rawLicensingRule": "SG 07-2019"
+      },
+      "uncertainty": "原图写SG 07-2019，疑缺T；仅列待核，不静默修正成已确认TSG编号",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-04",
+      "fileName": "工艺设计说明书part3.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part3.png",
+      "sha256": "2e5838256940951d87987e3bb8435bea03acd936b4c1d30855fbced8de2a031c",
+      "physicalPage": 1,
+      "locator": "5.3标准规范第3至18条",
+      "shortQuote": "GB/T20801.1～GB/T20801.6-2020；NB/T47013-2015",
+      "fields": {
+        "industrialPipingSeries": "GB/T 20801.1～6-2020",
+        "ndtReference": "NB/T 47013-2015"
+      },
+      "uncertainty": "设计标准登记真实存在；各分册历史实施日期不同，不能按统一“2020”概括全部历史状态",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-05",
+      "fileName": "工艺设计说明书part4.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part4.png",
+      "sha256": "33eebec391d85d53b68fe9bd865efea7ef031199ab11f0275cafd929cc14b4fd",
+      "physicalPage": 1,
+      "locator": "三、管道安装说明第2、3项及四",
+      "shortQuote": "直管段支撑间距不大于5m；焊接采用氩电联焊；绝热设计说明 无",
+      "fields": {
+        "supportSpacingMaxM": 5,
+        "horizontalBendSpacingRatio": 0.73,
+        "weldingProcessRaw": "氩电联焊",
+        "insulation": "无"
+      },
+      "uncertainty": "未见应力计算本体，不能由一般支撑间距替代应力分析/柔性判定",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-06",
+      "fileName": "工艺设计说明书part5.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part5.png",
+      "sha256": "2d66c230dee4bf3de5955463852d9b7f1ee9b8d4412c7dec136d19d2a3bba096",
+      "physicalPage": 1,
+      "locator": "五防腐2及六施工安装与试验3",
+      "shortQuote": "除锈达St3级；底漆两道，面漆两道；压力试验及泄漏性试验",
+      "fields": {
+        "preparationGrade": "St3",
+        "primer": "环氧富锌防锈底漆两道",
+        "topcoat": "丙烯酸聚氨酯面漆两道",
+        "colorReference": "SH/T 3043-2014",
+        "testScope": "按规范并结合管道特性表"
+      },
+      "uncertainty": "本页未明确干膜厚度、保压时间或泄漏合格判据；属于已阅设计集合未见，不推断其他资料也没有",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-07",
+      "fileName": "工艺设计说明书part6.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/工艺设计说明书part6.png",
+      "sha256": "53daab8098edb8f65241c4708f60104c7b10127364aa469320886fbc8105a770",
+      "physicalPage": 1,
+      "locator": "六第4项",
+      "shortQuote": "射线检测…NB/T47013-2015；底片质量等级不低于AB级",
+      "fields": {
+        "ndtStandardRaw": "NB/T47013-2015",
+        "radiographicTechnique": "AB"
+      },
+      "uncertainty": "AB为技术等级/底片要求，不能替代缺陷验收等级；后者另见特性表III",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-08",
+      "fileName": "压力管道强度计算书.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/压力管道强度计算书.png",
+      "sha256": "56bb88f3cf385fd6a503148dc7626106d1f1730fbfa201baee0e751e8dbcd6f2",
+      "physicalPage": 1,
+      "locator": "计算正文、参数表及底部图签",
+      "shortQuote": "P=0.55MPa；S=137MPa；20#；Φ108×4；第1张共2张",
+      "fields": {
+        "drawingNo": "QX201903S-13-Y-10",
+        "revision": "2",
+        "printedSheet": 1,
+        "declaredSheets": 2,
+        "P_MPa": 0.55,
+        "S_MPa": 137,
+        "phi": 1.0,
+        "Y": 0.4,
+        "negativeTolerance": "10%×T",
+        "corrosionAllowance_mm": 1.5,
+        "machiningAllowance_mm": 0,
+        "materialRaw": "20# (GB/T8163-2018)",
+        "outerDiameter_mm": 108,
+        "nominalThickness_mm": 4,
+        "calculationReference": "GB/T20801.3-2006 6.1公式(1)",
+        "stressValueReference": "GB/T20801.2 表A.1（未标年号、温度点）"
+      },
+      "uncertainty": "仅见该计算书第1张；签发日期栏空；未声明按管线编号的覆盖范围，不据P较大自动覆盖全部管线",
+      "actuallyViewed": true,
+      "highResolutionSource": {
+        "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6511.png",
+        "sha256": "41252e8928a918bc3cae024292160318393af64fea7140c944394697b144b04b"
+      }
+    },
+    {
+      "id": "DES-09",
+      "fileName": "管道特性表.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png",
+      "sha256": "2afaad383121c55ecbbcca0ee91a3bf377201ef0bdbc2bb9f0b16f15515922aa",
+      "physicalPage": 1,
+      "locator": "全部10行及右上图签",
+      "shortQuote": "PL8303、PL8306：GC2、Φ108×4、50℃、0.55MPaG",
+      "fields": {
+        "drawingNo": "QX201903S-13-Y-07",
+        "revision": "2",
+        "date": "2021.3",
+        "rows": 10,
+        "identifiedPipeNos": [
+          "PL8301",
+          "PL8302",
+          "PL8303",
+          "PL8304",
+          "PL8305",
+          "PL8306",
+          "VT8301",
+          "VT8302"
+        ],
+        "unnumberedRows": [
+          4,
+          8
+        ],
+        "gradeMissingRows": [
+          1,
+          2,
+          5,
+          6,
+          9,
+          10
+        ],
+        "medium": "化工品（丙醇）",
+        "hazardRaw": "易燃易爆"
+      },
+      "uncertainty": "第4/8行管线号空，仅紧随PL8303/PL8306，未自动赋号；易燃易爆不直接等同v3的新“泄漏危害性/毒性”分类",
+      "actuallyViewed": true,
+      "highResolutionSource": {
+        "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6509.png",
+        "sha256": "97feff3aa0300406bed324bf5f98a66164153730315aa5d4b964f7e815d84fbf"
+      }
+    },
+    {
+      "id": "DES-10",
+      "fileName": "管道特性表.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/管道特性表.png",
+      "sha256": "2afaad383121c55ecbbcca0ee91a3bf377201ef0bdbc2bb9f0b16f15515922aa",
+      "physicalPage": 1,
+      "locator": "强度试验、泄漏性试验及焊缝检测列",
+      "shortQuote": "水0.825/0.150；空气0.115；RT10%，III，AB",
+      "fields": {
+        "liquidTests": [
+          {
+            "designMPaG": 0.55,
+            "testMPaG": 0.825
+          },
+          {
+            "designMPaG": 0.1,
+            "testMPaG": 0.15
+          }
+        ],
+        "gasTests": [
+          {
+            "pipeNo": "VT8301/VT8302",
+            "designMPaG": 0.1,
+            "testMPaG": 0.115
+          }
+        ],
+        "leakTestMedium": "空气",
+        "leakTestMPaG": "0.55或0.1（等于各行设计压力）",
+        "ndtMethod": "RT",
+        "ndtRatioPercent": 10,
+        "acceptanceGrade": "III",
+        "technicalGrade": "AB"
+      },
+      "uncertainty": "这里只能复核明示数值；保压、检查判据、气压试验同意与分级升压、试验温度修正及屈服上限尚待文件",
+      "actuallyViewed": true,
+      "highResolutionSource": {
+        "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6509.png",
+        "sha256": "97feff3aa0300406bed324bf5f98a66164153730315aa5d4b964f7e815d84fbf"
+      }
+    },
+    {
+      "id": "DES-11",
+      "fileName": "管道及仪表流程图.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/管道及仪表流程图.png",
+      "sha256": "3fe482e603555cb13399c04d860a656a347583f49ce904bf6752715dd35b7e4a",
+      "physicalPage": 1,
+      "locator": "流程线标识、图签及备注",
+      "shortQuote": "QX201903S-13-Y-02；版次2；PL8301～PL8306、VT8301/VT8302",
+      "fields": {
+        "drawingNo": "QX201903S-13-Y-02",
+        "revision": "2",
+        "date": "2021/3",
+        "system": "两套卸车系统"
+      },
+      "uncertainty": "本轮确认图号、版次、流程对象；部分小字不可读，不据此确认所有管件或阀门参数",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-12",
+      "fileName": "卸车台配管平面图.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/卸车台配管平面图.png",
+      "sha256": "f370620493759ad7a88c8cd7d0b2fa8220b1bb83a5fa3d80a406a7e90bfba6c5",
+      "physicalPage": 1,
+      "locator": "右下图签、许可印章（IMG_6524清晰补照）",
+      "shortQuote": "QX201903S-13-Y-05；版次2；TS1810648-2021",
+      "fields": {
+        "drawingNo": "QX201903S-13-Y-05",
+        "revision": "2",
+        "date": "2021/3",
+        "printedSheets": "第1张共1张",
+        "stampOrganization": "广东星燃石化设计院有限公司",
+        "stampLicenseNo": "TS1810648-2021",
+        "stampDate": "2017年8月31日",
+        "signedFields": [
+          "设计",
+          "校核",
+          "审核",
+          "专业负责",
+          "项目负责"
+        ],
+        "approvalField": "审定栏空"
+      },
+      "uncertainty": "平面图正文/局部云线表小字不清；图签补照清晰。照片有红章形态不能证明原件盖章或实际批准效力",
+      "actuallyViewed": true,
+      "highResolutionSource": {
+        "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6524.png",
+        "sha256": "1e56202b632cc43ef01eb48a7eb1e9e098cedb16cec06dbb13cca85b239bb6c3"
+      }
+    },
+    {
+      "id": "DES-13",
+      "fileName": "设备及管道油漆保温一览表.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/设备及管道油漆保温一览表.png",
+      "sha256": "a3d696f5e58157f5300b64e0cb6c50074ee1df7b79f3b63de59ef7cfeb5c61ac",
+      "physicalPage": 1,
+      "locator": "表格各管线涂层结构/除锈与签字栏",
+      "shortQuote": "环氧富锌底漆2层；丙烯酸聚酯面漆2层；St3.0",
+      "fields": {
+        "drawingNo": "QX201903S-13-Y-08",
+        "revision": "2",
+        "date": "2021.3",
+        "primer": "环氧富锌底漆",
+        "topcoatRaw": "丙烯酸聚酯面漆",
+        "layersEach": 2,
+        "derusting": "St3.0",
+        "insulationColumns": "空白"
+      },
+      "uncertainty": "面漆名称与说明part5的“丙烯酸聚氨酯”写法不同，需设计确认是简写还是不同体系；未把两者同义归并",
+      "actuallyViewed": true,
+      "highResolutionSource": {
+        "path": "/Users/mac/Documents/AIcheck/Scan/png/IMG_6529.png",
+        "sha256": "5090a20d4cfa4cca2a02283d74932c30afe0222e1cbf963b9bfbd03c448e080d"
+      }
+    },
+    {
+      "id": "DES-14",
+      "fileName": "特种设备设计资质.png",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/特种设备设计资质.png",
+      "sha256": "f14bcda780af8182253e3912c346204eb0e3efa1edbafc94a71efbd508e724e4",
+      "physicalPage": 1,
+      "locator": "单位、证号、发证及有效期",
+      "shortQuote": "四川省化工设计院；TS1851B09-2029；2025年06月24日",
+      "fields": {
+        "holder": "四川省化工设计院",
+        "licenseNo": "TS1851B09-2029",
+        "issuedAt": "2025-06-24",
+        "validUntil": "2029-08-11"
+      },
+      "uncertainty": "与广东星燃2021图纸主体/证号不同，不能作为其2021设计许可的对应证明；未做官方真实性核验，不判假证",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-15",
+      "fileName": "射线检测报告.pdf",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+      "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+      "physicalPage": 1,
+      "locator": "封面",
+      "shortQuote": "报告编号2021SHZH-014RTBG-01；二零二一年四月",
+      "fields": {
+        "reportNo": "2021SHZH-014RTBG-01",
+        "inspectionCompany": "广州声华科技股份有限公司",
+        "date": "2021-04"
+      },
+      "uncertainty": "报告对应简称需要与工程文件关联确认",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-16",
+      "fileName": "射线检测报告.pdf",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+      "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+      "physicalPage": 2,
+      "locator": "报告主页顶部检件规格及检测条件",
+      "shortQuote": "PL-8303；Φ108×5；20#；RT10%；III；报告日期2021年4月20日",
+      "fields": {
+        "pipeNoRaw": "PL-8303",
+        "specification": "Φ108×5",
+        "material": "20#",
+        "standard": "NB/T47013.2-2015",
+        "ratioPercent": 10,
+        "acceptanceGrade": "III",
+        "technique": "AB",
+        "reportNo": "2021SHZH-014RTBG-01",
+        "weldingProcessRaw": "GTAM",
+        "reportDate": "2021-04-20",
+        "actualInspectionDate": null
+      },
+      "uncertainty": "与设计Φ108×4存在书面不一致；尚不确定实装规格还是报告填写错误；GTAM原样登记不推定其应为哪种焊法；底部日期字段为报告日期，实际检测日期未由此确认",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-18",
+      "fileName": "射线检测报告.pdf",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+      "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+      "physicalPage": 4,
+      "locator": "报告主页顶部检件规格及检测条件",
+      "shortQuote": "PL-8306；Φ108×5；20#；RT10%；III；报告日期2021年4月20日",
+      "fields": {
+        "pipeNoRaw": "PL-8306",
+        "specification": "Φ108×5",
+        "material": "20#",
+        "standard": "NB/T47013.2-2015",
+        "ratioPercent": 10,
+        "acceptanceGrade": "III",
+        "technique": "AB",
+        "reportNo": "2021SHZH-014RTBG-01",
+        "weldingProcessRaw": "GTAM",
+        "reportDate": "2021-04-20",
+        "actualInspectionDate": null
+      },
+      "uncertainty": "与设计Φ108×4存在书面不一致；尚不确定实装规格还是报告填写错误；GTAM原样登记不推定其应为哪种焊法；底部日期字段为报告日期，实际检测日期未由此确认",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-17",
+      "fileName": "射线检测报告.pdf",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+      "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+      "physicalPage": 3,
+      "locator": "续页表头报告编号及管线号",
+      "shortQuote": "PL-8303；2021SHZH-010RTBG-01",
+      "fields": {
+        "pipeNoRaw": "PL-8303",
+        "reportNo": "2021SHZH-010RTBG-01",
+        "reportDate": "2021-04-20",
+        "actualInspectionDate": null
+      },
+      "uncertainty": "续页010与封面/主页014不一致，需出具单位确认整套报告归属；不得自行修正数字；底部日期字段为报告日期，实际检测日期未由此确认",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-19",
+      "fileName": "射线检测报告.pdf",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+      "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+      "physicalPage": 5,
+      "locator": "续页表头报告编号及管线号",
+      "shortQuote": "PL-8306；2021SHZH-010RTBG-01",
+      "fields": {
+        "pipeNoRaw": "PL-8306",
+        "reportNo": "2021SHZH-010RTBG-01",
+        "reportDate": "2021-04-20",
+        "actualInspectionDate": null
+      },
+      "uncertainty": "续页010与封面/主页014不一致，需出具单位确认整套报告归属；不得自行修正数字；底部日期字段为报告日期，实际检测日期未由此确认",
+      "actuallyViewed": true
+    },
+    {
+      "id": "DES-20",
+      "fileName": "射线检测报告.pdf",
+      "filePath": "/Users/mac/Documents/AIcheck/Scan/射线检测报告.pdf",
+      "sha256": "d04c3ceaa47ae569df51c63b090faddd5572aa21c4143f82bbf94ded1c52807c",
+      "physicalPage": 4,
+      "locator": "PL8306 A#片位5-6与5-6R1",
+      "shortQuote": "5-6：未熔合10mm、IV；5-6R1：I",
+      "fields": {
+        "object": "PL-8306/A#/5-6",
+        "initialDefect": "未熔合",
+        "length_mm": 10,
+        "initialGrade": "IV",
+        "reinspectionRow": "5-6R1",
+        "reinspectionGrade": "I"
+      },
+      "uncertainty": "存在复检行是闭环线索；未见返修审批、返修焊工、扩检分母与记录，不能写整条管线最终符合",
+      "actuallyViewed": true
+    }
+  ],
+  "methodChecks": [
+    {
+      "nodeId": 4,
+      "nodeCode": "R04",
+      "method": 1,
+      "methodTitle": "齐全性",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "目录Y00～Y09共10项18张；计算书Y10未列目录，且第1张共2张仅见1张。已阅说明6份、特性表、流程图、配管平面、防腐表。设备表/材料表由其他组核对；Y04卸车鹤管平面布置图未在本组范围识别。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-08"
+      ],
+      "nextStep": "补完整有效目录、Y04及Y10第2张；联同材料组确认Y06是否缺第2张；不能将未纳入本组审查直接写成用户未提供"
+    },
+    {
+      "nodeId": 4,
+      "nodeCode": "R04",
+      "method": 2,
+      "methodTitle": "三级签字",
+      "executionStatus": "待补充资料",
+      "result": "需人工核查",
+      "actual": "目录、说明6份、特性表、计算书、配管图、涂层表均见设计/编制、校核、审核手写痕迹；应力计算书未见。材料/设备表按各组证据复核。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-02",
+        "DES-08",
+        "DES-09",
+        "DES-12",
+        "DES-13"
+      ],
+      "nextStep": "对已确认有效版核原件签字、人员任职；照片痕迹不能认证签字真实或全部文件审批完整"
+    },
+    {
+      "nodeId": 4,
+      "nodeCode": "R04",
+      "method": 3,
+      "methodTitle": "四级签字触发",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "特性表第3/4/7/8行GC2、50℃、0.55MPaG，已明示行不触发v3三类四级条件；其余6行级别“/”。不得用已知GC2推断全部工程。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-09"
+      ],
+      "nextStep": "明确所有行管线级别/适用性后再确定签字级别；不以配管图审定空栏直接判缺签"
+    },
+    {
+      "nodeId": 4,
+      "nodeCode": "R04",
+      "method": 4,
+      "methodTitle": "触发参数完整",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "第1/2/5/6/9/10行压力管道级别为“/”；第4/8行管线编号空。各行设计温度50℃、压力0.1或0.55MPaG可读。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-09"
+      ],
+      "nextStep": "由设计确认“/”代表非压力管道还是漏填；为DN80两行给出明确管线/管段号"
+    },
+    {
+      "nodeId": 4,
+      "nodeCode": "R04",
+      "method": 5,
+      "methodTitle": "签字与设计许可联动",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "出图/红章为广东星燃、TS1810648-2021；提供的设计资质为四川省化工设计院TS1851B09-2029、2025签发。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-12",
+        "DES-14"
+      ],
+      "nextStep": "补广东星燃覆盖2021.3的许可、许可范围及人员证明；不能拿另一单位2025许可替代，也不因此判图纸或证书伪造"
+    },
+    {
+      "nodeId": 4,
+      "nodeCode": "R04",
+      "method": 6,
+      "methodTitle": "当前有效版本",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "目录本身Rev2但所有目录条目Rev1；说明/特性表/计算书/配管图等实物Rev2，效力/作废/变更批准未闭环。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-02",
+        "DES-08",
+        "DES-09",
+        "DES-12"
+      ],
+      "nextStep": "先取得设计发放/变更记录并确认有效版；暂停依赖版本的肯定结论"
+    },
+    {
+      "nodeId": 4,
+      "nodeCode": "R04",
+      "method": 7,
+      "methodTitle": "分类输出",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "已分类形成缺文件/缺完整页、版本冲突、级别参数缺失、许可对应证据缺项；未在未知适用性下认定四级缺签。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-08",
+        "DES-09",
+        "DES-14"
+      ],
+      "nextStep": "按以上清单补齐后回核；本输出为辅助意见"
+    },
+    {
+      "nodeId": 5,
+      "nodeCode": "R05",
+      "method": 1,
+      "methodTitle": "见证材料本体",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "本组选定设计/检测资料中未见施工图审查合格书、意见与回复或备案回执本体；图纸设计签字/出图章不能替代。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-12"
+      ],
+      "nextStep": "提供见证材料本体；未见不等于工程未办理"
+    },
+    {
+      "nodeId": 5,
+      "nodeCode": "R05",
+      "method": 2,
+      "methodTitle": "工程对应",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "见证本体缺，无法核对其项目/建设单位/设计单位。设计标签已由图签固定。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-02"
+      ],
+      "nextStep": "拿见证逐字段与设计图签比对；简称差异列双侧值"
+    },
+    {
+      "nodeId": 5,
+      "nodeCode": "R05",
+      "method": 3,
+      "methodTitle": "版本对应",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "见证版本未知，且目录Rev1/图纸Rev2本身冲突。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-02"
+      ],
+      "nextStep": "先确认有效版，再核审查版本及变更是否需复审，不直接认定未复审"
+    },
+    {
+      "nodeId": 5,
+      "nodeCode": "R05",
+      "method": 4,
+      "methodTitle": "审查早于施工",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "设计2021.3；射线报告日期2021-04-20不等于开工日期或实际检测日期。未有见证审查日期/本组最早开工证据。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-02",
+        "DES-16"
+      ],
+      "nextStep": "由主审结合开工报告/施工日志/焊接记录确定最早施工日期后与审查日比对"
+    },
+    {
+      "nodeId": 5,
+      "nodeCode": "R05",
+      "method": 5,
+      "methodTitle": "签章及回复闭环",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "见证本体未见，无法核验其签章、关键字段或逐条回复。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [],
+      "nextStep": "补见证本体及附件逐项闭环，勿以设计图章代替"
+    },
+    {
+      "nodeId": 5,
+      "nodeCode": "R05",
+      "method": 6,
+      "methodTitle": "机构口径",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "监检机构认可的见证范围未提供，采用v3默认三类作为待补清单。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [],
+      "nextStep": "认定范围口径待监检机构确认"
+    },
+    {
+      "nodeId": 5,
+      "nodeCode": "R05",
+      "method": 7,
+      "methodTitle": "逐份结论",
+      "executionStatus": "已完成",
+      "result": "证据不足",
+      "actual": "无见证本体可作逐份判定；保持证据不足，不生成不存在的证书编号或结论。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [],
+      "nextStep": "补齐后以真实见证编号、页码与施工图版次重审"
+    },
+    {
+      "nodeId": 6,
+      "nodeCode": "R06",
+      "method": 1,
+      "methodTitle": "计算覆盖范围",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "计算书仅明确GC2 Φ108×4，未列计算管线表；第1张共2张缺第2张。特性表另有Φ89×4、Φ57×3.5；应力计算适用范围无声明。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-08",
+        "DES-09"
+      ],
+      "nextStep": "补第2张及按全部管线/管段的强度和应力分析适用性矩阵，不按一份计算书推全覆盖"
+    },
+    {
+      "nodeId": 6,
+      "nodeCode": "R06",
+      "method": 2,
+      "methodTitle": "设计条件一致",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "Φ108×4、0.55MPa与PL8303/8306设计值相符；计算书无具体管线号/设计温度；20#按8163-2018，但特性表M1B不构成完整材料等级规范。RT实物记Φ108×5。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-08",
+        "DES-09",
+        "DES-16",
+        "DES-18"
+      ],
+      "nextStep": "确认计算范围/温度/有效规格及材料等级；联R07/R16/R22处理4mm与5mm差异"
+    },
+    {
+      "nodeId": 6,
+      "nodeCode": "R06",
+      "method": 3,
+      "methodTitle": "许用应力追溯",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "S=137MPa，只写GB/T20801.2表A.1、无版本/温度点；正文用20801.3-2006，说明系列2020。代入算式t≈0.2164mm与文中0.22mm近似一致，不能证明许用应力正确。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-08",
+        "DES-04"
+      ],
+      "nextStep": "提供取值版本/表行/50℃温度点/签发日期；按历史实施时间处理2006与2020，不按今天状态倒推"
+    },
+    {
+      "nodeId": 6,
+      "nodeCode": "R06",
+      "method": 4,
+      "methodTitle": "计算批准程序",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "计算书设计/校核/审核有手写，审定空；计算范围未知导致全覆盖管线是否需四级尚不能断定；日期栏空。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-08",
+        "DES-09"
+      ],
+      "nextStep": "核有效版、完整计算范围和签发日期后判签字级别；不要仅因空审定栏判不符合"
+    },
+    {
+      "nodeId": 6,
+      "nodeCode": "R06",
+      "method": 5,
+      "methodTitle": "支吊架/补偿联动",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "说明给直管支距≤5m、弯段≤0.73倍；未见应力分析本体，无法核对其专门支吊架/限位/冷紧/补偿输出与图纸。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-05",
+        "DES-12"
+      ],
+      "nextStep": "补应力分析或有依据的免除/简化说明及支吊架对照，关联R63"
+    },
+    {
+      "nodeId": 6,
+      "nodeCode": "R06",
+      "method": 6,
+      "methodTitle": "分类输出",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "已区分缺第2张/覆盖范围、缺温度/版本/签发日期、规格冲突与签字真实性待核；不是只有封面，确实看到了计算正文。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-08"
+      ],
+      "nextStep": "按条补充，当前不能给R06符合"
+    },
+    {
+      "nodeId": 7,
+      "nodeCode": "R07",
+      "method": 1,
+      "methodTitle": "变更书面本体",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "已阅范围未见设计变更通知/批准本体；Rev1/2与设计4mm/RT5mm构成需解释差异，不单凭差异认定已经非法变更。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-09",
+        "DES-16",
+        "DES-18"
+      ],
+      "nextStep": "取原设计单位变更通知或明确说明为报告填写错误"
+    },
+    {
+      "nodeId": 7,
+      "nodeCode": "R07",
+      "method": 2,
+      "methodTitle": "批准主体",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "无变更本体，不能核验原设计单位批准。原设计主体为广东星燃。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-12"
+      ],
+      "nextStep": "不得以施工/检测单位自行更改或其他设计院许可代替原设计批准"
+    },
+    {
+      "nodeId": 7,
+      "nodeCode": "R07",
+      "method": 3,
+      "methodTitle": "重新出图许可印章",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "目录/配管图可见TS1810648-2021红章影像；因没有变更文件及原件，不能据此确认变更批准或原件盖章。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-12"
+      ],
+      "nextStep": "核变更后的原件目录/配管图及对应许可；竣工图不自动替代批准"
+    },
+    {
+      "nodeId": 7,
+      "nodeCode": "R07",
+      "method": 4,
+      "methodTitle": "变更签字级别",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "变更范围未知、部分管线级别“/”；无法将现有设计三级痕迹当成变更审批。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-09",
+        "DES-12"
+      ],
+      "nextStep": "按实际改动文件和所涉参数重新判定三级/四级"
+    },
+    {
+      "nodeId": 7,
+      "nodeCode": "R07",
+      "method": 5,
+      "methodTitle": "变更连续性",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "目录1→实物2没有签发/作废/替代链；计算书Y10不在目录。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-08"
+      ],
+      "nextStep": "补带原图号、原版本、变更内容、批准日期的连续链；不自动认定Rev2有效"
+    },
+    {
+      "nodeId": 7,
+      "nodeCode": "R07",
+      "method": 6,
+      "methodTitle": "下游复核",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "Φ108×4对Φ108×5已由设计与RT原页确认；阀门Q41H/Q941H对F密封来自材料组，须合并其原证据后判。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-09",
+        "DES-16",
+        "DES-18"
+      ],
+      "nextStep": "规格/材质→R16/R22；厚度/接头→R25；参数/级别→R09；施工图版次→R05。未掌握实装前不判材料代用已批准"
+    },
+    {
+      "nodeId": 7,
+      "nodeCode": "R07",
+      "method": 7,
+      "methodTitle": "变更逐份结论",
+      "executionStatus": "已完成",
+      "result": "证据不足",
+      "actual": "无书面变更文件可逐份评价，本次为证据不足；已识别版本链未闭环风险。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-01",
+        "DES-08"
+      ],
+      "nextStep": "取得本体后才给“已批准/未批准/链不闭环”的确定逐份结论"
+    },
+    {
+      "nodeId": 8,
+      "nodeCode": "R08",
+      "method": 1,
+      "methodTitle": "标准登记",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "已实阅说明part2/3/4/5/6、计算及RT；所见标准号及年号全部另列表登记，原始SG07与NB/T47013系列缺分册单列。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-03",
+        "DES-04",
+        "DES-05",
+        "DES-06",
+        "DES-07",
+        "DES-08",
+        "DES-16"
+      ],
+      "nextStep": "与材料/焊接组标准清单合并；本组不声称覆盖未阅专项方案"
+    },
+    {
+      "nodeId": 8,
+      "nodeCode": "R08",
+      "method": 2,
+      "methodTitle": "版本状态",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "官方元数据证实20801.3-2006到2021-06-01才废止；20801.3-2020同日实施；20801.1-2020自2020-10-01实施。2021.3系列2020引用含尚未实施分册。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-02",
+        "DES-04",
+        "DES-08"
+      ],
+      "nextStep": "由设计确认各分册历史采用方案；未查标准保持待核，不把当前废止倒推当年违规"
+    },
+    {
+      "nodeId": 8,
+      "nodeCode": "R08",
+      "method": 3,
+      "methodTitle": "时间基准",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "设计图签2021.3、射线报告日期2021-04-20（实际检测日期未由此确认）；20801.1-2025实施2026-05-01，TSG31-2025施行2026-01-01，晚于所示工程时间。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-02",
+        "DES-16"
+      ],
+      "nextStep": "v3作为检查方法；正式判定用2021适用法规/标准、提前采用约定及项目监管口径，不直接追溯套新版"
+    },
+    {
+      "nodeId": 8,
+      "nodeCode": "R08",
+      "method": 4,
+      "methodTitle": "版本冲突及书写",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "计算正文20801.3-2006与说明系列2020存在引用差异；许用应力20801.2无年号；SG07-2019疑缺T；NB47013未分册。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-03",
+        "DES-04",
+        "DES-08"
+      ],
+      "nextStep": "保留双方原文，请设计澄清实际执行版本/取值表，不自行归一成同一版本"
+    },
+    {
+      "nodeId": 8,
+      "nodeCode": "R08",
+      "method": 5,
+      "methodTitle": "替代标准实质影响",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "官方确认2025工业管道整合标准为20801.1-2025；未获取本工程适用的全套历史标准及新旧条款对照，不能凭v3列出的数值断言2021检测比例不足。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-04",
+        "DES-09",
+        "DES-10"
+      ],
+      "nextStep": "后续对设计审批、强度应力取值、RT比例、表面检测及材料验收逐条核适用版本；v3中的20801.3/5-2025分册引用也先校验"
+    },
+    {
+      "nodeId": 8,
+      "nodeCode": "R08",
+      "method": 6,
+      "methodTitle": "逐标准输出",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "已输出引用出处、已核日期/来源、待核标识；未执行MCP标准查询，官方web只发送标准号。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-03",
+        "DES-04",
+        "DES-08"
+      ],
+      "nextStep": "未验证项补官方状态/过渡条款/标准正文，不给全标准现行结论"
+    },
+    {
+      "nodeId": 9,
+      "nodeCode": "R09",
+      "method": 1,
+      "methodTitle": "检查等级",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "GC2四行只标“化工品（丙醇）、易燃易爆”，无v3新版毒性与泄漏危害分级；其他行级别“/”。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-09"
+      ],
+      "nextStep": "若适用新版先补明确危险性分级；本工程仍先确认2021适用检查等级方法，不能默认IV"
+    },
+    {
+      "nodeId": 9,
+      "nodeCode": "R09",
+      "method": 2,
+      "methodTitle": "无损检测三维核对",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "所有10行RT10%、III、AB，说明引用NB/T47013-2015，报告分册.2-2015与10%/III/AB相应。接头类型及全部焊口分母、表面检测、特殊材料检测时序未明确。PL8306有IV→R1 I返修线索，续页报号冲突。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-07",
+        "DES-10",
+        "DES-16",
+        "DES-17",
+        "DES-18",
+        "DES-19",
+        "DES-20"
+      ],
+      "nextStep": "不能据报告写10%证明实检比例足够；补焊口台账、各接头适用要求、返修/扩检及报告更正；以历史适用依据比较，勿直接判10%不足"
+    },
+    {
+      "nodeId": 9,
+      "nodeCode": "R09",
+      "method": 3,
+      "methodTitle": "防腐",
+      "executionStatus": "待补充资料",
+      "result": "预警",
+      "actual": "有St3除锈、底/面漆各2层及SH/T3043-2014颜色依据；面漆表写聚酯、说明写聚氨酯；未见干膜厚度/检测验收要求。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-06",
+        "DES-13"
+      ],
+      "nextStep": "确认涂层材料名称及体系，补干膜厚度、附着力等适用检验要求；不把颜色标准当完整防腐验收标准"
+    },
+    {
+      "nodeId": 9,
+      "nodeCode": "R09",
+      "method": 4,
+      "methodTitle": "耐压六项",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "液压0.825/0.55=1.5及0.150/0.1=1.5；VT两行气压0.115/0.1=1.15。数值关系已核，保压≥10min、降压检查、升压规程、气压替代书面条件、温度应力修正与上限无完整证据；无明确真空系统范围。主审跨组已目视交工资料物理P17/印刷P15：PL8303/PL8306于2021-04-02记录洁净水0.825MPa试验合格；记录未列保压时长或具体验收判据。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-10",
+        "DES-06",
+        "DES-X01"
+      ],
+      "nextStep": "已有压力试验记录，无需重复要求整份；补充保压时长、验收判据及适用试验规程/批准，确认温度修正与气压、真空项适用性。"
+    },
+    {
+      "nodeId": 9,
+      "nodeCode": "R09",
+      "method": 5,
+      "methodTitle": "泄漏四项",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "各行规定空气、压力等于设计压力0.55或0.1MPaG；说明要求试验。未具体列方法、判据、保压与敏感性分类/免除条件。主审跨组已目视同页PL8303/PL8306于2021-04-02空气泄漏0.55MPa，两行记合格；记录未列保压时长或具体验收判据。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-06",
+        "DES-10",
+        "DES-X01"
+      ],
+      "nextStep": "已有泄漏试验记录，无需重复要求整份；补充方法、保压时长及适用验收判据，确认介质分类和历史条款后判断完整性。"
+    },
+    {
+      "nodeId": 9,
+      "nodeCode": "R09",
+      "method": 6,
+      "methodTitle": "焊接技术条件",
+      "executionStatus": "待补充资料",
+      "result": "证据不足",
+      "actual": "说明只明确氩电联焊及RT；本组设计原页未见焊材牌号、预热/焊后热处理适用范围；RT报告焊接方法原文GTAM不能代替WPS。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-05",
+        "DES-07",
+        "DES-16",
+        "DES-18"
+      ],
+      "nextStep": "关联R25/R26/R30取得WPS/焊材/预热及热处理要求，明确是否免除及依据"
+    },
+    {
+      "nodeId": 9,
+      "nodeCode": "R09",
+      "method": 7,
+      "methodTitle": "分领域输出",
+      "executionStatus": "已完成",
+      "result": "需人工核查",
+      "actual": "已分别记录检查等级、NDT、防腐、耐压、泄漏、焊接条件；明示规定与规范适用性分开，未把任何整节点标符合。",
+      "requirement": "已安装v3方法；适用标准条款与工程历史条件仍需确认",
+      "evidenceIds": [
+        "DES-09",
+        "DES-10",
+        "DES-13",
+        "DES-20"
+      ],
+      "nextStep": "完成有效版本/历史依据/补证后再形成正式结论"
+    }
+  ],
+  "standardsRegister": [
+    {
+      "raw": "HG/T20553-2011",
+      "normalized": "HG/T 20553-2011",
+      "evidenceIds": [
+        "DES-03",
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "HG/T20592-2009",
+      "normalized": "HG/T 20592-2009",
+      "evidenceIds": [
+        "DES-03"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T8163-2018",
+      "normalized": "GB/T 8163-2018",
+      "evidenceIds": [
+        "DES-03",
+        "DES-04",
+        "DES-08"
+      ],
+      "status": "官方元数据当前现行；设计2021.3晚于实施日，但未核具体材料限值",
+      "verifiedDates": {
+        "issued": "2018-05-14",
+        "effective": "2019-02-01"
+      },
+      "sourceUrl": "https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=D5537747C227CE74971D8E07FAB5BFD9",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "TSG D0001-2009",
+      "normalized": "TSG D0001-2009",
+      "evidenceIds": [
+        "DES-03"
+      ],
+      "status": "2021工程历史依据需保留；新版TSG31-2025公告施行晚于本工程，未据此追溯否定",
+      "verifiedDates": {
+        "newEffective": "2026-01-01"
+      },
+      "sourceUrl": "https://www.samr.gov.cn/tzsbj/tzgg/zjwh/art/2026/art_ed12d58e1b4a4f668ff80268b375ef59.html",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "SG 07-2019",
+      "normalized": "SG 07-2019（疑缺T，待设计确认）",
+      "evidenceIds": [
+        "DES-03"
+      ],
+      "status": "原始编号不完整/可能笔误，证据不足",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "HG/T20519-2009",
+      "normalized": "HG/T20519-2009",
+      "evidenceIds": [
+        "DES-03"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "HG/T20549-1998",
+      "normalized": "HG/T20549-1998",
+      "evidenceIds": [
+        "DES-03"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50316-2000（2008年版）",
+      "normalized": "GB50316-2000（2008年版）",
+      "evidenceIds": [
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "HG/T20505-2014",
+      "normalized": "HG/T20505-2014",
+      "evidenceIds": [
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T12459-2017",
+      "normalized": "GB/T12459-2017",
+      "evidenceIds": [
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50074-2014",
+      "normalized": "GB50074-2014",
+      "evidenceIds": [
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50160-2008（2018年版）",
+      "normalized": "GB50160-2008（2018年版）",
+      "evidenceIds": [
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "HG/T21629-1999",
+      "normalized": "HG/T21629-1999",
+      "evidenceIds": [
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50235-2010",
+      "normalized": "GB50235-2010",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50184-2011",
+      "normalized": "GB50184-2011",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50236-2011",
+      "normalized": "GB50236-2011",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50683-2011",
+      "normalized": "GB50683-2011",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB50275-2010",
+      "normalized": "GB50275-2010",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "HG/T20592～20635-2009",
+      "normalized": "HG/T20592～20635-2009",
+      "evidenceIds": [
+        "DES-04"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.1～GB/T20801.6-2020（第1部分）",
+      "normalized": "GB/T 20801.1-2020",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "2021.3时已实施；当前已被2025版替代",
+      "verifiedDates": {
+        "effective": "2020-10-01",
+        "withdrawn": "2026-05-01"
+      },
+      "sourceUrl": "https://std.samr.gov.cn/gb/search/gbDetailed?id=A028012948E9EBB4E05397BE0A0AB6FE",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.1～GB/T20801.6-2020（第2部分）",
+      "normalized": "GB/T 20801.2-2020",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "2021.3时已发布尚未实施，提前采用待设计说明；当前已被替代",
+      "verifiedDates": {
+        "effective": "2021-06-01"
+      },
+      "sourceUrl": "https://openstd.samr.gov.cn/bzgk/std/std_list?p.p1=0&p.p2=GB+%2F+T+20801.2&p.p90=circulation_date&p.p91=desc",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.1～GB/T20801.6-2020（第3部分）",
+      "normalized": "GB/T 20801.3-2020",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "2021.3时已发布尚未实施，提前采用待设计说明；当前已被替代",
+      "verifiedDates": {
+        "effective": "2021-06-01",
+        "withdrawn": "2026-05-01"
+      },
+      "sourceUrl": "https://std.samr.gov.cn/gb/search/gbDetailed?id=B4C25880C2DE1CB3E05397BE0A0A92D0",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.1～GB/T20801.6-2020（第4部分）",
+      "normalized": "GB/T 20801.4-2020",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "2021.3时已发布尚未实施，提前采用待设计说明；当前已被替代",
+      "verifiedDates": {
+        "effective": "2021-06-01",
+        "withdrawn": "2026-05-01"
+      },
+      "sourceUrl": "https://std.samr.gov.cn/gb/search/gbDetailed?id=B4C25880C2D91CB3E05397BE0A0A92D0",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.1～GB/T20801.6-2020（第5部分）",
+      "normalized": "GB/T 20801.5-2020",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "2021.3时已发布尚未实施，提前采用待设计说明；当前已被替代",
+      "verifiedDates": {
+        "effective": "2021-06-01",
+        "withdrawn": "2026-05-01"
+      },
+      "sourceUrl": "https://std.samr.gov.cn/gb/search/gbDetailed?id=B4C25880C2DA1CB3E05397BE0A0A92D0",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.1～GB/T20801.6-2020（第6部分）",
+      "normalized": "GB/T 20801.6-2020",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06"
+      ],
+      "status": "2021.3时已发布尚未实施，提前采用待设计说明；当前已被替代",
+      "verifiedDates": {
+        "effective": "2021-06-01",
+        "withdrawn": "2026-05-01"
+      },
+      "sourceUrl": "https://std.samr.gov.cn/gb/search/gbDetailed?id=B4C25880C2DB1CB3E05397BE0A0A92D0",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.3-2006",
+      "normalized": "GB/T 20801.3-2006",
+      "evidenceIds": [
+        "DES-08"
+      ],
+      "status": "2021.3尚未到官方废止日；与说明书2020引用差异需澄清，不直接判计算依据废止",
+      "verifiedDates": {
+        "effective": "2007-06-01",
+        "withdrawn": "2021-06-01"
+      },
+      "sourceUrl": "https://std.samr.gov.cn/gb/search/gbDetailed?id=71F772D7FC84D3A7E05397BE0A0AB82A",
+      "checkedAt": "2026-09-22",
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "GB/T20801.2，表A.1",
+      "normalized": "GB/T 20801.2（年号缺失）",
+      "evidenceIds": [
+        "DES-08"
+      ],
+      "status": "缺年份及取值温度点，不能追溯S=137MPa",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "NB/T47013-2015",
+      "normalized": "NB/T 47013-2015（系列，设计未指定分册）",
+      "evidenceIds": [
+        "DES-04",
+        "DES-06",
+        "DES-07"
+      ],
+      "status": "设计引用系列；尚待分册及适用条文核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "NB/T47013.2-2015",
+      "normalized": "NB/T 47013.2-2015",
+      "evidenceIds": [
+        "DES-16",
+        "DES-18"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "14D504",
+      "normalized": "14D504",
+      "evidenceIds": [
+        "DES-05"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "SH/T3043-2014",
+      "normalized": "SH/T 3043-2014",
+      "evidenceIds": [
+        "DES-06"
+      ],
+      "status": "未完成官方状态/历史时间线核验",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    },
+    {
+      "raw": "SH/T3503-J127-1（表号）",
+      "normalized": "SH/T 3503（仅表号线索，无年号）",
+      "evidenceIds": [
+        "DES-16",
+        "DES-17",
+        "DES-18",
+        "DES-19"
+      ],
+      "status": "表号不能当成已确认版本",
+      "verifiedDates": {},
+      "sourceUrl": null,
+      "checkedAt": null,
+      "substantiveClausesVerified": false
+    }
+  ],
+  "additionalOfficialSources": [
+    {
+      "title": "GB/T20801.1-2025官方元数据",
+      "url": "https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=02B92F024E3208D2CEA17BDF0F2743A0",
+      "facts": {
+        "effective": "2026-05-01",
+        "status": "现行"
+      },
+      "checkedAt": "2026-09-22"
+    },
+    {
+      "title": "工业管道新整合标准替代关系",
+      "url": "https://std.samr.gov.cn/gb/search/gbDetailedCNF?id=42BA7D06A208E936E06397BE0A0ACDC9",
+      "facts": {
+        "replaces": "20801.1～6-2020"
+      },
+      "checkedAt": "2026-09-22"
+    }
+  ],
+  "nodeSummary": [
+    {
+      "nodeId": 4,
+      "methodCount": 7,
+      "executionStatus": "部分实质核查完成；缺证据/依据项保持待补",
+      "result": "证据不足，含预警；不作整节点符合认定"
+    },
+    {
+      "nodeId": 5,
+      "methodCount": 7,
+      "executionStatus": "部分实质核查完成；缺证据/依据项保持待补",
+      "result": "证据不足，含预警；不作整节点符合认定"
+    },
+    {
+      "nodeId": 6,
+      "methodCount": 6,
+      "executionStatus": "部分实质核查完成；缺证据/依据项保持待补",
+      "result": "证据不足，含预警；不作整节点符合认定"
+    },
+    {
+      "nodeId": 7,
+      "methodCount": 7,
+      "executionStatus": "部分实质核查完成；缺证据/依据项保持待补",
+      "result": "证据不足，含预警；不作整节点符合认定"
+    },
+    {
+      "nodeId": 8,
+      "methodCount": 6,
+      "executionStatus": "部分实质核查完成；缺证据/依据项保持待补",
+      "result": "证据不足，含预警；不作整节点符合认定"
+    },
+    {
+      "nodeId": 9,
+      "methodCount": 7,
+      "executionStatus": "部分实质核查完成；缺证据/依据项保持待补",
+      "result": "证据不足，含预警；不作整节点符合认定"
+    }
+  ],
+  "crossGroupEvidence": [
+    {
+      "id": "DES-X01",
+      "sourceFile": "Scan/贵州化工交工资料.pdf",
+      "sha256": "515b8a3f5e0894a9aa52d49b485184bfb9e9d09cb53dd05c2156f0d3227050ba",
+      "physicalPage": 17,
+      "printedPage": 15,
+      "locator": "表A.0.16，PL8303-100/PL8306-100两行",
+      "shortQuote": "2021-04-02；洁净水0.825MPa、空气泄漏0.55MPa，两行均合格",
+      "facts": {
+        "objects": [
+          "PL8303-100",
+          "PL8306-100"
+        ],
+        "recordDate": "2021-04-02",
+        "designPressureMPa": 0.55,
+        "designTemperatureC": 50,
+        "pressureTest": {
+          "medium": "洁净水",
+          "recordedPressureMPa": 0.825,
+          "recordedConclusion": "两行均合格"
+        },
+        "leakTest": {
+          "medium": "空气",
+          "recordedPressureMPa": 0.55,
+          "recordedConclusion": "两行均合格"
+        },
+        "pretestCheck": "无损检测已合格"
+      },
+      "reviewProvenance": "主审及焊接组原页目视；设计子组依据evidence-context.json交叉引用，未冒称本组另行实阅",
+      "sourceEvidenceFile": "/Users/mac/Documents/AIcheck/output/skills/codex-scan-test/evidence-context.json",
+      "limitations": "这是记录所载执行证据，不是独立见证试验。未列保压时长或具体验收判据；射线报告签发日期不能直接用作实际检测日期，需原始检测/返修记录确认时序。无需重复要求整份试验记录。"
+    }
+  ]
+}

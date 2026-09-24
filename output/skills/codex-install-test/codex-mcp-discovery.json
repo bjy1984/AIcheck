@@ -1,0 +1,304 @@
+{
+  "name": "aicheck-inspection",
+  "serverInfo": {
+    "name": "aicheck-inspection",
+    "title": null,
+    "version": "2.0.0",
+    "description": null,
+    "icons": null,
+    "websiteUrl": null
+  },
+  "tools": {
+    "aicheck_certificate_registry": {
+      "name": "aicheck_certificate_registry",
+      "description": "明确获用户授权后，将最少的证件标识发送官方登记查询；不存储查询结果，第三方留存依其政策；查不到或服务失败不能判为假证。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person",
+              "organization_license"
+            ]
+          },
+          "identifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "allowExternalQuery": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "identifier",
+          "allowExternalQuery"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "aicheck_standard_content": {
+      "name": "aicheck_standard_content",
+      "description": "读取标准规范化原文及来源，供核对条款；不能以标准列表摘要代替原文。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "pageNo": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "section": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "fileId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "aicheck_certificate_validity": {
+      "name": "aicheck_certificate_validity",
+      "description": "对用户本地资料提取的证件字段核验有效期、主体与范围；不存储资料，不代表证件真伪或官方登记已核验。必须提供referenceDate或完整periodStart+periodEnd，日期为YYYY-MM-DD。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "certificates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "certificateNo": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "holder": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "validFrom": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "minLength": 10,
+                  "maxLength": 10
+                },
+                "validUntil": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "minLength": 10,
+                  "maxLength": 10
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "maxItems": 100
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "expectedHolder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "requiredScopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "periodStart": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "minLength": 10,
+            "maxLength": 10
+          },
+          "periodEnd": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "minLength": 10,
+            "maxLength": 10
+          },
+          "referenceDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "minLength": 10,
+            "maxLength": 10
+          }
+        },
+        "required": [
+          "certificates"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "aicheck_connection": {
+      "name": "aicheck_connection",
+      "description": "检查标准、规则和证件审查服务的可用性与处理留存说明。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "aicheck_standards": {
+      "name": "aicheck_standards",
+      "description": "检索公共标准依据，保留来源与版本；不读取工程资料，不证明标准现行性。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "aicheck_rules": {
+      "name": "aicheck_rules",
+      "description": "读取本地v3规则；source=server读取服务器公共审查规则及版本。无需工程身份或资料编号。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "local",
+              "server"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "aicheck_standard_status": {
+      "name": "aicheck_standard_status",
+      "description": "通过标准公共服务核验指定标准在审查日期的有效状态，不上传工程资料。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "standardRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "reviewDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "minLength": 10,
+            "maxLength": 10
+          }
+        },
+        "required": [
+          "standardRef"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  },
+  "resources": [
+    {
+      "mimeType": "text/markdown",
+      "name": "监检工作方法",
+      "uri": "aicheck://skill"
+    },
+    {
+      "mimeType": "text/markdown",
+      "name": "业务节点描述 v3",
+      "uri": "aicheck://business-nodes-v3"
+    },
+    {
+      "mimeType": "text/markdown",
+      "name": "审查输出与判定",
+      "uri": "aicheck://review-contract"
+    }
+  ],
+  "resourceTemplates": [],
+  "authStatus": "unsupported"
+}

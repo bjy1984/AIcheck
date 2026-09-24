@@ -80,3 +80,15 @@ def test_non_workstation_creation_cannot_drop_ranges(lifecycle, monkeypatch):
     with pytest.raises(ValueError, match="requires_workstation"):
         ex.create_review_run_from_ai_run(source, mode="inline")
     assert state["review_runs"] == []
+
+
+def test_important_skill_snapshot_survives_creation_and_replay(lifecycle):
+    _, source = lifecycle
+    from libs.important_review_runtime import attach_important_review
+    attach_important_review(source, {"importantNodeReview": True})
+    run = ex.create_review_run_from_ai_run(source, mode="inline")
+    assert run["importantReviewSnapshot"] == source["importantReviewSnapshot"]
+    source["importantReviewSnapshot"]["content"] = "CHANGED"
+    assert run["importantReviewSnapshot"]["content"] != "CHANGED"
+    replay = ex.clone_review_run_for_replay(run, run_mode="replay")
+    assert replay["importantReviewSnapshot"] == run["importantReviewSnapshot"]

@@ -25,6 +25,10 @@ def selected_input_evidence_links(links, versions, ranges):
 
 def resolve_review_input_selection(services, request, project_id: str, node_id: int,
                                    body: dict[str, Any]) -> tuple[list[str], dict[str, Any]] | None:
+    if body.get("importantNodeReview"):
+        from libs.important_node_review import NODE_IDS
+        if node_id not in NODE_IDS or not body.get("inputDocumentVersionIds"):
+            raise ReviewInputSelectionError("重要节点审查需要受支持的节点和明确的资料版本。")
     if "inputDocumentPageRanges" in body and os.getenv("AICHECK_REVIEW_PAGE_RANGES_ENABLED", "").lower() not in {"1", "true", "yes"}:
         # Never accept a range while downstream readers could still consume the whole file.
         raise ReviewInputSelectionError("页码范围尚未完成全链路验收，暂不能按指定页码发起审查。")

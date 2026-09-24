@@ -1,0 +1,21 @@
+{
+  "codexVersion": "0.144.6",
+  "discoveredSkills": [
+    {
+      "name": "aicheck-inspection",
+      "description": "审查用户本地提供的工业压力管道施工监检资料。由宿主 AI 完成资料读取和 OCR，依据业务节点描述 v3 对 R04–R09、R12、R13、R16、R24–R26 逐项核查；通过 MCP 查询标准、规则和证件有效性，输出本地可追溯的证据、缺项和人工复核建议。",
+      "interface": {
+        "displayName": "工业管道监检审查",
+        "shortDescription": "审查用户本地资料，按十二个节点核对证据，调用无工程资料存储的审查服务",
+        "iconSmall": null,
+        "iconLarge": null,
+        "brandColor": null,
+        "defaultPrompt": "使用 $aicheck-inspection 审查我提供的本地资料，按节点列出证据、缺项和人工复核事项。"
+      },
+      "path": "/Users/mac/.agents/skills/aicheck-inspection/SKILL.md",
+      "scope": "user",
+      "enabled": true
+    }
+  ],
+  "errors": []
+}

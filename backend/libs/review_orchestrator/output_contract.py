@@ -505,3 +505,9 @@ def _unscored_facts(atomic: dict[str, Any]) -> list[dict[str, Any]]:
                     }
                 )
     return output
+
+
+def review_task_payload(run):
+    """The output contract plus optional frozen, server-maintained review instructions."""
+    from libs.important_review_runtime import important_review_prompt
+    return {"task": "Generate ReviewFindingDraftList JSON only.", **important_review_prompt(run)}

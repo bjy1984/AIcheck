@@ -1,0 +1,26 @@
+{
+  "installedMcpVersion": "2.0.0",
+  "toolCount": 7,
+  "localRulesReviewed": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    12,
+    13,
+    16,
+    24,
+    25,
+    26
+  ],
+  "connection": {
+    "ok": false,
+    "error": {
+      "code": "notConfigured",
+      "message": "请设置AICHECK_BASE_URL为后台服务地址。"
+    }
+  },
+  "projectFilesSentToAicheck": 0
+}

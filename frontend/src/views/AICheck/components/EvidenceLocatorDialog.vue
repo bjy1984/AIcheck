@@ -26,6 +26,7 @@ const PdfEvidencePage = defineAsyncComponent(() => import('./PdfEvidencePage.vue
 const props = defineProps<{
   modelValue: boolean
   inline?: boolean
+  compact?: boolean
   projectId?: string
   evidence?: EvidenceLink
   extractedFields: ExtractedField[]
@@ -291,10 +292,10 @@ onBeforeUnmount(() => {
         border
         class="evidence-summary"
       >
-        <ElDescriptionsItem label="证据类型">
+        <ElDescriptionsItem v-if="!compact" label="证据类型">
           <ElTag type="info" effect="plain">{{ evidenceTypeLabel }}</ElTag>
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="置信度">
+        <ElDescriptionsItem v-if="!compact" label="置信度">
           {{ formatConfidence(evidence.confidence) }}
         </ElDescriptionsItem>
         <ElDescriptionsItem label="文件">
@@ -303,10 +304,10 @@ onBeforeUnmount(() => {
         <ElDescriptionsItem label="页码">
           {{ evidence.pageNo || '-' }}
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="字段">
+        <ElDescriptionsItem v-if="!compact" label="字段">
           {{ evidence.fieldName || linkedField?.fieldName || '-' }}
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="对象 ID">
+        <ElDescriptionsItem v-if="!compact" label="对象 ID">
           {{ evidence.objectId }}
         </ElDescriptionsItem>
       </ElDescriptions>

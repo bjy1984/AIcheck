@@ -1,0 +1,32 @@
+{
+  "liveProviders": false,
+  "ocr": [
+    {
+      "versionId": "DV-9291FBB5-V1",
+      "status": "success",
+      "fragments": 2
+    },
+    {
+      "versionId": "DV-19778A88-V1",
+      "status": "success",
+      "fragments": 2
+    },
+    {
+      "versionId": "DV-DC910A67-V1",
+      "status": "success",
+      "fragments": 2
+    }
+  ],
+  "reviews": [
+    {
+      "nodeId": 4,
+      "status": "waiting_human_review",
+      "errorCode": null,
+      "llmCalled": false,
+      "skillFrozen": true,
+      "findingCount": 1
+    }
+  ],
+  "errors": [],
+  "failedApi": []
+}

@@ -1,0 +1,149 @@
+{
+  "reviewDate": "2026-09-22",
+  "evidence": [
+    {
+      "source": "Scan/设备一览表.png",
+      "sha256": "fbe5b1f09bcb439d8ad310b5b77291c3306d4ecc734cad9fca9bd45e787b0ea9",
+      "physicalPage": 1,
+      "method": "本轮 Codex 原页目视读取",
+      "facts": {
+        "drawingNumber": "QX201903S-13-Y-03",
+        "revision": "2",
+        "drawingDate": "2021.3",
+        "designer": "广东星燃石化设计院有限公司",
+        "project": "珠海恒基达鑫国际化工仓储股份有限公司一、二期装车站新增两套卸车系统项目",
+        "equipment": [
+          "V8301、V8302 缓冲罐",
+          "F8301A/B 卸车鹤管",
+          "P8301A/B 卸车泵"
+        ],
+        "signatures": "标题栏可见设计、校核、审核、专业负责、项目负责签字痕迹"
+      },
+      "limits": "仅核对项目背景、图号版次和签署痕迹；未开展设备节点专项审查，签字痕迹不等于已验证人员资格或审批程序。"
+    },
+    {
+      "source": "Scan/特种设备安装改造维修许可证-贵州化工.pdf",
+      "sha256": "66b96692409e891d416b082117dd575e3fd4fb756afa03d298b98ea0087c4809",
+      "physicalPage": 1,
+      "method": "本轮 Codex 原页目视读取",
+      "facts": {
+        "holder": "贵州化工建设有限责任公司（原贵州化工建设公司）",
+        "certificateNumber": "TS3810436-2021",
+        "permitActivity": "压力管道安装",
+        "visibleScopes": [
+          "GA1 乙级",
+          "GB1（含 PE 专项）",
+          "GB2（2）",
+          "GC1"
+        ],
+        "validUntil": "2021-04-27",
+        "changeDate": "2017-12-13"
+      },
+      "limits": "证件签发日期部分被印章遮挡，未强行转录；这是安装许可，不能作为 R12 管道元件制造许可。未核验官方登记或真实性。"
+    },
+    {
+      "source": "Scan/特种设备生产许可证-贵州化工.pdf",
+      "sha256": "cd1c7f9017853f48f0145093ddfe59bc6a1b8fa8ed8cb45380ae4da548578cc8",
+      "physicalPage": 1,
+      "method": "本轮 Codex 原页目视读取",
+      "facts": {
+        "holder": "贵州化工建设有限责任公司",
+        "certificateNumber": "TS3810436-2025",
+        "permitActivity": "压力管道安装",
+        "visibleScopes": [
+          "GA2",
+          "GB1",
+          "GB2",
+          "GC1",
+          "GC2"
+        ],
+        "validUntil": "2025-04-27"
+      },
+      "limits": "虽标题为生产许可证，许可项目栏是安装；不能仅凭标题将其视为制造许可证。签发日期有遮挡，未用于判断历史许可衔接。未核验官方登记。"
+    },
+    {
+      "source": "Scan/png/IMG_6524.png",
+      "sha256": "1e56202b632cc43ef01eb48a7eb1e9e098cedb16cec06dbb13cca85b239bb6c3",
+      "physicalPage": 1,
+      "method": "本轮 Codex 原页目视读取",
+      "facts": {
+        "drawing": "卸车台配管平面图",
+        "drawingNumber": "QX201903S-13-Y-05",
+        "revision": "2",
+        "drawingDate": "2021/3",
+        "designSealHolder": "广东星燃石化设计院有限公司",
+        "designLicenseNumber": "TS1810648-2021",
+        "designSealVisibleDate": "2017年8月31日",
+        "engineeringDesignQualification": "A244010070",
+        "qualificationValidUntil": "2024年6月21日"
+      },
+      "limits": "用于放大读取标题栏与设计许可章；章面日期不自动作为许可起止日。审批完整性见设计组报告。"
+    },
+    {
+      "source": "Scan/png/IMG_6530.png",
+      "sha256": "11108240607ff902b5f6dc761c7b920f950d48c02a597d137e36547c6e840ad7",
+      "physicalPage": 1,
+      "method": "本轮 Codex 原页目视读取",
+      "facts": {
+        "drawing": "管道特性表",
+        "lines": [
+          "PL8303",
+          "PL8306"
+        ],
+        "visiblePipeDimensions": [
+          "108×4",
+          "89×4"
+        ],
+        "level": "GC2",
+        "designTemperature": "50℃",
+        "designPressure": "0.55 MPa",
+        "hydrostaticTest": "0.825 MPa",
+        "leakTest": "0.55 MPa",
+        "radiography": "10%、III、AB"
+      },
+      "limits": "为同一特性表的补充照片，用于原页交叉读取；不与已命名图纸重复计为独立设计文件。技术判定详见设计/材料组报告。"
+    },
+    {
+      "source": "Scan/贵州化工交工资料.pdf",
+      "sha256": "515b8a3f5e0894a9aa52d49b485184bfb9e9d09cb53dd05c2156f0d3227050ba",
+      "physicalPage": 17,
+      "printedPage": 15,
+      "method": "根代理及焊接组均目视原页，表A.0.16",
+      "facts": {
+        "objects": [
+          "PL8303-100",
+          "PL8306-100"
+        ],
+        "recordDate": "2021-04-02",
+        "designPressureMPa": 0.55,
+        "designTemperatureC": 50,
+        "pressureTest": {
+          "medium": "洁净水",
+          "recordedPressureMPa": 0.825,
+          "recordedConclusion": "两行均合格"
+        },
+        "leakTest": {
+          "medium": "空气",
+          "recordedPressureMPa": 0.55,
+          "recordedConclusion": "两行均合格"
+        },
+        "pretestCheck": "无损检测已合格"
+      },
+      "limits": "这是记录所载执行证据，不是独立见证试验。未列保压时长或具体验收判据；射线报告签发日期不能直接用作实际检测日期，需原始检测/返修记录确认时序。无需重复要求整份试验记录。"
+    }
+  ],
+  "additionalVisualCoverage": [
+    {
+      "source": "Scan/png/IMG_6526.png",
+      "method": "卸车台配管平面图全页目视概览",
+      "limits": "未逐个管件尺寸复核"
+    },
+    {
+      "source": "Scan/png/IMG_6527.png",
+      "method": "同图全页目视概览",
+      "limits": "未逐个管件尺寸复核"
+    }
+  ],
+  "privacy": "本证据 JSON 未全文列出身份证号；工程原件与渲染页未发送至 AIcheck 后台。",
+  "scope": "补充背景与跨组证据复核"
+}
