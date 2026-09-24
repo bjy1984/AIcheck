@@ -29,7 +29,7 @@ from libs.regulatory_tables import (
     volumetric_ndt_ratio,
 )
 from libs.review_grounding import REGULATION_CODE_RE
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import current_selected_parse_results, ocr_parse_usable
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
 from libs.review_orchestrator.design_ndt_requirements import (
     design_ndt_requirements,
@@ -174,24 +174,27 @@ def build_design_business_facts(
     parseable: list[str] = []
     catalog: list[str] = []
     unclassified: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    for parse_result in current_selected_parse_results(
+        state, {}, context={"reviewRun": review_run}, include_unusable=True,
+    ):
         version_id = str(parse_result.get("documentVersionId") or "")
         if not version_id or version_id not in versions:
             continue
         document = versions.get(version_id) or {}
         file_name = str(document.get("fileName") or parse_result.get("fileName") or "")
         design_type = classify_design_document(file_name, _first_page_text(parse_result))
-        parsed_ok = str(parse_result.get("status") or "success") in {"success", "succeeded", "已识别", "人工修正", ""}
+        parsed_ok = ocr_parse_usable(parse_result)
         uploaded.append(design_type)
         if parsed_ok:
             parseable.append(design_type)
-        if design_type == "drawing_catalog":
+        if parsed_ok and design_type == "drawing_catalog":
             catalog.extend(catalog_listed_types(parse_result))
         if design_type == "design_document_other":
             unclassified.append({"documentVersionId": version_id, "fileName": file_name})
-        roles = signature_roles(parse_result)
-        texts[version_id] = _all_text(parse_result)
-        parse_by_version[version_id] = parse_result
+        roles = signature_roles(parse_result) if parsed_ok else []
+        if parsed_ok:
+            texts[version_id] = _all_text(parse_result)
+            parse_by_version[version_id] = parse_result
         page_no = int((next((item for item in parse_result.get("fragments") or [] if isinstance(item, dict)), {}) or {}).get("pageNo") or 1)
         documents.append(
             {
@@ -203,8 +206,8 @@ def build_design_business_facts(
                 "bodyUploaded": True,
                 "parsed": parsed_ok,
                 "signatureRoles": roles,
-                "sealTexts": [item for item in _seal_texts(parse_result) if item.strip()],
-                "coveredPipelineIds": covered_pipeline_ids(parse_result, known_pipeline_ids or set()),
+                "sealTexts": [item for item in _seal_texts(parse_result) if item.strip()] if parsed_ok else [],
+                "coveredPipelineIds": covered_pipeline_ids(parse_result, known_pipeline_ids or set()) if parsed_ok else [],
                 "evidenceRefs": [{"documentVersionId": version_id, "pageNo": page_no, "quotedText": file_name}],
             }
         )
@@ -220,10 +223,14 @@ def build_design_business_facts(
         "designChanges": design_changes(documents, parse_by_version, texts, _project_record(state, project_id)),
         # N-16/N-17：设计说明 / 设计规定的四领域要求；没有设计说明时退回全部设计文件正文
         "designSpecialRequirements": design_special_requirements(
-            "\n".join(texts[str(item["documentVersionId"])] for item in documents if item.get("documentType") == "design_specification")
+            "\n".join(texts[str(item["documentVersionId"])] for item in documents
+                      if item.get("documentType") == "design_specification"
+                      and str(item["documentVersionId"]) in texts)
             or "\n".join(texts.values()),
             pipelines,
-            source={"documentVersionIds": [str(item["documentVersionId"]) for item in documents if item.get("documentType") == "design_specification"]},
+            source={"documentVersionIds": [str(item["documentVersionId"]) for item in documents
+                                           if item.get("documentType") == "design_specification"
+                                           and str(item["documentVersionId"]) in texts]},
         ),
         "fixedClauses": {"designSpecialRequirementRules": frozen_special_requirement_rules(review_run.get("businessPackId"))},
         "drawingReviewWitness": drawing_review_witness(documents, texts, _project_record(state, project_id)),

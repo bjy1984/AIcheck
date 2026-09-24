@@ -9,10 +9,14 @@ from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.source_coverage import selected_source_issues
 from libs.review_tools.r63_stress_analysis import (
     SCOPE_FIELDS as R63_SCOPE_FIELDS,
+)
+from libs.review_tools.r63_stress_analysis import (
     frozen_stress_analysis_rules,
 )
 from libs.review_tools.r68_blowing_cleaning import (
     SCOPE_FIELDS as R68_SCOPE_FIELDS,
+)
+from libs.review_tools.r68_blowing_cleaning import (
     frozen_blowing_cleaning_rules,
 )
 

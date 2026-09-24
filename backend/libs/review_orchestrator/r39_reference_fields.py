@@ -2,7 +2,7 @@
 from copy import deepcopy
 
 from libs.ocr.page_coverage import review_coverage_gap
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import current_selected_parse_results
 from libs.review_tools.r39_tools import _text
 from libs.review_workstations import digest
 
@@ -71,7 +71,7 @@ def _pair(run, instruction, procedure):
 
 
 def reference_from_fields(state, run):
-    parses = [row for row in selected_parse_results(state, {}, context={"reviewRun": run})
+    parses = [row for row in current_selected_parse_results(state, {}, context={"reviewRun": run})
               if row.get("profileId") == "ndt_procedure_v1"]
     by_version = {}
     for parse in parses:

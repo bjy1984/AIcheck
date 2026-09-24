@@ -36,7 +36,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any
 
-from libs.contracts.responses import server_time
+from libs.contracts.responses import SERVER_TZ, server_time
 from libs.integrations.cnse_client import CnseApiError
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 
@@ -58,7 +58,7 @@ def _norm_name(value: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.strptime(server_time(), "%Y-%m-%d %H:%M:%S")
+    return datetime.strptime(server_time(), "%Y-%m-%d %H:%M:%S").replace(tzinfo=SERVER_TZ)
 
 
 def _cached_lookup(state: dict[str, Any], kind: str, key: str, query) -> dict[str, Any]:
@@ -69,7 +69,7 @@ def _cached_lookup(state: dict[str, Any], kind: str, key: str, query) -> dict[st
         if not isinstance(entry, dict) or entry.get("kind") != kind or entry.get("key") != key:
             continue
         try:
-            queried_at = datetime.strptime(str(entry.get("queriedAt")), "%Y-%m-%d %H:%M:%S")
+            queried_at = datetime.strptime(str(entry.get("queriedAt")), "%Y-%m-%d %H:%M:%S").replace(tzinfo=SERVER_TZ)
         except ValueError:
             continue
         ttl = timedelta(hours=1) if entry.get("error") else CACHE_TTL
@@ -118,7 +118,10 @@ def _platform_evidence(version_id: str, file_name: str, quoted: str, source_url:
 
 
 def _verify_org_license(state: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
-    from libs.integrations.external_registry_queries import configured_cnse_origin, query_cnse_organization_license
+    from libs.integrations.external_registry_queries import (
+        configured_cnse_origin,
+        query_cnse_organization_license,
+    )
     from libs.review_orchestrator.certificate_facts import _split_scopes, parse_date
     from libs.review_orchestrator.r12_registry import verification_from_license_record
 
@@ -131,6 +134,9 @@ def _verify_org_license(state: dict[str, Any], record: dict[str, Any]) -> dict[s
         {"candidateId": license_no, "organizationName": record.get("holder") or "", "licenseNo": license_no},
         entry.get("result") or {},
     )
+    if record.get("holderFieldRejected") and verification.get("outcome") in {"verified_match", "verified_mismatch"}:
+        verification = {**verification, "outcome": "unable_to_verify", "reason": "ocr_holder_unreliable",
+                        "comment": "证书上的单位名称抽取成了句子，不能仅凭许可证编号确认持证单位；请核对原文。"}
     updated = {**record, "platformVerification": verification}
     if verification.get("outcome") != "verified_match":
         return updated
@@ -157,9 +163,16 @@ def _verify_org_license(state: dict[str, Any], record: dict[str, Any]) -> dict[s
 
 
 def _verify_person(state: dict[str, Any], record: dict[str, Any], *, reference_date) -> dict[str, Any]:
-    from libs.integrations.external_registry_queries import configured_cnse_origin, query_cnse_persons
+    from libs.integrations.external_registry_queries import (
+        configured_cnse_origin,
+        query_cnse_persons,
+    )
     from libs.review_orchestrator.certificate_facts import parse_date
-    from libs.review_orchestrator.runtime_tools import _is_welder_license, _license_is_current, _split_welder_items
+    from libs.review_orchestrator.runtime_tools import (
+        _is_welder_license,
+        _license_is_current,
+        _split_welder_items,
+    )
 
     id_number = str(record.get("certificateNo") or "").strip().upper()
     entry = _cached_lookup(state, "person", id_number, query_cnse_persons)

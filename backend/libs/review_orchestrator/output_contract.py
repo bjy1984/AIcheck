@@ -8,10 +8,14 @@ TEXT_TOO_LONG 警告（不判失败——截断会把"差在哪"截掉，比长�
 
 from __future__ import annotations
 
+import logging
+import os
 from copy import deepcopy
 from typing import Any
 
 from libs.review_orchestrator.approval_view import recorded_approval_checks
+
+logger = logging.getLogger(__name__)
 
 TITLE_MAX_CHARS = 30
 DESCRIPTION_MAX_CHARS = 150
@@ -239,8 +243,8 @@ def store_generated_findings(review_run, drafts, *, complete, hash_payload):
         from libs.db.repository import repo
 
         attach_clause_details(repo.state, drafts)
-    except Exception:  # noqa: BLE001 -- 条款补全失败只是界面少一块，不能让审查落库失败
-        pass
+    except Exception:  # 条款补全失败只是界面少一块，不能让审查落库失败
+        logger.warning("条款详情补全失败，保留原始发现", exc_info=True)
     review_run["findingDrafts"] = deepcopy(drafts)
     if complete:
         review_run["findingRetention"] = "complete"
@@ -298,6 +302,9 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
     只有显示名按 id 从业务包取，取不到就用 id。
     """
     names = _atomic_check_names(str(run.get("businessPackId") or ""))
+    opinions = _visible_jev_opinions(run)
+    fact_check = run.get("jevFactCheck") if isinstance(run.get("jevFactCheck"), dict) else {}
+    fact_rows = (fact_check.get("facts") or []) if fact_check.get("status") in {"completed", "partial"} else []
     seen: set[str] = set()
     outcomes: list[dict[str, Any]] = []
     for record in records:
@@ -310,11 +317,17 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
             if not check_id or check_id in seen:
                 continue
             seen.add(check_id)
+            hint = atomic.get("jevHint") if isinstance(atomic.get("jevHint"), dict) else None
             outcomes.append(
                 {
                     "atomicCheckId": check_id,
                     "name": names.get(check_id) or check_id,
                     "result": str(atomic.get("result") or ""),
+                    "decisionSource": "rule_engine",
+                    # Jev 只给选项和把握值、不给理由：分歧只用来排人工核对的先后。
+                    **({"jevHint": hint} if hint else {}),
+                    **({"jevFactCheck": _fact_check_view(fact_check["status"], fact_rows, check_id)}
+                       if any(row.get("atomicCheckId") == check_id for row in fact_rows) else {}),
                     "ruleCode": str(record.get("ruleCode") or ""),
                     # 「需人工判断」的原因常是引擎没给分：把没分的事实列出来，
                     # 界面才有东西让人核，核完落成 fact_corrections 下次就有分。
@@ -326,9 +339,58 @@ def atomic_check_outcomes(records: list[dict[str, Any]], run: dict[str, Any]) ->
                     "checks": _business_checks(atomic),
                     "reason": _outcome_reason(atomic),
                     "facts": _grounded_facts(atomic),
+                    **({"secondOpinion": opinions[check_id]} if check_id in opinions else {}),
                 }
             )
     return outcomes
+
+
+def _fact_check_view(status: str, rows: list[dict[str, Any]], check_id: str) -> dict[str, Any]:
+    """Jev 对这一原子项所用事实的原文核对：可疑项与逐条结果，不含原文。"""
+    own = [row for row in rows if row.get("atomicCheckId") == check_id]
+    return {"status": status, "suspects": [row["suspectLabel"] for row in own if row.get("suspect")],
+            "facts": [{key: row.get(key) for key in ("certificateLabel", "field", "value", "choice",
+                                                     "confidence", "suspect", "status")} for row in own]}
+
+
+def _visible_jev_opinions(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Release calibrated advice only; raw shadow opinions stay on ReviewRun."""
+    truthy = {"1", "true", "yes"}
+    if os.getenv("AICHECK_JEV_CALIBRATION_APPROVED", "").lower() not in truthy:
+        return {}
+    if os.getenv("AICHECK_JEV_SECOND_OPINION_UI_ENABLED", "").lower() not in truthy:
+        return {}
+    try:
+        enter = float(os.environ["AICHECK_JEV_QUEUE_ENTER_CONFIDENCE"])
+        exit_at = float(os.environ["AICHECK_JEV_QUEUE_EXIT_CONFIDENCE"])
+    except (KeyError, ValueError):
+        return {}
+    if not 0 < enter < exit_at <= 1:
+        return {}
+    snapshot = run.get("jevSecondOpinions") or {}
+    # R19 compares with Qwen's semantic judgment, not the deterministic rule engine.
+    # Keep it shadow-only until that comparison has its own calibrated UI contract.
+    if snapshot.get("comparisonSource") == "r19_semantic_review":
+        return {}
+    if snapshot.get("status") != "completed" or snapshot.get("model") != "jev-1.13.0":
+        return {}
+    previous = run.get("jevQueuePrevious") or {}
+    visible: dict[str, dict[str, Any]] = {}
+    for item in snapshot.get("atomic") or []:
+        if not isinstance(item, dict) or item.get("model") != "jev-1.13.0":
+            continue
+        check_id = str(item.get("atomicCheckId") or "")
+        confidence = item.get("confidence")
+        if not check_id or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+            continue
+        agrees = item.get("agreesWithRuleEngine") is True
+        queued = (True if not agrees else True if confidence < enter else False if confidence >= exit_at
+                  else bool(previous.get(check_id, True)))
+        visible[check_id] = {"choice": item.get("choice"), "confidence": confidence,
+                             "model": "jev-1.13.0", "agreesWithRuleEngine": agrees,
+                             "needsHumanReview": queued,
+                             "priority": "disagreement" if not agrees else "low_confidence" if queued else "normal"}
+    return visible
 
 
 _EVIDENCE_TOOLS = frozenset({"validate_evidence_grounding", "extract_document_fields", "extract_table_records", "locate_evidence_fragment"})
@@ -360,8 +422,8 @@ def _outcome_reason(atomic: dict[str, Any]) -> str:
     """这一项为什么不是通过。
 
     优先级：判定不合格（failed）> 证据不够（evidence_insufficient / 需人工）> 锚定门。
-    2026-09-13 线上审计：节点 1 的设计单位许可证只覆盖 GB1/GB2/GC1、工程要 GC2，
-    整项判 failed，界面上写的原因却是「缺少施工起止日期」——那只是同一项里另一个
+    2026-09-13 线上审计：节点 1 的设计单位许可证列 GB1/GB2/GC1、工程要 GC2，
+    当时证照工具误判 failed，界面又写了「缺少施工起止日期」——那只是同一项里另一个
     工具报的数据缺口，按工具顺序抢先了。资质不覆盖是实质不合格，缺日期是资料没填齐，
     两者混在一起，监检第一眼读到的就是错的那句。
     """
@@ -410,7 +472,7 @@ def _atomic_check_names(business_pack_id: str) -> dict[str, str]:
         from libs.business_pack.loader import DEFAULT_BUSINESS_PACK_ID, load_business_pack
 
         pack = load_business_pack(business_pack_id or DEFAULT_BUSINESS_PACK_ID)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- 业务包读取失败只影响显示名，调用方回退到原子项 ID
         return {}
     return {
         str(check.get("id")): str(check.get("name") or "")

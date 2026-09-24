@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from libs.business_pack import load_business_pack
 from libs.contracts.responses import server_time
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import current_selected_parse_results
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.rule_condition_bindings import compile_condition_bindings
@@ -112,7 +112,7 @@ def build_r19_agent_context(state: dict[str, Any], review_run: dict[str, Any]) -
     requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
     documents: list[dict[str, Any]] = []
     evidence_index: dict[str, dict[str, Any]] = {}
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    for parse_result in current_selected_parse_results(state, {}, context={"reviewRun": review_run}):
         version_id = str(parse_result.get("documentVersionId") or "")
         fields = [item for item in parse_result.get("fields") or [] if isinstance(item, dict)]
         tables = [item for item in parse_result.get("tables") or [] if isinstance(item, dict)]

@@ -44,6 +44,70 @@ def selected_parse_results(
     return results
 
 
+def latest_selected_parses(
+    state: dict[str, Any], review_run: dict[str, Any], requested: set[str],
+) -> dict[str, dict[str, Any]]:
+    """Select the latest OCR attempt for each frozen version after scope/correction checks."""
+    return _latest_by_version(
+        selected_parse_results(state, {}, context={"reviewRun": review_run}), requested,
+    )
+
+
+def _latest_by_version(
+    results: list[dict[str, Any]], requested: set[str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    ambiguous: set[str] = set()
+    for parse in results:
+        version_id = str(parse.get("documentVersionId") or "")
+        if not version_id or (requested is not None and version_id not in requested):
+            continue
+        previous = latest.get(version_id)
+        stamp = str(parse.get("finishedAt") or parse.get("updatedAt") or parse.get("createdAt") or "")
+        if previous is None:
+            latest[version_id] = parse
+            continue
+        previous_stamp = str(previous.get("finishedAt") or previous.get("updatedAt")
+                             or previous.get("createdAt") or "")
+        if stamp == previous_stamp:
+            # A record ID is not an OCR attempt clock. Ties cannot establish current evidence.
+            ambiguous.add(version_id)
+        elif stamp > previous_stamp:
+            latest[version_id] = parse
+            ambiguous.discard(version_id)
+    return {version_id: parse for version_id, parse in latest.items() if version_id not in ambiguous}
+
+
+def ocr_parse_usable(parse: dict[str, Any]) -> bool:
+    """A failed or pending latest attempt must not expose an older OCR as current evidence."""
+    status = str(parse.get("status") or "success").lower()
+    outcome = str(parse.get("outcomeStatus") or "").lower()
+    quality = parse.get("quality") if isinstance(parse.get("quality"), dict) else {}
+    quality_status = str(quality.get("status") or "").lower()
+    # A partial OCR can still contain traceable facts; each rule checks its own page gap.
+    return (status in {"success", "succeeded", "completed", "已识别", "人工修正"}
+            and outcome != "failed" and quality_status != "failed")
+
+
+def current_selected_parse_results(
+    state: dict[str, Any], arguments: dict[str, Any], *,
+    context: dict[str, Any] | None = None, include_unusable: bool = False,
+) -> list[dict[str, Any]]:
+    """Current OCR for each selected version, retaining the existing scope and page rules."""
+    latest = _latest_by_version(selected_parse_results(state, arguments, context=context))
+    return [parse for parse in latest.values() if include_unusable or ocr_parse_usable(parse)]
+
+
+def latest_usable_selected_parses(
+    state: dict[str, Any], review_run: dict[str, Any], requested: set[str],
+) -> list[dict[str, Any]]:
+    """Never fall back to an older successful OCR after the latest attempt failed."""
+    return [
+        parse for parse in latest_selected_parses(state, review_run, requested).values()
+        if ocr_parse_usable(parse)
+    ]
+
+
 def apply_field_corrections_to_parse_results(
     state: dict[str, Any],
     results: list[dict[str, Any]],
@@ -114,4 +178,3 @@ def apply_field_corrections_to_parse_results(
         )
         patched.append(clone)
     return patched
-

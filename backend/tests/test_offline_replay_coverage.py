@@ -66,8 +66,9 @@ def test_a_registered_fact_builder_builds_facts_with_the_network_cut(monkeypatch
     """
     import socket
 
-    from libs.review_orchestrator.installation_domain_facts import build_r43_business_facts
     from test_real_table_reaches_the_rules import state_and_run
+
+    from libs.review_orchestrator.installation_domain_facts import build_r43_business_facts
 
     def refuse(*args, **kwargs):
         raise AssertionError("事实构建期间尝试建立网络连接；重放将不再确定")

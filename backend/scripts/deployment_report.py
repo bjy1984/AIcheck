@@ -2030,7 +2030,10 @@ def knowledge_rule_contract_check(
         ],
         "validate_review_evidence_refs": [
             "EVIDENCE_LINK_NOT_FOUND",
-            "EVIDENCE_REF_BAD_BBOX",
+            "EVIDENCE_ANCHOR_NOT_LOCATABLE",
+            "EVIDENCE_REF_ANCHOR_MISMATCH",
+            "EVIDENCE_REF_OUTSIDE_RUN",
+            "EVIDENCE_ANCHOR_OUTSIDE_PROJECT",
             "documentVersionId",
             "pageNo",
             "bbox",

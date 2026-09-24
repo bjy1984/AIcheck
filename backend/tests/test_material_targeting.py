@@ -492,7 +492,7 @@ def test_node2_license_evidence_is_system_confirmed_without_confidence_queue() -
     rejected = assert_ok(
         client.post(
             f"/api/projects/{PROJECT_ID}/nodes/2/evidence-links/{license_link['id']}/reject",
-            json={"comment": "测试改为不采用。"},
+            json={"comment": "测试改为不采用。", "expectedRevision": license_link["revision"]},
         )
     )
     rejected_row = next(
@@ -503,6 +503,33 @@ def test_node2_license_evidence_is_system_confirmed_without_confidence_queue() -
     assert rejected["evidenceLink"]["manualStatus"] == "rejected"
     assert rejected_row["evidenceReviewStatus"] == "不采用"
     assert rejected_row["fulfilled"] is False
+    assert rejected["evidenceLink"]["revision"] == license_link["revision"] + 1
+    assert not any(
+        license_link["reviewPointId"] in binding.get("reviewPointIds", [])
+        for binding in repo.state["bindings"]
+        if binding.get("source") == "material_targeting"
+        and binding.get("documentVersionId") == version["id"]
+    )
+
+    recomputed = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+    preserved = next(item for item in repo.state["node_evidence_links"] if item["id"] == license_link["id"])
+    assert preserved["manualStatus"] == "rejected"
+    assert all(item["reviewPointId"] != license_link["reviewPointId"] for item in recomputed["createdLinks"])
+    assert not any(
+        license_link["reviewPointId"] in binding.get("reviewPointIds", [])
+        for binding in repo.state["bindings"]
+        if binding.get("source") == "material_targeting"
+        and binding.get("documentVersionId") == version["id"]
+    )
+
+    stale = client.post(
+        f"/api/projects/{PROJECT_ID}/nodes/2/evidence-links/{license_link['id']}/confirm",
+        json={"expectedRevision": license_link["revision"]},
+    )
+    assert stale.status_code == 409
+    assert preserved["manualStatus"] == "rejected"
 
 
 def test_node2_schedule_can_target_construction_plan_text() -> None:

@@ -4,13 +4,11 @@ import hashlib
 import json
 import logging
 import os
-import re
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from libs.audit_runtime import (
-    audit_runtime_config,
     audit_runtime_for_run,
     audit_runtime_public_config,
 )
@@ -75,11 +73,28 @@ from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
     truncation_requirements,
 )
+from libs.review_orchestrator.evidence_ref_validation import (
+    validate_review_evidence_refs,
+)
 from libs.review_orchestrator.failure_policy import (
     NON_RETRYABLE_REVIEW_REASONS,  # noqa: F401 -- public compatibility re-export
     review_failure_retryable,
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
+from libs.review_orchestrator.jev_fact_check import (
+    certificate_fact_items,
+    check_facts,
+    design_fact_items,
+    record_fact_items,
+    welder_fact_items,
+)
+from libs.review_orchestrator.jev_primary import (
+    attach_hints,
+    author_node_questions,
+    decide_node,
+    jev_hint_summary,
+)
+from libs.review_orchestrator.jev_tables import classify_review_tables
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.ndt_fact_builders import NDT_FACT_BUILDERS
 from libs.review_orchestrator.node_fact_overrides import (
@@ -135,7 +150,11 @@ from libs.review_orchestrator.rule_result_digest import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.task_queues import review_task_queues
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
-from libs.review_page_scope import existing_scoped_run, prompt_grounding, task_page_ranges
+from libs.review_page_scope import (
+    existing_scoped_run,
+    prompt_grounding,
+    task_page_ranges,
+)
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.review_tools.condition_execution import (
@@ -328,6 +347,11 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
     task_queues = review_task_queues()
     tenant_id = tenant_id_for_record(ai_run) or current_tenant_id()
     workflow_id = review_workflow_id(tenant_id, review_run_id)
+    previous_jev_queue = next((item.get("jevQueueStatus") for item in repo.state.get("review_runs", [])
+                               if isinstance(item, dict) and item.get("projectId") == ai_run.get("projectId")
+                               and tenant_id_for_record(item) == tenant_id
+                               and str(item.get("nodeId")) == str(ai_run.get("nodeId"))
+                               and isinstance(item.get("jevQueueStatus"), dict)), {})
     now = server_time()
     audit_runtime = audit_runtime_public_config(mode=str(ai_run.get("auditInputMode") or "") or None)
     clause_package_snapshot = repo.clone(ai_run.get("clausePackageSnapshot"))
@@ -404,6 +428,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "startedAt": None,
         "finishedAt": None,
         "revision": 1,
+        "jevQueuePrevious": repo.clone(previous_jev_queue),
     }
     if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() in {"1", "true", "yes"}:
         project = repo.require_project(str(record.get("projectId") or "")) or {}
@@ -1336,16 +1361,21 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["llmResultText"] = (ai_run.get("llmMetadata") or {}).get("resultText")
             ai_run["evidenceCoverage"] = repo.clone(review_run.get("evidenceCoverage") or ai_run.get("evidenceCoverage") or {})
             ai_run["failedEvidenceShardIds"] = list(review_run.get("failedEvidenceShardIds") or [])
-            deterministic_verdict = str(next(iter(context.get("ruleResults") or []), {}).get("result") or "")
+            deterministic_verdict = str(next(iter(context.get("deterministicRuleResults")
+                                                   or context.get("ruleResults") or []), {}).get("result") or "")
+            suggested_verdict = str(next(iter(context.get("ruleResults") or []), {}).get("result") or "")
             # 逐项核查结果（含通过项）也随运行一起带出去：界面只列问题时，
             # 「没报问题」和「压根没查」在人眼里是一样的。
             ai_run["atomicCheckOutcomes"] = repo.clone(output_contract.atomic_check_outcomes(context.get("ruleResults") or [], review_run))
-            opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=deterministic_verdict)
+            opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=suggested_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {
-                    # 建议结论携带确定性判定（最终仍由监检人员确认，任何结论不自动成立）。
-                    "result": SUGGESTION_RESULT_LABELS.get(deterministic_verdict, "需人工确认"),
+                    # 结论只来自规则、平台核验和计算；Jev 只给出分歧提示。
+                    "result": SUGGESTION_RESULT_LABELS.get(suggested_verdict, "需人工确认"),
+                    "primaryResult": suggested_verdict or None,
                     "deterministicResult": deterministic_verdict or None,
+                    "decisionSource": "rule_engine",
+                    **jev_hint_summary(review_run.get("jevDecision"), review_run.get("jevFactCheck")),
                     "opinionDraft": opinion["text"],
                     "opinionSource": opinion["source"],
                     "confidence": opinion["confidence"],
@@ -1469,6 +1499,14 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
     ensure_document_sources(review_run, repo.state)
     audit_runtime = audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
+    if node_key == "classify_ocr_tables":
+        if review_run.get("workflowEngine") != "temporal":
+            return {"status": "skipped_inline"}
+        classified = classify_review_tables(repo.state, review_run)
+        review_run["jevTableClassifications"] = classified
+        return {"status": classified["status"], "classifiedTables": sum(
+            len(rows) for rows in classified["tables"].values()),
+            "overlongDocumentVersionIds": classified["overlongDocumentVersionIds"]}
     if node_key == "load_context":
         project = repo.require_project(str(review_run.get("projectId")))
         node = repo.node(str(review_run.get("projectId")), int(review_run.get("nodeId") or 0))
@@ -1556,8 +1594,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 "groundingStatus": grounding_input.get("groundingStatus"),
                 "reviewWarnings": grounding_input.get("reviewWarnings") or [],
             }
-        grounding_input = build_grounded_review_input(
-            repo.state, version_ids, **({"review_run": review_run} if review_run.get("inputDocumentPageRanges") else {}))
+        grounding_input = build_grounded_review_input(repo.state, version_ids, review_run=review_run)
         fields = grounding_input.get("fields") or []
         evidence_links = grounding_input.get("evidenceLinks") or []
         if context.get("businessFacts"):
@@ -1804,6 +1841,35 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "linkedClauseIds": linked_clause_ids,
             "certificateVerificationCount": verification_tool.get("verificationCount", 0),
         }
+    if node_key == "qwen_compose_jev_questions":
+        project = context.get("project") or {}
+        pack = project.get("businessPackSnapshot") or load_business_pack(
+            str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
+        plan = author_node_questions(repo.state, review_run, context.get("ruleResults") or [], pack,
+                                     business_facts=context.get("businessFacts"))
+        review_run["jevQuestionPlan"] = plan
+        return {"status": plan["status"], "questionCount": len(plan.get("questions") or []),
+                "model": plan.get("model")}
+    if node_key == "jev_decision":
+        project = context.get("project") or {}
+        pack = project.get("businessPackSnapshot") or load_business_pack(
+            str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
+        original = context.get("ruleResults") or []
+        decision = decide_node(repo.state, review_run, original, pack,
+                               review_run.get("jevQuestionPlan"), business_facts=context.get("businessFacts"))
+        review_run["jevDecision"] = decision
+        # Jev 只加提示、不改结论：规则、平台核验和计算结果照旧往下走。
+        context["ruleResults"] = attach_hints(original, decision)
+        # 规则用到的证书、设计试验要求等事实请 Jev 对原文核一遍：答「否」只标记抽取可疑（R02-02 那一类）。
+        fact_check = check_facts(repo.state, review_run,
+                                 certificate_fact_items(context.get("certificateVerification"))
+                                 + design_fact_items(context.get("businessFacts"), original)
+                                 + welder_fact_items(context.get("businessFacts"), original)
+                                 + record_fact_items(context.get("businessFacts"), original))
+        review_run["jevFactCheck"] = fact_check
+        return {"status": decision["status"], "decisionCount": len(decision["atomic"]),
+                "disagreementCount": len(decision.get("disagreementAtomicCheckIds") or []),
+                "factCheckStatus": fact_check["status"], "factSuspectCount": len(fact_check.get("suspects") or [])}
     if node_key == "retrieve_knowledge":
         retrieval = retrieve_knowledge_clauses(
             repo.state,
@@ -1870,6 +1936,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             drafts,
             context.get("evidenceLinks") or [],
             audit_runtime=audit_runtime,
+            review_run=review_run,
+            source_state=repo.state,
         )
         mismatched_indexes = {
             int(failure.get("index"))
@@ -2007,6 +2075,9 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
+            *([("本次节点建议由 Jev 按 Qwen 生成的题目和选项作出。只解释其选择并引用已有依据；"
+                "规则工具结果用于人工对照，若两者冲突要明确写出，不得改写 Jev 的选择。")]
+              if (review_run.get("jevDecision") or {}).get("status") == "completed" else []),
             *output_contract.prompt_format_requirements(complete=bool(workstation)),
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
@@ -2021,6 +2092,14 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
            if review_run.get("inputDocumentPageRanges") else {}),
         "groundingStatus": grounding_input.get("groundingStatus"),
         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
+        **({"jevDecision": {"model": "jev-1.13.0",
+                              "questionAuthorModel": (review_run.get("jevQuestionPlan") or {}).get("actualModel")
+                              or (review_run.get("jevQuestionPlan") or {}).get("model"),
+                              "questionPlanHash": (review_run.get("jevQuestionPlan") or {}).get("questionHash"),
+                              "atomic": [{"atomicCheckId": row.get("atomicCheckId"),
+                                          "choice": row.get("choice"), "confidence": row.get("confidence")}
+                                         for row in (review_run.get("jevDecision") or {}).get("atomic") or []]}}
+           if (review_run.get("jevDecision") or {}).get("status") == "completed" else {}),
         # 压掉嵌套工具输出里的证据引用列表再进提示词。原样给会让单个
         # locate_evidence_fragment 结果占掉 39% 预算（见 rule_result_digest）。
         "ruleResults": compact_rule_results(context.get("ruleResults") or []),
@@ -2547,6 +2626,7 @@ def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], 
         draft["suggestedAction"] = str(item.get("suggestedAction") or item.get("suggested_action") or "human_confirm")
         draft["groundingStatus"] = str(item.get("groundingStatus") or item.get("grounding_status") or base.get("groundingStatus") or "")
         draft["unsupportedClaims"] = item.get("unsupportedClaims") if isinstance(item.get("unsupportedClaims"), list) else []
+        draft["claims"] = [str(claim) for claim in item.get("claims") if isinstance(claim, str)] if isinstance(item.get("claims"), list) else []
         draft["requiresHumanConfirmation"] = True
         draft["llmGenerated"] = True
         drafts.append(draft)
@@ -2645,140 +2725,6 @@ def validate_review_schema(drafts: list[dict[str, Any]]) -> dict[str, Any]:
         failures=failures,
         warnings=warnings,
         metrics={"findingCount": len(drafts)},
-    )
-
-
-def validate_bbox(value: Any) -> bool:
-    if not isinstance(value, list | tuple) or len(value) != 4:
-        return False
-    try:
-        x1, y1, x2, y2 = [float(item) for item in value]
-    except (TypeError, ValueError):
-        return False
-    return x2 >= x1 and y2 >= y1 and x1 >= 0 and y1 >= 0
-
-
-def normalize_claim_text(value: Any) -> str:
-    text = str(value or "").upper()
-    return re.sub(r"[\s\u3000:：/／\\\-_.，。,、()（）\[\]【】]+", "", text)
-
-
-def extract_claim_tokens(draft: dict[str, Any]) -> list[str]:
-    text = "\n".join(
-        str(draft.get(key) or "")
-        for key in ["title", "description", "opinionDraft", "resultText", "suggestedAction"]
-    )
-    patterns = [
-        r"\b[A-Z]{1,6}\s*/?\s*T?\s*\d{2,6}(?:\.\d+)?(?:-\d{4})?\b",
-        r"\bTS[A-Z0-9\-]{6,}\b",
-        r"\bA\d{6,}\b",
-        r"\b\d{4}[年\-/.]\d{1,2}[月\-/.]\d{1,2}日?\b",
-        r"\b\d+(?:\.\d+)?\s*(?:%|MPA|MM|℃|级|类)\b",
-        r"[\u4e00-\u9fa5]{2,30}(?:公司|院|中心|厂|集团|有限责任公司)",
-    ]
-    tokens: list[str] = []
-    for pattern in patterns:
-        for match in re.findall(pattern, text, flags=re.IGNORECASE):
-            token = match if isinstance(match, str) else "".join(match)
-            normalized = normalize_claim_text(token)
-            if normalized and normalized not in tokens:
-                tokens.append(normalized)
-    return tokens[:20]
-
-
-def evidence_text_corpus(evidence_links: list[dict[str, Any]], refs: list[dict[str, Any]]) -> str:
-    ref_ids = {str(ref.get("evidenceLinkId")) for ref in refs if isinstance(ref, dict) and ref.get("evidenceLinkId")}
-    rows = [
-        item
-        for item in evidence_links
-        if isinstance(item, dict) and (not ref_ids or str(item.get("id") or "") in ref_ids)
-    ]
-    values: list[str] = []
-    for row in rows:
-        for key in ["quotedText", "fieldName", "fieldValue", "fileName", "standardCode", "reportNo", "conclusion"]:
-            if row.get(key):
-                values.append(str(row.get(key)))
-        for item in row.get("matchedEvidenceItems") or []:
-            values.append(str(item))
-    return normalize_claim_text("\n".join(values))
-
-
-def validate_review_evidence_refs(
-    drafts: list[dict[str, Any]],
-    evidence_links: list[dict[str, Any]],
-    *,
-    audit_runtime: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    runtime = audit_runtime or audit_runtime_config()
-    if runtime.get("requireEvidenceRefs") is False:
-        warnings = []
-        for draft_index, draft in enumerate(drafts):
-            if draft.get("evidenceRefs"):
-                warnings.append(
-                    {
-                        "code": "PURE_LLM_EVIDENCE_REFS_IGNORED",
-                        "index": draft_index,
-                        "message": "Pure LLM mode does not require evidenceRefs; OCR/page/bbox evidence was not loaded.",
-                    }
-                )
-        warnings.append(
-            {
-                "code": "PURE_LLM_REVIEW_ADVISORY_ONLY",
-                "message": "Evidence validation is advisory because auditInputMode does not require OCR evidence.",
-            }
-        )
-        return validation_payload(
-            passed=True,
-            checked=0,
-            warnings=warnings,
-            metrics={
-                "evidenceRefCount": 0,
-                "availableEvidenceLinks": len(evidence_links),
-                "auditInputMode": runtime.get("mode"),
-                "evidenceValidationMode": runtime.get("evidenceValidationMode"),
-            },
-        )
-    failures: list[dict[str, Any]] = []
-    warnings: list[dict[str, Any]] = []
-    evidence_ids = {str(item.get("id")) for item in evidence_links if isinstance(item, dict) and item.get("id")}
-    checked_refs = 0
-    for draft_index, draft in enumerate(drafts):
-        refs = draft.get("evidenceRefs") if isinstance(draft.get("evidenceRefs"), list) else []
-        if not refs:
-            warnings.append({"code": "NO_EVIDENCE_REFS", "index": draft_index, "message": "Finding has no direct evidence references."})
-            continue
-        claim_tokens = extract_claim_tokens(draft)
-        if claim_tokens:
-            corpus = evidence_text_corpus(evidence_links, refs)
-            missing_tokens = [token for token in claim_tokens if token not in corpus]
-            if missing_tokens:
-                failures.append(
-                    {
-                        "code": "CLAIM_TO_EVIDENCE_MISMATCH",
-                        "index": draft_index,
-                        "missingTokens": missing_tokens[:10],
-                        "message": "Finding contains explicit numbers/dates/certificates/standards/entities not found in cited evidence text.",
-                    }
-                )
-        for ref_index, ref in enumerate(refs):
-            checked_refs += 1
-            if not isinstance(ref, dict):
-                failures.append({"code": "EVIDENCE_REF_NOT_OBJECT", "index": draft_index, "refIndex": ref_index})
-                continue
-            evidence_link_id = ref.get("evidenceLinkId")
-            if evidence_link_id and str(evidence_link_id) not in evidence_ids:
-                failures.append({"code": "EVIDENCE_LINK_NOT_FOUND", "index": draft_index, "refIndex": ref_index, "evidenceLinkId": evidence_link_id})
-            has_position = bool(ref.get("documentVersionId")) and ref.get("pageNo") is not None and validate_bbox(ref.get("bbox"))
-            if not evidence_link_id and not has_position:
-                failures.append({"code": "EVIDENCE_REF_MISSING_POSITION", "index": draft_index, "refIndex": ref_index})
-            if ref.get("bbox") is not None and not validate_bbox(ref.get("bbox")):
-                failures.append({"code": "EVIDENCE_REF_BAD_BBOX", "index": draft_index, "refIndex": ref_index, "bbox": ref.get("bbox")})
-    return validation_payload(
-        passed=not failures,
-        checked=checked_refs,
-        failures=failures,
-        warnings=warnings,
-        metrics={"evidenceRefCount": checked_refs, "availableEvidenceLinks": len(evidence_ids)},
     )
 
 
@@ -3721,6 +3667,8 @@ def confirmed_findings_for_human_decision(
             [corrected],
             evidence_links,
             audit_runtime=audit_runtime_for_run(review_run),
+            review_run=review_run,
+            source_state=repo.state,
         )
         if not evidence_validation.get("passed"):
             return [], {

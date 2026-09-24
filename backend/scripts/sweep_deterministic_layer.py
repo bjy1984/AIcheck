@@ -46,9 +46,7 @@ def _fact_summary(facts: Any) -> dict[str, int]:
         return {}
     summary: dict[str, int] = {}
     for key, value in facts.items():
-        if isinstance(value, list):
-            summary[key] = len(value)
-        elif isinstance(value, dict):
+        if isinstance(value, (list, dict)):
             summary[key] = len(value)
         elif value not in (None, "", False):
             summary[key] = 1
@@ -192,7 +190,7 @@ def main() -> int:
     ran = [row for row in rows if row.get("resultCounts")]
     print(f"\n=== 真跑出核查项的 {len(ran)} 个节点 ===")
     for row in ran:
-        print(f"  节点 {row['nodeId']:3d} {str(row.get('ruleId')):22s} 文档{row['documentCount']:3d} "
+        print(f"  节点 {row['nodeId']:3d} {row.get('ruleId')!s:22s} 文档{row['documentCount']:3d} "
               f"原子项{row.get('atomicCheckCount', 0):3d} -> {row['resultCounts']}")
     print("\n=== 证据不足的原因合计 ===")
     totals: dict[str, int] = {}

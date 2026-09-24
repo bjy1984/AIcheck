@@ -304,7 +304,7 @@ R01_R03_BINDINGS: dict[str, dict[str, Any]] = {
     "AC-R01-02": {
         "facts": ["designLicense.scopeCodes", "project.pipelineGrades"],
         "tools": ["extract_document_fields", "extract_table_records", "check_design_license_scope", "validate_evidence_grounding"],
-        "parameters": {"argumentProfile": "r01_design_scope_project", "scopeProfile": "design-license-scope-cn-v1"},
+        "parameters": {"argumentProfile": "r01_design_scope_project", "scopeProfile": "design-license-scope-cn-v2"},
     },
     "AC-R01-03": {
         "facts": [
@@ -316,12 +316,13 @@ R01_R03_BINDINGS: dict[str, dict[str, Any]] = {
             "argumentProfile": "r01_design_license_period",
             "coverageMode": "closed_interval",
             "periodEndPolicy": "latest_of_planned_actual_change_clarification",
+            "scopeProfile": "design-license-scope-cn-v2",
         },
     },
     "AC-R01-04": {
         "facts": ["designLicense.scopeCodes", "designDocument.pipelineGrades"],
         "tools": ["extract_document_fields", "extract_table_records", "check_design_license_scope", "validate_evidence_grounding"],
-        "parameters": {"argumentProfile": "r01_design_scope_documents", "scopeProfile": "design-license-scope-cn-v1"},
+        "parameters": {"argumentProfile": "r01_design_scope_documents", "scopeProfile": "design-license-scope-cn-v2"},
     },
     "AC-R02-01": {
         "facts": ["installationLicense.scopeCodes", "project.pipelineGrades"],
@@ -770,7 +771,7 @@ def main() -> None:
         "atomicCheckToolBindingSet": {
             "id": "engineering-inspection-tool-bindings-v1",
             "schemaVersion": "atomic-check-tool-binding-v1",
-            "version": "2026.08.07",
+            "version": "2026.09.23",
             "lifecycleStatus": "draft",
             "atomicCheckCount": len(bindings),
             "pilotRules": sorted(PILOT_RULES),

@@ -5,7 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from libs.review_grounding import _position_failures
-from libs.review_orchestrator.runtime_tools import selected_parse_results
+from libs.review_input_data import current_selected_parse_results
 from libs.review_workstations import digest
 from libs.rule_conditions import _applicability_leaves, validate_conditions
 
@@ -17,7 +17,7 @@ def condition_candidates_from_run(state: dict[str, Any], run: dict[str, Any], co
     checks = conditions["checks"] + (_applicability_leaves(conditions["applicability"]) if "applicability" in conditions else [])
     names = {check["field"] for check in checks}
     candidates: dict[str, list[dict[str, Any]]] = {name: [] for name in names}
-    for parse in selected_parse_results(state, {}, context={"reviewRun": run}):
+    for parse in current_selected_parse_results(state, {}, context={"reviewRun": run}):
         for field in parse.get("fields") or []:
             if not isinstance(field, dict):
                 continue

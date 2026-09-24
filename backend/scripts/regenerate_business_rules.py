@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -82,9 +83,26 @@ def load_node_names(path: Path) -> dict[int, str]:
     return names
 
 
+def replace_single_rule_yaml(original: str, rule: dict[str, Any]) -> str:
+    """Regenerate one rule without recompiling unrelated published rule assets."""
+    rule_id = str(rule["id"])
+    marker = re.compile(rf"(?m)^- id: {re.escape(rule_id)}\n")
+    matches = list(marker.finditer(original))
+    if len(matches) != 1:
+        raise ValueError(f"expected_one_existing_rule:{rule_id}")
+    start = matches[0].start()
+    next_rule = re.search(r"(?m)^- id: RULE-ENG-INSP-R\d{2}\n", original[matches[0].end():])
+    end = matches[0].end() + next_rule.start() if next_rule else len(original)
+    rendered = yaml.safe_dump(use_literal_strings({"ruleSets": [rule]}), allow_unicode=True, sort_keys=False, width=120)
+    if not rendered.startswith("ruleSets:\n"):
+        raise ValueError("unexpected_rule_yaml_render")
+    return original[:start] + rendered.removeprefix("ruleSets:\n") + original[end:]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Regenerate business-pack rules.yaml from rules/业务规则.md.")
     parser.add_argument("--check", action="store_true", help="Only print generation summary without writing files.")
+    parser.add_argument("--only-rule", help="Regenerate one R01-R69 rule without changing other rule assets.")
     args = parser.parse_args()
 
     rules_md_path = WORKSPACE_ROOT / "rules" / "业务规则.md"
@@ -132,6 +150,23 @@ def main() -> None:
         "matched files:",
         len(matched_files),
     )
+    if args.only_rule:
+        source_rule_id = str(args.only_rule).upper()
+        if not re.fullmatch(r"R(?:0[1-9]|[1-6][0-9])", source_rule_id):
+            parser.error("--only-rule must be R01-R69")
+        if markdown_text != root_rules_md_path.read_text(encoding="utf-8"):
+            parser.error("root and rules/ business rule sources differ")
+        rule = next((item for item in rule_sets if item["sourceRuleId"] == source_rule_id), None)
+        if rule is None:
+            parser.error(f"missing source rule: {source_rule_id}")
+        original = rules_yaml_path.read_text(encoding="utf-8")
+        scoped_yaml = replace_single_rule_yaml(original, rule)
+        if args.check:
+            if scoped_yaml != original:
+                parser.error(f"{source_rule_id} generated asset differs from source")
+            return
+        rules_yaml_path.write_text(scoped_yaml, encoding="utf-8")
+        return
     if args.check:
         return
 

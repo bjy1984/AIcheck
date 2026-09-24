@@ -12,13 +12,9 @@ from libs.review_orchestrator.deterministic_tools import (
     result,
 )
 from libs.review_tools.installation_domain_rules import (
-    evaluate_r10_standard_adoption,
-    evaluate_r10_compliance_declaration,
     evaluate_r10_comparison_table,
-    evaluate_r56_accessory_documents,
-    evaluate_r56_accessory_installation,
-    evaluate_r57_safety_valve_calibration,
-    evaluate_r58_emergency_valve_test,
+    evaluate_r10_compliance_declaration,
+    evaluate_r10_standard_adoption,
     evaluate_r43_material_certificate,
     evaluate_r44_coating_construction,
     evaluate_r46_cathodic_protection,
@@ -31,6 +27,10 @@ from libs.review_tools.installation_domain_rules import (
     evaluate_r53_installation_connections,
     evaluate_r54_compensator,
     evaluate_r55_supports,
+    evaluate_r56_accessory_documents,
+    evaluate_r56_accessory_installation,
+    evaluate_r57_safety_valve_calibration,
+    evaluate_r58_emergency_valve_test,
 )
 from libs.review_tools.leak_test_rules import (
     evaluate_r64_alternative_test,

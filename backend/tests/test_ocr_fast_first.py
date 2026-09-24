@@ -1072,3 +1072,28 @@ def test_qualification_certificate_extracts_license_fields_from_labeled_lines() 
     assert fields["valid_until"]["fieldValue"] == "2027年6月21日"
     assert fields["issuer"]["fieldValue"] == "国家市场监督管理总局"
     assert fields["issue_date"]["fieldValue"] == "2023年6月22日"
+
+
+def _licence_until(lines):
+    head = ["中华人民共和国特种设备生产许可证", "许可证编号：TS3841999-2028", "许可项目：压力管道安装"]
+    result = {"fragments": [{"text": text, "pageNo": 1} for text in head + lines], "fields": []}
+    extract_qualification_certificate_fields(result)
+    return {item["fieldCode"]: item["fieldValue"] for item in result["fields"]}.get("valid_until")
+
+
+def test_qualification_validity_range_uses_end_date_not_start():
+    # 生产实例 R02-02：原文「有效期：2024年9月7日至2028年9月6日」曾被存成截止 2024年9月7日。
+    assert _licence_until(["有效期：2024年9月7日至2028年9月6日"]) == "2028年9月6日"
+    assert _licence_until(["有效期限：2024年09月07日—2028年09月06日"]) == "2028年09月06日"
+    assert _licence_until(["有效期自2024年9月7日至2028年9月6日"]) == "2028年9月6日"
+    assert _licence_until(["有效期", "2024年9月7日至2028年9月6日"]) == "2028年9月6日"
+    assert _licence_until(["有效期起：2024年9月7日", "有效期止：2028年9月6日"]) == "2028年9月6日"
+
+
+def test_qualification_validity_ignores_later_ranges_of_other_certificates():
+    # 资质合订本：第一张证写「有效期至」，后面 CTC 证书的区间不能顶替它。
+    bundle = ["有效期至：2028年05月12日", "发证日期：2023年03月08日",
+              "证书有效日期：2021年06月30日至2024年06月29日", "有效期：自2023年12月10日至2026年12月09日"]
+    assert _licence_until(bundle) == "2028年05月12日"
+    # MinerU 整份文档只有一个片段时同样只认第一个有效期陈述。
+    assert _licence_until(["\n".join(bundle)]) == "2028年05月12日"

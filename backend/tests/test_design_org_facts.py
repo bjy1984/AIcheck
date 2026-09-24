@@ -8,8 +8,11 @@ designDocument.designSealOrganization。2026-09-11 全节点扫描：后两处�
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 from libs.review_orchestrator.certificate_facts import merge_certificate_facts
 from libs.review_orchestrator.design_org_facts import build_design_org_facts
+from libs.review_orchestrator.deterministic_tools import check_design_license_scope
 from libs.review_tools.executor import build_tool_arguments
 
 TITLE_BLOCK = (
@@ -114,6 +117,116 @@ def test_节点1合并后check_all_equal拿到三个值():
 
 def test_节点2不产设计单位事实():
     assert "designDocument" not in merge_certificate_facts(_state(), {**_run(), "nodeId": 2}, {})
+
+
+def test_设计文件级别从结构化字段进入R01_04并带原文定位():
+    state = _state()
+    state["ocr_parse_results"][0]["fields"].append({
+        "fieldCode": "pressure_pipe_level", "fieldName": "压力管道级别", "fieldValue": "GC2",
+        "pageNo": 23, "bbox": [10, 20, 30, 40], "confidence": 0.0,
+    })
+    state["ocr_parse_results"][1]["fields"].append({
+        "fieldCode": "license_scope", "fieldName": "许可范围", "fieldValue": "GC1", "pageNo": 1,
+    })
+    facts = merge_certificate_facts(state, _run(), {})
+    design = facts["designDocument"]
+    assert design["pipelineGrades"] == ["GC2"]
+    assert design["pipelineGradeIssues"] == []
+    grade = next(item for item in facts["judgment"]["claimedFacts"] if item.get("label") == "设计文件管道级别")
+    assert grade["value"] == "GC2" and grade["documentVersionId"] == "DV-DWG"
+    assert grade["fields"][0]["fieldName"] == "压力管道级别"
+    evidence = next(item for item in facts["judgment"]["evidenceRefs"]
+                    if item["evidenceRefId"] in grade["evidenceRefIds"])
+    assert evidence["pageNo"] == 23 and evidence["quotedText"] == "GC2"
+    arguments = build_tool_arguments(
+        "check_design_license_scope",
+        {"atomicCheckId": "AC-R01-04", "parameters": {"argumentProfile": "r01_design_scope_documents",
+                                                "scopeProfile": "design-license-scope-cn-v2"}},
+        facts=facts, explicit={}, document_version_ids=["DV-DWG", "DV-LIC"],
+        evidence_facts=[], evidence_refs=[],
+    )
+    assert arguments["requiredPipelineGrades"] == ["GC2"]
+    assert check_design_license_scope(arguments)["result"] == "passed"
+
+
+def test_一份设计文件没有级别时不拿另一份的级别冒充完整覆盖():
+    state = _state()
+    state["documents"].append({"id": "DOC-DWG-2", "projectId": "P-1", "currentVersionId": "DV-DWG-2",
+                                "fileName": "另一份设计文件.pdf", "materialTypeCode": "design_document"})
+    state["versions"].append({"id": "DV-DWG-2", "documentId": "DOC-DWG-2"})
+    state["ocr_parse_results"].append({"documentVersionId": "DV-DWG-2", "status": "success", "fields": [],
+                                       "fragments": []})
+    state["ocr_parse_results"][0]["fields"].append({
+        "fieldCode": "pressure_pipe_level", "fieldName": "压力管道级别", "fieldValue": "GC2", "pageNo": 23,
+    })
+    run = {**_run(), "inputDocumentVersionIds": ["DV-DWG", "DV-DWG-2", "DV-LIC"]}
+    design = build_design_org_facts(state, run)["designDocument"]
+    assert design["pipelineGrades"] == []
+    assert design["pipelineGradeIssues"] == ["DV-DWG-2"]
+
+
+def test_已选设计文件完全没有OCR时也不能报告级别覆盖():
+    state = _state()
+    state["ocr_parse_results"][0]["fields"].append({
+        "fieldCode": "pressure_pipe_level", "fieldName": "压力管道级别", "fieldValue": "GC2", "pageNo": 23,
+    })
+    state["documents"].append({"id": "DOC-DWG-2", "projectId": "P-1", "currentVersionId": "DV-DWG-2",
+                                "fileName": "尚未识别的设计文件.pdf", "materialTypeCode": "design_document"})
+    state["versions"].append({"id": "DV-DWG-2", "documentId": "DOC-DWG-2"})
+    run = {**_run(), "inputDocumentVersionIds": ["DV-DWG", "DV-DWG-2", "DV-LIC"]}
+    design = build_design_org_facts(state, run)["designDocument"]
+    assert design["pipelineGrades"] == []
+    assert design["pipelineGradeIssues"] == ["DV-DWG-2"]
+
+
+def test_设计文件OCR失败时不把残留字段当成已核完整资料():
+    state = _state()
+    state["ocr_parse_results"][0]["status"] = "failed"
+    state["ocr_parse_results"][0]["fields"].append({
+        "fieldCode": "pressure_pipe_level", "fieldName": "压力管道级别", "fieldValue": "GC2", "pageNo": 23,
+    })
+    design = build_design_org_facts(state, _run())["designDocument"]
+    assert design["pipelineGrades"] == []
+    assert design["pipelineGradeIssues"] == ["DV-DWG"]
+
+
+def test_同版设计许可证重识别后只用最新证照事实():
+    state = _state()
+    old = state["ocr_parse_results"][1]
+    old.update(id="OLD", createdAt="2026-08-01 10:00:00")
+    new = deepcopy(old)
+    new.update(id="NEW", createdAt="2026-08-02 10:00:00")
+    new["fields"][0]["fieldValue"] = "TS1844171-NEW"
+    state["ocr_parse_results"].append(new)
+
+    facts = merge_certificate_facts(state, _run(), {})
+
+    assert [item["certificateNo"] for item in facts["certificateFacts"]["certificates"]] == ["TS1844171-NEW"]
+
+
+def test_最新设计许可证OCR失败时不借旧证据():
+    state = _state()
+    state["ocr_parse_results"][1].update(id="OLD", createdAt="2026-08-01 10:00:00")
+    state["ocr_parse_results"].append({
+        "id": "FAILED", "documentVersionId": "DV-LIC", "status": "failed",
+        "createdAt": "2026-08-02 10:00:00",
+        "fields": [{"fieldCode": "certificate_no", "fieldValue": "TS-STALE"}],
+    })
+
+    facts = merge_certificate_facts(state, _run(), {})
+
+    assert facts["certificateFacts"]["certificates"] == []
+
+
+def test_同一字段写多个级别但没有对象映射时不猜一种():
+    state = _state()
+    state["ocr_parse_results"][0]["fields"].append({
+        "fieldCode": "pressure_pipe_level", "fieldName": "压力管道级别",
+        "fieldValue": "GC1、GC2", "pageNo": 23,
+    })
+    design = build_design_org_facts(state, _run())["designDocument"]
+    assert design["pipelineGrades"] == []
+    assert design["pipelineGradeIssues"] == ["DV-DWG"]
 
 
 def test_设计章按事实路径确认后有分():

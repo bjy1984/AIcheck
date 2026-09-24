@@ -5,11 +5,22 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
+from libs.business_pack import load_business_pack
+from libs.business_pack.clause_store import (
+    bind_project_node_clause_packages,
+    publish_standard_clause_release,
+    resolve_project_node_clause_package,
+)
 from libs.review_orchestrator.certificate_facts import (
     build_certificate_facts,
     certificate_profile_for_node,
 )
-from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+from libs.review_orchestrator.deterministic_tools import (
+    check_certificate_validity,
+    check_design_license_scope,
+)
 from libs.review_tools.executor import build_tool_arguments
 
 
@@ -76,6 +87,89 @@ def test_有效期覆盖施工期且主体一致则通过():
     codes = {item["code"] for item in output["checks"]}
     assert any(code.endswith("valid_until_covers_period_end") for code in codes)
     assert any(code.endswith("holder_matches_project") for code in codes)
+
+
+def test_设计许可证GC1覆盖GC2时证照与范围工具结论一致():
+    facts = build_certificate_facts(_state_with_design_license(), "P-1", 1, ["DV-1"])
+    cert = facts["certificateFacts"]["certificates"][0]
+    validity = check_certificate_validity({
+        **facts["certificateFacts"], **facts["certificateFacts"]["period"], "requiredScopes": ["GC2"]
+    })
+    scope = check_design_license_scope({"licenseScopes": cert["scopes"], "requiredPipelineGrades": ["GC2"]})
+
+    assert validity["result"] == scope["result"] == "passed"
+    assert validity["facts"]["certificates"][0]["acceptedScopesByRequired"] == {"GC2": ["GC1", "GC2"]}
+    assert validity["ruleVersion"] == "certificate-validity-cn-v2"
+
+
+def test_r01_新版GCD覆盖GC2_旧版仍按冻结规则判断():
+    base = {"referenceDate": "2026-09-23", "requiredScopes": ["GC2"], "certificateType": "design_license",
+            "certificates": [{"certificateNo": "TS-1", "validUntil": "2028-01-01", "scopes": ["GCD"]}]}
+    scope_args = {"licenseScopes": ["GCD"], "requiredPipelineGrades": ["GC2"]}
+
+    assert check_design_license_scope(scope_args)["result"] == "failed"
+    assert check_certificate_validity(base)["result"] == "failed"
+    new_profile = {"scopeProfile": "design-license-scope-cn-v2"}
+    scope = check_design_license_scope({**scope_args, **new_profile})
+    validity = check_certificate_validity({**base, **new_profile})
+    assert scope["result"] == validity["result"] == "passed"
+    assert scope["ruleVersion"] == "design-license-scope-cn-v2"
+    assert validity["ruleVersion"] == "certificate-validity-cn-v3"
+    assert validity["facts"]["certificates"][0]["acceptedScopesByRequired"] == {
+        "GC2": ["GC1", "GC2", "GCD"]
+    }
+
+
+def test_r01_新版不反向覆盖且未知版本不放行():
+    profile = {"scopeProfile": "design-license-scope-cn-v2"}
+    assert check_design_license_scope({**profile, "licenseScopes": ["GC2"],
+                                       "requiredPipelineGrades": ["GCD"]})["result"] == "failed"
+    assert check_design_license_scope({**profile, "licenseScopes": ["GCD"],
+                                       "requiredPipelineGrades": ["GC1"]})["result"] == "failed"
+    assert check_design_license_scope({**profile, "licenseScopes": ["GCD"],
+                                       "requiredPipelineGrades": []})["result"] == "evidence_insufficient"
+    assert check_design_license_scope({"scopeProfile": "unknown", "licenseScopes": ["GCD"],
+                                       "requiredPipelineGrades": ["GC2"]})["result"] == "evidence_insufficient"
+
+
+def test_r01_业务包新旧发布版本并存且原文保留():
+    pack = load_business_pack()
+    assert pack["version"] == "2026.09.23"
+    r01 = next(item for item in pack["ruleSets"] if item["sourceRuleId"] == "R01")
+    assert r01["version"] == "engineering-inspection-r01-v20260923"
+    assert "GC2 管道可由 GC2、GC1 或 GCD 许可覆盖" in r01["witnessText"]
+    assert "GC2级别管道要有GC2或者GC1的资质" in r01["sourceWitness"]
+    bindings = {item["atomicCheckId"]: item for item in pack["atomicCheckToolBindings"]}
+    for identity in ("AC-R01-02", "AC-R01-03", "AC-R01-04"):
+        assert bindings[identity]["parameters"]["scopeProfile"] == "design-license-scope-cn-v2"
+
+    old_pack = deepcopy(pack)
+    old_pack["version"] = "2026.07.16"
+    old_r01 = next(item for item in old_pack["standardClausePackages"] if item["sourceRuleId"] == "R01")
+    old_r01["requiredEvidence"] = ["previous-r01-evidence"]
+    state: dict = {}
+    publish_standard_clause_release(state, old_pack)
+    project = {"id": "P-OLD", "businessPackId": old_pack["id"],
+               "businessPackVersion": "2026.07.16", "updatedAt": "2026-09-22"}
+    bind_project_node_clause_packages(state, project, old_pack)
+    old_project_package = resolve_project_node_clause_package(state, "P-OLD", 1)
+    old_release = deepcopy([row for row in state["standard_clause_packages_db"]
+                            if row["releaseId"] == "engineering_inspection_v1@2026.07.16"])
+    publish_standard_clause_release(state, pack)
+    assert [row for row in state["standard_clause_packages_db"]
+            if row["releaseId"] == "engineering_inspection_v1@2026.07.16"] == old_release
+    assert len({row["releaseId"] for row in state["standard_clause_packages_db"]}) == 2
+    assert project["businessPackVersion"] == "2026.07.16"
+    assert resolve_project_node_clause_package(state, "P-OLD", 1) == old_project_package
+
+
+def test_设计证照范围不覆盖时仍判失败_非设计证不套设计规则():
+    base = {"referenceDate": "2026-09-23", "requiredScopes": ["GC2"],
+            "certificates": [{"certificateNo": "TS-1", "validUntil": "2028-01-01", "scopes": ["GB1"]}]}
+    assert check_certificate_validity({**base, "certificateType": "design_license"})["result"] == "failed"
+    other = {**base, "certificateType": "ndt_personnel_certificate"}
+    other["certificates"] = [{**base["certificates"][0], "scopes": ["GC1"]}]
+    assert check_certificate_validity(other)["result"] == "failed"
 
 
 def test_过期或主体不符判失败_缺有效期判证据不足():
@@ -273,3 +367,90 @@ def test_frozen_empty_certificate_merge_clears_previous_certificates_without_mut
     assert result[namespace]["certificateNo"] is None
     assert result[namespace]["certificates"] == []
     assert old == original
+
+
+def _installation_licence_state(fields, text):
+    return {
+        "projects": [{"id": "P-1", "contractorOrgName": "示例管道安装有限公司",
+                      "constructionStart": "2025-04-01", "plannedConstructionEnd": "2026-04-30"}],
+        "documents": [{"id": "DOC-1", "projectId": "P-1", "fileName": "安装许可证.pdf",
+                       "materialTypeCode": "installation_license", "currentVersionId": "DV-1"}],
+        "ocr_parse_results": [{"documentVersionId": "DV-1", "status": "success",
+                               "profileId": "qualification_certificate_v1",
+                               "fields": [{"fieldCode": "certificate_no", "fieldName": "许可证编号",
+                                           "fieldValue": "TS3841999-2028", "pageNo": 1}, *fields],
+                               "fragments": [{"pageNo": 1, "text": text}]}],
+    }
+
+
+def test_已落库的区间起始日被当成截止日时按原文区间改回():
+    # 生产实例 R02-02：旧 OCR 结果把「2024年9月7日至2028年9月6日」存成有效期至 2024年9月7日。
+    fields = [{"fieldCode": "valid_until", "fieldName": "有效期至", "fieldValue": "2024年9月7日", "pageNo": 1},
+              {"fieldCode": "issue_date", "fieldName": "发证日期", "fieldValue": "2024年7月31日", "pageNo": 1}]
+    facts = build_certificate_facts(_installation_licence_state(
+        fields, "发证日期：2024年7月31日 有效期：2024年9月7日至2028年9月6日"), "P-1", 2, ["DV-1"])
+    item = facts["certificateFacts"]["certificates"][0]
+    assert (item["validFrom"], item["validUntil"]) == ("2024-09-07", "2028-09-06")
+    assert item["sources"]["validUntil"] == "ocr_text_range"
+    assert item["replacedByValidityRange"] == {"validUntil": "2024-09-07", "validFrom": "2024-07-31"}
+
+
+def test_别的证书的区间和人工修正都不能覆盖截止日():
+    fields = [{"fieldCode": "valid_until", "fieldName": "有效期至", "fieldValue": "2028年05月12日", "pageNo": 1}]
+    bundle = "有效期至：2028年05月12日 证书有效日期：2021年06月30日至2024年06月29日"
+    item = build_certificate_facts(_installation_licence_state(fields, bundle), "P-1", 2, ["DV-1"])[
+        "certificateFacts"]["certificates"][0]
+    assert item["validUntil"] == "2028-05-12" and "replacedByValidityRange" not in item
+    corrected = [{**fields[0], "fieldValue": "2024年9月7日", "humanCorrected": True}]
+    item = build_certificate_facts(_installation_licence_state(
+        corrected, "有效期：2024年9月7日至2028年9月6日"), "P-1", 2, ["DV-1"])["certificateFacts"]["certificates"][0]
+    assert item["validUntil"] == "2024-09-07", "人工修正过的值不能被正文覆盖"
+
+
+def test_有效期起字段不能当截止日():
+    fields = [{"fieldCode": "", "fieldName": "有效期起", "fieldValue": "2024年9月7日", "pageNo": 1},
+              {"fieldCode": "", "fieldName": "有效期止", "fieldValue": "2028年9月6日", "pageNo": 1}]
+    item = build_certificate_facts(_installation_licence_state(fields, ""), "P-1", 2, ["DV-1"])[
+        "certificateFacts"]["certificates"][0]
+    assert (item["validFrom"], item["validUntil"]) == ("2024-09-07", "2028-09-06")
+
+
+def test_合订的几张焊工证按人分开_不把甲的姓名配上乙的证号():
+    # 生产实例：三名焊工的证合订成一份，旧版产出一条「李卫伍＋赵相军证号」的记录。
+    fragments = [{"pageNo": 1, "text": text} for text in [
+        "焊工清单", "序号 姓名 证号 有效期",
+        "张三焊工证", "考试合格作业项目(取证)", "项目代号 有效期 发证机关(章)", "批准日期",
+        "GTAW-FeⅡ-6G-3/159-FefS-02/11/12 自 2024年12月至 2028年11月 示例市局 2024年12月26日",
+        "姓名 张三", "证件编号 110101199001010011", "发证机关 示例市市场监督管理局",
+        "李四焊工证", "考试合格作业项目(取证)", "项目代号 有效期 发证机关(章)", "批准日期",
+        "SMAW-FeⅡ-6G(K)-12/159-Fef3J 自 2023年4月至 2027年4月 示例县局 2023年2月17日",
+        "姓名 李四", "证件编号 110101199202020022", "发证机关 示例县市场监督管理局",
+    ]]
+    state = {
+        "projects": [{"id": "P-1", "constructionStart": "2025-04-01", "plannedConstructionEnd": "2026-04-30"}],
+        "documents": [{"id": "DOC-1", "projectId": "P-1", "fileName": "焊工证.pdf",
+                       "materialTypeCode": "welder_certificate", "currentVersionId": "DV-1"}],
+        "ocr_parse_results": [{"documentVersionId": "DV-1", "status": "success", "fields": [], "fragments": fragments}],
+    }
+    certificates = build_certificate_facts(state, "P-1", 24, ["DV-1"])["certificateFacts"]["certificates"]
+    assert [(item["holder"], item["certificateNo"], item["validUntil"]) for item in certificates] == [
+        ("张三", "110101199001010011", "2028-11-30"),
+        ("李四", "110101199202020022", "2027-04-30"),
+    ]
+
+
+def test_证号类别位与证书类型不符时改用原文里唯一相符的编号():
+    # 真实 OCR 上 Jev 核对抓到：安装许可证取成了告知书里设计单位的 TS1 号，检测机构核准证取成了质量体系证书号。
+    fields = [{"fieldCode": "certificate_no", "fieldName": "许可证编号", "fieldValue": "TS1844168-2027", "pageNo": 1}]
+    text = "制造(管道设计)许可证编号:TS1844168-2027 施工单位 示例管道安装有限公司 许可证编号 TS3844617-2026"
+    state = _installation_licence_state(fields, text)
+    state["ocr_parse_results"][0]["fields"] = fields
+    item = build_certificate_facts(state, "P-1", 2, ["DV-1"])["certificateFacts"]["certificates"][0]
+    assert item["certificateNo"] == "TS3844617-2026"
+    assert item["replacedByNumberType"] == {"certificateNo": "TS1844168-2027"}
+    # 原文里有两个相符的编号时不猜，只记警告。
+    state = _installation_licence_state(fields, text + " 另一安装许可证编号 TS3811111-2027")
+    state["ocr_parse_results"][0]["fields"] = fields
+    item = build_certificate_facts(state, "P-1", 2, ["DV-1"])["certificateFacts"]["certificates"][0]
+    assert item["certificateNo"] == "TS1844168-2027"
+    assert "certificate_no_ambiguous" in item["extractionWarnings"]

@@ -31,8 +31,11 @@ from datetime import date, timedelta
 from typing import Any
 
 from libs.contracts.responses import business_today
-from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
-from libs.review_input_data import selected_parse_results
+from libs.ocr.welder_certificate_tool import (
+    extract_welder_certificate_from_ocr_result,
+    split_welder_cards,
+)
+from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 
 from .deterministic_tools import parse_date as _iso_parse_date
@@ -146,7 +149,7 @@ _MONTH_TEXT = r"(\d{4}\s*[年.\-/]\s*\d{1,2}\s*月?)(?![\d日])"
 _TEXT_PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "validUntil": [
         re.compile(r"有效期(?:限)?(?:至|止|到)\s*[:：]?\s*" + _DATE_TEXT),
-        re.compile(r"有效(?:期|日期)\s*[:：]?\s*" + _DATE_TEXT + r"\s*(?:至|到|—|-|~)\s*" + _DATE_TEXT),
+        re.compile(r"有效(?:期|日期)(?:限)?\s*[:：]?\s*(?:自|从)?\s*" + _DATE_TEXT + r"\s*(?:至|到|—|–|-|~|～)\s*" + _DATE_TEXT),
         re.compile(r"(?:至|到)\s*" + _DATE_TEXT + r"\s*(?:止|有效)"),
         re.compile(r"有效期(?:限)?(?:至|止|到)\s*[:：]?\s*" + _MONTH_TEXT),
         re.compile(r"有效期(?:限)?\s*[:：]?\s*(?:自)?\s*" + _MONTH_TEXT + r"\s*(?:至|到|—|-|~)\s*" + _MONTH_TEXT),
@@ -190,6 +193,26 @@ def project_certificate_period(project: dict[str, Any] | None) -> dict[str, Any]
     }
 
 
+# 原文写明的有效期区间。OCR 字段常把「A 至 B」的起始日 A 填进「有效期至」，
+# 已落库的旧解析结果也是这样，所以区间要在规则侧再对一次，不能只靠 OCR 服务。
+_VALIDITY_RANGE_PATTERNS = (
+    re.compile(r"有效(?:期|日期)(?:限)?\s*[:：]?\s*(?:自|从)?\s*" + _DATE_TEXT
+               + r"\s*(?:至|到|—|–|-|~|～)\s*" + _DATE_TEXT),
+    re.compile(_DATE_TEXT + r"\s*(?:至|到)\s*" + _DATE_TEXT + r"\s*(?:止|有效)"),
+)
+# 特种设备许可证编号的类别位：TS1 设计、TS3 安装改造修理、TS7 检验检测机构核准。
+# 资质合订本和告知书里常同时出现几张证的编号（管理体系认证 CTC…、设计单位 TS1…），
+# 2026-09-23 真实 OCR 上 Jev 核对抓到过：检测机构核准证取成了质量体系证书号，
+# 安装许可证取成了告知书里设计单位的 TS1 号。
+_EXPECTED_NUMBER_PREFIX = {"design_license": "TS1", "installation_license": "TS3", "ndt_agency_approval": "TS7"}
+_TS_NUMBER_RE = re.compile(r"TS\s*(\d)\s*(\d{6})\s*[-—–]\s*(\d{4})", re.IGNORECASE)
+# 字段名按子串认别名时，「有效期起」会被当成「有效期」命中截止日，反之亦然。
+_OPPOSITE_NAME_MARKERS = {
+    "validUntil": ("起", "自", "从", "发证", "签发", "批准"),
+    "validFrom": ("至", "止", "截止"),
+}
+
+
 def build_certificate_facts(
     state: dict[str, Any],
     project_id: str,
@@ -212,11 +235,9 @@ def build_certificate_facts(
     documents = _documents_by_version(state, project_id)
     items: list[dict[str, Any]] = []
     considered: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": source_run}):
+    for parse_result in latest_usable_selected_parses(state, source_run, requested):
         version_id = str(parse_result.get("documentVersionId") or "")
         if not version_id or version_id not in documents:
-            continue
-        if str(parse_result.get("status") or "success") not in {"success", "succeeded", "已识别", "人工修正", ""}:
             continue
         document = documents.get(version_id) or {}
         if not _matches_profile(profile, parse_result, document):
@@ -424,7 +445,6 @@ def _extract_certificates(
     if profile["certificateType"] == "welder_certificate":
         welder = _welder_certificates(parse_result, version_id, file_name)
         if welder:
-            _fill_from_text(welder[0], _full_text(parse_result), parse_result, version_id, file_name)
             return welder
     fields = _field_values(parse_result)
     text = _full_text(parse_result)
@@ -452,8 +472,17 @@ def _extract_certificates(
         "evidence": [],
         "sources": {},
     }
+    human_corrected: set[str] = set()
     for key in ("holder", "certificateNo", "issuer", "validFrom", "validUntil"):
-        hit = _first_field(fields, FIELD_ALIASES[key])
+        hit = _first_field(fields, FIELD_ALIASES[key], exclude_name_markers=_OPPOSITE_NAME_MARKERS.get(key, ()))
+        if key == "holder" and profile["certificateType"] in {
+            "design_license", "installation_license", "ndt_agency_approval"
+        }:
+            candidates = list(_all_fields(fields, FIELD_ALIASES[key]))
+            hit = next((candidate for candidate in candidates if not _organization_field_is_sentence(candidate["value"])), None)
+            if hit is None and candidates:
+                # OCR 有时把「你单位被评定为 A 级机构。」的后半句填入单位名称。
+                record["holderFieldRejected"] = candidates[0]["value"]
         if hit is not None:
             value = hit["value"]
             if key in {"validFrom", "validUntil"}:
@@ -462,6 +491,8 @@ def _extract_certificates(
             if value:
                 record[key] = value
                 record["sources"][key] = "ocr_field"
+                if hit.get("humanCorrected"):
+                    human_corrected.add(key)
                 record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw"),
                                                     confidence=hit.get("confidence"), confidence_unavailable=unavailable,
                                                     field_name=hit.get("name"), human_corrected=bool(hit.get("humanCorrected"))))
@@ -475,11 +506,81 @@ def _extract_certificates(
                                             field_name=hit.get("name"), human_corrected=bool(hit.get("humanCorrected"))))
     if scope_hits:
         record["sources"]["scopes"] = "ocr_field"
-    _fill_from_text(record, text, parse_result, version_id, file_name)
+    _fill_from_text(record, text, parse_result, version_id, file_name,
+                    allow_person_holder=profile["certificateType"] not in {
+                        "design_license", "installation_license", "ndt_agency_approval"
+                    })
+    _reconcile_validity_range(record, text, parse_result, version_id, file_name, protected=human_corrected)
+    _reconcile_certificate_number(record, text, profile["certificateType"], protected=human_corrected)
     if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
         return []
     return [record]
 
+
+def _reconcile_certificate_number(record: dict[str, Any], text: str, certificate_type: str, *,
+                                  protected: set[str]) -> None:
+    """编号类别位与证书类型不符时，改用原文里唯一一个类别位相符的编号；多个或没有就不猜，只记警告。"""
+    expected = _EXPECTED_NUMBER_PREFIX.get(certificate_type)
+    number = re.sub(r"\s+", "", str(record.get("certificateNo") or "")).upper()
+    if not expected or not number or number.startswith(expected) or "certificateNo" in protected:
+        return
+    candidates = {f"TS{match.group(1)}{match.group(2)}-{match.group(3)}" for match in _TS_NUMBER_RE.finditer(text)
+                  if f"TS{match.group(1)}" == expected}
+    if len(candidates) != 1:
+        record.setdefault("extractionWarnings", []).append(
+            "certificate_no_type_mismatch" if not candidates else "certificate_no_ambiguous")
+        return
+    record.setdefault("replacedByNumberType", {})["certificateNo"] = record["certificateNo"]
+    record["certificateNo"] = candidates.pop()
+    record.setdefault("sources", {})["certificateNo"] = "ocr_text_number_type"
+
+
+def _reconcile_validity_range(
+    record: dict[str, Any], text: str, parse_result: dict[str, Any], version_id: str, file_name: str, *,
+    protected: set[str],
+) -> None:
+    """按原文里与截止日同属一个「有效期 A 至 B」的区间校正起止日。
+
+    OCR 字段把起始日 A 当成截止日时改回 B；起始日缺失或取的是发证日期时改为 A。
+    只认与当前截止日对得上的区间：资质合订本里常有好几张证书，别的区间属于别的
+    证书，不能拿来覆盖。人工修正过的值不动，被替换的原值留痕。
+    """
+    until = record.get("validUntil")
+    if not until or "validUntil" in protected:
+        return
+    for pattern in _VALIDITY_RANGE_PATTERNS:
+        for match in pattern.finditer(text):
+            start = parse_date(re.sub(r"\s+", "", match.group(1)))
+            end = parse_date(re.sub(r"\s+", "", match.group(2)), month_end=True)
+            if not start or not end or end <= start:
+                continue
+            sources = record.setdefault("sources", {})
+            replaced: dict[str, Any] = {}
+            if until == start.isoformat() and sources.get("validUntil") == "ocr_field":
+                replaced["validUntil"] = until
+                record["validUntil"] = end.isoformat()
+                sources["validUntil"] = "ocr_text_range"
+            elif until != end.isoformat():
+                continue
+            # 发证日期不等于生效日；同一区间的起始日才是有效期起点。
+            if ("validFrom" not in protected and record.get("validFrom") != start.isoformat()
+                    and sources.get("validFrom") in {None, "ocr_field"}):
+                if record.get("validFrom"):
+                    replaced["validFrom"] = record["validFrom"]
+                record["validFrom"] = start.isoformat()
+                sources["validFrom"] = "ocr_text_range"
+            if replaced:
+                record["replacedByValidityRange"] = replaced
+            page_no, quoted, fragment_confidence = _locate_text(parse_result, match.group(0))
+            record.setdefault("evidence", []).append(_evidence(
+                version_id, file_name, page_no, None, quoted,
+                confidence=fragment_confidence, confidence_unavailable=_confidence_unavailable(parse_result)))
+            return
+
+
+def _organization_field_is_sentence(value: str) -> bool:
+    text = str(value or "").strip()
+    return "被评定为" in text or "被评为" in text or "你单位" in text or text.endswith(("。", "！", "!", "；", ";"))
 
 
 _PERSON_SPLIT = re.compile(r"(?=特种设备检验检测人员证)")
@@ -523,9 +624,12 @@ def _record_from_text(
     return record
 
 
-def _fill_from_text(record: dict[str, Any], text: str, parse_result: dict[str, Any], version_id: str, file_name: str) -> None:
+def _fill_from_text(
+    record: dict[str, Any], text: str, parse_result: dict[str, Any], version_id: str, file_name: str, *,
+    allow_person_holder: bool = True,
+) -> None:
     """按正文正则补缺（持证人、编号、发证机关、有效期起止、范围代号）。"""
-    if not record.get("holder"):
+    if allow_person_holder and not record.get("holder"):
         name = re.search(r"姓\s*名\s*[:：]?\s*([一-龥·]{2,6})", text)
         if name:
             record["holder"] = name.group(1)
@@ -570,6 +674,21 @@ def _roman(value: str) -> str:
 
 
 def _welder_certificates(parse_result: dict[str, Any], version_id: str, file_name: str) -> list[dict[str, Any]]:
+    # 几个焊工的证合订成一份时按「某某焊工证」分段，每人一条；不分段会把甲的姓名配上乙的证号。
+    fragments = [item for item in parse_result.get("fragments") or [] if isinstance(item, dict)]
+    segments = split_welder_cards(fragments) if fragments else [fragments]
+    parts = [parse_result] if len(segments) == 1 else [{**parse_result, "fragments": segment} for segment in segments]
+    records = []
+    for part in parts:
+        found = _welder_certificate(part, version_id, file_name)
+        if found:
+            # 正文补缺只用这个人自己那一段，不能从合订本别人的证上补。
+            _fill_from_text(found[0], _full_text(part), part, version_id, file_name)
+        records.extend(found)
+    return records
+
+
+def _welder_certificate(parse_result: dict[str, Any], version_id: str, file_name: str) -> list[dict[str, Any]]:
     try:
         extraction = extract_welder_certificate_from_ocr_result(parse_result)
     except Exception:  # noqa: BLE001 - 抽取器失败就退回通用路径
@@ -580,9 +699,11 @@ def _welder_certificates(parse_result: dict[str, Any], version_id: str, file_nam
     certificate_no = _field_obj_value(fields.get("certificateNo"))
     if not name and not certificate_no and not qualified:
         return []
-    valid_until_dates = [parse_date(item.get("validUntil")) for item in qualified]
+    # 日期自相矛盾（批准日晚于截止日）的项不参与有效期判断。
+    qualified_dated = [item for item in qualified if not item.get("dateConflict")]
+    valid_until_dates = [parse_date(item.get("validUntil")) for item in qualified_dated]
     valid_until_dates = [item for item in valid_until_dates if item]
-    approval_dates = [parse_date(item.get("approvalDate")) for item in qualified]
+    approval_dates = [parse_date(item.get("approvalDate")) for item in qualified_dated]
     approval_dates = [item for item in approval_dates if item]
     record = {
         "certificateType": "welder_certificate",
@@ -653,8 +774,11 @@ def _field_values(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
     return values
 
 
-def _first_field(fields: list[dict[str, Any]], aliases: tuple[str, ...]) -> dict[str, Any] | None:
+def _first_field(fields: list[dict[str, Any]], aliases: tuple[str, ...], *,
+                 exclude_name_markers: tuple[str, ...] = ()) -> dict[str, Any] | None:
     for hit in _all_fields(fields, aliases):
+        if hit["name"] and any(marker in hit["name"] for marker in exclude_name_markers):
+            continue
         return hit
     return None
 
@@ -754,6 +878,8 @@ def _warnings(certificates: list[dict[str, Any]], considered: list[dict[str, Any
     elif not certificates:
         warnings.append("certificate_document_present_but_fields_unextracted")
     for item in certificates:
+        if item.get("holderFieldRejected"):
+            warnings.append(f"holder_field_rejected:{item.get('certificateNo') or item.get('fileName')}")
         if not item.get("validUntil"):
             warnings.append(f"valid_until_missing:{item.get('certificateNo') or item.get('fileName')}")
         if not item.get("holder"):
@@ -887,6 +1013,26 @@ def merge_certificate_facts(
                         ] if evidence.get("fieldName") else [],
                     }
                 )
+                if evidence["evidenceRefId"] not in {r["evidenceRefId"] for r in judgment["evidenceRefs"]}:
+                    judgment["evidenceRefs"].append(evidence)
+            for source in design_org["designDocument"].get("gradeSources") or []:
+                evidence = source["evidence"]
+                judgment["claimedFacts"].append({
+                    "factId": f"design-grade-{evidence['documentVersionId']}",
+                    "label": "设计文件管道级别", "value": source["value"],
+                    "documentVersionId": evidence["documentVersionId"],
+                    "factPath": "designDocument.pipelineGrades",
+                    "evidenceRefIds": [evidence["evidenceRefId"]],
+                    "confidence": evidence.get("confidence"),
+                    "confidenceUnavailable": bool(evidence.get("confidenceUnavailable")),
+                    "conflicted": False,
+                    "fields": [{"fieldName": evidence["fieldName"],
+                                "documentVersionId": evidence["documentVersionId"],
+                                "documentId": source["documentId"],
+                                "quotedText": evidence.get("quotedText"),
+                                "humanCorrected": bool(evidence.get("humanCorrected"))}]
+                    if evidence.get("fieldName") else [],
+                })
                 if evidence["evidenceRefId"] not in {r["evidenceRefId"] for r in judgment["evidenceRefs"]}:
                     judgment["evidenceRefs"].append(evidence)
     for key, value in certificate_facts.items():

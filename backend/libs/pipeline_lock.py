@@ -33,7 +33,7 @@ def _strict_production() -> bool:
 
 
 @contextmanager
-def pipeline_lock(key: str) -> Iterator[bool]:
+def pipeline_lock(key: str, *, idle_timeout_seconds: int = 60) -> Iterator[bool]:
     database_url = str(os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
     if database_url.startswith(("postgresql://", "postgres://")):
         try:
@@ -45,9 +45,10 @@ def pipeline_lock(key: str) -> Iterator[bool]:
             # 锁永不释放——后续周期任务全部 duplicate_inflight，自动派发永久卡死
             # 且无自愈（2026-08-29 实测：一把僵尸锁卡死自动审查派发 4 分钟+）。
             # 给这条锁连接设服务端空闲超时：孤儿连接会被 PG 自动清理、锁随之释放。
-            # 60 秒足够任务体跑完（周期任务本身很快），又能兜住泄漏。
+            # 周期任务默认 60 秒；显式长任务可延长，仍由服务端清理孤儿连接。
             try:
-                connection.execute("SET idle_session_timeout = '60s'")
+                timeout = max(60, min(int(idle_timeout_seconds), 600))
+                connection.execute(f"SET idle_session_timeout = '{timeout}s'")
             except psycopg.Error as exc:
                 logging.getLogger(__name__).warning("idle timeout unavailable: %s", type(exc).__name__)
             acquired = bool(connection.execute("SELECT pg_try_advisory_lock(%s)", (advisory_lock_id(key),)).fetchone()[0])
@@ -90,13 +91,15 @@ def _local_pipeline_lock(key: str) -> Iterator[bool]:
             lock.release()
 
 
-def pipeline_task_lock(scope: str, key_builder: Callable[..., str]):
+def pipeline_task_lock(
+    scope: str, key_builder: Callable[..., str], *, idle_timeout_seconds: int = 60,
+):
     def decorator(function: Callable[..., dict[str, Any]]):
         @wraps(function)
         def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
             key = f"aicheck:{scope}:{key_builder(*args, **kwargs)}"
             try:
-                with pipeline_lock(key) as acquired:
+                with pipeline_lock(key, idle_timeout_seconds=idle_timeout_seconds) as acquired:
                     if not acquired:
                         return {
                             "status": "duplicate_inflight",

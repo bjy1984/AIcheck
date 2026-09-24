@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from libs.contracts.responses import server_time
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import latest_usable_selected_parses
 from libs.review_orchestrator.r12_registry import (
     auto_verify_candidates,
     auto_verify_enabled,
@@ -57,7 +57,8 @@ def extract_r12_license_candidates(
     id_namespace: str = "R12",
 ) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or []}
+    for parse_result in latest_usable_selected_parses(state, review_run, requested):
         version_id = str(parse_result.get("documentVersionId") or "")
         page_items: dict[int, list[dict[str, Any]]] = {}
         for item in [*(parse_result.get("fragments") or []), *(parse_result.get("fields") or [])]:
@@ -148,7 +149,8 @@ def extract_component_items(
     design_only: bool = False,
 ) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or []}
+    for parse_result in latest_usable_selected_parses(state, review_run, requested):
         version_id = str(parse_result.get("documentVersionId") or "")
         if design_only and _is_certificate_or_report_parse_result(state, parse_result):
             continue
@@ -270,7 +272,8 @@ def extract_component_items(
                     }
                 )
     certificate_items: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}) if include_certificate_items else []:
+    parses = (latest_usable_selected_parses(state, review_run, requested) if include_certificate_items else [])
+    for parse_result in parses:
         version_id = str(parse_result.get("documentVersionId") or "")
         fields = [item for item in parse_result.get("fields") or [] if isinstance(item, dict)]
         field_map = _field_map(fields)

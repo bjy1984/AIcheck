@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from libs.review_document_scope import validate_document_sources
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import current_selected_parse_results
 from libs.review_page_scope import located_record_in_range, normalize_page_ranges
 
 # 否定形式（不一致 / 未覆盖 / 不符合）是在说差距，不是肯定结论——2026-09-06 清单模式实测，
@@ -209,17 +209,23 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
         if not version_ids.issubset(set(allowed)):
             raise ValueError("grounding_document_scope_expansion")
         ranges = normalize_page_ranges(review_run.get("inputDocumentPageRanges", {}), allowed)
-        if ranges:
-            # Detached view: never trim persistent OCR or silently fall back to full-document text.
-            scoped_state = dict(state)
-            scoped_state["ocr_parse_results"] = selected_parse_results(
-                state, {"documentVersionIds": sorted(version_ids)}, context={"reviewRun": review_run}) if version_ids else []
-            for key in ("extracted_fields", "evidence_links"):
-                scoped_state[key] = [row for row in state.get(key, []) if isinstance(row, dict)
-                                     and row.get("documentVersionId") in version_ids
-                                     and (row["documentVersionId"] not in ranges
-                                          or located_record_in_range(row, ranges[row["documentVersionId"]]))]
-            state = scoped_state
+        # Detached view: a frozen review sees only its current OCR attempt even without page ranges.
+        scoped_state = dict(state)
+        scoped_state["ocr_parse_results"] = current_selected_parse_results(
+            state, {"documentVersionIds": sorted(version_ids)}, context={"reviewRun": review_run}) if version_ids else []
+        for key in ("extracted_fields", "evidence_links"):
+            scoped_state[key] = [row for row in state.get(key, []) if isinstance(row, dict)
+                                 and row.get("documentVersionId") in version_ids
+                                 and (row["documentVersionId"] not in ranges
+                                      or located_record_in_range(row, ranges[row["documentVersionId"]]))]
+        state = scoped_state
+    else:
+        # Legacy AiRun and comparison entrypoints have no ReviewRun object, but
+        # must not feed two attempts of one version to the model either.
+        scoped_state = dict(state)
+        scoped_state["ocr_parse_results"] = current_selected_parse_results(
+            state, {"documentVersionIds": sorted(version_ids)}) if version_ids else []
+        state = scoped_state
     source_groups = [state.get("extracted_fields", []), state.get("ocr_parse_results", []), state.get("evidence_links", [])]
     available_version_ids = {
         str(item.get("documentVersionId"))

@@ -1,4 +1,4 @@
-"""审查编排图的静态拓扑：十二个步骤及其顺序。
+"""审查编排图的静态拓扑：步骤及其顺序。
 
 从 execution.py 搬出来的纯声明数据。步骤定义与执行逻辑放在一起没有好处——
 这份表被 deployment_report、import_layering 等多处引用，读它的人不该被迫
@@ -14,9 +14,13 @@ from __future__ import annotations
 from typing import Any
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
+    {"key": "classify_ocr_tables", "label": "Jev 表格行分类（可回退）", "taskQueue": "review.llm"},
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
     {"key": "load_ocr_result", "label": "加载 OCR 证据", "taskQueue": "review.graph"},
     {"key": "run_rule_engine", "label": "执行确定性规则", "taskQueue": "review.validation"},
+    # 键名保留兼容部署报告；题目已改为按原子项指令的固定模板生成，不再调 Qwen。
+    {"key": "qwen_compose_jev_questions", "label": "按冻结模板准备 Jev 语义题", "taskQueue": "review.llm"},
+    {"key": "jev_decision", "label": "Jev 节点判定（待人工确认）", "taskQueue": "review.llm"},
     {"key": "retrieve_knowledge", "label": "检索知识依据", "taskQueue": "review.retrieval"},
     {"key": "build_prompt", "label": "构造审查 Prompt", "taskQueue": "review.graph"},
     {"key": "llm_generate_findings", "label": "QwenRuntime 生成审查草稿", "taskQueue": "review.llm"},

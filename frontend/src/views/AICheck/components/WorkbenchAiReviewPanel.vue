@@ -73,7 +73,9 @@ const conclusion = computed(() =>
     ? undefined
     : buildWorkbenchAiConclusion({
         findings: props.presentation.findings,
-        deterministicResult: props.presentation.deterministicResult
+        deterministicResult:
+          props.presentation.primaryResult || props.presentation.deterministicResult,
+        decisionSource: props.presentation.decisionSource
       })
 )
 
@@ -185,6 +187,12 @@ const CHECK_OUTCOME_TONES: Record<string, 'red' | 'orange' | 'gray' | 'green' | 
 }
 
 const checkOutcomeRank = (outcome: WorkbenchAiCheckOutcome) => {
+  if (outcome.decisionSource === 'jev' && outcome.deterministicResult !== outcome.result) return -3
+  if (outcome.decisionSource === 'jev_unavailable') return -2
+  if (outcome.jevFactCheck?.suspects.length) return -3
+  if (outcome.jevHint && !outcome.jevHint.agreesWithRuleEngine) return -2
+  if (outcome.secondOpinion?.priority === 'disagreement') return -2
+  if (outcome.secondOpinion?.priority === 'low_confidence') return -1
   const index = CHECK_OUTCOME_ORDER.indexOf(outcome.result)
   return index < 0 ? CHECK_OUTCOME_ORDER.length : index
 }
@@ -574,16 +582,83 @@ const ruleLabel = (rule: Record<string, unknown>) => {
               <AuditStatusTag :tone="checkOutcomeTone(outcome.result)" round>
                 {{ checkOutcomeLabel(outcome.result) }}
               </AuditStatusTag>
+              <AuditStatusTag v-if="outcome.decisionSource === 'jev'" tone="blue" round>
+                Jev 建议 · 待人工确认
+              </AuditStatusTag>
+              <AuditStatusTag
+                v-else-if="outcome.decisionSource === 'jev_unavailable'"
+                tone="orange"
+                round
+              >
+                出題／判題未完成 · 待人工核查
+              </AuditStatusTag>
+              <AuditStatusTag v-if="outcome.jevFactCheck?.suspects.length" tone="orange" round>
+                Jev 核对：抽取值可疑 · 请先核对原文
+              </AuditStatusTag>
+              <AuditStatusTag
+                v-if="outcome.jevHint && !outcome.jevHint.agreesWithRuleEngine"
+                tone="orange"
+                round
+              >
+                Jev 提示不一致 · 请先核对原文
+              </AuditStatusTag>
+              <AuditStatusTag
+                v-if="outcome.secondOpinion"
+                :tone="outcome.secondOpinion.needsHumanReview ? 'orange' : 'green'"
+                round
+              >
+                {{
+                  outcome.secondOpinion.agreesWithRuleEngine
+                    ? outcome.secondOpinion.needsHumanReview
+                      ? '第二意見把握較低，建議人工'
+                      : '第二意見一致'
+                    : '第二意見分歧，建議人工'
+                }}
+              </AuditStatusTag>
               <span>{{ outcome.name }}</span>
               <small>{{ outcome.atomicCheckId }}</small>
+              <small v-if="outcome.decisionSource === 'jev' && outcome.deterministicResult">
+                规则结果：{{ checkOutcomeLabel(outcome.deterministicResult) }}
+                <template v-if="outcome.jevConfidence !== undefined">
+                  · Jev 把握值 {{ Math.round(outcome.jevConfidence * 100) }}%</template
+                >
+              </small>
+              <small v-if="outcome.jevFactCheck?.suspects.length">
+                原文与抽取值不符：{{ outcome.jevFactCheck.suspects.join('；') }}
+              </small>
+              <small v-if="outcome.jevHint">
+                Jev 看法：{{ checkOutcomeLabel(outcome.jevHint.choice) }} · 把握值
+                {{ Math.round(outcome.jevHint.confidence * 100) }}%（无理由，仅作提示）
+              </small>
               <!-- 依据与证据：通过/不通过/需人工都列，监检才能核对而不是只看一个标签 -->
               <div
-                v-if="outcome.reason || outcome.checks.length || outcome.facts.length"
+                v-if="
+                  outcome.reason ||
+                  (outcome.jevHint?.perPerson || outcome.perPerson)?.length ||
+                  outcome.checks.length ||
+                  outcome.facts.length
+                "
                 class="ai-outcome-basis"
               >
                 <p v-if="outcome.reason" class="ai-outcome-reason">
                   <span>原因</span>{{ outcome.reason }}
                 </p>
+                <ul
+                  v-if="(outcome.jevHint?.perPerson || outcome.perPerson)?.length"
+                  class="ai-outcome-checks"
+                  aria-label="逐人判定"
+                >
+                  <li
+                    v-for="person in outcome.jevHint?.perPerson || outcome.perPerson"
+                    :key="person.person"
+                  >
+                    <span class="ai-check-label">{{ person.person }}</span>
+                    <small
+                      >{{ checkOutcomeLabel(person.choice) }} · Jev 把握值
+                      {{ Math.round(person.confidence * 100) }}%</small
+                    >
+                  </li>
+                </ul>
                 <ul v-if="outcome.checks.length" class="ai-outcome-checks" aria-label="判定依据">
                   <li v-for="check in outcome.checks" :key="`${check.tool}:${check.code}`">
                     <i

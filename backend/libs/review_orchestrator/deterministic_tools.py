@@ -214,8 +214,8 @@ def check_date_covers(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 #: 证照核验失败时，按这个优先级把「哪条检查没过」翻成原子项的不通过原因。
-#: 2026-09-13 线上审计：节点 1 的设计单位许可证只覆盖 GB1/GB2/GC1、工程要 GC2，
-#: 判了 failed——但界面上那一项的原因写的是「缺少施工起止日期」。原因来自
+#: 2026-09-13 线上审计：节点 1 的设计单位许可证只有 GB1/GB2/GC1、工程要 GC2，
+#: 当时证照工具按代码完全相等误判 failed；界面又写了「缺少施工起止日期」。原因来自
 #: `_outcome_reason`，它只认带 facts.reason 的工具，而本工具从来不报 reason，
 #: 于是排在前面的日期工具赢了。监检第一眼读到的是错的那句。
 _CERTIFICATE_FAILURE_REASONS: tuple[tuple[str, str], ...] = (
@@ -243,10 +243,17 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
     - 有效期：有业务期间时要求 validFrom <= periodStart 且 validUntil >= periodEnd；
       项目没填施工起止时按 referenceDate（默认当日）判断是否已过期，并记 warning；
     - 主体一致：给了 expectedHolder 才比（去空白、去括号差异）；
-    - 范围覆盖：给了 requiredScopes 才比；
+    - 范围覆盖：给了 requiredScopes 才比；设计许可按已冻结的级别覆盖规则核验；
     - 一张证缺 validUntil → 该证 evidence_insufficient；没有任何证 → evidence_insufficient。
     多张证时：任一 failed → failed；否则任一 insufficient → evidence_insufficient；否则 passed。
     """
+    scope_profile = str(arguments.get("scopeProfile") or "design-license-scope-cn-v1")
+    if scope_profile not in {"design-license-scope-cn-v1", "design-license-scope-cn-v2"}:
+        return result(
+            "check_certificate_validity", "evidence_insufficient",
+            facts={"reason": "unsupported_scope_profile", "scopeProfile": scope_profile},
+            checks=[], rule_version="certificate-validity-cn-v2",
+        )
     certificates = [item for item in arguments.get("certificates") or [] if isinstance(item, dict)]
     period_start = parse_date(arguments.get("periodStart"))
     period_end = parse_date(arguments.get("periodEnd"))
@@ -293,9 +300,15 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                 cert_checks.append(check(f"{label}:holder_matches_project", same, cert.get("holder"), arguments.get("expectedHolder")))
                 if not same:
                     status = "failed"
+        accepted_scopes: dict[str, frozenset[str]] = {}
         if required_scopes:
             scopes = {normalize_grade(item) for item in cert.get("scopes") or [] if item}
-            missing = sorted(required_scopes - scopes)
+            certificate_type = str(cert.get("certificateType") or arguments.get("certificateType") or "")
+            accepted_scopes = {
+                grade: _design_license_accepted_scopes(grade, scope_profile) if certificate_type == "design_license" else frozenset({grade})
+                for grade in required_scopes
+            }
+            missing = sorted(grade for grade, accepted in accepted_scopes.items() if not scopes.intersection(accepted))
             if not scopes:
                 cert_checks.append(check(f"{label}:scope_present", False, None, sorted(required_scopes)))
                 if status == "passed":
@@ -308,6 +321,10 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
         # 平台按证件号查到的是另一个人时它照样给通过——界面上就出现「与平台登记不一致」
         # 配「核验通过」的自相矛盾（2026-09-13 用户截图）。这是判定问题，不是显示问题。
         verification = cert.get("platformVerification") if isinstance(cert.get("platformVerification"), dict) else {}
+        if cert.get("holderFieldRejected"):
+            if status == "passed":
+                status = "evidence_insufficient"
+            cert_checks.append(check(f"{label}:holder_ocr_reliable", False, cert.get("holderFieldRejected"), "单位名称"))
         if verification.get("outcome") == "verified_mismatch":
             status = "evidence_insufficient"
             # 单位证书走的是 r12_registry，登记名字段叫 registryOrganizationName；
@@ -333,6 +350,7 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                 "validFrom": valid_from.isoformat() if valid_from else None,
                 "validUntil": valid_until.isoformat() if valid_until else None,
                 "scopes": list(cert.get("scopes") or []),
+                "acceptedScopesByRequired": {grade: sorted(accepted) for grade, accepted in accepted_scopes.items()},
                 "result": status,
                 "checks": cert_checks,
                 # 公示平台查了没有、查到没有——原来只留在事实里，界面上完全看不到
@@ -363,10 +381,11 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
             "referenceDate": reference.isoformat(),
             "expectedHolder": arguments.get("expectedHolder"),
             "requiredScopes": sorted(required_scopes),
+            "scopeProfile": scope_profile,
             "certificates": per_certificate,
         },
         checks=checks,
-        rule_version="certificate-validity-cn-v1",
+        rule_version="certificate-validity-cn-v3" if scope_profile == "design-license-scope-cn-v2" else "certificate-validity-cn-v2",
     )
     if warnings:
         output["warnings"] = list(dict.fromkeys(warnings))
@@ -380,6 +399,13 @@ def _norm_holder(value: Any) -> str:
 
 
 def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
+    scope_profile = str(arguments.get("scopeProfile") or "design-license-scope-cn-v1")
+    if scope_profile not in {"design-license-scope-cn-v1", "design-license-scope-cn-v2"}:
+        return result(
+            "check_design_license_scope", "evidence_insufficient",
+            facts={"reason": "unsupported_scope_profile", "scopeProfile": scope_profile},
+            checks=[], rule_version="design-license-scope-cn-v1",
+        )
     scopes = {normalize_grade(item) for item in arguments.get("licenseScopes") or [] if item}
     required = {normalize_grade(item) for item in arguments.get("requiredPipelineGrades") or [] if item}
     if not scopes or not required:
@@ -392,28 +418,38 @@ def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
             facts={
                 "licenseScopes": sorted(scopes),
                 "requiredPipelineGrades": sorted(required),
+                "scopeProfile": scope_profile,
                 "reason": "_and_".join(missing) + "_missing",
             },
             checks=[],
-            rule_version="design-license-scope-cn-v1",
+            rule_version=scope_profile,
         )
-    coverage = {
-        "GC1": {"GC1"},
-        "GC2": {"GC1", "GC2"},
-        "GCD": {"GCD"},
-    }
     checks = []
     for grade in sorted(required):
-        allowed = coverage.get(grade, {grade})
+        allowed = _design_license_accepted_scopes(grade, scope_profile)
         checks.append(check(f"scope_covers_{grade}", bool(scopes & allowed), sorted(scopes), sorted(allowed)))
     passed = all(item["passed"] for item in checks)
     return result(
         "check_design_license_scope",
         "passed" if passed else "failed",
-        facts={"licenseScopes": sorted(scopes), "requiredPipelineGrades": sorted(required)},
+        facts={"licenseScopes": sorted(scopes), "requiredPipelineGrades": sorted(required), "scopeProfile": scope_profile},
         checks=checks,
-        rule_version="design-license-scope-cn-v1",
+        rule_version=scope_profile,
     )
+
+
+def _design_license_accepted_scopes(required_grade: str, scope_profile: str) -> frozenset[str]:
+    """按 R01 冻结版本解释许可范围；v2 加入 GCD 对 GC2 的覆盖。
+
+    市监总局 2021 年许可目录「注一」明确 GC1、GCD 覆盖 GC2：
+    https://www.samr.gov.cn/tzsbj/dtzb/gzdt/art/2021/art_ab36c6d55fde4d7daf8264578997607e.html
+    """
+    if required_grade != "GC2":
+        return frozenset({required_grade})
+    accepted = {"GC1", "GC2"}
+    if scope_profile == "design-license-scope-cn-v2":
+        accepted.add("GCD")
+    return frozenset(accepted)
 
 
 def decode_welder_qualification(arguments: dict[str, Any]) -> dict[str, Any]:

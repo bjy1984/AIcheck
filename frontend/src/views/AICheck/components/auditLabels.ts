@@ -732,6 +732,10 @@ const REASON_FRAMES: Array<[string, (stem: string) => string]> = [
 
 /** 词典拼不出正确说法的整段词根，在这里直译。 */
 const REASON_STEMS: Record<string, string> = {
+  // 检验服务接口（inspection_services）把判定结论本身当 reason 写出。
+  evidence_insufficient: '证据不足',
+  ocr_holder_unreliable: 'OCR 识别的持证单位名称不可靠',
+  unsupported_scope_profile: '当前许可范围判定口径尚未支持',
   original_with_manufacturer_quality_seal: '原件带制造单位质量章',
   copy_with_dealer_and_handler_seals: '复印件带经销商与经手人签章',
   actual_material_usage: '实际材料用量',
@@ -890,6 +894,7 @@ export const checkCodeLabels: Record<string, string> = {
   hold_at_least_3_minutes: '保压不少于 3 分钟',
   increment_at_most_10_percent: '每级增量不超过 10%',
   holder_matches_project: '持证单位与项目单位一致',
+  holder_ocr_reliable: 'OCR 识别的持证单位名称可信',
   holder_matches_registry: '持证人与平台登记一致',
   holder_present: '识别到持证主体',
   valid_until_present: '识别到有效期',

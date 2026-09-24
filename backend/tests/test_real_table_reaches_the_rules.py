@@ -182,7 +182,7 @@ def test_the_real_row_reaches_the_frozen_criteria_not_just_the_facts():
                   if tr.get("toolName") == "evaluate_r43_material_certificate")
     checks = {row["code"].lower(): row["result"] for row in frozen["facts"]["processChecks"]}
     # 1) 线接上了：没有 scope/domains 缺失
-    assert not [c for c in checks if c.endswith("_scope_missing") or c.endswith("_domains_missing")], checks
+    assert not [c for c in checks if c.endswith(("_scope_missing", "_domains_missing"))], checks
     # 2) 表格给的两个必填项过了
     assert [r for c, r in checks.items() if "documentno" in c] == ["passed"], checks
     assert [r for c, r in checks.items() if "materialgrade" in c] == ["passed"], checks
@@ -217,7 +217,6 @@ def _bogus_snapshot(object_id):
 
 def test_a_validated_condition_mapping_selects_the_object(monkeypatch):
     """工作台发起审查时送的"下次审查对象"，冻结后就是这里唯一的选取来源。"""
-    from libs.review_orchestrator import ndt_table_facts
     import libs.review_condition_mapping as mapping
 
     state, run = state_and_run()

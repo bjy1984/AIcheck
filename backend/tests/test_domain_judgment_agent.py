@@ -164,7 +164,7 @@ def test_a_non_json_reply_does_not_crash_the_run():
 
 
 @pytest.mark.parametrize(
-    "quote", ["已审阅合格证 、 质量证明书", "已审阅合格证、质量证明书", "已审阅合格证、质量证明书"]
+    "quote", ["已审阅合格证 、 质量证明书", "已审阅合格证、质量证明书"]
 )
 def test_whitespace_and_fullwidth_differences_do_not_break_a_real_quotation(quote):
     out = parse_response(

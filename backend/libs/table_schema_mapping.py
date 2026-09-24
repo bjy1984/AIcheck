@@ -42,7 +42,7 @@ def normalize_header(value: Any) -> str:
     text = str(value or "")
     for wide, narrow in (("（", "("), ("）", ")"), ("：", ":"), ("／", "/"), ("，", ","), ("、", "/")):
         text = text.replace(wide, narrow)
-    return re.sub(r"[\s​　]+", "", text)
+    return re.sub(r"[\s\u200b　]+", "", text)
 
 
 def table_headers(table: dict[str, Any]) -> set[str]:

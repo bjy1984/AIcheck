@@ -142,9 +142,6 @@
  "libs/review_orchestrator/graph.py": {
   "BLE001": 3
  },
- "libs/review_orchestrator/r24_r34_facts.py": {
-  "PLC0206": 1
- },
  "libs/security/auth.py": {
   "BLE001": 4
  },
@@ -258,9 +255,6 @@
  },
  "scripts/offline_vectorize_rules.py": {
   "BLE001": 1
- },
- "scripts/openapi_contract.py": {
-  "TRY004": 2
  },
  "scripts/publish_atomic_check_bindings.py": {
   "TRY004": 1

@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from libs.regulatory_tables import product_inspection_rules
-from libs.review_input_data import selected_parse_results
+from libs.review_input_data import current_selected_parse_results
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
 from libs.review_orchestrator.r13_facts import (
     _business_rows,
@@ -41,7 +41,7 @@ def build_r14_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
     pipeline_characteristics: list[dict[str, Any]] = []
     factory_reports: list[dict[str, Any]] = []
     special_reports: list[dict[str, Any]] = []
-    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
+    for parse_result in current_selected_parse_results(state, {}, context={"reviewRun": review_run}):
         pipeline_characteristics.extend(_extract_pipeline_characteristics(state, parse_result))
         document_kind, inspection_types = _r14_document_kind(state, parse_result)
         if document_kind == "factory_inspection_report":
@@ -136,8 +136,8 @@ def _table_cell_rows(table: dict[str, Any]) -> list[list[str]]:
         return [[text for _, text in sorted(rows[index])] for index in sorted(rows)]
     html = str(table.get("html") or "")
     output: list[list[str]] = []
-    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.S):
-        texts = [re.sub(r"<[^>]+>", "", cell).strip() for cell in re.findall(r"<td[^>]*>(.*?)</td>", row_html, flags=re.S)]
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.DOTALL):
+        texts = [re.sub(r"<[^>]+>", "", cell).strip() for cell in re.findall(r"<td[^>]*>(.*?)</td>", row_html, flags=re.DOTALL)]
         if any(texts):
             output.append(texts)
     return output

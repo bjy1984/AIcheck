@@ -129,13 +129,17 @@ def parse_business_rules_markdown(text: str) -> list[dict[str, Any]]:
         meta = parse_meta_row(section)
         source_sequence = meta.get("sourceSequence") or int(source_rule_id.removeprefix("R"))
         standard_text = extract_rule_field(section, "判断准则（原文）") or extract_rule_field(section, "标准规范（原文）")
-        witness_text = (
+        source_witness = (
             extract_rule_field(section, "方法（原文）")
             or extract_rule_field(section, "方法及内容（原文）")
             or extract_rule_field(section, "工作见证（原文）")
         )
+        witness_text = extract_rule_field(section, "执行方法（新版）") or source_witness
         agent_thinking = extract_rule_field(section, "Agent思考方式（新增）")
         toolchain_thinking = extract_rule_field(section, "工具集调用思考（新增）")
+        version_override = extract_rule_field(section, "规则版本（新增）")
+        if version_override and not re.fullmatch(r"v\d{8}", version_override):
+            raise ValueError(f"invalid_rule_version_override:{source_rule_id}")
         rules.append(
             {
                 "sourceRuleId": source_rule_id,
@@ -151,6 +155,8 @@ def parse_business_rules_markdown(text: str) -> list[dict[str, Any]]:
                 "criteria": standard_text,
                 "witnessText": witness_text,
                 "checkMethod": witness_text,
+                "sourceWitness": source_witness if witness_text != source_witness else "",
+                "versionOverride": version_override,
                 "agentThinking": agent_thinking,
                 "toolchainThinking": toolchain_thinking,
                 "rawSection": section,
@@ -405,7 +411,7 @@ def build_rule_sets(
             "id": old.get("id") or f"RULE-ENG-INSP-R{rule_number:02d}",
             "name": display_name,
             "ruleKey": rule_key,
-            "version": f"{rule_key}-{import_version}",
+            "version": f"{rule_key}-{parsed['versionOverride'] or import_version}",
             "status": "已发布",
             "nodeIds": node_ids,
             "severity": severity_for_review_class(parsed["reviewClass"]),
@@ -426,7 +432,7 @@ def build_rule_sets(
             "standardText": parsed["standardText"],
             "checkMethod": parsed["witnessText"],
             "witnessText": parsed["witnessText"],
-            "sourceWitness": old.get("sourceWitness") or "",
+            "sourceWitness": parsed["sourceWitness"] or old.get("sourceWitness") or "",
             "agentThinking": parsed["agentThinking"],
             "toolchainThinking": parsed["toolchainThinking"],
             "referencedStandards": standard_matches,

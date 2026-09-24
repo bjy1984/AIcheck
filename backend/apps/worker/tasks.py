@@ -74,6 +74,7 @@ from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.mineru_client import MinerUClient, MinerUError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
+from libs.jev_document_routing import classify_document_node_routing
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
     OFFLINE_EMBEDDING_MODEL,
@@ -160,6 +161,7 @@ from libs.review_grounding import (
     grounding_prompt_block,
     unsupported_claims,
 )
+from libs.review_orchestrator.jev_client import jev_stage_enabled
 from libs.seal_local_reader import (
     merge_scanned_seals,
     read_seal_texts_locally,
@@ -401,6 +403,21 @@ def _classification_records(
     return records
 
 
+def _queue_jev_routing_after_classification(
+    result: dict[str, Any], project_id: str, document_id: str,
+    version_id: str, parse_result: dict[str, Any],
+) -> None:
+    if result.get("status") != "completed":
+        return
+    try:
+        parse_id = str(parse_result.get("id") or parse_result.get("parseResultId") or stable_payload_hash(parse_result))
+        result["jevRoutingDispatch"] = task_dispatcher.dispatch_document_routing_shadow(
+            project_id, document_id, version_id, parse_id,
+        )
+    except Exception as exc:  # noqa: BLE001 -- routing dispatch cannot roll back classification success
+        result["jevRoutingDispatch"] = {"taskId": None, "statusReason": type(exc).__name__}
+
+
 def _set_classification_operation_state(
     document_id: str,
     document_version_id: str,
@@ -539,6 +556,9 @@ def _execute_document_material_classification(
             )
         except Exception as persistence_exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
             _retry_persistence_or_raise(self, persistence_exc)
+        _queue_jev_routing_after_classification(
+            fallback, project_id, document_id, document_version_id, parse_result,
+        )
         return fallback
 
     # The model call is remote and may take long enough for a replacement
@@ -574,6 +594,9 @@ def _execute_document_material_classification(
         )
     except Exception as persistence_exc:  # noqa: BLE001 - retry commit without rerunning targeting in this worker.
         _retry_persistence_or_raise(self, persistence_exc)
+    _queue_jev_routing_after_classification(
+        result, project_id, document_id, document_version_id, parse_result,
+    )
     return result
 
 
@@ -599,6 +622,46 @@ def classify_document_material(
             document_id,
             document_version_id,
         )
+    finally:
+        reset_request_tenant_id(tenant_token)
+
+
+@celery_app.task(bind=True, max_retries=2)
+@pipeline_task_lock(
+    "jev-document-routing",
+    lambda _self, _project_id, _document_id, version_id, tenant_id=None: (
+        f"{tenant_id or current_tenant_id()}:{version_id}"
+    ),
+    idle_timeout_seconds=180,
+)
+def classify_document_node_jev_shadow(
+    self, project_id: str, document_id: str, version_id: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    tenant_token = set_request_tenant_id(tenant_id or current_tenant_id())
+    try:
+        if not jev_stage_enabled("DOCUMENT_ROUTING"):
+            return {"status": "disabled", "documentVersionId": version_id}
+        refresh_ocr_worker_state(document_id, version_id)
+        shadow = classify_document_node_routing(repo, project_id, document_id, version_id)
+        if shadow.get("status") in {"disabled", "invalid_scope", "stale_version"}:
+            return shadow
+        # A newer upload may become current while the outbound request is running.
+        refresh_ocr_worker_state(document_id, version_id)
+        document = repo.find_one("documents", document_id)
+        if (not document or str(document.get("projectId") or "") != project_id
+                or str(document.get("currentVersionId") or "") != version_id):
+            return {"status": "stale_version", "documentVersionId": version_id}
+        # The Lab picker consumes this version-bound recommendation directly;
+        # accepting a node remains a human action through the existing binder.
+        document["jevRoutingDecision"] = repo.clone(shadow)
+        try:
+            flush_state_records({"documents": [document]})
+        except Exception as exc:
+            if not bool(getattr(self.request, "called_directly", False)) and int(self.request.retries or 0) < 2:
+                raise self.retry(exc=exc, countdown=10)
+            raise
+        return shadow
     finally:
         reset_request_tenant_id(tenant_token)
 
