@@ -309,6 +309,60 @@ def record_fact_items(business_facts: dict[str, Any] | None,
     return items
 
 
+# 施工记录表（按签名从扫描件重建）上逐字写明、判据会读的值；由记录值推导的布尔旗标不问。
+DOMAIN_FACT_LABELS: dict[tuple[str, str], str] = {
+    ("staticGrounding", "installation.connectionMethod"): "接头型式",
+    ("staticGrounding", "measurement.maxJointBondingResistanceOhm"): "跨线接头电阻值",
+    ("staticGrounding", "measurement.groundResistanceOhm"): "对地电阻值",
+    ("leakTestConditions", "medium.name"): "泄漏性试验介质",
+    ("leakTestConditions", "pressure.testPressureMPa"): "泄漏性试验压力",
+    ("leakTestMethod", "report.result"): "泄漏性试验结论",
+    ("blowingCleaning", "medium.name"): "吹洗介质",
+    ("blowingCleaning", "acceptance.conclusion"): "吹洗鉴定",
+}
+
+
+def _read_path(row: dict[str, Any], path: str) -> Any:
+    value: Any = row
+    for key in path.split("."):
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
+
+
+def domain_record_fact_items(business_facts: dict[str, Any] | None,
+                             rule_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """R47／R66／R67／R68 施工记录（选定对象后）上抽出的值，请 Jev 对原文核一遍。"""
+    atomic_id = next((str(item.get("atomicCheckId")) for record in rule_results
+                      for item in record.get("atomicCheckResults") or []
+                      if any(isinstance(tool, dict) and str(tool.get("toolName") or "") not in _EVIDENCE_GATE_ONLY
+                             for tool in item.get("toolResults") or [])), None)
+    items: list[dict[str, Any]] = []
+    for namespace, facts in sorted((business_facts or {}).items()):
+        if not atomic_id or not isinstance(facts, dict):
+            continue
+        for block in facts.values():
+            for row in (block or {}).get("domains") or [] if isinstance(block, dict) else []:
+                version = str((row or {}).get("documentVersionId") or "") if isinstance(row, dict) else ""
+                object_id = str((row or {}).get("objectId") or "").strip() if isinstance(row, dict) else ""
+                if not version or not object_id or not isinstance(row.get("extractedPaths"), list):
+                    continue
+                for path in row["extractedPaths"]:
+                    label = DOMAIN_FACT_LABELS.get((str(row.get("domain") or ""), str(path)))
+                    value = _read_path(row, str(path))
+                    if not label or isinstance(value, bool) or value in (None, ""):
+                        continue
+                    text = f"{value:g}" if isinstance(value, float) else str(value).strip()
+                    items.append({
+                        "atomicCheckId": atomic_id, "documentVersionIds": [version],
+                        "certificateLabel": namespace.upper(), "field": str(path), "value": text,
+                        "plausible": _plausible_field_value(text),
+                        "suspectLabel": f"{namespace.upper()}·{object_id}·{label}={text[:40]}",
+                        "instructions": f"只看这份资料：管线{object_id}的{label}是否写为{text}？"
+                                        "只核对原文写明的内容，表头和栏目名称不算。",
+                    })
+    return items
+
+
 def fact_questions(verification: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
     """Certificate questions grouped by source document (kept for callers of the first version)."""
     return _group(certificate_fact_items(verification))

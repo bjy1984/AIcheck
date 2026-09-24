@@ -14,6 +14,7 @@ from libs.review_orchestrator.jev_fact_check import (
     certificate_fact_items,
     check_facts,
     design_fact_items,
+    domain_record_fact_items,
     record_fact_items,
     welder_fact_items,
 )
@@ -68,7 +69,8 @@ def decision_step(state: dict[str, Any], review_run: dict[str, Any], context: di
                              certificate_fact_items(context.get("certificateVerification"))
                              + design_fact_items(context.get("businessFacts"), original)
                              + welder_fact_items(context.get("businessFacts"), original)
-                             + record_fact_items(context.get("businessFacts"), original))
+                             + record_fact_items(context.get("businessFacts"), original)
+                             + domain_record_fact_items(context.get("businessFacts"), original))
     review_run["jevFactCheck"] = fact_check
     return {"status": decision["status"], "decisionCount": len(decision["atomic"]),
             "disagreementCount": len(decision.get("disagreementAtomicCheckIds") or []),
