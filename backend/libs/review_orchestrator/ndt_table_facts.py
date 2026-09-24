@@ -71,12 +71,18 @@ def _mapped_payload(row: dict[str, Any], signature: dict[str, Any], run: dict[st
     from libs.table_schema_mapping import normalize_header
 
     headers = {normalize_header(key): value for key, value in row.items()}
-    object_id = next(
-        (str(headers[normalize_header(column)]).strip()
-         for column in signature.get("objectIdColumns") or []
-         if str(headers.get(normalize_header(column)) or "").strip() not in ("", "/", "／", "-", "—")),
-        "",
-    )
+    blank = ("", "/", "／", "-", "—")
+    if signature.get("objectIdJoin"):
+        # 一条管线有多个对象（支吊架）：对象号由几栏拼成，任一栏缺了就归属不到对象。
+        parts = [str(headers.get(normalize_header(column)) or "").strip() for column in signature["objectIdJoin"]]
+        object_id = "/".join(parts) if all(part not in blank for part in parts) else ""
+    else:
+        object_id = next(
+            (str(headers[normalize_header(column)]).strip()
+             for column in signature.get("objectIdColumns") or []
+             if str(headers.get(normalize_header(column)) or "").strip() not in blank),
+            "",
+        )
     if not object_id:
         # 没有对象识别的行归属不到任何被审查对象，宁可不产生，也不并到别人名下。
         return None
