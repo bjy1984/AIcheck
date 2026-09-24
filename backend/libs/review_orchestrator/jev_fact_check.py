@@ -278,8 +278,9 @@ def record_fact_items(business_facts: dict[str, Any] | None,
                     items.append({
                         "atomicCheckId": atomic_id, "documentVersionIds": [version], "certificateLabel": namespace.upper(),
                         "field": field, "value": value,
-                        # 编号不含数字就不是编号，本地直接标可疑。
-                        "plausible": _plausible_field_value(value) and (not number_field or bool(re.search(r"\d", value))),
+                        # 汉字写成、又没有数字的「编号」是标题或栏目名，本地直接标可疑。
+                        "plausible": _plausible_field_value(value) and not (
+                            number_field and not re.search(r"\d", value) and re.search(r"[一-龥]", value)),
                         "suspectLabel": f"{namespace.upper()}·{label}={value[:40]}",
                         "instructions": f"只看这份资料：{target}是否写为{value}？只核对原文写明的内容，表头和栏目名称不算。",
                     })
