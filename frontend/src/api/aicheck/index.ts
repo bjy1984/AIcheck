@@ -3628,6 +3628,7 @@ export const requestAiRecheckApi = (
     inputDocumentPageRanges?: Record<string, { start: number; end: number }>
     conditionObjectMapping?: import('./projectRules').RuleObjectMappingRequest
     handoffSelection?: import('./reviewHandoffs').HandoffSelection
+    selectedObjectIds?: string[]
   },
   options?: MutationHeaderOptions
 ): Promise<IResponse<AiRecheckPayload>> => {

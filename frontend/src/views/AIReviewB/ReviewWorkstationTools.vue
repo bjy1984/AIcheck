@@ -2,19 +2,23 @@
 import { ref } from 'vue'
 import { ElButton } from 'element-plus'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
+import type { ReviewObjectCandidate } from '@/types/ai-review-b'
+import { objectCandidateLabel, selectionWithObject } from './objectSelection'
 import type { EvidenceLink } from '@/types/aicheck'
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
 import ReviewDocumentPicker from './ReviewDocumentPicker.vue'
 import ReviewHandoffDependencies from './ReviewHandoffDependencies.vue'
 import ReviewHandoffPanel from './ReviewHandoffPanel.vue'
 
-defineProps<{
+const props = defineProps<{
   projectId: string
   nodeId: number
   runId: string
   projectEtag?: string
   evidenceLinks?: EvidenceLink[]
   selection: ReviewDocumentSelection | null
+  /** 上次审查发现记录表有多个对象时的候选 */
+  objectCandidates?: ReviewObjectCandidate[]
   documentsDisabled: boolean
 }>()
 const emit = defineEmits<{
@@ -34,6 +38,15 @@ const focusTool = (section: 'documents' | 'rules' | 'handoffs') => {
 }
 defineExpose({ focusTool })
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
+const objectError = ref('')
+const chooseObject = (objectId: string) => {
+  try {
+    objectError.value = ''
+    emit('change', selectionWithObject(props.selection, objectId))
+  } catch (error) {
+    objectError.value = error instanceof Error ? error.message : String(error)
+  }
+}
 </script>
 
 <template>
@@ -79,6 +92,32 @@ const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
         :disabled="documentsDisabled"
         @click="emit('change', { ...selection, conditionObjectMapping: undefined })"
         >移除对象选择</ElButton
+      >
+    </p>
+    <div
+      v-if="(objectCandidates?.length || 0) > 1 && !selection?.selectedObjectIds?.length"
+      role="group"
+      aria-label="选择审查对象"
+      class="workstation-tools__hint"
+    >
+      上次审查发现记录表列了 {{ objectCandidates!.length }}
+      个对象，系统不替您挑选。请选择下次只审的一个：
+      <ElButton
+        v-for="candidate in objectCandidates"
+        :key="candidate.objectId"
+        size="small"
+        :disabled="documentsDisabled"
+        @click="chooseObject(candidate.objectId)"
+        >{{ objectCandidateLabel(candidate) }}</ElButton
+      >
+      <span v-if="objectError" role="alert">{{ objectError }}</span>
+    </div>
+    <p v-if="selection?.selectedObjectIds?.length" role="status" class="workstation-tools__hint">
+      下次只审对象：{{ selection.selectedObjectIds.join('、') }}。调整文件后请重新确认对象。
+      <ElButton
+        :disabled="documentsDisabled"
+        @click="emit('change', { ...selection, selectedObjectIds: undefined })"
+        >移除审查对象</ElButton
       >
     </p>
     <p v-if="selection?.handoffSelection" role="status" class="workstation-tools__hint">

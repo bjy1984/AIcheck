@@ -34,7 +34,19 @@ export type ReviewApprovalCheck = {
   evidenceRefs?: Record<string, unknown>[]
 }
 
+/** 一张记录表列了多个对象时的候选（对象号、所在文件版本与页码） */
+export type ReviewObjectCandidate = {
+  objectId: string
+  objectType?: string | null
+  documentVersionId?: string | null
+  pageNo?: number | null
+}
+
 export type ReviewBRun = {
+  /** 记录表有多个对象、需要监检员指定时列出的候选 */
+  objectCandidates?: ReviewObjectCandidate[]
+  /** 本次只审的对象（发起时指定并冻结） */
+  selectedObjectIds?: string[]
   approvalChecks?: ReviewApprovalCheck[]
   automationLimitations?: Array<{
     atomicCheckId: string

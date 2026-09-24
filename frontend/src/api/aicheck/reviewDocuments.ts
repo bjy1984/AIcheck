@@ -26,6 +26,8 @@ export type ReviewDocumentSelection = {
     pageRange?: { start: number; end: number }
   }>
   handoffSelection?: HandoffSelection
+  /** 记录表有多个对象时，只审这些（与 conditionObjectMapping 二选一） */
+  selectedObjectIds?: string[]
   pageScopeExplicit?: boolean
   conditionObjectMapping?: RuleObjectMappingRequest
   reviewMode: 'formal' | 'gap_precheck'
