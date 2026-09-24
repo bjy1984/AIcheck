@@ -163,7 +163,12 @@ runtime = {
     "AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE": "32",
 }
 # 凭证覆盖固定配置：口令、密钥以文件为准
-runtime.update({k: v for k, v in secrets.items() if not k.startswith("AICHECK_BOOTSTRAP_PASSWORD_")})
+# DEEPSEEK_* 不透传：2026-09-24 起模型全部走通义，运行时里留着 DeepSeek 密钥只会让
+# 某条旧路径（litellm server 模式、模型对比 challenger）悄悄又打回去。
+runtime.update({
+    k: v for k, v in secrets.items()
+    if not k.startswith("AICHECK_BOOTSTRAP_PASSWORD_") and not k.startswith("DEEPSEEK_")
+})
 
 # 主模型密钥复用视觉那把 DashScope 密钥（同账号同 key）——embedding 也是它。
 # 不在凭证文件里复制第二份：轮换时漏改的那份不会报错，只会静默降级。
@@ -201,16 +206,27 @@ if secrets.get("AICHECK_TOKEN_PLAN_API_KEY"):
     if embedding_key:
         runtime["AICHECK_EMBEDDING_API_KEY"] = embedding_key
 
-# LLM 备用供应商：DeepSeek（通义供应商级故障/熔断时降级）。模型名必须显式覆盖，
-# 否则 fallback_provider 用 qwen_runtime.yaml 的通义默认值，DeepSeek 会 400。
-# 地址与密钥两个都配齐才生效（fallback_provider 的规矩），所以放同一个 if 里。
-# 注意 DeepSeek 欠费（HTTP 402）时备胎照样打不通——那不是配置问题，去充值。
-if secrets.get("DEEPSEEK_API_KEY"):
-    runtime["AICHECK_LLM_FALLBACK_API_BASE"] = "https://api.deepseek.com"
-    runtime["AICHECK_LLM_FALLBACK_API_KEY"] = secrets["DEEPSEEK_API_KEY"]
-    for role in ("REVIEW", "DEFAULT", "PROJECT_REVIEW", "DOCUMENT_CLASSIFIER"):
-        runtime[f"AICHECK_LLM_FALLBACK_MODEL_{role}"] = "deepseek-v4-pro"
-    runtime["AICHECK_LLM_FALLBACK_MODEL_COMPARE_FAST"] = "deepseek-v4-flash"
+# LLM 备用供应商：通义按量计费（主供应商 Token Plan 限流/故障/熔断时降级）。
+# 2026-09-24 起不再用 DeepSeek（用户要求全部走通义）：当天灰度里 Token Plan 按分钟
+# 限流 429，一转 DeepSeek 就 402 欠费，一次复核 30 个证据分片落空。按量计费与 Token Plan
+# 额度互相独立，限流时正好接得住；模型名与主供应商逐角色相同（三个文本模型在按量端点
+# 实测 200）。只有主供应商是 Token Plan、且有按量 sk- 密钥时才配——主供应商本身就是按量
+# 时，备胎指回同一个端点毫无意义。凭证里的 DEEPSEEK_API_KEY 不再读取。
+PAYG_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+payg_key = next(
+    (
+        secrets[name]
+        for name in ("AICHECK_LLM_VISION_API_KEY", "AICHECK_EMBEDDING_API_KEY")
+        if secrets.get(name, "").startswith("sk-") and not secrets[name].startswith("sk-sp-")
+    ),
+    "",
+)
+if runtime.get("AICHECK_LLM_API_BASE") == TOKEN_PLAN_BASE and payg_key:
+    runtime["AICHECK_LLM_FALLBACK_API_BASE"] = PAYG_BASE
+    runtime["AICHECK_LLM_FALLBACK_API_KEY"] = payg_key
+    for name, value in list(runtime.items()):
+        if name.startswith("AICHECK_LLM_MODEL_") and name != "AICHECK_LLM_MODEL_VISION":
+            runtime[name.replace("AICHECK_LLM_MODEL_", "AICHECK_LLM_FALLBACK_MODEL_")] = value
 
 TARGET.write_text("".join("%s=%s\n" % (k, v) for k, v in sorted(runtime.items())))
 TARGET.chmod(0o600)
