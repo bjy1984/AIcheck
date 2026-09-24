@@ -2,6 +2,7 @@
 import { workstationNavigation, filterWorkstationNodes } from './workstationNavigation'
 import ReviewNodeOverview from './components/ReviewNodeOverview.vue'
 import { cloneDocumentSelectionVersions, documentSelectionPayload } from './documentPageSelection'
+import { runObjectCandidates } from './objectSelection'
 import ReviewDecisionSummary from './components/ReviewDecisionSummary.vue'
 import { needsAttention, overviewResult } from './workstationOverview'
 import ReviewWorkstationTools from './ReviewWorkstationTools.vue'
@@ -1246,7 +1247,7 @@ const handleStartReview = async () => {
   const selectedMode = startReviewMode.value
   const modeLabel = selectedMode === 'formal' ? '正式 AI 复核' : '缺项预审'
   await ElMessageBox.confirm(
-    `${selectedInput ? `将仅使用已选 ${selectedInput.versions.length} 份文件版本${selectedInput.versions.some((item) => item.pageRange) ? '（含指定页码范围）' : ''}` : '将使用节点当前资料'}${selectedInput?.conditionObjectMapping ? `，对象为 ${selectedInput.conditionObjectMapping.selection.subject.objectId}（使用已试跑的固定原文选择）` : ''}${selectedInput?.handoffSelection ? `，使用 ${selectedInput.handoffSelection.items.length} 份已核验交接（对象 ${selectedInput.handoffSelection.subject.objectId}、事件 ${selectedInput.handoffSelection.subject.eventId}、返修轮次 ${selectedInput.handoffSelection.subject.repairRound}）` : ''}，按当前规则和适用标准条款包发起${modeLabel}，是否继续？`,
+    `${selectedInput ? `将仅使用已选 ${selectedInput.versions.length} 份文件版本${selectedInput.versions.some((item) => item.pageRange) ? '（含指定页码范围）' : ''}` : '将使用节点当前资料'}${selectedInput?.conditionObjectMapping ? `，对象为 ${selectedInput.conditionObjectMapping.selection.subject.objectId}（使用已试跑的固定原文选择）` : ''}${selectedInput?.selectedObjectIds?.length ? `，只审对象 ${selectedInput.selectedObjectIds.join('、')}` : ''}${selectedInput?.handoffSelection ? `，使用 ${selectedInput.handoffSelection.items.length} 份已核验交接（对象 ${selectedInput.handoffSelection.subject.objectId}、事件 ${selectedInput.handoffSelection.subject.eventId}、返修轮次 ${selectedInput.handoffSelection.subject.repairRound}）` : ''}，按当前规则和适用标准条款包发起${modeLabel}，是否继续？`,
     `发起${modeLabel}`,
     { type: 'warning', confirmButtonText: '确认发起', cancelButtonText: '取消' }
   )
@@ -2105,6 +2106,7 @@ onBeforeUnmount(() => {
           :node-id="activeNodeId"
           :run-id="activeRunId"
           :selection="reviewDocumentSelection"
+          :object-candidates="runObjectCandidates(activeRun)"
           :project-etag="workspace?.project.etag"
           :documents-disabled="actionLoading || workspace?.permissions.canManageEvidence !== true"
           @change="reviewDocumentSelection = $event"

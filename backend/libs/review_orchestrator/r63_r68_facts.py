@@ -5,6 +5,7 @@
 """
 from copy import deepcopy
 
+from libs.review_object_selection import candidate_objects
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.source_coverage import selected_source_issues
 from libs.review_tools.r63_stress_analysis import (
@@ -39,7 +40,9 @@ def _build(node_id, state, run):
         elif key != scope:
             return {namespace: {fact_key: {"projectId": run["projectId"], "scope": None, "standardRules": {},
                                            "domains": [], "selectionIssues": deepcopy(issues),
-                                           "sourceIssues": [f"{namespace}_source_object_conflict"]}}}
+                                           "sourceIssues": [f"{namespace}_source_object_conflict"],
+                                           # 列出候选对象，由监检员选定后再审（不替人挑）。
+                                           "candidateObjects": candidate_objects(rows)}}}
         domains.append(deepcopy(row))
     return {namespace: {fact_key: {"projectId": run["projectId"], "scope": deepcopy(scope), "domains": domains,
                                    "standardRules": frozen_rules(run),
