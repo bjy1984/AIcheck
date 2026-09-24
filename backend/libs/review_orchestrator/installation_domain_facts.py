@@ -5,6 +5,7 @@
 """
 from copy import deepcopy
 
+from libs.review_object_selection import candidate_objects
 from libs.review_orchestrator.domain_judgment_store import judgment_for, merge_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.source_coverage import selected_source_issues
@@ -61,7 +62,9 @@ def _build(node_id, state, run):
         elif key != scope:
             return {namespace: {fact_key: {"projectId": run["projectId"], "scope": None, "standardRules": {},
                                            "domains": [], "selectionIssues": deepcopy(issues),
-                                           "sourceIssues": [f"{namespace}_source_object_conflict"]}}}
+                                           "sourceIssues": [f"{namespace}_source_object_conflict"],
+                                           # 列出候选对象，由监检员选定后再审（不替人挑）。
+                                           "candidateObjects": candidate_objects(rows)}}}
         # agent 读正文得出的判断（若有）并进来；表格里已有的值不被覆盖。
         # 这些判断是此前记进 state 的证据，不是这里现调模型——事实构建保持离线。
         domains.append(merge_judgment(deepcopy(row), judgment_for(

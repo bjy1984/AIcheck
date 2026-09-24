@@ -56,6 +56,7 @@ from libs.review_grounding import (
     merge_canonical_grounding_metadata,
 )
 from libs.review_live_sources import ensure_live_document_sources as ensure_document_sources
+from libs.review_object_selection import collect_object_candidates
 from libs.review_orchestrator import (
     checklist_mode,
     output_contract,
@@ -376,7 +377,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
         "inputDocumentVersionIds": ai_run.get("inputDocumentVersionIds") or [],
-        **{key: repo.clone(ai_run[key]) for key in ("conditionObjectMapping", "handoffSelection", "importantReviewSnapshot") if key in ai_run},
+        **{key: repo.clone(ai_run[key]) for key in ("conditionObjectMapping", "handoffSelection", "importantReviewSnapshot", "selectedObjectIds") if key in ai_run},
         **({"inputDocumentPageRanges": page_ranges} if page_ranges is not None else {}),
         "schemaVersion": ai_run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
         "runMode": ai_run.get("runType") or "production",
@@ -406,6 +407,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
                 "atomicCheckToolBindingSetHash": ai_run.get("atomicCheckToolBindingSetHash"),
                 # 只在选用了插件时进哈希：没选用的审查与改造前哈希一致，既有任务照常复用。
                 **({"reviewPlugins": plugin_snapshot} if any_plugin_enabled(plugin_snapshot) else {}),
+                **({"selectedObjectIds": ai_run["selectedObjectIds"]} if ai_run.get("selectedObjectIds") else {}),
             }
         ),
         "outputHash": None,
@@ -1355,6 +1357,7 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             # 逐项核查结果（含通过项）也随运行一起带出去：界面只列问题时，
             # 「没报问题」和「压根没查」在人眼里是一样的。
             ai_run["atomicCheckOutcomes"] = repo.clone(output_contract.atomic_check_outcomes(context.get("ruleResults") or [], review_run))
+            ai_run["objectCandidates"] = repo.clone(review_run.get("objectCandidates") or [])  # 待选审查对象
             opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=suggested_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {
@@ -1528,6 +1531,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             context["businessFacts"] = builder(repo.state, review_run)
         context["businessFacts"] = merge_certificate_facts(repo.state, review_run, context.get("businessFacts"))
         context["businessFacts"] = merge_project_pipelines(repo.state, review_run, context.get("businessFacts"))  # P11 N-02：逐管线事实
+        if candidates := collect_object_candidates(context.get("businessFacts")):  # 多对象待监检员选定
+            review_run["objectCandidates"] = candidates
         applied_corrections = apply_node_fact_corrections(
             repo.state,
             str(review_run.get("projectId") or ""),
