@@ -74,9 +74,32 @@ def classify_table(table: dict[str, Any], signatures: list[dict[str, Any]]) -> s
     return hits[0]["businessSchema"] if len(hits) == 1 else None
 
 
+# 表格裡的「/」「—」是「本欄不填」的記號，不是值；當成有值會讓「該寫沒寫」看起來寫了。
+_BLANK_MARKS = frozenset({"/", "／", "-", "—", "--", "——", "\\"})
+_NUMBER_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(.*?)\s*$")
+
+
 def _parse_text(value: Any, _field: dict[str, Any]) -> Any:
     text = str(value or "").strip()
-    return text or None
+    return text if text and text not in _BLANK_MARKS else None
+
+
+def _parse_number(value: Any, field: dict[str, Any]) -> Any:
+    """只收一個乾淨的數，後面只許跟簽名宣告的單位（units，不分大小寫）。
+
+    「约」「≤」「0.02~0.03」、單位不對（壓力欄寫了 kPa）與 OCR 夾雜的字一律不收——
+    換算單位是判據的事，這裡不代算。
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    found = _NUMBER_RE.match(str(value or ""))
+    if not found:
+        return None
+    unit = found.group(2).casefold()
+    allowed = {str(item).casefold() for item in field.get("units") or []}
+    return float(found.group(1)) if not unit or unit in allowed else None
 
 
 def _parse_percent(value: Any, _field: dict[str, Any]) -> Any:
@@ -109,7 +132,7 @@ def _parse_labelled(value: Any, field: dict[str, Any]) -> Any:
     return tail or None
 
 
-_PARSERS = {"text": _parse_text, "percent": _parse_percent, "labelled": _parse_labelled}
+_PARSERS = {"text": _parse_text, "number": _parse_number, "percent": _parse_percent, "labelled": _parse_labelled}
 
 
 def _assign(target: dict[str, Any], path: str, value: Any) -> None:

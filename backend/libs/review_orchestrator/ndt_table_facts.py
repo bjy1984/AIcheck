@@ -6,6 +6,7 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from libs.ocr.form_tables import form_tables
 from libs.review_input_data import current_selected_parse_results
 from libs.review_workstations import digest
 from libs.table_schema_mapping import classify_table, load_signatures, map_row
@@ -73,7 +74,7 @@ def _mapped_payload(row: dict[str, Any], signature: dict[str, Any], run: dict[st
     object_id = next(
         (str(headers[normalize_header(column)]).strip()
          for column in signature.get("objectIdColumns") or []
-         if str(headers.get(normalize_header(column)) or "").strip()),
+         if str(headers.get(normalize_header(column)) or "").strip() not in ("", "/", "／", "-", "—")),
         "",
     )
     if not object_id:
@@ -131,10 +132,12 @@ def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[st
     versions = {row["id"]: row for row in state.get("versions", []) if row.get("tenantId") == run.get("tenantId")}
     documents = {row["id"] for row in state.get("documents", [])
                  if row.get("projectId") == run.get("projectId") and row.get("tenantId") == run.get("tenantId")}
+    form_signatures = [item for item in _signatures() if item.get("form") and item["businessSchema"] in schemas]
     for parse in current_selected_parse_results(state, {}, context={"reviewRun": run}):
         version_id = parse.get("documentVersionId")
         if (parse.get("tenantId") != run.get("tenantId") or versions.get(version_id, {}).get("documentId") not in documents):
             continue
+        candidates: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
         for table in parse.get("tables") or []:
             if not isinstance(table, dict):
                 continue
@@ -147,7 +150,16 @@ def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[st
                 signature = _signature_for(table, schemas)
                 if signature is None:
                     continue
-                schema = signature["businessSchema"]
+            candidates.append((table, signature))
+        # 扫描件上的固定表格：OCR 只给片段不给表，按签名宣告的表名与表头从片段重建。
+        # 同样按读取时机做，既有文件不必重跑 OCR。OCR 已经给了同一种表时不再重建，
+        # 否则同一条记录会读成两行，被判成来源含糊。
+        present = {signature["businessSchema"] if signature else table.get("businessSchema")
+                   for table, signature in candidates}
+        missing = [item for item in form_signatures if item["businessSchema"] not in present]
+        candidates.extend(form_tables(parse, missing) if missing else [])
+        for table, signature in candidates:
+            schema = signature["businessSchema"] if signature else table.get("businessSchema")
             for index, row in enumerate(table.get("normalizedRows") or []):
                 if not isinstance(row, dict):
                     continue

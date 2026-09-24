@@ -40,6 +40,138 @@ signatures:
     label: 材质
     stopLabels: [标准, 標準]
 
+# 以下兩條是掃描件上的固定表格：OCR 只給片段、不給表，由 libs/ocr/form_tables.py
+# 按 form 宣告的表名與表頭錨點重建（沒有 match：這類表不會以 OCR 表格的形式出現）。
+# 只對映表上逐字寫明、判據直接讀的欄位；接地位置、吹洗方法、是否適用等表上沒寫的，
+# 一律不寫，也不宣告 applicableWhen——適用性由設計資料決定，不從記錄表推。
+- businessSchema: static_grounding_domains
+  domain: staticGrounding
+  objectType: pipeline
+  sourceRuleIds: [R47]
+  evidence: >-
+    七項目快照（2026-09-23）恒基達鑫一二期裝車站交工資料 20260623104730.pdf 第 16 頁
+    「表A.0.10管道静电接地测试记录」掃描件，macOS Vision 片段逐字：管线号 | 接头型式 |
+    （法兰或螺拴接头）跨线接头 规格 材质 电阻值 | （系统接地）接地线 规格 材质 对地电阻值；
+    兩條管線 PL8303-100、PL8306-100。
+  form:
+    title: 'A\.?0\.10管道静电接地测试记录'
+    rowKey: 管线号
+    rowKeyPattern: '^[A-Z]{1,5}-?\d'
+    columns:
+    - {name: 管线号, label: 管线号}
+    - {name: 接头型式, label: 接头型式}
+    - {name: 跨线接头规格, label: 规格, occurrence: 1}
+    - {name: 跨线接头材质, label: 材质, occurrence: 1}
+    - {name: 跨线接头电阻值, label: 电阻值}
+    - {name: 接地线规格, label: 规格, occurrence: 2}
+    - {name: 接地线材质, label: 材质, occurrence: 2}
+    - {name: 对地电阻值, label: 对地电阻值}
+  objectIdColumns: [管线号]
+  fields:
+  - path: installation.connectionMethod
+    columns: [接头型式]
+    parse: text
+  # 每條管線一列、一個跨接電阻值；這一列的最大值就是它本身。
+  - path: measurement.maxJointBondingResistanceOhm
+    columns: [跨线接头电阻值]
+    parse: number
+    units: [Ω, ohm]
+  - path: measurement.groundResistanceOhm
+    columns: [对地电阻值]
+    parse: number
+    units: [Ω, ohm]
+- businessSchema: blowing_cleaning_domains
+  domain: blowingCleaning
+  objectType: pipeline
+  sourceRuleIds: [R68]
+  evidence: >-
+    同一份交工資料第 18 頁「A.0.17管道系统吹扫与清洗检查记录」掃描件，片段逐字：序号 |
+    管线号 | 管道等级 | 工作介质 | 起点 | 终点 | 吹洗：压力Mpa 介质 流速M/s 鉴定 |
+    化学清洗（脱脂）：介质 方法 鉴定；兩條管線各一列，吹洗介质「洁净水」、鉴定「合格」，
+    化學清洗三欄均為「/」。
+  form:
+    title: 'A\.?0\.17管道系统吹扫与清洗检查记录'
+    rowKey: 管线号
+    rowKeyPattern: '^[A-Z]{1,5}-?\d'
+    columns:
+    - {name: 序号, label: 序号}
+    - {name: 管线号, label: 管线号}
+    - {name: 管道等级, label: 等级}
+    - {name: 工作介质, label: 介质, occurrence: 1}
+    - {name: 起点, label: 起点}
+    - {name: 终点, label: 终点}
+    - {name: 吹洗压力Mpa, label: 压力Mpa}
+    - {name: 吹洗介质, label: 介质, occurrence: 2}
+    - {name: 吹洗流速M/s, label: 流速M/s}
+    - {name: 吹洗鉴定, label: 鉴定, occurrence: 1}
+    - {name: 化学清洗介质, label: 介质, occurrence: 3}
+    - {name: 化学清洗方法, label: 方法}
+    - {name: 化学清洗鉴定, label: 鉴定, occurrence: 2}
+  objectIdColumns: [管线号]
+  fields:
+  # 只取吹洗那一套。判據只有一個介質欄與一個結論欄；若在吹洗是「/」時改取化學清洗，
+  # 兩欄可能各取自不同的方法，拼出一條表上不存在的記錄。化學清洗的記錄等真實樣本再補。
+  - path: medium.name
+    columns: [吹洗介质]
+    parse: text
+  - path: acceptance.conclusion
+    columns: [吹洗鉴定]
+    parse: text
+
+# 第 17 頁的壓力試驗和泄漏性試驗記錄是橫向表格直著掃描的（文字豎排），form_tables
+# 會試兩個旋轉方向，只接受表頭順序對得上的那一個。同一張表供 R66、R67 兩條規則讀，
+# 各自只取判據讀的欄；試驗用壓力表、介質／環境溫度、檢測方法、保壓時間、依據標準
+# 表上都沒寫，一律不對映（設計溫度不是介質溫度）。
+- businessSchema: leak_test_condition_domains
+  domain: leakTestConditions
+  objectType: pipeline
+  sourceRuleIds: [R66]
+  evidence: &leak_record_evidence >-
+    七項目快照（2026-09-23）恒基達鑫交工資料 20260623104730.pdf 第 17 頁
+    「A. 0.16管道系统压力试验和泄漏性试验记录」掃描件（逆時針 90° 豎排），片段逐字：
+    序号 | 管线号 | 管道等级 | 设计参数：压力 温度 | 介质 | 起点 | 终点 |
+    压力试验：介质 压力 结论 | 泄漏性试验：介质 压力 结论；兩條管線，泄漏性試驗
+    介质「空气」、压力「0.55Mpa」、结论「合格」。
+  form: &leak_record_form
+    title: 'A\.?0\.16管道系统压力试验和泄漏性试验记录'
+    rowKey: 管线号
+    rowKeyPattern: '^[A-Z]{1,5}-?\d'
+    columns:
+    - {name: 序号, label: 序号}
+    - {name: 管线号, label: 管线号}
+    - {name: 管道等级, label: 等级}
+    - {name: 设计压力, label: 压力, occurrence: 1}
+    - {name: 设计温度, label: 温度}
+    - {name: 工作介质, label: 介质, occurrence: 1}
+    - {name: 起点, label: 起点}
+    - {name: 终点, label: 终点}
+    - {name: 压力试验压力, label: 压力, occurrence: 2}
+    - {name: 压力试验介质, label: 介质, occurrence: 2}
+    - {name: 压力试验结论, label: 结论, occurrence: 1}
+    - {name: 泄漏性试验压力, label: 压力, occurrence: 3}
+    - {name: 泄漏性试验介质, label: 介质, occurrence: 3}
+    - {name: 泄漏性试验结论, label: 结论, occurrence: 2}
+  objectIdColumns: [管线号]
+  fields:
+  - path: medium.name
+    columns: [泄漏性试验介质]
+    parse: text
+  - path: pressure.testPressureMPa
+    columns: [泄漏性试验压力]
+    parse: number
+    units: [MPa]
+- businessSchema: leak_test_method_domains
+  domain: leakTestMethod
+  objectType: pipeline
+  sourceRuleIds: [R67]
+  evidence: *leak_record_evidence
+  form: *leak_record_form
+  objectIdColumns: [管线号]
+  fields:
+  - path: report.result
+    columns: [泄漏性试验结论]
+    parse: text
+
 # 2026-09-10：這裡原本還有一條 ndt_plan_items 簽名，表頭取自生產庫的
 # 「介质 | 公称直径 | 检测比例 | 管道号」。逐張追來源後撤掉了：那 13 張表的
 # tableId 全是 TABLE-PARSE-FDE-*，內容逐字相同（PL8301/PL8302、天然气、DN100、
