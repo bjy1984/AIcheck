@@ -732,6 +732,8 @@ const REASON_FRAMES: Array<[string, (stem: string) => string]> = [
 
 /** 词典拼不出正确说法的整段词根，在这里直译。 */
 const REASON_STEMS: Record<string, string> = {
+  // 检验服务接口（inspection_services）把判定结论本身当 reason 写出。
+  evidence_insufficient: '证据不足',
   ocr_holder_unreliable: 'OCR 识别的持证单位名称不可靠',
   unsupported_scope_profile: '当前许可范围判定口径尚未支持',
   original_with_manufacturer_quality_seal: '原件带制造单位质量章',
