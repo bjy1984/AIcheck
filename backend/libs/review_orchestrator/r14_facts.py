@@ -5,6 +5,7 @@ import re
 from functools import lru_cache
 from typing import Any
 
+from libs.ocr.form_tables import form_tables
 from libs.ocr.text_line_tables import text_line_tables
 from libs.regulatory_tables import product_inspection_rules
 from libs.review_input_data import current_selected_parse_results
@@ -223,15 +224,22 @@ def _pipeline_table_signature() -> dict[str, Any] | None:
     return next((item for item in load_signatures() if item.get("businessSchema") == "pipeline_characteristics"), None)
 
 
+@lru_cache(maxsize=1)
+def _pipeline_form_signatures() -> tuple[dict[str, Any], ...]:
+    return tuple(item for item in load_signatures() if item.get("businessSchema") == "pipeline_summary")
+
+
 def _extract_pipeline_characteristics(
     state: dict[str, Any],
     parse_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
     version_id = str(parse_result.get("documentVersionId") or "")
     output: list[dict[str, Any]] = []
-    # 设计文件的管道特性表常被 OCR 输出成按行排的文字、没有表格：按签名逐字认表头、按格数重建。
+    # 设计文件的管道特性表常被 OCR 输出成按行排的文字、没有表格：按签名逐字认表头、按格数重建；
+    # 交工资料的压力管道汇总表是扫描件，按签名的表头锚点从片段重建。
     text_tables = text_line_tables(parse_result, _pipeline_table_signature()) if _pipeline_table_signature() else []
-    for table in [*(parse_result.get("tables") or []), *text_tables]:
+    scanned = [table for table, _signature in form_tables(parse_result, _pipeline_form_signatures())]
+    for table in [*(parse_result.get("tables") or []), *text_tables, *scanned]:
         if not isinstance(table, dict):
             continue
         hints = " ".join(
@@ -239,15 +247,18 @@ def _extract_pipeline_characteristics(
                 str(parse_result.get("profileId") or ""),
                 str(parse_result.get("documentType") or ""),
                 str(table.get("title") or table.get("tableName") or table.get("businessSchema") or ""),
+                str(table.get("formTitle") or ""),
                 " ".join(str(item) for item in table.get("businessSchemas") or []),
                 " ".join(str(key) for key in table),
             ]
         )
         compact = _compact(hints)
-        if not any(marker in compact for marker in ("管道特性", "管线特性", "pipingcharacteristic", "pipelinecharacteristic")):
+        if not any(marker in compact for marker in ("管道特性", "管线特性", "压力管道汇总", "pipingcharacteristic",
+                                                     "pipelinecharacteristic")):
             continue
         # 图签先于按行读：图签命中时整张表只描述一条管线，下面的 BOM 行不是管线。
-        title_block = _extract_title_block_pipeline(state, parse_result, table)
+        # 按签名重建的表已经是一条管线一行，不是图签；拿图签逻辑读会把表头格子错配成「标签：值」。
+        title_block = None if table.get("reconstructedFrom") else _extract_title_block_pipeline(state, parse_result, table)
         if title_block:
             output.append(title_block)
             continue

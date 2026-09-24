@@ -216,6 +216,36 @@ signatures:
       columns: [管线号, 管道名称, 规格, 介质, 介质状态, 起点, 终点, 设计温度, 设计压力, 工作温度, 工作压力,
                 隔热材料, 保温厚度, 外防护, 试压介质, 试验压力MPa, 清洗吹扫介质, 管道长度, 管道级别]
 
+# 交工資料裡的「壓力管道匯總表」：橫向表格直著掃描（逆時針 90°），form_tables 轉正後
+# 每條管線一行。供 R14 管道特性與逐管線事實讀取，欄名沿用 R14 的別名。
+- businessSchema: pipeline_summary
+  evidence: >-
+    七項目快照（2026-09-23）GDLNG 交工資料 20260623104730.pdf 第 4 頁「压力管道汇总表」
+    掃描件（macOS Vision），片段逐字：管道名称 | 管道编号 | 管道 级别 | 材质 | 介质 |
+    管道规格：公称直径（mm） 公称壁厚（mm） | 管道长度（m） | 起止点：起点 终点 |
+    设计条件：温度 压力 MPa | 工作条件：温度 压力 MPa | 备注（图号）；兩條管線 PL8303、PL8306，
+    終點「四区交／换站」折成兩行。
+  form:
+    title: '压力管道汇总表'
+    rowKey: 管道编号
+    rowKeyPattern: '^[A-Z]{1,5}-?\d'
+    columns:
+    - {name: 管道名称, label: 管道名称}
+    - {name: 管道编号, label: 管道编号}
+    - {name: 管道级别, label: 级别}
+    - {name: 材质, label: 材质}
+    - {name: 介质, label: 介质}
+    - {name: 公称直径, label: 公称直径}
+    - {name: 公称壁厚, label: 公称壁厚}
+    - {name: 管道长度, label: 管道长度}
+    - {name: 起点, label: 起点}
+    - {name: 终点, label: 终点}
+    - {name: 设计温度, label: 温度, occurrence: 1}
+    - {name: 设计压力, label: 压力, occurrence: 1}
+    - {name: 工作温度, label: 温度, occurrence: 2}
+    - {name: 工作压力, label: 压力, occurrence: 2}
+    - {name: 备注, label: 备注}
+
 # 2026-09-10：這裡原本還有一條 ndt_plan_items 簽名，表頭取自生產庫的
 # 「介质 | 公称直径 | 检测比例 | 管道号」。逐張追來源後撤掉了：那 13 張表的
 # tableId 全是 TABLE-PARSE-FDE-*，內容逐字相同（PL8301/PL8302、天然气、DN100、

@@ -96,3 +96,63 @@ def test_rebuilt_rows_become_project_pipelines_with_their_source():
     assert {(item["pipelineId"], item["pipelineGrade"], item["designPressureMPa"], item["minimumTestPressureMPa"])
             for item in pipelines} == {("LS-04012-50-M1B", "GC2", 1.25, 1.88), ("LS-0011", "GC2", 1.25, 1.88)}
     assert pipelines[0]["medium"] == "蒸汽" and pipelines[0]["source"]["fileName"] == "设计说明书.pdf"
+
+
+def _frag(text, x0, y0, x1, y1, confidence=1.0):
+    return {"id": f"S-{x0}-{y0}", "pageNo": 4, "text": text, "bbox": [x0, y0, x1, y1], "confidence": confidence}
+
+
+# GDLNG 交工資料第 4 頁「压力管道汇总表」：直著掃描，終點「四区交／换站」折成兩行（真實座標）。
+SUMMARY_PAGE = [
+    _frag("压力管道汇总表", 60, 360, 79, 488), _frag("备注", 125, 51, 138, 77), _frag("（图号）", 137, 46, 149, 84, 0.5),
+    _frag("QX201903S", 167, 43, 182, 93, 0.5), _frag("13-Y-07", 181, 43, 197, 87),
+    _frag("QX201903S-", 197, 35, 214, 95, 0.5), _frag("13-Y-07", 214, 44, 229, 86),
+    _frag("工作条件", 115, 108, 130, 158), _frag("压力", 137, 103, 152, 127), _frag("MPa", 149, 103, 160, 128, 0.5),
+    _frag("0.5", 175, 105, 189, 127, 0.5), _frag("0.5", 207, 105, 221, 127, 0.5),
+    _frag("温度", 135, 136, 153, 164, 0.5), _frag("常温", 175, 136, 189, 165, 0.5), _frag("常温", 207, 137, 221, 164, 0.5),
+    _frag("MPa", 149, 172, 163, 199), _frag("设计条件", 115, 179, 130, 229), _frag("压力", 136, 174, 152, 198),
+    _frag("0.55", 172, 174, 191, 199, 0.5), _frag("0.55", 204, 174, 222, 199, 0.3),
+    _frag("温度", 136, 208, 152, 234, 0.5), _frag("50", 176, 214, 189, 230), _frag("50", 207, 214, 222, 231),
+    _frag("四区交", 167, 246, 182, 283), _frag("四区交", 199, 246, 214, 283, 0.5), _frag("终点", 142, 251, 156, 278),
+    _frag("换站", 183, 252, 198, 278, 0.5), _frag("换站", 215, 251, 230, 278, 0.5), _frag("起止点", 115, 270, 130, 307),
+    _frag("P8301A", 175, 292, 189, 335), _frag("P8301B", 207, 292, 221, 335), _frag("起点", 142, 300, 156, 327),
+    _frag("管道长度", 135, 341, 152, 391), _frag("（m）", 149, 354, 163, 379, 0.5), _frag("101", 176, 356, 188, 377),
+    _frag("90", 208, 358, 222, 374), _frag("管道规格", 113, 398, 130, 447), _frag("公称壁厚", 136, 399, 150, 448, 0.5),
+    _frag("（mm）", 149, 407, 160, 440, 0.3), _frag("公称直径", 136, 455, 150, 504), _frag("（mm）", 149, 464, 160, 497, 0.3),
+    _frag("100", 175, 469, 189, 491), _frag("100", 208, 469, 221, 492),
+    _frag("化工品（丙醇）", 175, 509, 189, 585, 0.5), _frag("化工品（丙醇）", 207, 509, 221, 585, 0.5),
+    _frag("介质", 131, 535, 145, 563), _frag("材质", 131, 598, 144, 624), _frag("20", 176, 603, 189, 619),
+    _frag("20", 208, 603, 221, 619), _frag("管道", 125, 641, 138, 666), _frag("级别", 137, 641, 150, 666),
+    _frag("GC2", 175, 640, 189, 667), _frag("GC2", 207, 640, 221, 667), _frag("管道编号", 130, 674, 144, 723),
+    _frag("PL8303", 175, 678, 188, 722, 0.5), _frag("PL8306", 207, 678, 221, 722),
+    _frag("管道名称", 130, 734, 144, 783), _frag("卸车管线", 175, 734, 189, 784), _frag("卸车管线", 207, 735, 221, 784),
+]
+
+
+def _state_with(fragments):
+    return {"documents": [{"id": "D", "projectId": "P", "fileName": "交工资料.pdf", "currentVersionId": "V"}],
+            "versions": [{"id": "V", "documentId": "D"}],
+            "ocr_parse_results": [{"id": "O", "documentVersionId": "V", "status": "success", "fragments": fragments}]}
+
+
+def test_a_sideways_summary_table_gives_each_pipeline_with_its_design_conditions():
+    pipelines = {item["pipelineId"]: item for item in build_project_pipelines(_state_with(SUMMARY_PAGE), "P")}
+    assert set(pipelines) == {"PL8303", "PL8306"}
+    first = pipelines["PL8303"]
+    assert (first["pipelineGrade"], first["designPressureMPa"], first["designTemperatureC"], first["medium"]) == (
+        "GC2", 0.55, 50.0, "化工品（丙醇）")
+    assert first["source"]["pageNo"] == 4
+
+
+def test_a_cell_wrapped_onto_two_lines_is_read_whole_not_cut():
+    from libs.ocr.form_tables import form_tables
+    from libs.review_orchestrator.r14_facts import _pipeline_form_signatures
+
+    ((table, _signature),) = form_tables({"fragments": SUMMARY_PAGE}, list(_pipeline_form_signatures()))
+    assert [row["终点"] for row in table["normalizedRows"]] == ["四区交 换站", "四区交 换站"]
+    assert [row["备注"] for row in table["normalizedRows"]] == ["QX201903S 13-Y-07", "QX201903S- 13-Y-07"]
+
+
+def test_an_html_pipeline_table_is_read_as_rows_not_as_a_drawing_title_block():
+    state = _state_with([{"pageNo": 1, "text": DRAWING_HTML}])
+    assert [item["pipelineId"] for item in build_project_pipelines(state, "P")] == ["NG-01"]
