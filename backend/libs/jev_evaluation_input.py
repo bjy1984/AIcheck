@@ -16,11 +16,18 @@ from libs.review_orchestrator.jev_state import (
 )
 
 
-def approved_ocr_text(state: dict[str, Any], scope: dict[str, Any]) -> tuple[str, str]:
-    """Return (status, whole OCR); never return a partial document as ready."""
-    requested_order = [str(item) for item in scope.get("inputDocumentVersionIds") or [] if item]
+def approved_ocr_text(state: dict[str, Any], scope: dict[str, Any], *,
+                      versions: list[str] | None = None) -> tuple[str, str]:
+    """Return (status, whole OCR); never return a partial document as ready.
+
+    `versions` 只取冻结范围内的一部分资料（逐份核对事实时用）；冻结的运行本身原样校验，
+    不改写它的版本清单，页范围照旧生效。
+    """
+    frozen = [str(item) for item in scope.get("inputDocumentVersionIds") or [] if item]
+    requested_order = frozen if versions is None else [str(item) for item in versions if item]
     requested = set(requested_order)
-    if not requested or len(requested) != len(requested_order):
+    if (not requested or len(requested) != len(requested_order) or len(set(frozen)) != len(frozen)
+            or not requested <= set(frozen)):
         return "invalid_scope", ""
     try:
         # This validates that the requested version belongs to the project and

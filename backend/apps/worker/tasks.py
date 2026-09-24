@@ -74,7 +74,7 @@ from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.mineru_client import MinerUClient, MinerUError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
-from libs.jev_document_routing import classify_document_node_routing
+from libs.jev_document_routing import ROUTING_REQUEST_BUDGET_SECONDS, classify_document_node_routing
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
     OFFLINE_EMBEDDING_MODEL,
@@ -632,7 +632,9 @@ def classify_document_material(
     lambda _self, _project_id, _document_id, version_id, tenant_id=None: (
         f"{tenant_id or current_tenant_id()}:{version_id}"
     ),
-    idle_timeout_seconds=180,
+    # 锁连接在外呼期间一直空闲：空闲超时要盖过最坏的串行请求耗时（10 批×(3×15s+7s)=520s），
+    # 再留余量给前后的 OCR 刷新与落库；超时过短会在任务仍在跑时放掉锁，重复投递就会重复外呼。
+    idle_timeout_seconds=int(ROUTING_REQUEST_BUDGET_SECONDS) + 60,
 )
 def classify_document_node_jev_shadow(
     self, project_id: str, document_id: str, version_id: str,

@@ -12,19 +12,25 @@ import os
 from collections import defaultdict
 from typing import Any
 
+from libs.jev_evaluation_input import approved_ocr_text
 from libs.material_targeting import MANUAL_REJECTED, review_points_for_project
 from libs.review_orchestrator.jev_client import (
     MODEL,
+    RETRY_DELAYS_SECONDS,
     ask_jev,
     batch_jev_questions,
     jev_stage_enabled,
 )
-from libs.review_orchestrator.jev_state import scoped_document_states
 
 CONFIDENCE_FLOOR = 0.90
 QUESTION_BATCH_SIZE = 30
 MAX_ROUTING_BATCHES = 10
 MAX_TEMPLATE_CHARS = 6_000
+# ask_jev 默认的单次请求超时。一批最坏：首次加每个退避各一次尝试都超时，再加退避等待；
+# 批次串行，整份文件最多 MAX_ROUTING_BATCHES 批。worker 的路由锁必须撑过这段时间。
+JEV_REQUEST_TIMEOUT_SECONDS = 15.0
+ROUTING_REQUEST_BUDGET_SECONDS = MAX_ROUTING_BATCHES * (
+    JEV_REQUEST_TIMEOUT_SECONDS * (len(RETRY_DELAYS_SECONDS) + 1) + sum(RETRY_DELAYS_SECONDS))
 _CRITERIA = {
     "yes": "正文有该节点所需的实质资料，非仅提及名称。",
     "no": "正文无关或仅顺带提及。",
@@ -139,15 +145,16 @@ def classify_document_node_routing(
         return {**base, "status": "stale_version"}
     run_scope = {"projectId": project_id, "tenantId": document.get("tenantId"),
                  "nodeId": "待归属", "inputDocumentVersionIds": [version_id]}
-    try:
-        states, _, overlong_versions = scoped_document_states(repo.state, run_scope, [])
-    except ValueError:
+    # 只送 OCR 正文：工程号、节点、文件名、内部版本号都留在本地，也免得按文件名归类。
+    # 与路由评测、预检脚本走同一条已批准的出站入口。
+    ocr_status, full_state = approved_ocr_text(repo.state, run_scope)
+    if ocr_status == "invalid_scope":
         return {**base, "status": "invalid_scope"}
-    if overlong_versions:
-        return {**base, "status": "overlong_document", "overlongDocumentVersionIds": overlong_versions}
-    if states and states[0]["ocrNotReady"]:
+    if ocr_status == "overlong_document":
+        return {**base, "status": "overlong_document", "overlongDocumentVersionIds": [version_id]}
+    if ocr_status == "ocr_not_ready":
         return {**base, "status": "ocr_not_ready"}
-    if not states or not states[0]["hasOcrText"]:
+    if ocr_status != "ready":
         return {**base, "status": "no_ocr_text"}
     business_pack_id = str(project.get("businessPackId") or "engineering_inspection_v1")
     points = routing_question_points(
@@ -161,7 +168,6 @@ def classify_document_node_routing(
     questions, node_ids, overlong_templates = _node_questions(points)
     if not questions:
         return {**base, "status": "no_templates", "overlongNodeIds": overlong_templates}
-    full_state = states[0]["state"]
     rejected_nodes = {
         int(item.get("nodeId") or 0)
         for item in repo.state.get("node_evidence_links", [])

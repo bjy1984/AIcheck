@@ -2075,8 +2075,10 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
-            *([("本次节点建议由 Jev 按 Qwen 生成的题目和选项作出。只解释其选择并引用已有依据；"
-                "规则工具结果用于人工对照，若两者冲突要明确写出，不得改写 Jev 的选择。")]
+            # Jev 只作分歧提示（见 jev_primary.attach_hints）：结论以规则工具结果为准，不能让草稿替 Jev 立场。
+            *([("jevDecision 只是 Jev 的逐项分歧提示，不是节点建议或原子项结论的来源。"
+                "节点建议与各原子项结论一律以规则工具结果（ruleResults）为准，不得依据 Jev 的选择改写；"
+                "两者不一致时只写明分歧所在的原子项，提示人工核对。")]
               if (review_run.get("jevDecision") or {}).get("status") == "completed" else []),
             *output_contract.prompt_format_requirements(complete=bool(workstation)),
             "When more evidence is needed, plan only with availableRuntimeTools "
