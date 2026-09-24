@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from libs.review_orchestrator import execution, jev_fact_check, jev_primary, output_contract
+from libs.review_plugins import jev as jev_plugin
 
 R02_SUSPECT = ("安装（施工）单位许可证·有效期截止日=2024-09-07"
                "（原文第1页：「特种设备生产许可证有效期：2024年9月7日至2028年9月6日」）")
@@ -102,7 +103,7 @@ def test_graph_step_records_fact_check_and_output_shows_it_on_the_certificate_ch
     _enabled(monkeypatch)
     monkeypatch.setattr(jev_fact_check, "ask_jev", lambda _text, questions, **_kw: {
         key: {"type": "choice", "choice": "no" if key == "f0" else "yes", "confidence": 0.97} for key in questions})
-    monkeypatch.setattr(execution, "decide_node", lambda *_a, **_k: {"status": "no_semantic_checks", "atomic": []})
+    monkeypatch.setattr(jev_plugin, "decide_node", lambda *_a, **_k: {"status": "no_semantic_checks", "atomic": []})
     monkeypatch.setattr(execution.repo, "state", _state())
     records = [{"result": "failed", "ruleCode": "R02", "atomicCheckResults": [
         {"atomicCheckId": "AC-R02-02", "result": "failed", "toolResults": []}]}]

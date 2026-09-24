@@ -35,6 +35,7 @@ from apps.api.project_registration_routes import project_registration_router
 from apps.api.project_rule_routes import project_rule_router
 from apps.api.report_template_routes import report_template_router
 from apps.api.review_handoff_routes import router as review_handoff_router
+from apps.api.review_plugin_routes import review_plugin_router
 from apps.api.routes import (
     binding_node_ids,
     document_node_ids,
@@ -1480,6 +1481,8 @@ app.include_router(important_review_router)
 app.include_router(important_review_router, prefix="/api")
 app.include_router(inspection_service_router)
 app.include_router(inspection_service_router, prefix="/api")
+app.include_router(review_plugin_router)
+app.include_router(review_plugin_router, prefix="/api")
 app.include_router(batch_review_router)
 app.include_router(batch_review_router, prefix="/api")
 app.include_router(auto_review_router)

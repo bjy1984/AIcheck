@@ -7,17 +7,22 @@ an OCR change cannot silently reuse stale row labels.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import os
 from typing import Any
 
 from libs.review_input_data import latest_selected_parses
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_state import scoped_document_states
+from libs.review_orchestrator.table_rows import (  # noqa: F401 -- 舊呼叫方相容
+    CONFIDENCE_FLOOR,
+    TABLE_TYPE_CHOICES,
+    business_rows,
+    table_hash,
+    usable_prediction,
+)
+from libs.review_plugins.settings import run_plugin_enabled
 
-CONFIDENCE_FLOOR = 0.90
 _TABLE_TYPES = {
     "mech_test": "力学性能或拉伸、弯曲、冲击等试验结果表",
     "wps_parameters": "焊接工艺参数表，记录电流、电压、焊速、层间温度等",
@@ -32,38 +37,13 @@ _ROW_ROLES = {
     "template": "待填写的空白模板或占位符；没有实际对象、参数或结果值",
 }
 
-# A narrow, deterministic fallback for the one-cell title/blank-template rows
-# seen in WPS tables. It does not rely on a sub-0.90 model prediction.
-_SECTION_TITLES = {
-    "焊接参数", "焊接工艺参数", "焊接工艺评定", "力学性能", "力学性能试验",
-    "拉伸试验", "弯曲试验", "冲击试验", "热处理参数", "热处理工艺参数",
-}
-_EMPTY_TEMPLATE_MARKERS = {"待填写", "待填", "未填写", "请填写", "空白模板"}
-
-
-def _obvious_nondata_row(row: dict[str, Any]) -> bool:
-    if len(row) < 2:
-        return False
-    values = [str(value).strip() for value in row.values() if value is not None and str(value).strip()]
-    if len(values) != 1:
-        return False
-    return values[0] in _SECTION_TITLES | _EMPTY_TEMPLATE_MARKERS
-
-
-def table_hash(table: dict[str, Any]) -> str:
-    body = json.dumps(table, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":"))
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
-
-
 def classify_review_tables(state: dict[str, Any], review_run: dict[str, Any]) -> dict[str, Any]:
     if int(review_run.get("nodeId") or 0) not in range(24, 35):
         return {"model": MODEL, "status": "not_applicable", "tables": {}, "overlongDocumentVersionIds": []}
     if not jev_stage_enabled("TABLE_CLASSIFICATION"):
         return {"model": MODEL, "status": "disabled", "tables": {}, "overlongDocumentVersionIds": []}
-    # 与事实核对、主判定同一份审查运行白名单：未批准外呼的工程不组装、不外发，按固定解析处理。
-    allowed = {item.strip() for item in os.getenv("AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS", "").split(",")
-               if item.strip()}
-    if str(review_run.get("projectId") or "") not in allowed:
+    # 这次审查选用了 Jev 插件（建立时冻结）才外发；没有快照的旧审查沿用原白名单。
+    if not run_plugin_enabled(review_run, "jev"):
         return {"model": MODEL, "status": "project_not_approved_for_jev", "tables": {},
                 "overlongDocumentVersionIds": []}
     document_states, conflicts, overlong = scoped_document_states(state, review_run, [])
@@ -105,38 +85,4 @@ def classify_review_tables(state: dict[str, Any], review_run: dict[str, Any]) ->
     return output
 
 
-def usable_prediction(table: dict[str, Any], prediction: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not isinstance(prediction, dict) or prediction.get("tableHash") != table_hash(table):
-        return None
-    table_type = prediction.get("tableType") or {}
-    confidence = table_type.get("confidence")
-    if table_type.get("choice") not in _TABLE_TYPES or not isinstance(confidence, (int, float)) or confidence < CONFIDENCE_FLOOR:
-        return None
-    return prediction
-
-
-def business_rows(parse: dict[str, Any], classifications: dict[str, Any] | None,
-                  *, skip_mechanical: bool = False) -> list[dict[str, Any]]:
-    """Keep only confidently classified data rows; fall back row by row."""
-    version_id = str(parse.get("documentVersionId") or "")
-    valid_snapshot = classifications if isinstance(classifications, dict) and classifications.get("model") == MODEL else {}
-    predictions = valid_snapshot.get("tables", {}).get(version_id, [])
-    output: list[dict[str, Any]] = []
-    for table_index, table in enumerate(parse.get("tables") or [], 1):
-        if not isinstance(table, dict):
-            continue
-        rows = [row for row in table.get("normalizedRows") or table.get("records") or [] if isinstance(row, dict)]
-        predicted = next((item for item in predictions if item.get("tableIndex") == table_index
-                          and usable_prediction(table, item)), None)
-        if skip_mechanical and predicted and predicted["tableType"]["choice"] == "mech_test":
-            # Test specimens are not WPS/PQR records, but may be essential to R26 certificates.
-            continue
-        for row_index, row in enumerate(rows):
-            if _obvious_nondata_row(row):
-                continue
-            role = (predicted.get("rowRoles") or [])[row_index] if predicted and row_index < len(predicted.get("rowRoles") or []) else {}
-            confidence = role.get("confidence") if isinstance(role, dict) else None
-            if isinstance(role, dict) and role.get("choice") in {"header", "subtitle", "template"} and isinstance(confidence, (int, float)) and confidence >= CONFIDENCE_FLOOR:
-                continue
-            output.append(row)
-    return output
+assert set(_TABLE_TYPES) == TABLE_TYPE_CHOICES, "表類選項要與核心 table_rows 一致"

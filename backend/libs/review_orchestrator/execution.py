@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
+from libs import review_plugins
 from libs.audit_runtime import (
     audit_runtime_for_run,
     audit_runtime_public_config,
@@ -81,20 +82,6 @@ from libs.review_orchestrator.failure_policy import (
     review_failure_retryable,
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
-from libs.review_orchestrator.jev_fact_check import (
-    certificate_fact_items,
-    check_facts,
-    design_fact_items,
-    record_fact_items,
-    welder_fact_items,
-)
-from libs.review_orchestrator.jev_primary import (
-    attach_hints,
-    author_node_questions,
-    decide_node,
-    jev_hint_summary,
-)
-from libs.review_orchestrator.jev_tables import classify_review_tables
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.ndt_fact_builders import NDT_FACT_BUILDERS
 from libs.review_orchestrator.node_fact_overrides import (
@@ -155,6 +142,7 @@ from libs.review_page_scope import (
     prompt_grounding,
     task_page_ranges,
 )
+from libs.review_plugins.settings import any_plugin_enabled, freeze_review_plugins
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.review_tools.condition_execution import (
@@ -347,11 +335,8 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
     task_queues = review_task_queues()
     tenant_id = tenant_id_for_record(ai_run) or current_tenant_id()
     workflow_id = review_workflow_id(tenant_id, review_run_id)
-    previous_jev_queue = next((item.get("jevQueueStatus") for item in repo.state.get("review_runs", [])
-                               if isinstance(item, dict) and item.get("projectId") == ai_run.get("projectId")
-                               and tenant_id_for_record(item) == tenant_id
-                               and str(item.get("nodeId")) == str(ai_run.get("nodeId"))
-                               and isinstance(item.get("jevQueueStatus"), dict)), {})
+    # 审查插件（Jev 等）按工程设定选用，建立时冻结；只做加强，不改结论。
+    plugin_snapshot = freeze_review_plugins(repo.require_project(str(ai_run.get("projectId") or "")) or {})
     now = server_time()
     audit_runtime = audit_runtime_public_config(mode=str(ai_run.get("auditInputMode") or "") or None)
     clause_package_snapshot = repo.clone(ai_run.get("clausePackageSnapshot"))
@@ -419,6 +404,8 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
                 "promptVersion": ai_run.get("promptVersion"),
                 "ruleSetVersion": ai_run.get("ruleVersion"),
                 "atomicCheckToolBindingSetHash": ai_run.get("atomicCheckToolBindingSetHash"),
+                # 只在选用了插件时进哈希：没选用的审查与改造前哈希一致，既有任务照常复用。
+                **({"reviewPlugins": plugin_snapshot} if any_plugin_enabled(plugin_snapshot) else {}),
             }
         ),
         "outputHash": None,
@@ -428,8 +415,9 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "startedAt": None,
         "finishedAt": None,
         "revision": 1,
-        "jevQueuePrevious": repo.clone(previous_jev_queue),
+        "reviewPluginSnapshot": plugin_snapshot,
     }
+    review_plugins.on_run_created(record, repo.state)
     if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() in {"1", "true", "yes"}:
         project = repo.require_project(str(record.get("projectId") or "")) or {}
         initialize_run_workstation(record, project, current_published_rule_for_node(
@@ -1375,7 +1363,7 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                     "primaryResult": suggested_verdict or None,
                     "deterministicResult": deterministic_verdict or None,
                     "decisionSource": "rule_engine",
-                    **jev_hint_summary(review_run.get("jevDecision"), review_run.get("jevFactCheck")),
+                    **review_plugins.suggestion_fields(review_run),
                     "opinionDraft": opinion["text"],
                     "opinionSource": opinion["source"],
                     "confidence": opinion["confidence"],
@@ -1499,14 +1487,9 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
     ensure_document_sources(review_run, repo.state)
     audit_runtime = audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
-    if node_key == "classify_ocr_tables":
-        if review_run.get("workflowEngine") != "temporal":
-            return {"status": "skipped_inline"}
-        classified = classify_review_tables(repo.state, review_run)
-        review_run["jevTableClassifications"] = classified
-        return {"status": classified["status"], "classifiedTables": sum(
-            len(rows) for rows in classified["tables"].values()),
-            "overlongDocumentVersionIds": classified["overlongDocumentVersionIds"]}
+    if node_key in review_plugins.PLUGIN_STEPS:
+        # 审查插件的步骤（Jev 表格行分类、出题、分歧提示与事实核对）：没选用就略过。
+        return review_plugins.run_plugin_step(node_key, repo.state, review_run, context)
     if node_key == "load_context":
         project = repo.require_project(str(review_run.get("projectId")))
         node = repo.node(str(review_run.get("projectId")), int(review_run.get("nodeId") or 0))
@@ -1841,35 +1824,6 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "linkedClauseIds": linked_clause_ids,
             "certificateVerificationCount": verification_tool.get("verificationCount", 0),
         }
-    if node_key == "qwen_compose_jev_questions":
-        project = context.get("project") or {}
-        pack = project.get("businessPackSnapshot") or load_business_pack(
-            str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
-        plan = author_node_questions(repo.state, review_run, context.get("ruleResults") or [], pack,
-                                     business_facts=context.get("businessFacts"))
-        review_run["jevQuestionPlan"] = plan
-        return {"status": plan["status"], "questionCount": len(plan.get("questions") or []),
-                "model": plan.get("model")}
-    if node_key == "jev_decision":
-        project = context.get("project") or {}
-        pack = project.get("businessPackSnapshot") or load_business_pack(
-            str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
-        original = context.get("ruleResults") or []
-        decision = decide_node(repo.state, review_run, original, pack,
-                               review_run.get("jevQuestionPlan"), business_facts=context.get("businessFacts"))
-        review_run["jevDecision"] = decision
-        # Jev 只加提示、不改结论：规则、平台核验和计算结果照旧往下走。
-        context["ruleResults"] = attach_hints(original, decision)
-        # 规则用到的证书、设计试验要求等事实请 Jev 对原文核一遍：答「否」只标记抽取可疑（R02-02 那一类）。
-        fact_check = check_facts(repo.state, review_run,
-                                 certificate_fact_items(context.get("certificateVerification"))
-                                 + design_fact_items(context.get("businessFacts"), original)
-                                 + welder_fact_items(context.get("businessFacts"), original)
-                                 + record_fact_items(context.get("businessFacts"), original))
-        review_run["jevFactCheck"] = fact_check
-        return {"status": decision["status"], "decisionCount": len(decision["atomic"]),
-                "disagreementCount": len(decision.get("disagreementAtomicCheckIds") or []),
-                "factCheckStatus": fact_check["status"], "factSuspectCount": len(fact_check.get("suspects") or [])}
     if node_key == "retrieve_knowledge":
         retrieval = retrieve_knowledge_clauses(
             repo.state,
@@ -2075,11 +2029,8 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
-            # Jev 只作分歧提示（见 jev_primary.attach_hints）：结论以规则工具结果为准，不能让草稿替 Jev 立场。
-            *([("jevDecision 只是 Jev 的逐项分歧提示，不是节点建议或原子项结论的来源。"
-                "节点建议与各原子项结论一律以规则工具结果（ruleResults）为准，不得依据 Jev 的选择改写；"
-                "两者不一致时只写明分歧所在的原子项，提示人工核对。")]
-              if (review_run.get("jevDecision") or {}).get("status") == "completed" else []),
+            # 审查插件只作提示（如 Jev 的逐项分歧）：结论以规则工具结果为准。
+            *review_plugins.prompt_requirements(review_run),
             *output_contract.prompt_format_requirements(complete=bool(workstation)),
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
@@ -2094,14 +2045,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
            if review_run.get("inputDocumentPageRanges") else {}),
         "groundingStatus": grounding_input.get("groundingStatus"),
         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
-        **({"jevDecision": {"model": "jev-1.13.0",
-                              "questionAuthorModel": (review_run.get("jevQuestionPlan") or {}).get("actualModel")
-                              or (review_run.get("jevQuestionPlan") or {}).get("model"),
-                              "questionPlanHash": (review_run.get("jevQuestionPlan") or {}).get("questionHash"),
-                              "atomic": [{"atomicCheckId": row.get("atomicCheckId"),
-                                          "choice": row.get("choice"), "confidence": row.get("confidence")}
-                                         for row in (review_run.get("jevDecision") or {}).get("atomic") or []]}}
-           if (review_run.get("jevDecision") or {}).get("status") == "completed" else {}),
+        **review_plugins.prompt_payload(review_run),
         # 压掉嵌套工具输出里的证据引用列表再进提示词。原样给会让单个
         # locate_evidence_fragment 结果占掉 39% 预算（见 rule_result_digest）。
         "ruleResults": compact_rule_results(context.get("ruleResults") or []),

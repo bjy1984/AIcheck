@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from collections import defaultdict
 from typing import Any
 
@@ -21,6 +20,7 @@ from libs.review_orchestrator.jev_client import (
     batch_jev_questions,
     jev_stage_enabled,
 )
+from libs.review_plugins.settings import project_plugin_enabled
 
 CONFIDENCE_FLOOR = 0.90
 QUESTION_BATCH_SIZE = 30
@@ -137,9 +137,8 @@ def classify_document_node_routing(
             or str(document.get("projectId") or "") != project_id
             or str(version.get("documentId") or "") != document_id):
         return {**base, "status": "invalid_scope"}
-    allowed_projects = {item.strip() for item in os.getenv("AICHECK_JEV_DOCUMENT_ROUTING_ALLOWED_PROJECTS", "").split(",")
-                        if item.strip()}
-    if project_id not in allowed_projects:
+    # 工程选用了 Jev 插件才外发；没有明确设定的工程沿用原来的文件归属白名单。
+    if not project_plugin_enabled(project, "jev", legacy_env="AICHECK_JEV_DOCUMENT_ROUTING_ALLOWED_PROJECTS"):
         return {**base, "status": "project_not_approved_for_jev"}
     if str(document.get("currentVersionId") or "") != version_id:
         return {**base, "status": "stale_version"}

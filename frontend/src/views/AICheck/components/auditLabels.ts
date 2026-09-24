@@ -734,6 +734,8 @@ const REASON_FRAMES: Array<[string, (stem: string) => string]> = [
 const REASON_STEMS: Record<string, string> = {
   // 检验服务接口（inspection_services）把判定结论本身当 reason 写出。
   evidence_insufficient: '证据不足',
+  // 审查插件（Jev 等）没被本工程选用，对应步骤略过、规则结果照常
+  review_plugin_not_enabled: '本工程未选用该审查插件，已略过',
   ocr_holder_unreliable: 'OCR 识别的持证单位名称不可靠',
   unsupported_scope_profile: '当前许可范围判定口径尚未支持',
   original_with_manufacturer_quality_seal: '原件带制造单位质量章',
