@@ -46,6 +46,16 @@ def _number(value: Any) -> float | None:
         return None
 
 
+def _required_mark(value: Any) -> bool | None:
+    """要求栏：√／✓／是／要求 → True；-／/／×／否／不要求 → False；别的写法判不了。"""
+    text = str(value or "").strip()
+    if text in {"√", "✓", "✔", "是", "要求", "需要"}:
+        return True
+    if text in {"-", "/", "／", "×", "✗", "否", "不要求", "不需要", "无"}:
+        return False
+    return None
+
+
 def _pipeline_from_characteristic(item: dict[str, Any]) -> dict[str, Any]:
     row = item.get("sourceRow") if isinstance(item.get("sourceRow"), dict) else {}
     pipeline = {key: item.get(key) for key in _PIPELINE_KEYS}
@@ -62,6 +72,9 @@ def _pipeline_from_characteristic(item: dict[str, Any]) -> dict[str, Any]:
     pipeline["leakHazard"] = _value(row, "leakHazard", "泄漏危害性", "泄漏危害")
     # 火灾危险性（甲／乙／丙类）只照设计资料写的取，决定静电接地是否适用；不按介质名称猜。
     pipeline["fireHazard"] = _value(row, "fireHazard", "火灾危险性", "火灾危险类别", "火灾危险性类别")
+    # 设计表「介质特性」栏（可燃、有毒、腐蚀……）与「泄漏试验要求」栏（打 √ 即要求）照原文取。
+    pipeline["mediumProperty"] = _value(row, "mediumProperty", "介质特性")
+    pipeline["leakTestRequired"] = _required_mark(_value(row, "leakTestRequired", "泄漏试验要求"))
     pipeline["weldingMethod"] = _value(row, "weldingMethod", "焊接方法")
     pipeline["ndtRatio"] = _value(row, "ndtRatio", "检测比例", "无损检测比例")
     pipeline["source"] = {

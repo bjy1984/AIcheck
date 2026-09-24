@@ -27,19 +27,26 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
+def _fits(count: int, columns: list[str], variant: dict[str, Any]) -> bool:
+    """格數要與葉子欄位數相同；只許少掉簽名宣告可空的結尾欄（例如常空的「备注」）。"""
+    return len(columns) - int(variant.get("optionalTrailing") or 0) <= count <= len(columns)
+
+
 def _table_from_lines(lines: list[str], spec: dict[str, Any], variant: dict[str, Any], start: int,
                       *, page_no: Any, name: str) -> dict[str, Any] | None:
     columns = list(variant["columns"])
     key = re.compile(spec["rowKeyPattern"])
-    rows, quoted, rejected = [], lines[start - 3:start], 0
+    # 引文：兩層表頭（上一行若就是含表名的那行，一併帶上）與收下的數據行，都是 OCR 原文。
+    head = start - 3 if start >= 3 and _compact(spec["title"]) in _compact(lines[start - 3]) else start - 2
+    rows, quoted, rejected = [], lines[head:start], 0
     for line in lines[start:]:
         cells = _tokens(line)
         if not cells or not key.search(cells[0]):
             continue
-        if len(cells) != len(columns):
+        if not _fits(len(cells), columns, variant):
             rejected += 1
             continue
-        rows.append(dict(zip(columns, cells, strict=True)))
+        rows.append(dict(zip(columns, cells, strict=False)))
         quoted.append(line)
     if not rows:
         return None
@@ -63,27 +70,29 @@ def _html_rows(html: str) -> list[list[tuple[str, bool]]]:
     return rows
 
 
+def _variant_for(header: str, sub_header: str, spec: dict[str, Any]) -> dict[str, Any] | None:
+    return next((item for item in spec["variants"] if _compact(header) == _compact(item["header"])
+                 and _compact(sub_header) == _compact(item["subHeader"])), None)
+
+
 def _html_table(html: str, spec: dict[str, Any], *, page_no: Any, name: str) -> dict[str, Any] | None:
     rows = _html_rows(html)
-    for index, row in enumerate(rows[:-2]):
-        texts = [text for text, _span in row if text]
-        if len(texts) != 1 or _compact(texts[0]) != _compact(spec["title"]):
-            continue
-        header = "".join(text for text, _span in rows[index + 1])
-        sub_header = "".join(text for text, _span in rows[index + 2])
-        variant = next((item for item in spec["variants"] if _compact(header) == _compact(item["header"])
-                        and _compact(sub_header) == _compact(item["subHeader"])), None)
+    for index, row in enumerate(rows[:-1]):
+        variant = _variant_for("".join(text for text, _span in row),
+                               "".join(text for text, _span in rows[index + 1]), spec)
         if variant is None:
-            return None
+            continue
         columns, key = list(variant["columns"]), re.compile(spec["rowKeyPattern"])
         records, rejected = [], 0
-        for data in rows[index + 3:]:
+        for data in rows[index + 2:]:
+            while data and not data[-1][0] and not data[-1][1]:
+                data = data[:-1]  # 行尾多出的空格子（MinerU 常補一格）不算欄
             if not data or not key.search(data[0][0]):
                 continue
-            if len(data) != len(columns) or any(span for _text, span in data):
+            if not _fits(len(data), columns, variant) or any(span for _text, span in data):
                 rejected += 1
                 continue
-            records.append(dict(zip(columns, (text for text, _span in data), strict=True)))
+            records.append(dict(zip(columns, (text for text, _span in data), strict=False)))
         if not records:
             return None
         return {"tableId": f"HTML-{name}-{variant['id']}-P{page_no}", "pageNo": page_no, "title": spec["title"],
@@ -93,7 +102,11 @@ def _html_table(html: str, spec: dict[str, Any], *, page_no: Any, name: str) -> 
 
 
 def text_line_tables(parse: dict[str, Any], signature: dict[str, Any]) -> list[dict[str, Any]]:
-    """一份 OCR 結果裡，簽名宣告過的按行文字表格。"""
+    """一份 OCR 結果裡，簽名宣告過的按行文字或 HTML 表格。
+
+    以兩層表頭逐字吻合認表；表名要出現在同一頁（同一個片段）裡——圖紙上表名常夾在
+    圖簽那一行，不一定獨佔一行。
+    """
     spec = signature.get("textLines")
     if not isinstance(spec, dict):
         return []
@@ -102,20 +115,19 @@ def text_line_tables(parse: dict[str, Any], signature: dict[str, Any]) -> list[d
         if not isinstance(fragment, dict):
             continue
         text = str(fragment.get("text") or "")
+        if _compact(spec["title"]) not in _compact(_TAG_RE.sub("", text)):
+            continue
         for match in _HTML_TABLE_RE.finditer(text):
             table = _html_table(match.group(0), spec, page_no=fragment.get("pageNo"), name=signature["businessSchema"])
             if table:
                 tables.append(table)
         lines = [line.strip() for line in text.split("\n")]
-        for index, line in enumerate(lines):
-            if _compact(line) != _compact(spec["title"]) or index + 2 >= len(lines):
+        for index in range(len(lines) - 1):
+            variant = _variant_for(lines[index], lines[index + 1], spec)
+            if variant is None:
                 continue
-            header, sub_header = _compact(lines[index + 1]), _compact(lines[index + 2])
-            for variant in spec["variants"]:
-                if header == _compact(variant["header"]) and sub_header == _compact(variant["subHeader"]):
-                    table = _table_from_lines(lines, spec, variant, index + 3,
-                                              page_no=fragment.get("pageNo"), name=signature["businessSchema"])
-                    if table:
-                        tables.append(table)
-                    break
+            table = _table_from_lines(lines, spec, variant, index + 2,
+                                      page_no=fragment.get("pageNo"), name=signature["businessSchema"])
+            if table:
+                tables.append(table)
     return tables

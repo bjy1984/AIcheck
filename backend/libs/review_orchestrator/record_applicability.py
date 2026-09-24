@@ -1,10 +1,10 @@
 """施工記錄的適用性：按管線號到設計管線事實裡找依據，只宣告「適用」，不宣告「不適用」。
 
 2026-09-24 業務確認的口徑：
-- R66／R67 泄漏試驗：介質有毒或有泄漏危害性（設計資料明寫）即適用；
-- R47 靜電接地：介質火災危險性為甲、乙類或寫明可燃／易燃（設計資料明寫）即適用；
+- R66／R67 泄漏試驗：設計表的泄漏試驗要求打 √，或介質有毒／有泄漏危害性（設計資料明寫）即適用；
+- R47 靜電接地：介質火災危險性為甲、乙類，或設計表寫明介質特性可燃／易燃即適用；
 - 判不了就維持「適用性未知 → 證據不足」，不按不適用放過；介質名稱本身不拿來猜。
-設計文件寫明泄漏試驗或靜電接地要求這一路，要等設計事實能交接到這些節點再接。
+設計文件寫明靜電接地要求這一路，要等設計事實能交接到這些節點再接。
 """
 from __future__ import annotations
 
@@ -44,6 +44,10 @@ def _matching_pipeline(object_id: Any, by_line: dict[str, dict[str, Any]]) -> di
 
 
 def _leak_basis(pipeline: dict[str, Any]) -> str | None:
+    if pipeline.get("leakTestRequired") is True:
+        return "design_leak_test_required"
+    if any(word in str(pipeline.get("mediumProperty") or "") for word in ("有毒", "剧毒", "毒性")):
+        return "medium_toxic"
     flags = medium_hazard_flags(toxicity=pipeline.get("mediumToxicity"), leak_hazard=pipeline.get("leakHazard"),
                                 medium=pipeline.get("medium"))
     if flags["toxic"] is True:
@@ -55,7 +59,10 @@ def _leak_basis(pipeline: dict[str, Any]) -> str | None:
 
 def _grounding_basis(pipeline: dict[str, Any]) -> str | None:
     fire = str(pipeline.get("fireHazard") or "").strip()
-    return "medium_flammable" if fire and _FIRE_CLASS_RE.search(fire) else None
+    if fire and _FIRE_CLASS_RE.search(fire):
+        return "medium_flammable"
+    # 设计表「介质特性」栏明写可燃／易燃，同样是设计资料写明的依据，不是按介质名称猜。
+    return "medium_flammable" if re.search(r"可燃|易燃", str(pipeline.get("mediumProperty") or "")) else None
 
 
 _DOMAINS = {("r47", "staticGrounding"): _grounding_basis,
