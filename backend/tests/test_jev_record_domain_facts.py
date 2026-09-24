@@ -31,3 +31,13 @@ def test_nothing_is_asked_before_an_object_is_chosen_or_without_a_rule_check():
     unselected["r47"]["staticGrounding"]["domains"] = []  # 两条管线未选定时构建器不给 domains
     assert domain_record_fact_items(unselected, RULES) == []
     assert domain_record_fact_items(_facts(47, GROUNDING_PAGE, "PL8306-100"), []) == []
+
+
+def test_coating_and_support_records_are_asked_by_their_own_column_and_object():
+    from tests.test_support_and_installation_records import COATING_PAGE, SUPPORT_PAGE, _run
+
+    coating = domain_record_fact_items(_run(44, COATING_PAGE, "PL8306-100"), RULES)
+    assert [(item["field"], item["value"]) for item in coating] == [("coating.coatingType", "丙烯酸聚氨脂面漆")]
+    support = domain_record_fact_items(_run(55, SUPPORT_PAGE, "PL8306/PS-1"), RULES)
+    assert [(item["field"], item["value"]) for item in support] == [("support.type", "G1,T形支架，BL.2.1m")]
+    assert support[0]["instructions"].startswith("只看这份资料：支架PL8306/PS-1的结构型式、型号、规格是否写为")
