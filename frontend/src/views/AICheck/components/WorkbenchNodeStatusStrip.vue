@@ -106,7 +106,7 @@ const tone = (item: InspectionAuditItem) => TONES[item.status] || 'gray'
 .node-status-list button {
   display: flex;
   gap: 6px;
-  align-items: baseline;
+  align-items: center;
   padding: 4px 10px;
   border: 1px solid #e6edf7;
   border-radius: 999px;
