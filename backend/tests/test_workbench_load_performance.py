@@ -141,3 +141,43 @@ def test_shared_submitted_binding_ids_give_the_same_node_projection() -> None:
             submitted_binding_ids=routes_module.submitted_binding_ids_for(PROJECT_ID, None),
         )
         assert own == shared
+
+
+def test_only_the_file_list_computes_ocr_readiness(monkeypatch) -> None:
+    """已提交资料只要 id，不算 OCR 就绪度（它扫全部资料的全部片段）。节点包只给自己的
+    资料清单算一次——界面要显示；总览一次都不算。线上节点包单次 3.5 秒的大头（2026-09-25）。"""
+    calls: list[str] = []
+    original = routes_module.attach_document_ocr_readiness
+
+    def _counting(document_repo: Any, document: dict[str, Any]):
+        calls.append(str(document.get("id")))
+        return original(document_repo, document)
+
+    monkeypatch.setattr(routes_module, "attach_document_ocr_readiness", _counting)
+    package = client.get(f"/api/projects/{PROJECT_ID}/nodes/24/package", headers=INSPECTION).json()
+    assert package["code"] == 0, package
+    files = package["data"]["projectFiles"]
+    assert sorted(calls) == sorted(str(item["id"]) for item in files), "每份资料只算一次，且只算清单里的"
+    assert all("ocrReadiness" in item for item in files)
+
+    calls.clear()
+    overview = client.get(f"/api/projects/{PROJECT_ID}/inspection/audit-overview", headers=INSPECTION).json()
+    assert overview["code"] == 0, overview
+    assert calls == [], f"总览算了 {len(calls)} 次 OCR 就绪度"
+    rows = routes_module.build_inspection_submitted_document_rows(PROJECT_ID, None)
+    assert all("ocrReadiness" in row for row in rows), "需要展示的调用方照算"
+
+
+def test_node_package_builds_the_project_view_once(monkeypatch) -> None:
+    """节点包自己建了项目视图，又让已提交资料行再建一次：线上每次约 0.7 秒（2026-09-25 剖析）。"""
+    calls: list[str] = []
+    original = repo.project_document_read_view
+
+    def _counting(project_id: str):
+        calls.append(project_id)
+        return original(project_id)
+
+    monkeypatch.setattr(repo, "project_document_read_view", _counting)
+    response = client.get(f"/api/projects/{PROJECT_ID}/nodes/24/package", headers=INSPECTION)
+    assert response.json()["code"] == 0, response.text
+    assert len(calls) <= 1, f"节点包构造了 {len(calls)} 次项目视图"

@@ -5946,7 +5946,7 @@ def build_inspection_submitted_document_rows(
     project_id: str,
     scope: set[int] | None,
     *,
-    document_repo: Any = None,
+    document_repo: Any = None, include_ocr_readiness: bool = True,
 ) -> list[dict[str, Any]]:
     """document_repo 可由调用方传入复用。
 
@@ -6021,7 +6021,8 @@ def build_inspection_submitted_document_rows(
                     existing_row["submittedBindings"],
                 )
                 continue
-            enriched_document = attach_document_ocr_readiness(document_repo, document)
+            # 只要 id 的调用方（总览、节点包）不算 OCR 就绪度：它扫全部资料的全部片段，节点包单次 3.5 秒的大头
+            enriched_document = attach_document_ocr_readiness(document_repo, document) if include_ocr_readiness else document
             latest_submission_by_document[document_id] = submission
             rows_by_document[document_id] = {
                 "documentId": document_id,
@@ -6049,7 +6050,7 @@ def build_inspection_submitted_document_rows(
 
 def submitted_binding_ids_for(project_id: str, scope: set[int] | None, document_repo: Any = None) -> set[str]:
     """已提交资料的绑定 id，与节点无关：总览只算一次（69 个节点各算一遍占总览三分之二耗时，2026-09-25）。"""
-    rows = build_inspection_submitted_document_rows(project_id, scope, document_repo=document_repo)
+    rows = build_inspection_submitted_document_rows(project_id, scope, document_repo=document_repo, include_ocr_readiness=False)
     return {str(binding.get("id") or "") for item in rows for binding in item.get("submittedBindings") or []}
 
 
@@ -6717,7 +6718,7 @@ def node_package(request: Request, project_id: str, node_id: int):
         if document_access_policy.binding_relation_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, effective_project_id, item, document_repo=document_repo)
     ]
     if effective_role == "inspection":
-        submitted_rows = build_inspection_submitted_document_rows(effective_project_id, scope)
+        submitted_rows = build_inspection_submitted_document_rows(effective_project_id, scope, document_repo=document_repo, include_ocr_readiness=False)
         submitted_document_ids = {str(item.get("documentId") or "") for item in submitted_rows}
 
         # 0817 第 8 条：施工方一上传监检就能看见，不再按已提交过滤掉；
