@@ -99,9 +99,13 @@ def test_加载时钉住的记录既不被覆盖也不刷新_baseline():
     source = (
         pathlib.Path(__file__).resolve().parents[1] / "libs" / "db" / "repository.py"
     ).read_text(encoding="utf-8")
-    idx = source.index("def load_review_run_scope_from_sync_postgres")
-    block = source[idx : idx + 6000]
+    # 两个作用域加载器（review-run、会话）共用这一个合并步骤，挡在这里就两处都挡住了。
+    idx = source.index("def _merge_scoped_state_rows")
+    block = source[idx : source.index("\n    def ", idx + 1)]
     assert block.count("object_is_pinned") >= 2, "覆盖与 baseline 两处都要挡"
+    for loader in ("def load_review_run_scope_from_sync_postgres", "def load_review_session_scope_from_sync_postgres"):
+        start = source.index(loader)
+        assert "self._merge_scoped_state_rows(rows)" in source[start : source.index("\n    def ", start + 1)]
 
 
 def test_三条加载路径都要保住钉住的记录():

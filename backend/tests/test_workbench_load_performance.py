@@ -104,3 +104,40 @@ def test_version_marker_survives_so_clients_can_still_detect_changes() -> None:
     assert payload.get("etag")
     if project.get("businessPackSnapshotHash"):
         assert payload.get("businessPackSnapshotHash") == project["businessPackSnapshotHash"]
+
+
+def test_audit_overview_builds_submitted_document_rows_once_not_per_node(monkeypatch) -> None:
+    """已提交资料行与节点无关，却在 69 个节点里各算一遍、每次重算全部资料的 OCR 就绪度。
+
+    2026-09-25 线上剖析：总览 11 秒里约三分之二花在这里。
+    """
+    calls: list[str] = []
+    original = routes_module.build_inspection_submitted_document_rows
+
+    def _counting(project_id: str, *args: Any, **kwargs: Any):
+        calls.append(project_id)
+        return original(project_id, *args, **kwargs)
+
+    monkeypatch.setattr(routes_module, "build_inspection_submitted_document_rows", _counting)
+    response = client.get(
+        f"/api/projects/{PROJECT_ID}/inspection/audit-overview", headers=INSPECTION
+    )
+    assert response.json()["code"] == 0, response.text
+    assert len(calls) == 1, f"audit-overview 算了 {len(calls)} 次已提交资料行，应只算一次"
+
+
+def test_shared_submitted_binding_ids_give_the_same_node_projection() -> None:
+    """共享的已提交绑定 id 与逐节点自己算的结果一致——只省重复计算，不改输出。"""
+    for node_id in (1, 24, 47):
+        own = routes_module.build_inspection_audit_workspace(
+            PROJECT_ID, node_id, scope=None, include_content=False, role="inspection"
+        )
+        shared = routes_module.build_inspection_audit_workspace(
+            PROJECT_ID,
+            node_id,
+            scope=None,
+            include_content=False,
+            role="inspection",
+            submitted_binding_ids=routes_module.submitted_binding_ids_for(PROJECT_ID, None),
+        )
+        assert own == shared
