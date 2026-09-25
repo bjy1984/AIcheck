@@ -454,3 +454,18 @@ def test_证号类别位与证书类型不符时改用原文里唯一相符的�
     item = build_certificate_facts(state, "P-1", 2, ["DV-1"])["certificateFacts"]["certificates"][0]
     assert item["certificateNo"] == "TS1844168-2027"
     assert "certificate_no_ambiguous" in item["extractionWarnings"]
+
+
+def test_截止早于起始是读错了_交人工不判过期():
+    """2026-09-25 业务包升级乾跑：ECD202 储磊资格证读成 2023-11-01 至 2021-11-30，
+    按当日判「已过期」会把 OCR 读错说成不符合。"""
+    inverted = {"certificateNo": "612423199205085216", "holder": "储磊",
+                "validFrom": "2023-11-01", "validUntil": "2021-11-30"}
+    output = check_certificate_validity({"referenceDate": "2026-09-25", "certificates": [inverted]})
+    assert output["result"] == "evidence_insufficient"
+    codes = [item["code"] for item in output["facts"]["certificates"][0]["checks"]]
+    assert codes == ["612423199205085216:validity_dates_consistent"], "日期读错时不再判覆盖/过期"
+
+    # 同一批里另一张真过期的证照样判不符合：只放过读错的那张
+    expired = {"certificateNo": "B", "validFrom": "2019-01-01", "validUntil": "2020-01-01"}
+    assert check_certificate_validity({"referenceDate": "2026-09-25", "certificates": [inverted, expired]})["result"] == "failed"
