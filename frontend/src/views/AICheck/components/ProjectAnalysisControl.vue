@@ -114,15 +114,18 @@ const startPolling = () => {
   void poll()
   pollTimer = setInterval(() => void poll(), 2000)
 }
-const load = async () => {
+// 预览（节点数、文件数、token 估算）只有打开抽屉准备发起时才用得到。后台预取只要运行列表：
+// 页头状态徽标靠它。预览要把全工程拼一遍，线上约 1.4 秒、页面刚打开时被挤到 4.5 秒，
+// 正好压在当前节点加载上（2026-09-25 实测）。
+const load = async (options: { preview?: boolean } = { preview: true }) => {
   if (!props.projectId) return
   loading.value = true
   try {
     const [previewResponse, runsResponse] = await Promise.all([
-      getProjectAnalysisPreviewApi(props.projectId),
+      options.preview ? getProjectAnalysisPreviewApi(props.projectId) : undefined,
       listProjectAnalysisRunsApi(props.projectId)
     ])
-    preview.value = previewResponse.data.preview
+    if (previewResponse) preview.value = previewResponse.data.preview
     activeRun.value = runsResponse.data.items[0]
     // 列表里的是 run 原始记录，没有 progressMode/percent：直接当状态用，
     // 已完成的分析打开抽屉会先显示 0%。先取一次状态视图，再决定是否轮询。
@@ -199,7 +202,7 @@ watch(
     drawerVisible.value = false
     if (!projectId) return
     try {
-      await load()
+      await load({ preview: false })
     } catch {
       // 后台预取失败不弹抽屉错误；用户打开抽屉时会再次加载并看到可操作提示。
     }
