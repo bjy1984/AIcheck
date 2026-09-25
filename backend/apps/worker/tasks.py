@@ -5382,9 +5382,40 @@ AUTO_REVIEW_STATE_KEYS = {
 }
 
 
+# 判断有没有活只需要这四个小集合。四个周期任务每分钟各跑一次，原来不论有没有活都先整库
+# 载入（含 OCR 结果、审查运行等大集合），线上每次 9–28 秒、结果全是空的，常年占住一个核，
+# 把单进程 API 挤慢（2026-09-25 实测节点页）。没活就直接返回，有活照旧。
+AUTO_REVIEW_PROBE_KEYS = {"auto_review_policies", "auto_review_candidates", "auto_review_outbox", "project_review_runs"}
+
+
+def _auto_review_idle(kind: str, now: datetime) -> bool:
+    """只载入小集合，按各任务自己的筛选条件看有没有待办。"""
+    from libs.auto_review import policy_due_for_daily_scan
+
+    load_state(AUTO_REVIEW_PROBE_KEYS)
+
+    def rows(key: str) -> list[dict[str, Any]]:
+        return [row for row in repo.state.get(key) or [] if isinstance(row, dict)]
+
+    if kind == "events":
+        return not any(str(row.get("status") or "") in {"pending", "retry_pending"} for row in rows("auto_review_outbox"))
+    if kind == "scan":
+        return not any(policy_due_for_daily_scan(row, now) for row in rows("auto_review_policies"))
+    if kind == "candidates":
+        return not any(str(row.get("status") or "") == "pending" for row in rows("auto_review_candidates"))
+    if kind == "finalize":
+        return not any(
+            str(row.get("status") or "") in {"running", "partial"} and not row.get("finishedAt")
+            for row in rows("project_review_runs")
+        )
+    raise ValueError(kind)
+
+
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_consume_evidence_events")
 def auto_review_consume_evidence_events(self) -> dict[str, Any]:
+    if _auto_review_idle("events", datetime.now(UTC)):
+        return {"completedEventIds": [], "skippedEventIds": [], "createdCandidateIds": []}
     load_state(AUTO_REVIEW_STATE_KEYS)
     result = consume_auto_review_events(repo.state, now=datetime.now(UTC))
     # 单例必须显式排除：flush 默认带上全部单例，而 scoped load 没有加载
@@ -5404,6 +5435,8 @@ def auto_review_consume_evidence_events(self) -> dict[str, Any]:
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_scan_due_projects")
 def auto_review_scan_due_projects(self) -> dict[str, Any]:
+    if _auto_review_idle("scan", datetime.now(UTC)):
+        return {"dueProjectIds": [], "createdCandidateIds": []}
     load_state(AUTO_REVIEW_STATE_KEYS)
     result = scan_due_auto_review_projects(repo.state, now=datetime.now(UTC))
     flush_state(
@@ -5480,6 +5513,8 @@ def _start_auto_review_node(project_id: str, node_id: int, metadata: dict[str, A
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_start_pending_candidates")
 def auto_review_start_pending_candidates(self) -> dict[str, Any]:
+    if _auto_review_idle("candidates", datetime.now(UTC)):
+        return {"projectReviewRunIds": [], "skippedCandidateIds": []}
     load_state()
     result = dispatch_pending_auto_review_candidates(
         repo.state,
@@ -5497,6 +5532,8 @@ def auto_review_start_pending_candidates(self) -> dict[str, Any]:
 )
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_finalize_project_runs")
 def auto_review_finalize_project_runs(self) -> dict[str, Any]:
+    if _auto_review_idle("finalize", datetime.now(UTC)):
+        return {"finalizedProjectReviewRunIds": [], "runningProjectReviewRunIds": []}
     load_state(AUTO_REVIEW_STATE_KEYS)
     result = finalize_running_project_review_runs(repo.state)
     flush_state(
