@@ -63,6 +63,6 @@ def test_列表接口用的是原文哈希():
     source = (
         pathlib.Path(__file__).resolve().parents[1] / "apps" / "api" / "routes.py"
     ).read_text(encoding="utf-8")
-    idx = source.index('"payload": slim_event_payload(')
+    idx = source.index('"payload": repo.clone(slim_event_payload(')
     block = source[idx : idx + 500]
     assert 'stable_hash_payload(item.get("details") or {})' in block

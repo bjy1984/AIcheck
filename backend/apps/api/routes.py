@@ -6047,6 +6047,12 @@ def build_inspection_submitted_document_rows(
     )
 
 
+def submitted_binding_ids_for(project_id: str, scope: set[int] | None, document_repo: Any = None) -> set[str]:
+    """已提交资料的绑定 id，与节点无关：总览只算一次（69 个节点各算一遍占总览三分之二耗时，2026-09-25）。"""
+    rows = build_inspection_submitted_document_rows(project_id, scope, document_repo=document_repo)
+    return {str(binding.get("id") or "") for item in rows for binding in item.get("submittedBindings") or []}
+
+
 def build_inspection_audit_workspace(
     project_id: str,
     node_id: int,
@@ -6055,6 +6061,7 @@ def build_inspection_audit_workspace(
     include_content: bool,
     role: str | None = None,
     document_repo: Any = None,
+    submitted_binding_ids: set[str] | None = None,
 ) -> dict[str, Any] | None:
     project = repo.require_project(project_id)
     node = repo.node(project_id, node_id)
@@ -6062,15 +6069,8 @@ def build_inspection_audit_workspace(
         return None
     if scope is not None and node_id not in scope:
         return None
-
-    submitted_rows = build_inspection_submitted_document_rows(
-        project_id, scope, document_repo=document_repo
-    )
-    submitted_binding_ids = {
-        str(binding.get("id") or "")
-        for item in submitted_rows
-        for binding in item.get("submittedBindings") or []
-    }
+    if submitted_binding_ids is None:
+        submitted_binding_ids = submitted_binding_ids_for(project_id, scope, document_repo)
     project_bindings = [
         binding
         for binding in repo.bindings_for_project(project_id)
@@ -6536,6 +6536,7 @@ def inspection_audit_overview(
     normalized_status = str(status or "").strip()
     # 项目级视图构造一次给全部节点复用，而不是每个节点各建一次
     shared_document_repo = repo.project_document_read_view(project_id)
+    shared_binding_ids = submitted_binding_ids_for(project_id, scope, shared_document_repo)
     overview_role = effective_role_for_request(request)[0]
     for node in nodes:
         projection = build_inspection_audit_workspace(
@@ -6545,6 +6546,7 @@ def inspection_audit_overview(
             include_content=False,
             role=overview_role,
             document_repo=shared_document_repo,
+            submitted_binding_ids=shared_binding_ids,
         )
         if not projection:
             continue
@@ -12046,7 +12048,7 @@ def list_review_session_messages(
 ):
     ensure_review_session_state()
     # live read：其他 worker 后台线程finalize的消息需先从共享存储刷新（进程级节流）。
-    refresh_review_live_state_shared()
+    refresh_review_live_state_shared(session_id=session_id)
     session = repo.find_one("review_sessions", session_id)
     if not session:
         return fail(errors.NOT_FOUND, request)
@@ -12488,23 +12490,25 @@ REVIEW_SESSION_EVENT_LIVE_KEYS = {
 }
 
 _REVIEW_LIVE_REFRESH_LOCK = threading.Lock()
-_REVIEW_LIVE_REFRESH_MONOTONIC = 0.0
+_REVIEW_LIVE_REFRESH_MONOTONIC: dict[str, float] = {}
 
 
-def refresh_review_live_state_shared(min_interval_seconds: float = 0.4) -> None:
-    """进程级共享节流的 live-read 刷新。
+def refresh_review_live_state_shared(min_interval_seconds: float = 0.4, *, session_id: str = "") -> None:
+    """进程级共享节流的 live-read 刷新；给了 session_id 就只读这个会话相关的行。
 
-    N 个 SSE / 轮询客户端共享一次 DB 读取（节流窗口内直接命中本地快照），
-    避免客户端数量线性放大 DB 压力。无 Postgres 时为 no-op。
+    N 个 SSE / 轮询客户端共享一次 DB 读取（节流窗口内直接命中本地快照）。整表重载
+    review_runs/review_events 单次 12.6 秒（2026-09-25），会话页只需要自己那几行。
     """
-    global _REVIEW_LIVE_REFRESH_MONOTONIC
     if repo.sync_postgres is None:
         return
-    now = time.monotonic()
+    now, key = time.monotonic(), session_id or "*"
     with _REVIEW_LIVE_REFRESH_LOCK:
-        if now - _REVIEW_LIVE_REFRESH_MONOTONIC < min_interval_seconds:
+        if now - _REVIEW_LIVE_REFRESH_MONOTONIC.get(key, 0.0) < min_interval_seconds:
             return
-        _REVIEW_LIVE_REFRESH_MONOTONIC = now
+        _REVIEW_LIVE_REFRESH_MONOTONIC[key] = now
+    if session_id:
+        repo.load_review_session_scope_from_sync_postgres(session_id)
+        return
     refresh_state_from_postgres_for_live_read(REVIEW_SESSION_EVENT_LIVE_KEYS)
 
 
@@ -12577,9 +12581,8 @@ def review_session_event_snapshot(session_id: str, session: dict[str, Any]) -> l
                 "title": item.get("title"),
                 "sessionId": session_id,
                 "reviewRunId": item.get("reviewRunId"),
-                "payload": slim_event_payload(
-                    str(item.get("eventType") or ""), repo.clone(item.get("details") or {})
-                ),
+                # 先折叠再复制：大事件每条约 42 KB，整份深拷贝后再丢掉是白费。
+                "payload": repo.clone(slim_event_payload(str(item.get("eventType") or ""), item.get("details") or {})),
                 # hash 照原文算——折叠只是传输层的事，指纹要指向真正的内容，
                 # 否则拿摘要算出来的哈希会让人以为内容变了。
                 "payloadHash": stable_hash_payload(item.get("details") or {}),
@@ -12613,7 +12616,7 @@ def list_review_session_events(
 ):
     ensure_review_session_state()
     # live read：后台线程/其他 worker 追加的事件先从共享存储刷新再出快照（进程级节流）。
-    refresh_review_live_state_shared()
+    refresh_review_live_state_shared(session_id=session_id)
     session = repo.find_one("review_sessions", session_id)
     if not session:
         return fail(errors.NOT_FOUND, request)
@@ -12664,7 +12667,7 @@ def stream_review_session_events(
             # 共享持久化存储 live read：跨 worker 的事件通过 Postgres 汇聚；
             # 同步 DB 读取放到线程池且进程级节流，N 个客户端共享一次刷新。
             if repo.sync_postgres is not None:
-                await asyncio.to_thread(refresh_review_live_state_shared)
+                await asyncio.to_thread(refresh_review_live_state_shared, session_id=session_id)
             ordered = review_session_event_snapshot(session_id, session)
             fresh = [
                 item
@@ -12693,7 +12696,7 @@ def stream_review_session_events(
 def list_review_session_agent_executions(request: Request, session_id: str):
     """按会话查询持久化 Agent 执行记录（审计/恢复用）。"""
     ensure_review_session_state()
-    refresh_review_live_state_shared()
+    refresh_review_live_state_shared(session_id=session_id)
     session = repo.find_one("review_sessions", session_id)
     if not session:
         return fail(errors.NOT_FOUND, request)

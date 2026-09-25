@@ -5659,43 +5659,107 @@ class InMemoryRepository:
                         if self.object_is_pinned(collection, self.persistence_object_id(collection, item, index))
                         or not (self.persistence_object_id(collection, item, index) in dependency_ids.get(key, set())
                                 or (key not in dependency_ids and item.get("documentVersionId") in dependency_versions))]
-            rows = list({(collection, object_id): (collection, object_id, payload) for collection, object_id, payload in rows}.values())
-            self.sync_postgres.commit()
+            self._merge_scoped_state_rows(rows)
 
-            state_key_by_collection = {value: key for key, value in STATE_COLLECTIONS.items()}
-            grouped: dict[str, list[dict[str, Any]]] = {}
-            for collection_name, _, payload in rows:
-                state_key = state_key_by_collection.get(str(collection_name))
-                if state_key:
-                    grouped.setdefault(state_key, []).append(self.clone(payload))
-            for state_key, incoming in grouped.items():
-                collection_name = STATE_COLLECTIONS[state_key]
-                # 钉住的记录不许被库里的副本顶掉——那会把别的请求正在改的对象丢了。
-                incoming = [
-                    item
-                    for index, item in enumerate(incoming)
-                    if not self.object_is_pinned(
-                        collection_name, self.persistence_object_id(collection_name, item, index)
-                    )
-                ]
-                incoming_ids = {
-                    self.persistence_object_id(collection_name, item, index)
-                    for index, item in enumerate(incoming)
-                }
-                retained = [
-                    item
-                    for index, item in enumerate(self.state.get(state_key, []))
-                    if self.persistence_object_id(collection_name, item, index) not in incoming_ids
-                ]
-                self.state[state_key] = [*incoming, *retained]
-            self._persistence_baseline.update(
-                {
-                    (str(collection_name), str(object_id)): self.canonical_persistence_payload(payload)
-                    for collection_name, object_id, payload in rows
-                    if not self.object_is_pinned(str(collection_name), str(object_id))
-                }
+    def _merge_scoped_state_rows(self, rows: list[Any]) -> None:
+        """把作用域加载读到的行并进内存：按对象 id 顶替，钉住的记录与其 baseline 都不动。
+
+        调用方持有 _sync_postgres_lock。
+        """
+        rows = list({(collection, object_id): (collection, object_id, payload) for collection, object_id, payload in rows}.values())
+        self.sync_postgres.commit()
+
+        state_key_by_collection = {value: key for key, value in STATE_COLLECTIONS.items()}
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for collection_name, _, payload in rows:
+            state_key = state_key_by_collection.get(str(collection_name))
+            if state_key:
+                grouped.setdefault(state_key, []).append(self.clone(payload))
+        for state_key, incoming in grouped.items():
+            collection_name = STATE_COLLECTIONS[state_key]
+            # 钉住的记录不许被库里的副本顶掉——那会把别的请求正在改的对象丢了。
+            incoming = [
+                item
+                for index, item in enumerate(incoming)
+                if not self.object_is_pinned(
+                    collection_name, self.persistence_object_id(collection_name, item, index)
+                )
+            ]
+            incoming_ids = {
+                self.persistence_object_id(collection_name, item, index)
+                for index, item in enumerate(incoming)
+            }
+            retained = [
+                item
+                for index, item in enumerate(self.state.get(state_key, []))
+                if self.persistence_object_id(collection_name, item, index) not in incoming_ids
+            ]
+            self.state[state_key] = [*incoming, *retained]
+        self._persistence_baseline.update(
+            {
+                (str(collection_name), str(object_id)): self.canonical_persistence_payload(payload)
+                for collection_name, object_id, payload in rows
+                if not self.object_is_pinned(str(collection_name), str(object_id))
+            }
+        )
+        self.apply_tenant_scope()
+
+    def load_review_session_scope_from_sync_postgres(self, session_id: str) -> None:
+        """会话级 live read：只合并这个会话、它的消息/事件/Agent 执行，以及同节点运行的事件。
+
+        轮询 /review-sessions/{id}/events 原先每次整表重载 review_runs（77 MB）与
+        review_events（51 MB），2026-09-25 实测单次 12.6 秒，节点页要等它。
+        会话相关行都带 sessionId，走 payload 的 GIN 索引；运行事件走 reviewRunId 索引。
+        """
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            tenant_id = configured_tenant_id()
+            session_collections = [
+                STATE_COLLECTIONS[key] for key in ("review_session_events", "review_messages", "agent_executions")
+            ]
+            rows = self.sync_postgres.execute(
+                """
+                SELECT collection, object_id, payload
+                FROM aicheck_state
+                WHERE tenant_id = %s
+                  AND (
+                       (collection = %s AND object_id = %s)
+                       OR (collection = ANY(%s) AND payload @> %s::jsonb)
+                  )
+                """,
+                (tenant_id, STATE_COLLECTIONS["review_sessions"], session_id, session_collections,
+                 json.dumps({"sessionId": session_id})),
+            ).fetchall()
+            session = next(
+                (payload for collection, _, payload in rows if collection == STATE_COLLECTIONS["review_sessions"]),
+                None,
             )
-            self.apply_tenant_scope()
+            if session:
+                run_rows = self.sync_postgres.execute(
+                    """
+                    SELECT collection, object_id, payload
+                    FROM aicheck_state
+                    WHERE tenant_id = %s AND collection = %s AND payload @> %s::jsonb
+                    """,
+                    (tenant_id, STATE_COLLECTIONS["review_runs"], json.dumps({"projectId": session.get("projectId")})),
+                ).fetchall()
+                run_rows = [row for row in run_rows if str(row[2].get("nodeId")) == str(session.get("nodeId"))]
+                run_ids = [str(row[2].get("reviewRunId") or row[1]) for row in run_rows]
+                rows.extend(run_rows)
+                if run_ids:
+                    rows.extend(
+                        self.sync_postgres.execute(
+                            """
+                            SELECT collection, object_id, payload
+                            FROM aicheck_state
+                            WHERE tenant_id = %s AND collection = %s AND payload ->> 'reviewRunId' = ANY(%s)
+                            """,
+                            (tenant_id, STATE_COLLECTIONS["review_events"], run_ids),
+                        ).fetchall()
+                    )
+            self._merge_scoped_state_rows(rows)
 
     def load_ocr_task_state_from_sync_postgres(self, document_id: str, version_id: str) -> None:
         """Load only state needed by one OCR task, excluding unrelated historical parse payloads."""

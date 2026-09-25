@@ -2594,12 +2594,16 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
   if (!options.silent) loading.value = true
   try {
     if (!options.silent) pageIssue.value = undefined
-    const [contextRes, summaryRes, treeRes] = await Promise.all([
+    // 节点页不等次要数据（2026-09-25 实测：审计总览逐个组装 69 个节点要 11 秒，
+    // 以前等它和工作台汇总都回来才开始加载当前节点，打开节点要十几秒）。
+    // 当前节点只需要 context 与目录树；汇总和次要数据并行在后台加载，
+    // 当前节点一到就撤掉整页 loading。函数仍等全部完成再返回，调用方语义不变。
+    const summaryPromise = getWorkbenchSummaryApi(activeProjectId.value, role.value)
+    const [contextRes, treeRes] = await Promise.all([
       getWorkbenchContextApi(activeProjectId.value, role.value),
-      getWorkbenchSummaryApi(activeProjectId.value, role.value),
       getProjectTreeApi(activeProjectId.value)
     ])
-    if (!contextRes || !summaryRes || !treeRes) {
+    if (!contextRes || !treeRes) {
       pageIssue.value = {
         type: 'forbidden',
         title: '工作台加载失败',
@@ -2611,7 +2615,6 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
       return
     }
     context.value = contextRes.data
-    summary.value = summaryRes.data
     treeGroups.value = treeRes.data.groups
     const requestedNodeId = options.preserveSelection
       ? activeNodeId.value
@@ -2626,20 +2629,24 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
           ? 'node'
           : 'overview'
     }
+    let secondary: Promise<unknown>
     if (role.value === 'ndt') {
       reports.value = []
       archiveItems.value = []
       inspectionAuditOverview.value = undefined
       inspectionSubmittedDocuments.value = undefined
-      await loadNdtData()
+      secondary = loadNdtData()
     } else {
-      await Promise.all([
+      secondary = Promise.all([
         loadReportArchive(),
         loadNdtData(),
         loadInspectionAuditOverview(),
         loadInspectionSubmittedDocuments()
       ])
     }
+    // 先挂上，免得节点加载期间次要数据失败成了未处理的 rejection；下面照旧 await 抛出。
+    secondary.catch(() => undefined)
+    summaryPromise.catch(() => undefined)
     if (loadableNodeId) {
       activeNodeId.value = loadableNodeId
       await loadNodePackage(loadableNodeId)
@@ -2650,6 +2657,21 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
       dateComparisons.value = []
       inspectionAuditWorkspace.value = undefined
     }
+    if (!options.silent) loading.value = false
+    const summaryRes = await summaryPromise
+    if (!summaryRes) {
+      pageIssue.value = {
+        type: 'forbidden',
+        title: '工作台加载失败',
+        message: getAicheckErrorMessage(
+          undefined,
+          '接口返回失败，可能是当前角色无权访问或服务暂不可用。'
+        )
+      }
+      return
+    }
+    summary.value = summaryRes.data
+    await secondary
     if (!pageIssue.value) {
       pageIssue.value = undefined
     }
