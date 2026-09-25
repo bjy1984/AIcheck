@@ -98,17 +98,18 @@ class PipelineFactsConflict(IntegrationServiceError):
                          reason="REVIEW_PIPELINE_FACTS_CONFLICT")
 
 
-def _reject_conflicting_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
+def _conflicting_fields(candidates: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     conflicts = []
     for pipeline_id, rows in candidates.items():
-        fields = set().union(*(row.keys() for row in rows)) - {"pipelineId", "lineNo", "source", "evidence"}
+        fields = set().union(*(row.keys() for row in rows)) - {"pipelineId", "lineNo", "source", "evidence",
+                                                                "fieldConflicts"}
         for field in sorted(fields):
             populated = [row for row in rows if row.get(field) not in (None, "")]
             if populated and any(row[field] != populated[0][field] for row in populated[1:]):
                 conflicts.append({"pipelineId": pipeline_id, "field": field,
                                   "sources": [{"value": row[field], "source": row["source"]} for row in populated]})
-    if conflicts:
-        raise PipelineFactsConflict(conflicts)
+    return conflicts
+
 
 def _completeness(pipeline: dict[str, Any]) -> int:
     return sum(1 for key in ("pipelineGrade", "designPressureMPa", "designTemperatureC", "material", "specification") if pipeline.get(key) not in (None, ""))
@@ -143,7 +144,14 @@ def build_project_pipelines(state: dict[str, Any], project_id: str, *, review_ru
             if existing is None or _completeness(pipeline) > _completeness(existing):
                 by_line[key] = pipeline
     if review_run is not None:
-        _reject_conflicting_candidates(candidates)
+        # 冲突栏位当「未知」交人工，其余照审（2026-09-25 业务确认）。原来整次复核 409 停下，
+        # 页面上却没有修正入口——ECD202 施工图第 32 页 OCR 在空白格里编出两行（A07/A08 配上
+        # A06 的「甲苯」），整个工程的正式复核因此全部失败。不替人挑哪一行：冲突栏位置空、
+        # 各来源的值都记下；用到它的检查拿不到值就是证据不足。与行序无关。
+        for conflict in _conflicting_fields(candidates):
+            pipeline = by_line[conflict["pipelineId"]]
+            pipeline[conflict["field"]] = None
+            pipeline.setdefault("fieldConflicts", []).append(conflict)
     return list(by_line.values())
 
 
@@ -162,6 +170,9 @@ def merge_project_pipelines(
     project = dict(project)
     project["pipelines"] = pipelines
     project["pipelineCount"] = len(pipelines)
+    conflicts = [item for pipeline in pipelines for item in pipeline.get("fieldConflicts") or []]
+    if conflicts:
+        project["pipelineFieldConflicts"] = conflicts
     grades = list(dict.fromkeys(item["pipelineGrade"] for item in pipelines if item.get("pipelineGrade")))
     if scoped or (grades and not project.get("pipelineGrades")):
         project["pipelineGrades"] = grades

@@ -93,11 +93,8 @@ def _scoped_run(state):
 
 
 def test_scoped_pipeline_conflicts_cannot_be_hidden_by_richer_row_or_order():
+    """冲突栏位当「未知」交人工，其余照审（2026-09-25 业务确认）：不替人挑、不因行序变，也不再整次停下。"""
     from copy import deepcopy
-
-    import pytest
-
-    from libs.review_orchestrator.pipeline_facts import PipelineFactsConflict
 
     for reverse in (False, True):
         state = _state()
@@ -107,27 +104,26 @@ def test_scoped_pipeline_conflicts_cannot_be_hidden_by_richer_row_or_order():
             rows.reverse()
         before = deepcopy(state)
         run = _scoped_run(state)
-        with pytest.raises(PipelineFactsConflict) as error:
-            merge_project_pipelines(state, run, {"project": {"pipelines": [{"pipelineId": "OLD"}]}})
-        assert error.value.reason == "REVIEW_PIPELINE_FACTS_CONFLICT"
-        conflict = error.value.conflicts[0]
-        assert conflict["pipelineId"] == "PL-101" and conflict["field"] == "designPressureMPa"
+        merged = merge_project_pipelines(state, run, {"project": {"pipelines": [{"pipelineId": "OLD"}]}})
+        pl101 = next(row for row in merged["project"]["pipelines"] if row["pipelineId"] == "PL-101")
+        assert pl101["designPressureMPa"] is None, "冲突的值不替人挑"
+        (conflict,) = pl101["fieldConflicts"]
+        assert conflict["field"] == "designPressureMPa"
         assert {item["value"] for item in conflict["sources"]} == {1.6, 2.5}
         assert all(item["source"]["documentVersionId"] == "V-DESIGN" for item in conflict["sources"])
+        assert pl101["pipelineGrade"] == "GC1", "没冲突的栏位照常"
+        assert merged["project"]["pipelineFieldConflicts"] == [conflict]
         assert state == before
 
 
 def test_scoped_conflicts_check_all_candidates_even_if_richest_row_has_no_value():
-    import pytest
-
-    from libs.review_orchestrator.pipeline_facts import PipelineFactsConflict
-
     state = _state()
     rows = state["ocr_parse_results"][0]["tables"][0]["normalizedRows"]
     rows.extend([{"管线号": "PL-101", "毒性程度": "高度危害"}, {"管线号": "PL-101", "毒性程度": "中度危害"}])
-    with pytest.raises(PipelineFactsConflict) as error:
-        build_project_pipelines(state, "P-1", review_run=_scoped_run(state))
-    assert error.value.conflicts[0]["field"] == "mediumToxicity"
+    (pl101,) = [row for row in build_project_pipelines(state, "P-1", review_run=_scoped_run(state))
+                if row["pipelineId"] == "PL-101"]
+    assert pl101["mediumToxicity"] is None
+    assert [item["field"] for item in pl101["fieldConflicts"]] == ["mediumToxicity"]
 
 
 def test_scoped_identical_and_complementary_rows_and_unselected_conflicts():
@@ -141,12 +137,8 @@ def test_scoped_identical_and_complementary_rows_and_unselected_conflicts():
     assert build_project_pipelines(state, "P-1")[0]["designPressureMPa"] == 1.6
 
 
-def test_runtime_context_stops_on_pipeline_conflict_without_retry(monkeypatch):
-    import pytest
-
+def test_runtime_context_continues_with_the_conflicting_field_unknown(monkeypatch):
     from libs.review_orchestrator import execution
-    from libs.review_orchestrator.failure_policy import review_failure_retryable
-    from libs.review_orchestrator.pipeline_facts import PipelineFactsConflict
 
     state = _state()
     state["ocr_parse_results"][0]["tables"][0]["normalizedRows"][1]["设计压力"] = "99"
@@ -154,7 +146,8 @@ def test_runtime_context_stops_on_pipeline_conflict_without_retry(monkeypatch):
     monkeypatch.setattr(execution.repo, "require_project", lambda *_: {})
     monkeypatch.setattr(execution.repo, "node", lambda *_: {})
     context = {}
-    with pytest.raises(PipelineFactsConflict) as error:
-        execution.run_step(_scoped_run(state), "load_context", context)
-    assert not review_failure_retryable(error.value)
-    assert "businessFacts" not in context
+    execution.run_step(_scoped_run(state), "load_context", context)
+    project = context["businessFacts"]["project"]
+    pl101 = next(row for row in project["pipelines"] if row["pipelineId"] == "PL-101")
+    assert pl101["designPressureMPa"] is None
+    assert project["pipelineFieldConflicts"][0]["field"] == "designPressureMPa"

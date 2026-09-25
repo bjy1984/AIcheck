@@ -207,3 +207,23 @@ def test_material_class_is_not_taken_as_the_pipeline_grade_and_marks_become_flag
     first = pipelines["A01-PL-02"]
     assert (first["pipelineGrade"], first["mediumProperty"], first["leakTestRequired"]) == ("GC2", "可燃", True)
     assert first["designPressureMPa"] == 0.275 and first["minimumTestPressureMPa"] == 0.413
+
+
+def test_ocr_invented_rows_leave_only_the_conflicting_field_unknown():
+    """2026-09-25 ECD202 施工图第 32 页：原图 8 行，OCR 在空白格里又编出 A07/A08 两行（配上 A06 的甲苯），
+    整个工程的正式复核因「管线资料冲突」全部失败。现在只把冲突栏位置空交人工，其余照审。"""
+    from libs.review_document_scope import freeze_document_scope
+
+    page = TANK_AREA + """
+A06-PL-02 Φ89x3.0 M1E GC2 甲苯 液态 可燃 LP7111 ST7106 常温 0.25 60 0.275 - - - 水 0.413 RT10% III级 √ 水
+A07-PL-02 Φ89x3.0 M1E GC2 乙酸异丙酯 液态 可燃 LP7113 ST7107 常温 0.25 60 0.275 - - - 水 0.413 RT10% III级 √ 水
+A07-PL-02 Φ89x3.0 M1E GC2 甲苯 液态 可燃 LP7111 ST7106 常温 0.25 60 0.275 - - - 水 0.413 RT10% III级 √ 水"""
+    state = _state_with([{"pageNo": 32, "text": page}])
+    run = {"projectId": "P", "nodeId": 1, "inputDocumentVersionIds": ["V"]}
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    pipelines = {item["pipelineId"]: item for item in build_project_pipelines(state, "P", review_run=run)}
+    assert set(pipelines) == {"A01-PL-02", "A02-PL-02", "A06-PL-02", "A07-PL-02"}
+    assert pipelines["A07-PL-02"]["medium"] is None
+    assert [item["field"] for item in pipelines["A07-PL-02"]["fieldConflicts"]] == ["medium"]
+    assert pipelines["A07-PL-02"]["designPressureMPa"] == 0.275, "没冲突的栏位照常"
+    assert pipelines["A06-PL-02"]["medium"] == "甲苯" and "fieldConflicts" not in pipelines["A06-PL-02"]
