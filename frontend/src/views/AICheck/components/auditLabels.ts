@@ -949,6 +949,7 @@ export const checkCodeLabels: Record<string, string> = {
   witness_type_accepted: '见证方式符合要求',
   all_values_equal: '三处单位名一致',
   not_expired_on_reference_date: '证书在参考日未过期',
+  validity_dates_consistent: '有效期起止日期一致（截止不早于起始）',
   scope_covers_required: '许可范围覆盖所需级别',
   valid_from_before_period_start: '生效日早于开工',
   valid_until_after_period_end: '有效期晚于完工',
