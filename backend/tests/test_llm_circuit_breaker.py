@@ -112,3 +112,12 @@ def test_欠费402一次就熔断_冷却拉长(fake_redis, monkeypatch) -> None:
     with pytest.raises(IntegrationServiceError) as exc_info:
         breaker.ensure_closed(host)
     assert exc_info.value.reason == "LLM_CIRCUIT_OPEN"
+
+
+def test_额度用尽的429一次就熔断_普通限流不会(fake_redis, monkeypatch) -> None:
+    quota = IntegrationServiceError("Qwen official API", "chat.completions", status_code=429, reason="INSUFFICIENT_QUOTA")
+    breaker.record_failure("token-plan.example", quota)
+    assert fake_redis.ttl("llm:breaker:token-plan.example:open") == 1800
+    limited = IntegrationServiceError("Qwen official API", "chat.completions", status_code=429)
+    breaker.record_failure("other.example", limited)
+    assert fake_redis.ttl("llm:breaker:other.example:open") == -2, "普通限流仍按窗口计数"

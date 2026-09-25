@@ -219,3 +219,37 @@ def test_非限流错误不重试(monkeypatch):
     with pytest.raises(IntegrationServiceError):
         client.chat_sync([{"role": "user", "content": "x"}], model="project-review-large")
     assert len(calls) == 1
+
+
+def _quota_exhausted() -> IntegrationServiceError:
+    return IntegrationServiceError("Qwen official API", "chat.completions", status_code=429, reason="INSUFFICIENT_QUOTA")
+
+
+def test_额度用尽的429不重试_直接转移(monkeypatch):
+    """2026-09-25：Token Plan 额度用完回 429 insufficient_quota，每次都白等三轮退避。"""
+    client = _client(monkeypatch)
+    slept: list[float] = []
+    monkeypatch.setenv("AICHECK_LLM_RATE_LIMIT_BACKOFF_SECONDS", "5")
+    monkeypatch.setattr(qwen_runtime.time, "sleep", slept.append)
+    providers: list[object] = []
+
+    def fake_official(messages, role_or_model, _provider=None, **kwargs):
+        providers.append(_provider)
+        if _provider is None:
+            raise _quota_exhausted()
+        return {"id": "RESP-FB"}
+
+    monkeypatch.setattr(client, "_official_chat_sync", fake_official)
+    result = client.chat_sync([{"role": "user", "content": "x"}], model="project-review-large")
+    assert providers[0] is None and providers[1] is not None and len(providers) == 2
+    assert slept == []
+    assert result["id"] == "RESP-FB"
+
+
+def test_串流失败时从响应体取错误码() -> None:
+    import httpx
+
+    body = b'{"error":{"message":"Your token-plan quota has been exhausted.","code":"insufficient_quota"}}'
+    response = httpx.Response(429, content=body)
+    assert qwen_runtime._error_code(response) == "INSUFFICIENT_QUOTA"
+    assert qwen_runtime._error_code(httpx.Response(429, content=b"not json")) is None
