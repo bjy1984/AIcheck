@@ -275,6 +275,13 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
         if valid_until is None:
             status = "evidence_insufficient"
             cert_checks.append(check(f"{label}:valid_until_present", False, None, "present"))
+        elif valid_from is not None and valid_until < valid_from:
+            # 截止早于起始是读错了（2026-09-25：储磊资格证读成 2023-11-01 至 2021-11-30），
+            # 拿读错的日期判「已过期」就是把 OCR 错误说成不符合。交人工，不判日期覆盖。
+            status = "evidence_insufficient"
+            cert_checks.append(
+                check(f"{label}:validity_dates_consistent", False, valid_until.isoformat(), f">= {valid_from.isoformat()}")
+            )
         else:
             end_target = period_end or reference
             covers_end = valid_until >= end_target
