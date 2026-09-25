@@ -63,7 +63,8 @@ def test_设计许可证事实从字段与正文里抽齐():
     assert "GC1" in item["scopes"]
     assert any(ev["quotedText"].startswith("有效期至") for ev in item["evidence"])
     assert cert["expectedHolder"] == "广东政和工程有限公司"
-    assert cert["period"] == {"periodStart": "2025-04-01", "periodEnd": "2026-04-30", "referenceDate": cert["period"]["referenceDate"]}
+    assert cert["period"] == {"periodStart": "2025-04-01", "periodEnd": "2026-04-30",
+                              "referenceDate": cert["period"]["referenceDate"], "referenceDateSource": "business_today"}
     # 旧绑定表的命名也镜像了一份
     assert facts["designLicense"]["validUntil"] == "2028-01-17"
     assert facts["designLicense"]["holderName"] == "广东政和工程有限公司"
@@ -466,6 +467,24 @@ def test_截止早于起始是读错了_交人工不判过期():
     codes = [item["code"] for item in output["facts"]["certificates"][0]["checks"]]
     assert codes == ["612423199205085216:validity_dates_consistent"], "日期读错时不再判覆盖/过期"
 
-    # 同一批里另一张真过期的证照样判不符合：只放过读错的那张
+    # 同一批里另一张在施工期内真过期的证照样判不符合：只放过读错的那张
     expired = {"certificateNo": "B", "validFrom": "2019-01-01", "validUntil": "2020-01-01"}
-    assert check_certificate_validity({"referenceDate": "2026-09-25", "certificates": [inverted, expired]})["result"] == "failed"
+    period = {"periodStart": "2025-03-01", "periodEnd": "2025-12-31"}
+    assert check_certificate_validity({**period, "certificates": [inverted, expired]})["result"] == "failed"
+
+
+def test_没有施工期时今天过期交人工_有施工期才判不符合():
+    """2026-09-25 业务确认：项目没填施工起止，只能拿当日比；当日过期不等于施工期间无效。
+    ECD202 任志国资格证读成 2022-11-01～2022-11-30，按当日判成了不符合。"""
+    cert = {"certificateNo": "C", "holder": "任志国", "validFrom": "2022-11-01", "validUntil": "2022-11-30"}
+    without_period = check_certificate_validity(
+        {"referenceDate": "2026-09-25", "referenceDateSource": "business_today", "certificates": [cert]}
+    )
+    assert without_period["result"] == "evidence_insufficient"
+    assert "construction_period_missing_using_reference_date" in without_period["warnings"]
+    with_period = check_certificate_validity({"periodStart": "2025-03-01", "periodEnd": "2025-12-31", "certificates": [cert]})
+    assert with_period["result"] == "failed"
+    # 调用方明确指定的核验日期（独立核验服务）不是兜底，照常判不符合
+    assert check_certificate_validity({"referenceDate": "2026-09-22", "certificates": [cert]})["result"] == "failed"
+    # 节点复核的事实里带着来源标记
+    assert check_certificate_validity({"certificates": [cert]})["result"] == "evidence_insufficient"

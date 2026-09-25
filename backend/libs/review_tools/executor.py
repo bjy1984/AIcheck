@@ -502,6 +502,7 @@ def build_tool_arguments(
         arguments.setdefault("periodStart", period.get("periodStart") or read_fact(facts, "project.constructionStart"))
         arguments.setdefault("periodEnd", period.get("periodEnd") or read_fact(facts, "project.plannedConstructionEnd"))
         arguments.setdefault("referenceDate", period.get("referenceDate"))
+        arguments.setdefault("referenceDateSource", period.get("referenceDateSource"))
         arguments.setdefault("expectedHolder", cert_facts.get("expectedHolder"))
         if profile in {
             "r01_design_license_period",
