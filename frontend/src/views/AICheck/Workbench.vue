@@ -353,6 +353,12 @@ const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
 const activeInspectionWorkspaceView = ref<InspectionWorkspaceView>(
   resolveInspectionWorkspaceView(route.query.view)
 )
+// 重要节点审查页第一次打开才挂载：以前用 v-show 常驻，一进工作台就去拉配置、文件和轮询
+// （线上约 2.8 秒、106 KB），跟当前节点抢单进程 API（2026-09-25 实测）。打开过就保留，切走不丢状态。
+const importantReviewVisited = ref(activeInspectionWorkspaceView.value === 'important')
+watch(activeInspectionWorkspaceView, (view) => {
+  if (view === 'important') importantReviewVisited.value = true
+})
 const workbenchMainRef = ref<HTMLElement>()
 const workbenchPageTransitionPhase = ref<'idle' | 'leaving' | 'hidden' | 'entering'>('idle')
 let workbenchPageTransitionTimer: number | undefined
@@ -2594,11 +2600,11 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
   if (!options.silent) loading.value = true
   try {
     if (!options.silent) pageIssue.value = undefined
-    // 节点页不等次要数据（2026-09-25 实测：审计总览逐个组装 69 个节点要 11 秒，
-    // 以前等它和工作台汇总都回来才开始加载当前节点，打开节点要十几秒）。
-    // 当前节点只需要 context 与目录树；汇总和次要数据并行在后台加载，
-    // 当前节点一到就撤掉整页 loading。函数仍等全部完成再返回，调用方语义不变。
-    const summaryPromise = getWorkbenchSummaryApi(activeProjectId.value, role.value)
+    // 当前节点优先，汇总与次要数据等它到了再发（2026-09-25 实测）。
+    // 审计总览逐个组装 69 个节点；以前等它和工作台汇总都回来才加载当前节点，要十几秒。
+    // 改成并行也不够：API 是单进程，同时来的请求互相分 CPU，节点链路（目录树、节点包、
+    // 节点工作区，单独约 3.4 秒）被拖到 11 秒。所以先只要 context 与目录树，加载当前节点、
+    // 撤掉整页 loading，再发汇总和次要数据。函数仍等全部完成再返回，调用方语义不变。
     const [contextRes, treeRes] = await Promise.all([
       getWorkbenchContextApi(activeProjectId.value, role.value),
       getProjectTreeApi(activeProjectId.value)
@@ -2629,6 +2635,17 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
           ? 'node'
           : 'overview'
     }
+    if (loadableNodeId) {
+      activeNodeId.value = loadableNodeId
+      await loadNodePackage(loadableNodeId)
+    } else {
+      activeNodeId.value = 0
+      nodePackage.value = undefined
+      standardReferences.value = []
+      dateComparisons.value = []
+      inspectionAuditWorkspace.value = undefined
+    }
+    const summaryPromise = getWorkbenchSummaryApi(activeProjectId.value, role.value)
     let secondary: Promise<unknown>
     if (role.value === 'ndt') {
       reports.value = []
@@ -2644,19 +2661,8 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
         loadInspectionSubmittedDocuments()
       ])
     }
-    // 先挂上，免得节点加载期间次要数据失败成了未处理的 rejection；下面照旧 await 抛出。
+    // 先挂上，免得等汇总时次要数据失败成了未处理的 rejection；下面照旧 await 抛出。
     secondary.catch(() => undefined)
-    summaryPromise.catch(() => undefined)
-    if (loadableNodeId) {
-      activeNodeId.value = loadableNodeId
-      await loadNodePackage(loadableNodeId)
-    } else {
-      activeNodeId.value = 0
-      nodePackage.value = undefined
-      standardReferences.value = []
-      dateComparisons.value = []
-      inspectionAuditWorkspace.value = undefined
-    }
     if (!options.silent) loading.value = false
     const summaryRes = await summaryPromise
     if (!summaryRes) {
@@ -5394,7 +5400,7 @@ onBeforeUnmount(() => {
           ]"
         >
           <ImportantReview
-            v-if="role === 'inspection' && activeProjectId"
+            v-if="role === 'inspection' && activeProjectId && importantReviewVisited"
             v-show="activeInspectionWorkspaceView === 'important'"
             :project-id="activeProjectId"
             :active="activeInspectionWorkspaceView === 'important'"
