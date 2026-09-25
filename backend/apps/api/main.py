@@ -104,6 +104,8 @@ from libs.security.tenant import (
 )
 
 logger = logging.getLogger("aicheck.api")
+# 失败请求在持久化模式下 reset 过、还等着整份重载的租户，见 handle_request。
+TENANTS_RESET_BY_FAILED_REQUEST: set[str] = set()
 _tenant_mutation_locks: dict[tuple[int, str], asyncio.Lock] = {}
 PUBLIC_REGISTRATION_LINK_PATTERN = re.compile(
     r"^(?:/api)?/registration-links/[^/]+(?:/apply)?$"
@@ -366,6 +368,16 @@ async def handle_request(
                 fail(errors.PASSWORD_CHANGE_REQUIRED, request, http_status=403),
                 errors.PASSWORD_CHANGE_REQUIRED.reason,
             )
+    elif tenant_id_key(tenant_id) in TENANTS_RESET_BY_FAILED_REQUEST:
+        # 不登录（X-Role 头身份）时也要补这一步。持久化模式下写入撞上 40906，
+        # restore_failed_request_state 会 reset()：state 换成 runtime_initial_state()、
+        # 基线清空、租户标成未加载，指望下一个请求整份重载。原先只有上面登录那条
+        # 路径会重载，这条路径就一直带着 reset 出来的种子数据跑——开 demo 时里面有
+        # 库里早已存在的 AUD-001 等记录，却没有基线，下一次写入把它们当新行 INSERT，
+        # 必然再撞 40906，而且重读重试也救不回来。
+        # 只认「被失败请求 reset 过」的租户：从没标过已加载的进程（单测直接往
+        # repo.state 里塞数据、不走 lifespan）不能在这里被整份重载覆盖掉。
+        reload_tenant_reset_by_failed_request(tenant_id)
     admin_read_error = inferred_admin_read_error(request)
     if admin_read_error is not None:
         return audit_rejected_request(request, admin_read_error, errors.FORBIDDEN.reason)
@@ -534,16 +546,34 @@ def restore_failed_request_state(request: Request) -> None:
     if tenant_id != current_tenant_id():
         token = set_request_tenant_id(tenant_id)
     try:
-        persistent = bool(
-            postgres_persistence_configured()
-            or repo.sqlite_enabled
-            or repo.sqlite_path
-            or os.getenv("AICHECK_SQLITE_PATH")
-        )
+        persistent = persistence_configured()
         repo.restore_tenant_runtime(snapshot, invalidate=persistent)
+        if persistent and snapshot.get("state") is None:
+            TENANTS_RESET_BY_FAILED_REQUEST.add(tenant_id_key(tenant_id))
     finally:
         if token is not None:
             reset_request_tenant_id(token)
+
+
+def persistence_configured() -> bool:
+    return bool(
+        postgres_persistence_configured()
+        or repo.sqlite_enabled
+        or repo.sqlite_path
+        or os.getenv("AICHECK_SQLITE_PATH")
+    )
+
+
+def tenant_id_key(tenant_id: str | None) -> str:
+    return str(tenant_id or configured_tenant_id())
+
+
+def reload_tenant_reset_by_failed_request(tenant_id: str | None) -> None:
+    key = tenant_id_key(tenant_id)
+    if not repo.tenant_is_loaded(key) and persistence_configured():
+        load_state(tenant_id=key)
+        repo.mark_tenant_loaded(key)
+    TENANTS_RESET_BY_FAILED_REQUEST.discard(key)
 
 
 def is_public_registration_request(request: Request) -> bool:

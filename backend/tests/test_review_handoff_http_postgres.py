@@ -190,3 +190,38 @@ def test_two_http_processes_reject_stale_verification_and_refresh_source(isolate
     finally:
         writer.close_sync_postgres()
         reset_request_tenant_id(token)
+
+
+def test_unauthenticated_process_reloads_state_after_persistence_conflict(isolated_postgres_url, tmp_path):
+    """40906 之后 reset 出来的是种子 state、没有基线；不登录的请求也得先整份重载。
+
+    上面双进程用例的偶发失败就是这个：输掉并发的那个进程若恰好是 clients[1]，
+    它下一次写入会把种子里的 AUD-001 当新行 INSERT。这里用「改库不动 updated_at」
+    稳定地造出一次 40906，不靠并发撞运气。
+    """
+    url, original, body = verification_fixture()
+    apply_migrations(isolated_postgres_url)
+    writer = InMemoryRepository(seed=False)
+    token = set_request_tenant_id('TENANT-DEFAULT')
+    try:
+        writer.configure_sync_postgres(isolated_postgres_url)
+        writer.upsert_state_records_to_sync_postgres({key: value for key, value in repo.state.items()
+                                                     if key in STATE_COLLECTIONS})
+        with api_process(isolated_postgres_url, tmp_path / 'api-0.log') as client:
+            endpoint = f"{url}/{original['id']}"
+            assert client.get(endpoint).json()['code'] == 0
+            # 进程外改了这条交接却不推进 updated_at：新鲜度探针看不见，
+            # 进程手上的基线就过期了，下一次写入必然 40906。
+            writer.sync_postgres.execute(
+                "UPDATE aicheck_state SET payload = jsonb_set(payload, '{syntheticOutOfBand}', 'true') "
+                "WHERE tenant_id = %s AND collection = 'review_handoffs' AND object_id = %s",
+                ('TENANT-DEFAULT', original['id']))
+            writer.sync_postgres.commit()
+            conflict = client.post(endpoint + '/verifications', json=body).json()
+            assert conflict['code'] == 40906, (conflict, _api_log_tails(tmp_path))
+            retried = client.post(endpoint + '/verifications', json=body).json()
+            assert retried['code'] == 0, (retried, (tmp_path / 'api-0.log').read_text(errors='replace')[-4000:])
+            assert len(retried['data']['verifications']) == 1
+    finally:
+        writer.close_sync_postgres()
+        reset_request_tenant_id(token)
