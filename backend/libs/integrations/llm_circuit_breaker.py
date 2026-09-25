@@ -84,6 +84,16 @@ def is_provider_fault(exc: Exception) -> bool:
     return (exc.reason or "") in _PROVIDER_FAULT_REASONS
 
 
+# 额度用尽：402 欠费，或 429 但 code 是 insufficient_quota（2026-09-25 Token Plan 额度用完
+# 就是这样回的——不是限流，等多久都不会好）。
+QUOTA_EXHAUSTED_REASONS = {"INSUFFICIENT_QUOTA"}  # error.code 转大写后进 IntegrationServiceError.reason
+
+
+def is_quota_exhausted(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None)
+    return status == 402 or (status == 429 and getattr(exc, "reason", None) in QUOTA_EXHAUSTED_REASONS)
+
+
 def ensure_closed(host: str) -> None:
     """熔断打开时抛 LLM_CIRCUIT_OPEN 快速失败；否则无事发生。"""
     if not _enabled() or not host:
@@ -112,13 +122,13 @@ def record_failure(host: str, exc: Exception) -> None:
     threshold = _int_env("AICHECK_LLM_BREAKER_THRESHOLD", 5)
     window = _int_env("AICHECK_LLM_BREAKER_WINDOW_SECONDS", 120)
     cooldown = _int_env("AICHECK_LLM_BREAKER_COOLDOWN_SECONDS", 60)
-    if getattr(exc, "status_code", None) == 402:
-        # 欠费不会一分钟后自己好：一次就熔断、冷却拉长。否则每个分片都先撞一次 402，
+    if is_quota_exhausted(exc):
+        # 欠费/额度用尽不会一分钟后自己好：一次就熔断、冷却拉长。否则每个分片都先撞一次，
         # 2026-09-24 灰度里 DeepSeek 备胎 15 分钟被打了 5 次 402，全部白等。
         payment_cooldown = _int_env("AICHECK_LLM_BREAKER_PAYMENT_COOLDOWN_SECONDS", 1800)
         try:
             client.set(f"llm:breaker:{host}:open", "1", ex=payment_cooldown)
-            LOGGER.warning("LLM 断路器熔断：%s 返回 402（余额不足），冷却 %ss", host, payment_cooldown)
+            LOGGER.warning("LLM 断路器熔断：%s 额度用尽（%s），冷却 %ss", host, exc, payment_cooldown)
         except Exception:  # noqa: BLE001 -- optional Redis breaker failure must not replace the model request outcome
             return
         return

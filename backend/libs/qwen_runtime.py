@@ -209,6 +209,15 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _error_code(response: httpx.Response) -> str | None:
+    """串流失败时响应体已读出（raw capture 先读再抛）；取 OpenAI 兼容的 error.code。"""
+    try:
+        error = response.json().get("error")
+    except (ValueError, AttributeError, httpx.ResponseNotRead):
+        return None
+    return safe_reason(str(error.get("code") or "").upper()) if isinstance(error, dict) else None
+
+
 def _int_env(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, str(default)))
@@ -403,13 +412,16 @@ class QwenRuntimeClient:
         否则重试本身就把主供应商熔断，所有调用都被推给备胎。
         429 发生在响应开始之前，串流还没吐字，重试不会重复输出。
         """
+        from libs.integrations import llm_circuit_breaker
+
         retries = max(0, _int_env("AICHECK_LLM_RATE_LIMIT_RETRIES", 3))
         base_delay = max(0.0, _float_env("AICHECK_LLM_RATE_LIMIT_BACKOFF_SECONDS", 5.0))
         for attempt in range(retries + 1):
             try:
                 return self._chat_sync_dispatch(messages, model=model, **kwargs)
             except IntegrationServiceError as exc:
-                if exc.status_code != 429 or attempt >= retries:
+                # 额度用尽也回 429，但等多久都不会好：不重试，直接交给熔断与转移。
+                if exc.status_code != 429 or attempt >= retries or llm_circuit_breaker.is_quota_exhausted(exc):
                     raise
                 delay = min(60.0, base_delay * (2**attempt)) * random.uniform(0.8, 1.2)
                 LOGGER.warning("LLM 限流（429），%.1fs 后第 %s 次重试（role=%s）", delay, attempt + 1, model)
@@ -455,8 +467,8 @@ class QwenRuntimeClient:
             )
         except Exception as fallback_exc:
             llm_circuit_breaker.record_failure(fallback_host, fallback_exc)
-            if getattr(fallback_exc, "status_code", None) == 402:
-                LOGGER.warning("备用供应商 %s 余额不足（402），按主供应商原错误失败", fallback["label"])
+            if llm_circuit_breaker.is_quota_exhausted(fallback_exc):
+                LOGGER.warning("备用供应商 %s 额度用尽（%s），按主供应商原错误失败", fallback["label"], fallback_exc)
                 raise primary_exc from fallback_exc
             raise
         llm_circuit_breaker.record_success(fallback_host)
@@ -563,6 +575,7 @@ class QwenRuntimeClient:
                     "Qwen official API",
                     "chat.completions",
                     status_code=exc.response.status_code,
+                    reason=_error_code(exc.response),
                 ) from exc
             except httpx.HTTPError as exc:
                 raise IntegrationServiceError(
@@ -598,7 +611,7 @@ class QwenRuntimeClient:
             try:
                 payload = response.json()
                 error = payload.get("error") if isinstance(payload, dict) else None
-                reason = (error or {}).get("code") if isinstance(error, dict) else None
+                reason = str((error or {}).get("code") or "").upper() if isinstance(error, dict) else None
             except ValueError:
                 reason = None
             raise IntegrationServiceError(
