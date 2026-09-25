@@ -181,3 +181,15 @@ def test_主供应商已是按量或没有按量密钥时不配备胎(tmp_path: 
     token_plan_only = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
                                         "AICHECK_EMBEDDING_API_KEY": "sk-sp-wrong-kind"})
     assert "AICHECK_LLM_FALLBACK_API_BASE" not in token_plan_only
+
+
+def test_有Jev密钥才开Jev_且只开走项目开关的阶段(tmp_path: pathlib.Path):
+    """2026-09-25：用户批准 GDLNG/ECD202 出境做 Jev 评估。真正外发仍要项目级开关。"""
+    base = {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg"}
+    off = _build(tmp_path, {**base, "AICHECK_JEV_ENABLED": "true", "AICHECK_JEV_DATA_EGRESS_APPROVED": "true"})
+    assert not [key for key in off if key.startswith("AICHECK_JEV_")], "没有密钥时凭证里残留的开关也不许透传"
+    on = _build(tmp_path, {**base, "AICHECK_JEV_API_KEY": "jev-key"})
+    assert on["AICHECK_JEV_ENABLED"] == on["AICHECK_JEV_DATA_EGRESS_APPROVED"] == "true"
+    assert on["AICHECK_JEV_PRIMARY_DECISION_ENABLED"] == on["AICHECK_JEV_FACT_CHECK_ENABLED"] == "true"
+    for stage in ("DOCUMENT_ROUTING", "SECOND_OPINION", "CLAIM_SHADOW"):
+        assert f"AICHECK_JEV_{stage}_ENABLED" not in on, "不走项目开关的阶段不开"
