@@ -96,16 +96,18 @@ jobs:
       - name: Run backend suite with real PostgreSQL
         run: pytest -q
 
-      # Docker Hub 不再提供 minio/minio（2026-09-24 起 pull access denied）；同一版本改从
-      # MinIO 官方的 quay.io 仓库拉取，并按 digest 固定，标签被改指也拉不到别的镜像。
+      # MinIO 官方镜像先后收回：Docker Hub 2026-09-24 起 pull access denied，
+      # quay.io/minio/minio 2026-09-25 起也要登录（仓库 API 401）。改用 Bitnami 冻结的
+      # legacy 仓库里的同一版本（MinIO 2025-04-22），按 digest 固定。
+      # 用镜像自带的启动命令：它读 MINIO_ROOT_USER/PASSWORD、在 9000 端口起服务，
+      # 数据目录是非 root 用户可写的 /bitnami/minio/data。
       - name: Start isolated MinIO with object lock support
         run: >-
           docker run -d --name aicheck-test-minio
           -p 9000:9000
           -e MINIO_ROOT_USER=aicheck-ci
           -e MINIO_ROOT_PASSWORD=AicheckCiMinioSecret-2026
-          quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
-          server /data --address :9000
+          docker.io/bitnamilegacy/minio:2025.4.22@sha256:50cec18ac4184af4671a78aedd5554942c8ae105d51a465fa82037949046da01
 
       - name: Wait for MinIO readiness
         run: |
