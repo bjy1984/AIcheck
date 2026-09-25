@@ -190,6 +190,8 @@ def project_certificate_period(project: dict[str, Any] | None) -> dict[str, Any]
         "periodStart": start.isoformat() if start else None,
         "periodEnd": end.isoformat() if end else None,
         "referenceDate": business_today().isoformat(),
+        # 当日只是没有施工期时的兜底，不是业务核验日期：有效期工具据此把「当日已过期」交人工
+        "referenceDateSource": "business_today",
     }
 
 

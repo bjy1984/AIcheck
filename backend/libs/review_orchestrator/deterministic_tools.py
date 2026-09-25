@@ -58,6 +58,7 @@ DETERMINISTIC_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             "periodStart": "date?",
             "periodEnd": "date?",
             "referenceDate": "date?",
+            "referenceDateSource": "string?",
             "expectedHolder": "string?",
             "requiredScopes": ["string"],
         },
@@ -258,6 +259,10 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
     period_start = parse_date(arguments.get("periodStart"))
     period_end = parse_date(arguments.get("periodEnd"))
     reference = parse_date(arguments.get("referenceDate")) or business_today()
+    # 没有施工期、又没有调用方指定的核验日期时，才是拿「今天」兜底
+    reference_is_fallback = period_end is None and (
+        not arguments.get("referenceDate") or arguments.get("referenceDateSource") == "business_today"
+    )
     expected_holder = _norm_holder(arguments.get("expectedHolder"))
     required_scopes = {normalize_grade(item) for item in arguments.get("requiredScopes") or [] if item}
     warnings: list[str] = []
@@ -290,7 +295,10 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                       covers_end, valid_until.isoformat(), end_target.isoformat())
             )
             if not covers_end:
-                status = "failed"
+                # 没有施工期时只能拿「今天」兜底：今天过期不等于施工期间无效，交人工而不判不符合
+                # （2026-09-25 业务确认：ECD202 未填施工期，任志国资格证按当日判成了不符合）。
+                # 调用方明确给了核验日期（独立核验服务）照常判。
+                status = "evidence_insufficient" if reference_is_fallback else "failed"
             if period_start is not None and valid_from is not None:
                 covers_start = valid_from <= period_start
                 cert_checks.append(check(f"{label}:valid_from_covers_period_start", covers_start, valid_from.isoformat(), period_start.isoformat()))
