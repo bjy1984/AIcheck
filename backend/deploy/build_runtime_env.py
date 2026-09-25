@@ -228,6 +228,22 @@ if runtime.get("AICHECK_LLM_API_BASE") == TOKEN_PLAN_BASE and payg_key:
         if name.startswith("AICHECK_LLM_MODEL_") and name != "AICHECK_LLM_MODEL_VISION":
             runtime[name.replace("AICHECK_LLM_MODEL_", "AICHECK_LLM_FALLBACK_MODEL_")] = value
 
+# Jev 插件（外部模型，只给提示与事实核对，不改结论）。凭证里放了 AICHECK_JEV_API_KEY 才开：
+# 总开关、出境批准、逐项建议（PRIMARY_DECISION）与事实核对（FACT_CHECK）。真正外发还要
+# 项目级开关（管理员「编辑项目」里的 Jev 加强）打开并在运行建立时冻结——没打开的项目一个字都
+# 不送。2026-09-25 用户批准：只 GDLNG 与 ECD202 两个测试项目可出境。
+# 文档路由、第二意见、声明影子等其他阶段不开：它们不走项目开关。
+if secrets.get("AICHECK_JEV_API_KEY"):
+    runtime.update({
+        "AICHECK_JEV_ENABLED": "true",
+        "AICHECK_JEV_DATA_EGRESS_APPROVED": "true",
+        "AICHECK_JEV_PRIMARY_DECISION_ENABLED": "true",
+        "AICHECK_JEV_FACT_CHECK_ENABLED": "true",
+    })
+else:
+    for name in [key for key in runtime if key.startswith("AICHECK_JEV_")]:
+        runtime.pop(name)
+
 TARGET.write_text("".join("%s=%s\n" % (k, v) for k, v in sorted(runtime.items())))
 TARGET.chmod(0o600)
 print("  runtime env written: %d keys -> %s" % (len(runtime), TARGET))
