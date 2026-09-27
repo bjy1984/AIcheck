@@ -47,6 +47,7 @@ def skill_catalog():
                       "displayName": NODE_LABELS[node_id],
                       "group": "设计文件" if node_id < 10 else "元件与材料" if node_id < 20 else "焊接",
                       "sections": sections, "content": match[3].strip(), "source": "业务节点描述 v3",
+                      "ruleVersion": hashlib.sha256(text.encode()).hexdigest(), "versionScope": "instructions_and_rule_document",
                       "version": version, "skillId": "important-node-review", "instructions": instructions})
     return nodes
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import json
@@ -66,6 +67,7 @@ def normalize_mineru_zip(
     profile_id: str | None,
     document_type: str | None,
     provider_task_id: str,
+    preserve_source_tables: bool = False,
 ) -> MinerUNormalizedBundle:
     members = validated_zip_members(zip_bytes)
     content_name = unique_artifact_name(
@@ -88,6 +90,7 @@ def normalize_mineru_zip(
         document_type=document_type,
         provider_task_id=provider_task_id,
         markdown_present=markdown_name is not None,
+        preserve_source_tables=preserve_source_tables,
     )
     artifacts = build_mineru_artifacts(
         zip_bytes,
@@ -309,6 +312,7 @@ def build_mineru_result(
     document_type: str | None,
     provider_task_id: str,
     markdown_present: bool,
+    preserve_source_tables: bool = False,
 ) -> dict[str, Any]:
     page_by_no = {int(page["pageNo"]): page for page in pages}
     fragments: list[dict[str, Any]] = []
@@ -364,6 +368,8 @@ def build_mineru_result(
         )
         block_type = _BLOCK_TYPE_MAP.get(item_type, item_type)
         common = {
+            "sourceOrder": source_index,
+            "headingLevel": raw_item.get("text_level"),
             "pageNo": page_no,
             "bbox": mapped_bbox,
             "coordinateSystem": (
@@ -593,6 +599,7 @@ def build_mineru_result(
     provider_metadata = dict(result["metadata"])
     provider_engine_runs = list(result["engineRuns"])
     adapter_quality = dict(result["quality"])
+    source_tables = copy.deepcopy(tables) if preserve_source_tables else None
     enriched = enrich_parse_result(
         result,
         profile=profile_for(profile_id, document_type),
@@ -626,6 +633,8 @@ def build_mineru_result(
         enriched_quality["status"] = "needs_human_review"
         enriched["outcomeStatus"] = "partial"
         enriched["formalEvidenceReady"] = False
+    if source_tables is not None:
+        enriched["tables"] = source_tables
     return enriched
 
 

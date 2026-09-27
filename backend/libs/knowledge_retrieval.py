@@ -1381,6 +1381,19 @@ def _ensure_retrieval_collections(state: dict[str, Any]) -> None:
         return
 
 
+def strict_lexical_match(query: str, searchable: str) -> bool:
+    """AND meaningful phrases; do not let a short/common token satisfy a query."""
+    ignored = {"标准", "规范", "条款", "查询", "检索", "要求", "规定", "相关", "的", "表", "and", "the", "or"}
+    terms = re.findall(r"[\u4e00-\u9fff]+|[a-z0-9]+(?:[_.:-][a-z0-9]+)*", unicodedata.normalize("NFKC", query).casefold())
+    terms = [term for term in terms if len(term) >= 2 and term not in ignored]
+    haystack = unicodedata.normalize("NFKC", searchable).casefold()
+    return bool(terms) and all(
+        term in haystack if re.search(r"[\u4e00-\u9fff]", term)
+        else re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", haystack)
+        for term in terms
+    )
+
+
 def retrieve_knowledge_clauses(
     state: dict[str, Any],
     *,
@@ -1392,6 +1405,7 @@ def retrieve_knowledge_clauses(
     top_k: int = 5,
     query_type: str = "review_basis_search",
     dense_chunk_ids: list[str] | None = None,
+    require_query_match: bool = False,
 ) -> dict[str, Any]:
     # knowledge_page_index_nodes 是延迟加载集合（占冷启动 293MB 的 25%）。
     # 检索是核心路径且调用点分散，在入口兜底比逐个调用方注入更可靠：
@@ -1430,6 +1444,11 @@ def retrieve_knowledge_clauses(
                 page_index_node_ids_by_identity.setdefault(str(clause_id), []).append(node_ref)
     scored: list[dict[str, Any]] = []
     for clause in candidates:
+        if require_query_match:
+            searchable = " ".join(str(clause.get(key) or "") for key in
+                ("text", "title", "standardCode", "sourceRelativePath", "clauseNo")).casefold()
+            if not strict_lexical_match(query, searchable):
+                continue
         identity_ids = candidate_identity_ids(clause)
         base_score = clause_score(
             clause, tokens, node_id=node_id, business_pack_id=business_pack_id
@@ -1481,7 +1500,7 @@ def retrieve_knowledge_clauses(
         reverse=True,
     )
     selected = scored[: max(1, int(top_k or 5))]
-    if not selected and candidates:
+    if not selected and candidates and not require_query_match:
         fallback = next(
             (
                 candidate
@@ -1546,6 +1565,9 @@ def retrieve_knowledge_clauses(
         "selectedClauses": [
             {
                 "clauseId": item.get("clauseId"),
+                "fileId": item.get("fileId"),
+                "contextType": item.get("contextType"),
+                "sourceMethod": item.get("sourceMethod"),
                 "kbDocId": item.get("kbDocId"),
                 "kbVersion": item.get("kbVersion"),
                 "clauseNo": item.get("clauseNo"),

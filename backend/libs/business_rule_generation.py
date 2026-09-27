@@ -603,6 +603,7 @@ def build_standard_anchor_clauses(rule_sets: list[dict[str, Any]]) -> list[dict[
         clauses.append(
             {
                 "id": f"KC-{anchor['clauseId']}",
+                "sourceMethod": "business_rule_reference",
                 "clauseId": anchor["clauseId"],
                 "kbDocId": STANDARD_SOURCE_ID,
                 "kbVersion": STANDARD_VERSION,
@@ -636,6 +637,7 @@ def build_rule_reference_clauses(rule_sets: list[dict[str, Any]]) -> list[dict[s
             {
                 "id": f"KC-{rule['sourceRuleId']}",
                 "clauseId": f"BUSINESS-RULE-{rule['sourceRuleId']}",
+                "sourceMethod": "business_rule_reference",
                 "kbDocId": STANDARD_SOURCE_ID,
                 "kbVersion": STANDARD_VERSION,
                 "clauseNo": rule["sourceRuleId"],

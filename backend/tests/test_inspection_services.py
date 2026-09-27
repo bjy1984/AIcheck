@@ -180,7 +180,7 @@ def test_explicit_business_period_never_invents_today_as_reference_date():
     assert output["facts"]["dateBasis"] == "business_period"
 
 
-def test_registry_uses_direct_client_only_after_external_consent(monkeypatch, caplog):
+def test_registry_defaults_to_direct_query_and_honors_explicit_disable(monkeypatch, caplog):
     from libs.integrations import external_registry_queries
     calls = []
     def query(identifier):
@@ -193,7 +193,7 @@ def test_registry_uses_direct_client_only_after_external_consent(monkeypatch, ca
     body = {"kind": "person", "identifier": "110101199001011234", "allowExternalQuery": False}
     assert client.post(PREFIX + "/certificate-registry", headers=HEADERS, json=body).status_code == 400
     assert calls == []
-    body["allowExternalQuery"] = True
+    del body["allowExternalQuery"]
     with caplog.at_level("INFO"):
         for _ in range(2):
             output = data(client.post(PREFIX + "/certificate-registry", headers=HEADERS, json=body))
@@ -221,16 +221,56 @@ def test_registry_failure_is_sanitized_and_not_cached(monkeypatch):
     assert repo.state == before
 
 
-def test_authenticated_access_is_required_and_other_roles_denied(monkeypatch):
+def test_public_review_requires_no_login_but_project_api_stays_protected(monkeypatch):
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
-    assert client.get(PREFIX + "/rules").json()["code"] != 0
-    login = client.post("/api/auth/login", json={"username": "inspection", "password": "anyuekeji.123"}).json()["data"]
-    headers = {"Authorization": "Bearer " + login["token"]}
-    assert data(client.get(PREFIX + "/rules", headers=headers))["nodes"]
-    forged = {**headers, "X-Role": "admin"}
-    assert client.post(PREFIX + "/certificate-validity", headers=forged, json={"certificates": []}).json()["code"] != 0
-    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "false")
-    for role in ("owner", "contractor", "ndt", "fde"):
-        denied = {"X-Role": role, "X-User-Id": "USER-INSPECTION-001"}
-        assert client.get(PREFIX + "/rules", headers=denied).status_code == 403
-        assert client.post(PREFIX + "/certificate-validity", headers=denied, json={"certificates": []}).json()["code"] != 0
+    for prefix in (PREFIX, "/inspection-services"):
+        assert data(client.get(prefix + "/rules"))["nodes"]
+        assert data(client.get(prefix + "/capabilities"))["authenticationRequired"] is False
+        assert data(client.post(prefix + "/certificate-validity", json={"certificates": [], "referenceDate": "2026-09-23"}))
+    for path in ("/api/projects", "/api/documents", "/api/knowledge/clauses", PREFIX + "/unknown"):
+        assert client.get(path).json()["code"] == 401
+    assert client.post(PREFIX + "/rules", json={}).json()["code"] == 401
+    assert data(client.get(PREFIX + "/rules", headers={"Authorization": "Bearer expired"}))["nodes"]
+
+
+def test_anonymous_standard_content_excludes_project_documents(monkeypatch):
+    from apps.api.knowledge_admin_routes import scoped_standard_canonical
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    tenant = main.configured_tenant_id()
+    for name, project in (("KF-KB-PUBLIC", None), ("KF-KB-PRIVATE", "P-PRIVATE")):
+        repo.state["knowledge_files"].append({"id": name, "sourceType": "standard",
+            "documentId": "DOC-" + name, "tenantId": tenant})
+        repo.state["documents"].append({"id": "DOC-" + name, "projectId": project,
+            "currentVersionId": "VER-" + name, "tenantId": tenant})
+        repo.state["versions"].append({"id": "VER-" + name, "documentId": "DOC-" + name,
+            "isCurrent": True, "tenantId": tenant})
+        repo.state.setdefault("standard_knowledge_records", []).append({"id": "REC-" + name,
+            "knowledgeFileId": name, "tenantId": tenant, "title": name})
+    response = client.get(PREFIX + "/standards/KF-KB-PUBLIC/canonical")
+    assert data(response)["knowledgeFileId"] == "KF-KB-PUBLIC"
+    assert client.get(PREFIX + "/standards/KF-KB-PRIVATE/canonical").json()["code"] != 0
+    assert client.get("/api/knowledge/files/PUBLIC/canonical").json()["code"] == 401
+
+
+def test_public_search_filters_files_before_retrieval(monkeypatch):
+    from apps.api import inspection_service_routes as routes
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    tenant = main.configured_tenant_id()
+    repo.state["knowledge_files"] = [
+        {"id": "PUBLIC", "sourceType": "standard", "tenantId": tenant},
+        {"id": "PRIVATE", "sourceType": "standard", "projectId": "P", "tenantId": tenant},
+        {"id": "OTHER-TENANT", "sourceType": "standard", "tenantId": "OTHER"},
+        {"id": "NON-STANDARD", "sourceType": "project", "tenantId": tenant}]
+    def retrieve(state, **kwargs):
+        assert [file["id"] for file in state["knowledge_files"]] == ["PUBLIC"]
+        return {"trace": {"selectedClauses": []}}
+    monkeypatch.setattr(routes.api, "retrieve_knowledge_clauses", retrieve)
+    assert data(client.get(PREFIX + "/standards"))["items"] == []
+
+
+@pytest.mark.parametrize('file_id',['rules%2Fstandards%2Fa.pdf','rules/standards/a.pdf'])
+def test_bad_file_path_reports_validation_not_auth(monkeypatch,file_id):
+    monkeypatch.setenv('AICHECK_REQUIRE_AUTH','true')
+    response=client.get(PREFIX+'/standards/'+file_id+'/canonical')
+    assert response.status_code==400
+    assert response.json()['code']==40001

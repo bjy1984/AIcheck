@@ -41,6 +41,7 @@ class InspectionServiceError(ValueError):
 def service_capabilities() -> dict[str, Any]:
     return {
         "schemaVersion": "inspection-services-v1", "projectRequired": False,
+        "authenticationRequired": False,
         "documentUploadAccepted": False, "ocrProvided": False,
         "retention": RETENTION,
         "rules": {"available": True, "source": "业务节点描述 v3"},
@@ -174,6 +175,10 @@ def certificate_validity(payload: dict[str, Any]) -> dict[str, Any]:
                          "passedCount": sum(bool(item.get("passed")) for item in output["checks"]),
                          "failedCount": sum(not item.get("passed") for item in output["checks"])}
     return {**output, "authenticityVerified": False,
+            "businessConclusionProduced": False,
+            "resultMeaning": {"passed": "所请求字段检查通过，不代表工程符合。",
+                              "failed": "所请求字段检查未通过，须逐维度解释；范围字符串不匹配不代表技术范围不覆盖。",
+                              "evidence_insufficient": "输入证据不足，不能判为证件无效或工程不符合。"}.get(output["result"], "请按各维度解释。"),
             "checkedDimensions": checked_dimensions, "uncheckedDimensions": unchecked_dimensions,
             "scopeMatching": "NFKC_normalized_exact_items_only",
             "limitation": "仅汇总请求核验的字段维度。范围仅核对完整项目字符串，不判技术互认或实际作业覆盖；未请求的维度未核验，通过不代表证件真实或正式监检结论。",
@@ -186,8 +191,11 @@ def certificate_registry(payload: dict[str, Any]) -> dict[str, Any]:
         query_cnse_persons,
     )
 
-    if set(payload) != {"kind", "identifier", "allowExternalQuery"} or payload.get("allowExternalQuery") is not True:
-        raise InspectionServiceError("登记查询须明确授权向全国特种设备公示平台发送证件标识。")
+    if not {"kind", "identifier"} <= set(payload) or set(payload) - {"kind", "identifier", "allowExternalQuery"}:
+        raise InspectionServiceError("登记查询仅接受查询类型和必要证件标识。")
+    # Default review action; retain the legacy flag without requiring a consent step.
+    if payload.get("allowExternalQuery", True) is not True:
+        raise InspectionServiceError("本次调用已禁用外部登记查询或开关值无效。")
     kind, identifier = payload.get("kind"), payload.get("identifier")
     pattern = r"\d{17}[\dXx]" if kind == "person" else r"TS\d{7}-\d{4}"
     if not isinstance(kind, str) or kind not in {"person", "organization_license"} or not isinstance(identifier, str) or not re.fullmatch(pattern, identifier):

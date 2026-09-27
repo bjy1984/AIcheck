@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "inspection-report@1",
+  "project": "示例工程（虚构数据，不是工程审查结果）",
+  "reportDate": "2026-09-25",
+  "scopeNote": "仅演示 R24 输出格式；多数方法尚未执行。",
+  "ruleSha256": "66cdd219525b67d82606d9101b501f705718f1ba948c6a45921eac3b70baa5fe",
+  "nodes": [
+    "R24"
+  ],
+  "materials": [
+    {
+      "id": "D1",
+      "name": "示例焊工名单.txt",
+      "path": "示例焊工名单.txt",
+      "sha256": null,
+      "hashReason": "文档示例无真实附件，不生成假哈希",
+      "readStatus": "partial",
+      "pages": null
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E1",
+      "materialId": "D1",
+      "page": null,
+      "locator": "示例名单第一行（非真实原件）",
+      "quote": "示例：证书所载到期日为2028年，未提供施焊日期。",
+      "locationVerified": false
+    }
+  ],
+  "services": [],
+  "checks": [
+    {
+      "id": "C-R24-1",
+      "node": "R24",
+      "method": 1,
+      "kind": "period",
+      "object": "待确定核查对象",
+      "title": "有效期覆盖尚待核实",
+      "execution": "waiting",
+      "result": "insufficient",
+      "actual": "名单载到期年份2028；缺有效起始日期和施焊日期",
+      "requirement": "随包 v3 对应方法，适用依据尚待核实",
+      "basisVerified": false,
+      "conditionsMet": false,
+      "conditionNote": "仅知到期年份，不能判覆盖施工期",
+      "evidenceIds": [
+        "E1"
+      ],
+      "serviceIds": [],
+      "period": {
+        "validFrom": null,
+        "validUntil": null,
+        "eventStart": null,
+        "eventEnd": null,
+        "evidenceIds": [
+          "E1"
+        ]
+      }
+    },
+    {
+      "id": "C-R24-2",
+      "node": "R24",
+      "method": 2,
+      "kind": "comparison",
+      "object": "待确定核查对象",
+      "title": "方法 2 尚未执行",
+      "execution": "not_run",
+      "result": "pending",
+      "actual": "未核查",
+      "requirement": "随包 v3 对应方法，适用依据尚待核实",
+      "basisVerified": false,
+      "conditionsMet": false,
+      "conditionNote": "尚未执行，不能形成业务结论",
+      "evidenceIds": [],
+      "serviceIds": []
+    },
+    {
+      "id": "C-R24-3",
+      "node": "R24",
+      "method": 3,
+      "kind": "comparison",
+      "object": "待确定核查对象",
+      "title": "方法 3 尚未执行",
+      "execution": "not_run",
+      "result": "pending",
+      "actual": "未核查",
+      "requirement": "随包 v3 对应方法，适用依据尚待核实",
+      "basisVerified": false,
+      "conditionsMet": false,
+      "conditionNote": "尚未执行，不能形成业务结论",
+      "evidenceIds": [],
+      "serviceIds": []
+    },
+    {
+      "id": "C-R24-4",
+      "node": "R24",
+      "method": 4,
+      "kind": "comparison",
+      "object": "待确定核查对象",
+      "title": "方法 4 尚未执行",
+      "execution": "not_run",
+      "result": "pending",
+      "actual": "未核查",
+      "requirement": "随包 v3 对应方法，适用依据尚待核实",
+      "basisVerified": false,
+      "conditionsMet": false,
+      "conditionNote": "尚未执行，不能形成业务结论",
+      "evidenceIds": [],
+      "serviceIds": []
+    },
+    {
+      "id": "C-R24-5",
+      "node": "R24",
+      "method": 5,
+      "kind": "comparison",
+      "object": "待确定核查对象",
+      "title": "方法 5 尚未执行",
+      "execution": "not_run",
+      "result": "pending",
+      "actual": "未核查",
+      "requirement": "随包 v3 对应方法，适用依据尚待核实",
+      "basisVerified": false,
+      "conditionsMet": false,
+      "conditionNote": "尚未执行，不能形成业务结论",
+      "evidenceIds": [],
+      "serviceIds": []
+    },
+    {
+      "id": "C-R24-6",
+      "node": "R24",
+      "method": 6,
+      "kind": "comparison",
+      "object": "待确定核查对象",
+      "title": "方法 6 尚未执行",
+      "execution": "not_run",
+      "result": "pending",
+      "actual": "未核查",
+      "requirement": "随包 v3 对应方法，适用依据尚待核实",
+      "basisVerified": false,
+      "conditionsMet": false,
+      "conditionNote": "尚未执行，不能形成业务结论",
+      "evidenceIds": [],
+      "serviceIds": []
+    }
+  ],
+  "issues": [
+    {
+      "id": "I-R24",
+      "checkIds": [
+        "C-R24-4",
+        "C-R24-2",
+        "C-R24-3",
+        "C-R24-5",
+        "C-R24-6"
+      ],
+      "priority": "high",
+      "kind": "basis",
+      "title": "R24 待开展逐项审查",
+      "action": "读取本次资料并逐项取证",
+      "completion": "全部方法均有真实执行记录及问题处理安排"
+    },
+    {
+      "id": "I-DATE",
+      "checkIds": [
+        "C-R24-1"
+      ],
+      "priority": "high",
+      "kind": "supply",
+      "title": "补齐证书有效区间和施焊日期",
+      "action": "读取证件原件并补施焊记录，逐焊口比较日期",
+      "completion": "有效起止日与施焊日期均有可回读证据"
+    }
+  ]
+}

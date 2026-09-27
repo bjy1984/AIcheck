@@ -1,0 +1,1971 @@
+[
+    {
+        "type": "text",
+        "text": "中华人民共和国国家标准",
+        "text_level": 1,
+        "bbox": [
+            119,
+            144,
+            927,
+            182
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            700,
+            210,
+            905,
+            230
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "钨极惰性气体保护电弧焊用 非合金钢及细晶粒钢实心焊丝",
+        "text_level": 1,
+        "bbox": [
+            228,
+            391,
+            821,
+            471
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Rods, wires and deposits for tungsten inert gas welding of non alloy and fine grain steels",
+        "text_level": 1,
+        "bbox": [
+            164,
+            497,
+            885,
+            541
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "(ISO 636:2017, Welding consumables—Rods, wires and deposits for tungsten inert gas welding of non-alloy and fine-grain steels—Classification, MOD)",
+        "bbox": [
+            174,
+            566,
+            878,
+            633
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "2020-11-19 发布",
+        "bbox": [
+            122,
+            846,
+            290,
+            866
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "2021-06-01 实施",
+        "bbox": [
+            761,
+            846,
+            929,
+            865
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "国家市场监督管理总局 发布\n国家标准化管理委员会",
+        "bbox": [
+            322,
+            887,
+            729,
+            935
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "ICS 25.160.20\nJ 33",
+        "bbox": [
+            119,
+            42,
+            235,
+            68
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "GB",
+        "bbox": [
+            675,
+            51,
+            870,
+            123
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "目次",
+        "text_level": 2,
+        "bbox": [
+            453,
+            153,
+            561,
+            176
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "前言 …… III\n1 范围 …… 1\n2 规范性引用文件 …… 1\n3 型号 …… 1\n4 技术要求 …… 3\n5 试验方法 …… 7\n6 复验 …… 9\n7 供货技术条件 …… 9\n附录 A（资料性附录） 本标准与 ISO 636:2017 相比的结构变化情况 …… 10\n附录 B（资料性附录） 本标准与 ISO 636:2017 的技术性差异及其原因 …… 11\n附录 C（资料性附录） 焊丝型号对照 …… 12",
+        "bbox": [
+            121,
+            209,
+            892,
+            444
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            739,
+            93,
+            890,
+            106
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "page_number",
+        "text": "I",
+        "bbox": [
+            860,
+            920,
+            870,
+            932
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            378,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "前言",
+        "text_level": 2,
+        "bbox": [
+            452,
+            155,
+            563,
+            176
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "本标准按照 GB/T 1.1—2009 给出的规则起草。",
+        "bbox": [
+            156,
+            213,
+            514,
+            229
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "本标准使用重新起草法修改采用 ISO 636:2017《焊接材料 钨极惰性气体保护电弧焊用非合金钢及细晶粒钢焊丝和熔敷金属 分类》。",
+        "bbox": [
+            122,
+            231,
+            892,
+            266
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "本标准与 ISO 636:2017 相比，在结构上有较多调整，附录 A 列出了本标准与 ISO 636:2017 章条编号变化对照一览表；",
+        "bbox": [
+            122,
+            268,
+            892,
+            302
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "本标准与 ISO 636:2017 相比存在技术性差异,附录 B 给出了相应技术性差异及其原因的一览表。本标准还做了下列编辑性修改：",
+        "bbox": [
+            154,
+            305,
+            885,
+            339
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "——将标准名称修改为《钨极惰性气体保护电弧焊用非合金钢及细晶粒钢实心焊丝》；",
+        "bbox": [
+            156,
+            342,
+            798,
+            358
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "——增加了附录 C(资料性附录)焊丝型号对照。",
+        "bbox": [
+            157,
+            361,
+            519,
+            377
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "本标准由全国焊接标准化技术委员会(SAC/TC 55)提出并归口。",
+        "bbox": [
+            157,
+            378,
+            643,
+            395
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "本标准起草单位:哈尔滨焊接研究院有限公司、哈焊所华通(常州)焊业股份有限公司、上海焊接器材有限公司、山东索力得焊材股份有限公司、天津大桥焊材集团有限公司、昆山京群焊材科技有限公司、上海大西洋焊接材料有限责任公司、天津市金桥焊材集团股份有限公司、厦门银都利工业有限公司、宝鸡石油钢管有限责任公司(国家石油天然气管材工程技术研究中心)、佛山市质量和标准化研究院。",
+        "bbox": [
+            122,
+            397,
+            895,
+            470
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "本标准主要起草人:杨子佳、陈默、李振华、王大梁、周宝鑫、李典钊、周峙宏、戴锋、张健、宋北、林晓辉、李苏珊、齐万利、刘云、向梅、徐理想、祝少华、蒋士芹、龚青。",
+        "bbox": [
+            122,
+            472,
+            894,
+            507
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            739,
+            93,
+            892,
+            109
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            971,
+            621,
+            986
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "钨极惰性气体保护电弧焊用 非合金钢及细晶粒钢实心焊丝",
+        "text_level": 1,
+        "bbox": [
+            334,
+            155,
+            678,
+            201
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "1 范围",
+        "text_level": 2,
+        "bbox": [
+            122,
+            237,
+            189,
+            252
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "本标准规定了钨极惰性气体保护电弧焊用非合金钢及细晶粒钢实心填充丝的型号、技术要求、试验方法、复验和供货技术条件等内容。",
+        "bbox": [
+            121,
+            275,
+            892,
+            309
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "本标准适用于熔敷金属最小抗拉强度要求值不大于 570 MPa 的钨极惰性气体保护电弧焊用非合金钢及细晶粒钢实心填充丝(以下简称“焊丝”)。",
+        "bbox": [
+            121,
+            314,
+            892,
+            350
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "2 规范性引用文件",
+        "text_level": 2,
+        "bbox": [
+            121,
+            371,
+            277,
+            387
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "下列文件对于本文件的应用是必不可少的。凡是注日期的引用文件，仅注日期的版本适用于本文件。凡是不注日期的引用文件，其最新版本（包括所有的修改单）适用于本文件。",
+        "bbox": [
+            121,
+            410,
+            892,
+            445
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "ref_text",
+        "text": "GB/T 2650 焊接接头冲击试验方法(GB/T 2650—2008, ISO 9016:2001, IDT)",
+        "bbox": [
+            154,
+            448,
+            757,
+            465
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "ref_text",
+        "text": "GB/T 2652 焊缝及熔敷金属拉伸试验方法(GB/T 2652—2008, ISO 5178:2001, IDT)",
+        "bbox": [
+            154,
+            467,
+            808,
+            484
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "ref_text",
+        "text": "GB/T 3323.1 焊缝无损检测 射线检测 第1部分:X和伽玛射线的胶片技术(GB/T 3323.1—2019,ISO 17636-1:2013,MOD)",
+        "bbox": [
+            122,
+            488,
+            892,
+            523
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "GB/T 18591 焊接 预热温度、道间温度及预热维持温度的测量指南(GB/T 18591—2001, ISO 13916:1996, IDT)",
+        "bbox": [
+            122,
+            527,
+            892,
+            562
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "ref_text",
+        "text": "GB/T 25774.1 焊接材料的检验 第1部分:钢、镍及镍合金熔敷金属力学性能试样的制备及检验(GB/T 25774.1—2010,ISO 15792-1:2000,MOD)",
+        "bbox": [
+            122,
+            566,
+            892,
+            600
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "GB/T 25775 焊接材料供货技术条件 产品类型、尺寸、公差和标志（GB/T 25775—2010, ISO 544:2003, MOD)",
+        "bbox": [
+            122,
+            606,
+            892,
+            641
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "ref_text",
+        "text": "GB/T 25778 焊接材料采购指南(GB/T 25778—2010, ISO 14344:2010, MOD)",
+        "bbox": [
+            156,
+            644,
+            759,
+            660
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "ref_text",
+        "text": "GB/T 37910.1—2019 焊缝无损检测 射线检测验收等级 第1部分:钢、镍、钛及其合金(ISO 10675-1:2016, MOD)",
+        "bbox": [
+            124,
+            663,
+            892,
+            699
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "ref_text",
+        "text": "GB/T 39255—2020 焊接与切割用保护气体(ISO 14175:2008, MOD)",
+        "bbox": [
+            156,
+            704,
+            690,
+            719
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "3 型号",
+        "text_level": 2,
+        "bbox": [
+            124,
+            742,
+            191,
+            757
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "3.1 型号划分",
+        "text_level": 2,
+        "bbox": [
+            124,
+            777,
+            240,
+            792
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "焊丝型号按熔敷金属力学性能、焊后状态和焊丝化学成分等进行划分。本标准与其他相关标准的实心焊丝型号对照参见附录 C。",
+        "bbox": [
+            122,
+            805,
+            894,
+            840
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "3.2 型号编制方法",
+        "text_level": 2,
+        "bbox": [
+            124,
+            853,
+            275,
+            869
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "焊丝型号由四部分组成：",
+        "bbox": [
+            157,
+            882,
+            347,
+            897
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "1）第一部分：用字母“W”表示钨极惰性气体保护电弧焊用实心填充丝；",
+        "bbox": [
+            157,
+            902,
+            704,
+            916
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            739,
+            93,
+            892,
+            108
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "page_number",
+        "text": "1",
+        "bbox": [
+            858,
+            921,
+            870,
+            932
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "2）第二部分：表示在焊态、焊后热处理条件下，熔敷金属的抗拉强度代号，见表1；",
+        "bbox": [
+            139,
+            117,
+            761,
+            133
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "3）第三部分：表示冲击吸收能量 $(KV_{2})$ 不小于27J时的试验温度代号，见表2；",
+        "bbox": [
+            139,
+            137,
+            749,
+            152
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "4）第四部分：表示焊丝化学成分分类，见4.3。",
+        "bbox": [
+            139,
+            156,
+            497,
+            172
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "除以上强制代号外，可在型号中附加可选代号：",
+        "bbox": [
+            141,
+            176,
+            497,
+            192
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "a) 字母“U”，附加在第三部分之后，表示在规定的试验温度下，冲击吸收能量 $(KV_{2})$ 应不小于47 J；",
+        "bbox": [
+            139,
+            195,
+            878,
+            231
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "b) 无镀铜代号“N”，附加在第四部分之后，表示无镀铜焊丝。",
+        "bbox": [
+            141,
+            235,
+            603,
+            252
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "本标准中焊丝型号示例如下：",
+        "bbox": [
+            141,
+            256,
+            366,
+            271
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "示例1：",
+        "bbox": [
+            142,
+            277,
+            198,
+            290
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "image",
+        "img_path": "images/a18f56be26d452f7f0469f7ae328b8d293375de1e8faaae1083095e6f1e7dc20.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            245,
+            293,
+            870,
+            422
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "示例 2:",
+        "bbox": [
+            137,
+            425,
+            193,
+            439
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "image",
+        "img_path": "images/d6e9adaf04d5aeceb690e504049693aeb56db5706ecfb3ff2f24aa1c16a4b879.jpg",
+        "image_caption": [
+            "表 1 熔敷金属抗拉强度代号"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            245,
+            442,
+            873,
+            571
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "table",
+        "img_path": "images/841c4f379f3c03ed68bb3aff32348cce2f7c4c36a8ebe78438c5cfea604e4fa8.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>抗拉强度代号 $^a$ </td><td>抗拉强度RmMPa</td><td>屈服强度 $^b$ RelMPa</td><td>断后伸长率A%</td></tr><tr><td>43×</td><td>430~600</td><td>≥330</td><td>≥20</td></tr><tr><td>49×</td><td>490~670</td><td>≥390</td><td>≥18</td></tr><tr><td>55×</td><td>550~740</td><td>≥460</td><td>≥17</td></tr><tr><td>57×</td><td>570~770</td><td>≥490</td><td>≥17</td></tr><tr><td colspan=\"4\"> $^a$ ×代表“A”或者“P”,“A”表示在焊态条件下试验;“P”表示在焊后热处理条件下试验;“AP”表示在焊态和焊后热处理条件下试验均可。 $^b$ 当屈服发生不明显时,应测定规定塑性延伸强度Rp0.2。</td></tr></table>",
+        "bbox": [
+            110,
+            611,
+            875,
+            826
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            107,
+            85,
+            260,
+            99
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "page_number",
+        "text": "2",
+        "bbox": [
+            129,
+            914,
+            144,
+            925
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "table",
+        "img_path": "images/693713c6c8a3a9a951dfda29fe2f9eda9d69b5c9bb83fe17b5c9511430fa09b0.jpg",
+        "table_caption": [
+            "表 2 冲击试验温度代号"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>冲击试验温度代号</td><td>冲击吸收能量(KV2)不小于27J时的试验温度℃</td></tr><tr><td>Z</td><td>无要求</td></tr><tr><td>Y</td><td>+20</td></tr><tr><td>0</td><td>0</td></tr><tr><td>2</td><td>-20</td></tr><tr><td>3</td><td>-30</td></tr><tr><td>4</td><td>-40</td></tr><tr><td>4H</td><td>-45</td></tr><tr><td>5</td><td>-50</td></tr><tr><td>6</td><td>-60</td></tr><tr><td>7</td><td>-70</td></tr><tr><td>7H</td><td>-75</td></tr><tr><td>8</td><td>-80</td></tr><tr><td>9</td><td>-90</td></tr><tr><td>10</td><td>-100</td></tr></table>",
+        "bbox": [
+            124,
+            161,
+            890,
+            503
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "4 技术要求",
+        "text_level": 2,
+        "bbox": [
+            122,
+            536,
+            226,
+            553
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "4.1 焊丝尺寸及表面质量",
+        "text_level": 2,
+        "bbox": [
+            122,
+            571,
+            327,
+            586
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "焊丝尺寸及表面质量应符合 GB/T 25775 的规定。",
+        "bbox": [
+            156,
+            598,
+            536,
+            615
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "4.2 焊丝松弛直径和翘距",
+        "text_level": 2,
+        "bbox": [
+            122,
+            627,
+            327,
+            642
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "焊丝的松弛直径和翘距应符合表3的规定。",
+        "bbox": [
+            157,
+            654,
+            485,
+            669
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "table",
+        "img_path": "images/af9daed3edabe7b2a437fec9643839ef61f092953032d6f3e9e97eab27cb044e.jpg",
+        "table_caption": [
+            "表 3 焊丝松弛直径和翘距"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>包装形式</td><td>焊丝直径mm</td><td>松弛直径mm</td><td>翘距mm</td></tr><tr><td>外径100 mm焊丝盘</td><td>所有</td><td> $\\geqslant 100$ </td><td> $\\leqslant 13$ </td></tr><tr><td rowspan=\"2\">其他盘(卷)状包装形式</td><td> $\\leqslant 0.8$ </td><td> $\\geqslant 300$ </td><td rowspan=\"2\"> $\\leqslant 25$ </td></tr><tr><td> $\\geqslant 0.9$ </td><td> $\\geqslant 380$ </td></tr><tr><td colspan=\"4\">注:对于某些大容量包装的焊丝可能经特殊处理以提供直丝输送,其松弛直径和翘距由供需双方协商确定。</td></tr></table>",
+        "bbox": [
+            124,
+            709,
+            892,
+            837
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "4.3 化学成分",
+        "text_level": 2,
+        "bbox": [
+            124,
+            862,
+            240,
+            877
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "焊丝化学成分应符合表4的规定。",
+        "bbox": [
+            157,
+            890,
+            416,
+            904
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            739,
+            92,
+            892,
+            106
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "page_number",
+        "text": "3",
+        "bbox": [
+            858,
+            920,
+            872,
+            931
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "table",
+        "img_path": "images/cf99c6776d1b675a311a84cb5df44375cbd168e17344fdbbb900c6ab76fcb0cf.jpg",
+        "table_caption": [
+            "表 4 焊丝化学成分"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">序号</td><td rowspan=\"2\">化学成分分类</td><td rowspan=\"2\">焊丝成分代号</td><td colspan=\"12\">化学成分(质量分数)*%</td></tr><tr><td>C</td><td>Mn</td><td>Si</td><td>P</td><td>S</td><td>Ni</td><td>Cr</td><td>Mo</td><td>V</td><td> $Cu^b$ </td><td>Al</td><td>Ti+Zr</td></tr><tr><td>1</td><td>2</td><td>ER50-2</td><td>0.07</td><td>0.90~1.40</td><td>0.40~0.70</td><td>0.025</td><td>0.025</td><td>0.15</td><td>0.15</td><td>0.15</td><td>0.03</td><td>0.50</td><td>0.05~0.15</td><td>Ti:0.05~0.15Zr:0.02~0.12</td></tr><tr><td>2</td><td>3</td><td>ER50-3</td><td>0.06~0.15</td><td>0.90~1.40</td><td>0.45~0.75</td><td>0.025</td><td>0.025</td><td>0.15</td><td>0.15</td><td>0.15</td><td>0.03</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>3</td><td>4</td><td>ER50-4</td><td>0.07~0.15</td><td>1.00~1.50</td><td>0.65~0.85</td><td>0.025</td><td>0.025</td><td>0.15</td><td>0.15</td><td>0.15</td><td>0.03</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>4</td><td>6</td><td>ER50-6</td><td>0.06~0.15</td><td>1.40~1.85</td><td>0.80~1.15</td><td>0.025</td><td>0.025</td><td>0.15</td><td>0.15</td><td>0.15</td><td>0.03</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>5</td><td>10</td><td>ER49-1</td><td>0.11</td><td>1.80~2.10</td><td>0.65~0.95</td><td>0.025</td><td>0.025</td><td>0.30</td><td>0.20</td><td>-</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>6</td><td>12</td><td>-</td><td>0.02~0.15</td><td>1.25~1.90</td><td>0.55~1.00</td><td>0.030</td><td>0.030</td><td>-</td><td>-</td><td>-</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>7</td><td>16</td><td>-</td><td>0.02~0.15</td><td>0.90~1.60</td><td>0.40~1.00</td><td>0.030</td><td>0.030</td><td>-</td><td>-</td><td>-</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>8</td><td>1M3</td><td>ER49-A1</td><td>0.12</td><td>1.30</td><td>0.30~0.70</td><td>0.025</td><td>0.025</td><td>0.20</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td>9</td><td>2M3</td><td>-</td><td>0.12</td><td>0.60~1.40</td><td>0.30~0.70</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>10</td><td>2M31</td><td>-</td><td>0.12</td><td>0.80~1.50</td><td>0.30~0.90</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>11</td><td>2M32</td><td>-</td><td>0.05</td><td>0.80~1.40</td><td>0.30~0.90</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>12</td><td>3M1T</td><td>-</td><td>0.12</td><td>1.40~2.10</td><td>0.40~1.00</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.10~0.45</td><td>-</td><td>0.50</td><td>-</td><td>Ti:0.02~0.30</td></tr><tr><td>13</td><td>3M3</td><td>-</td><td>0.12</td><td>1.10~1.60</td><td>0.60~0.90</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>14</td><td>4M3</td><td>-</td><td>0.12</td><td>1.50~2.00</td><td>0.30</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>15</td><td>4M31</td><td>-</td><td>0.07~0.12</td><td>1.60~2.10</td><td>0.50~0.80</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.40~0.60</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>16</td><td>4M3T</td><td>-</td><td>0.12</td><td>1.60~2.20</td><td>0.50~0.80</td><td>0.025</td><td>0.025</td><td>-</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>Ti:0.02~0.30</td></tr><tr><td>17</td><td>N1</td><td>-</td><td>0.12</td><td>1.25</td><td>0.20~0.50</td><td>0.025</td><td>0.025</td><td>0.60~1.00</td><td>-</td><td>0.35</td><td>-</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td>18</td><td>N2</td><td>ER55-Ni1</td><td>0.12</td><td>1.25</td><td>0.40~0.80</td><td>0.025</td><td>0.025</td><td>0.80~1.10</td><td>0.15</td><td>0.35</td><td>0.05</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td>19</td><td>N3</td><td>-</td><td>0.12</td><td>1.20~1.60</td><td>0.30~0.80</td><td>0.025</td><td>0.025</td><td>1.50~1.90</td><td>-</td><td>0.35</td><td>-</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td>20</td><td>N5</td><td>ER55-Ni2</td><td>0.12</td><td>1.25</td><td>0.40~0.80</td><td>0.025</td><td>0.025</td><td>2.00~2.75</td><td>-</td><td>-</td><td>-</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td>21</td><td>N7</td><td>-</td><td>0.12</td><td>1.25</td><td>0.20~0.50</td><td>0.025</td><td>0.025</td><td>3.00~3.75</td><td>-</td><td>0.35</td><td>-</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td>22</td><td>N71</td><td>ER55-Ni3</td><td>0.12</td><td>1.25</td><td>0.40~0.80</td><td>0.025</td><td>0.025</td><td>3.00~3.75</td><td>-</td><td>-</td><td>-</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td rowspan=\"2\">序号</td><td rowspan=\"2\">化学成分分类</td><td rowspan=\"2\">焊丝成分代号</td><td colspan=\"12\">化学成分(质量分数)  $^{a}$  %</td></tr><tr><td>C</td><td>Mn</td><td>Si</td><td>P</td><td>S</td><td>Ni</td><td>Cr</td><td>Mo</td><td>V</td><td> $Cu^b$ </td><td>Al</td><td>Ti+Zr</td></tr><tr><td>23</td><td>N9</td><td>-</td><td>0.10</td><td>1.40</td><td>0.50</td><td>0.025</td><td>0.025</td><td>4.00~4.75</td><td>-</td><td>0.35</td><td>-</td><td>0.35</td><td>-</td><td>-</td></tr><tr><td>24</td><td>NCC</td><td>-</td><td>0.12</td><td>1.00~1.65</td><td>0.60~0.90</td><td>0.030</td><td>0.030</td><td>0.10~0.30</td><td>0.50~0.80</td><td>-</td><td>-</td><td>0.20~0.60</td><td>-</td><td>-</td></tr><tr><td>25</td><td>NCC1</td><td>-</td><td>0.12</td><td>0.40~0.70</td><td>0.20~0.40</td><td>0.030</td><td>0.030</td><td>0.50~0.80</td><td>0.50~0.80</td><td>-</td><td>-</td><td>0.30~0.75</td><td>-</td><td>-</td></tr><tr><td>26</td><td>NCCT</td><td>-</td><td>0.12</td><td>1.00~1.65</td><td>0.60~0.90</td><td>0.030</td><td>0.030</td><td>0.10~0.30</td><td>0.50~0.80</td><td>-</td><td>-</td><td>0.20~0.60</td><td>-</td><td>Ti:0.02~0.30</td></tr><tr><td>27</td><td>NCCT1</td><td>-</td><td>0.12</td><td>1.20~1.80</td><td>0.50~0.80</td><td>0.030</td><td>0.030</td><td>0.10~0.40</td><td>0.50~0.80</td><td>0.02~0.30</td><td>-</td><td>0.20~0.60</td><td>-</td><td>Ti:0.02~0.30</td></tr><tr><td>28</td><td>NCCT2</td><td>-</td><td>0.12</td><td>1.10~1.70</td><td>0.50~0.90</td><td>0.030</td><td>0.030</td><td>0.40~0.80</td><td>0.50~0.80</td><td>-</td><td>-</td><td>0.20~0.60</td><td>-</td><td>Ti:0.02~0.30</td></tr><tr><td>29</td><td>N1M2T</td><td>-</td><td>0.12</td><td>1.70~2.30</td><td>0.60~1.00</td><td>0.025</td><td>0.025</td><td>0.40~0.80</td><td>-</td><td>0.20~0.60</td><td>-</td><td>0.50</td><td>-</td><td>Ti:0.02~0.30</td></tr><tr><td>30</td><td>N1M3</td><td>-</td><td>0.12</td><td>1.00~1.80</td><td>0.20~0.80</td><td>0.025</td><td>0.025</td><td>0.30~0.90</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>31</td><td>N2M3</td><td>-</td><td>0.12</td><td>1.10~1.60</td><td>0.30</td><td>0.025</td><td>0.025</td><td>0.80~1.20</td><td>-</td><td>0.40~0.65</td><td>-</td><td>0.50</td><td>-</td><td>-</td></tr><tr><td>32</td><td> $Z\\times^{c}$ </td><td>-</td><td colspan=\"12\">其他协定成分</td></tr><tr><td colspan=\"15\">注1:表中单值均为最大值。注2:表中列出的“焊丝成分代号”是为便于实际使用对照。</td></tr><tr><td colspan=\"15\"> $^a$  化学分析应按表中规定的元素进行分析。如在分析过程中发现其他元素,这些元素的总量(除铁外)不应超过0.50%。 $^b$ Cu含量包括镀铜层中的含量。 $^c$ 表中未列出的分类可用相类似的分类表示,词头加字母“Z”。化学成分范围不进行规定,两种分类之间不可替换。</td></tr></table>",
+        "bbox": [
+            157,
+            115,
+            857,
+            904
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            107,
+            85,
+            260,
+            100
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            971,
+            621,
+            986
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "table",
+        "img_path": "",
+        "table_caption": [
+            ""
+        ],
+        "table_footnote": [],
+        "bbox": [
+            173,
+            116,
+            873,
+            904
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            739,
+            86,
+            892,
+            100
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_number",
+        "text": "5",
+        "bbox": [
+            857,
+            915,
+            870,
+            927
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            971,
+            621,
+            986
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "table",
+        "img_path": "",
+        "table_caption": [
+            ""
+        ],
+        "table_footnote": [],
+        "bbox": [
+            157,
+            117,
+            875,
+            906
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            110,
+            89,
+            262,
+            104
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "page_number",
+        "text": "6",
+        "bbox": [
+            132,
+            916,
+            144,
+            928
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            971,
+            621,
+            986
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "4.4 力学性能",
+        "text_level": 2,
+        "bbox": [
+            119,
+            128,
+            236,
+            144
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.4.1 拉伸试验",
+        "text_level": 2,
+        "bbox": [
+            119,
+            156,
+            250,
+            171
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "熔敷金属拉伸试验结果应符合表1的规定。",
+        "bbox": [
+            152,
+            184,
+            482,
+            200
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.4.2 冲击试验",
+        "text_level": 2,
+        "bbox": [
+            119,
+            212,
+            252,
+            226
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.4.2.1 夏比 V 型缺口冲击试验温度按表 2 要求，测定五个冲击试样的冲击吸收能量 $(KV_{2})$ 。在计算五个冲击吸收能量 $(KV_{2})$ 的平均值时，应去掉一个最大值和一个最小值。余下的三个值中有两个应不小于 27 J，另一个可小于 27 J，但不应小于 20 J，三个值的平均值不应小于 27 J。",
+        "bbox": [
+            117,
+            239,
+            892,
+            294
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.4.2.2 如果型号中附加了可选代号“U”，夏比 V 型缺口冲击试验温度按表 2 要求，测定三个冲击试样的冲击吸收能量 $(KV_{2})$ 。三个值中有一个值可小于 47 J，但不应小于 32 J，三个值的平均值不应小于 47 J。",
+        "bbox": [
+            117,
+            296,
+            892,
+            350
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.5 焊丝送丝性能",
+        "text_level": 2,
+        "bbox": [
+            119,
+            362,
+            273,
+            377
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "缠绕的焊丝应适合连续送丝。焊丝接头处应适当处理，以保证能均匀连续送丝。",
+        "bbox": [
+            152,
+            389,
+            752,
+            406
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.6 焊缝 X 射线检测",
+        "text_level": 2,
+        "bbox": [
+            119,
+            418,
+            294,
+            433
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "焊缝 X 射线检测验收等级应符合 GB/T 37910.1—2019 中表 1 规定的 2 级。",
+        "bbox": [
+            152,
+            445,
+            726,
+            461
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5 试验方法",
+        "text_level": 2,
+        "bbox": [
+            119,
+            483,
+            223,
+            498
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.1 焊丝尺寸及表面质量",
+        "text_level": 2,
+        "bbox": [
+            119,
+            516,
+            324,
+            533
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.1.1 尺寸",
+        "text_level": 2,
+        "bbox": [
+            119,
+            545,
+            218,
+            560
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "焊丝直径检验用精度为 0.01 mm 的量具，在同一位置互相垂直方向测量，测量部位不少于两处。直条状填充丝长度检验用精度为 1 mm 的量具进行测量。",
+        "bbox": [
+            119,
+            572,
+            890,
+            608
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.1.2 表面质量",
+        "text_level": 2,
+        "bbox": [
+            119,
+            618,
+            253,
+            634
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "焊丝表面质量按 GB/T 25775 的规定，对焊丝任意部位进行目测检验。",
+        "bbox": [
+            154,
+            647,
+            682,
+            663
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.2 焊丝松弛直径和翘距",
+        "text_level": 2,
+        "bbox": [
+            119,
+            675,
+            326,
+            690
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "测量缠绕在焊丝盘(卷)上焊丝的松弛直径和翘距时,按表3的要求,从焊丝盘上截取足够长度的焊丝,不受拘束地放在平面上,测量所形成圆或圆弧的直径即为松弛直径;焊丝翘起的最高点到平面的距离即为翘距。",
+        "bbox": [
+            119,
+            701,
+            894,
+            756
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.3 化学分析",
+        "text_level": 2,
+        "bbox": [
+            121,
+            767,
+            240,
+            783
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "焊丝的化学成分分析应在焊丝成品上取样。化学成分分析可采用任何适宜的分析方法，仲裁试验时，按供需双方确认的分析方法进行。",
+        "bbox": [
+            121,
+            795,
+            894,
+            828
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.4 力学性能试验",
+        "text_level": 2,
+        "bbox": [
+            121,
+            840,
+            273,
+            857
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "5.4.1 试验用母材",
+        "text_level": 2,
+        "bbox": [
+            121,
+            869,
+            270,
+            884
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "熔敷金属力学性能试验用母材应采用与其熔敷金属化学成分或力学性能相当的钢板。若采用其他",
+        "bbox": [
+            154,
+            896,
+            894,
+            912
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            739,
+            87,
+            890,
+            100
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "page_number",
+        "text": "7",
+        "bbox": [
+            858,
+            916,
+            870,
+            927
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "母材，应使用试验焊材或其他相当的焊材在坡口面和垫板面焊接隔离层，其厚度加工后不小于3 mm。",
+        "bbox": [
+            109,
+            124,
+            867,
+            140
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.2 试件制备",
+        "text_level": 2,
+        "bbox": [
+            110,
+            152,
+            242,
+            168
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.2.1 熔敷金属力学性能试件按 GB/T 25774.1 进行制备，采用试件类型 1.1。焊接时采用 $\\phi2.4\\ mm$ 或 $\\phi2.5\\ mm$ 焊丝按表 5 规定的规范进行焊接。当采用其他尺寸焊丝时，按制造商推荐的规范进行焊接。",
+        "bbox": [
+            107,
+            180,
+            880,
+            233
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.2.2 试板定位焊后，启焊时试板温度应达到规定的预热温度，并在焊接过程中保持道间温度，见表6。试板温度超过时，应自然冷却。按照GB/T18591用表面温度计、测温笔或热电偶测量预热温度和道间温度。",
+        "bbox": [
+            107,
+            236,
+            882,
+            289
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.2.3 试件要求焊后热处理时，应在拉伸试样和冲击试样加工之前进行。试件放入炉内时，炉温不得高于 $315^{\\circ}\\mathrm{C}$ ，自 $315^{\\circ}\\mathrm{C}$ 始，以不大于 $220^{\\circ}\\mathrm{C} / \\mathrm{h}$ 的速率加热到 $620^{\\circ}\\mathrm{C} \\pm 15^{\\circ}\\mathrm{C}$ ，保温 $60\\mathrm{min} \\sim 75\\mathrm{min}$ 。达到保温时间后，以不大于 $195^{\\circ}\\mathrm{C} / \\mathrm{h}$ 的速率随炉冷却至 $315^{\\circ}\\mathrm{C}$ 以下时，允许从炉中取出，自然冷却至室温。也可根据供需双方协定，采用其他热处理规范。",
+        "bbox": [
+            109,
+            292,
+            882,
+            365
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "table",
+        "img_path": "images/222eeb236bd25508ab1a93c8cd8691e8be09465be161327e8a1af9f4f8fed95e.jpg",
+        "table_caption": [
+            "表 5 参考焊接规范"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>焊丝直径mm</td><td>电流类型</td><td>焊接电流A</td><td>焊接速度mm/min</td><td>焊缝长度mm</td><td>保护气体*</td></tr><tr><td>2.4/2.5</td><td>直流正接</td><td>220±30</td><td>100±30</td><td>≥200</td><td>I1,I2,I3</td></tr><tr><td colspan=\"6\">*保护气体类型代号按GB/T 39255-2020的规定。仲裁试验时,应采用GB/T 39255-2020中表2规定的I1。</td></tr></table>",
+        "bbox": [
+            112,
+            404,
+            878,
+            498
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "table",
+        "img_path": "images/3ca97b832607e0834a5171ee9d175e76462128334a0258521cec2ced357445b5.jpg",
+        "table_caption": [
+            "表 6 预热温度和道间温度"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>化学成分分类</td><td>预热温度°C</td><td>道间温度°C</td></tr><tr><td>2,3,4,6,10,12,16</td><td>室温</td><td rowspan=\"2\"> $150 \\pm 15$ </td></tr><tr><td>1M3,2M3,2M31,2M32,3M1T,3M3,4M3,4M31,4M3T,N1,N2,N3,N5,N7,N71,N9,NCC,NCC1,NCCT,NCCT1,NCCT2,N1M2T,N1M3,N2M3</td><td> $\\geqslant 100$ </td></tr><tr><td>ZX</td><td colspan=\"2\">供需双方协定</td></tr></table>",
+        "bbox": [
+            112,
+            552,
+            878,
+            733
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.3 拉伸试验",
+        "text_level": 2,
+        "bbox": [
+            110,
+            758,
+            242,
+            775
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "熔敷金属拉伸试样尺寸及取样位置按 GB/T 25774.1 的规定。拉伸试验按 GB/T 2652 进行。",
+        "bbox": [
+            142,
+            787,
+            838,
+            802
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.4 冲击试验",
+        "text_level": 2,
+        "bbox": [
+            110,
+            815,
+            242,
+            830
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.4.1 冲击试样尺寸及取样位置按 GB/T 25774.1 的规定。",
+        "bbox": [
+            107,
+            843,
+            571,
+            858
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.4.2 每组冲击试样中至少应测量一个试样 V 型缺口的形状尺寸，测量应在至少放大 50 倍的投影仪或金相显微镜上进行。",
+        "bbox": [
+            107,
+            861,
+            880,
+            895
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.4.4.3 V型缺口冲击试验应按GB/T2650进行。",
+        "bbox": [
+            107,
+            897,
+            495,
+            913
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            110,
+            92,
+            263,
+            106
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "page_number",
+        "text": "8",
+        "bbox": [
+            131,
+            919,
+            146,
+            929
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "5.5 焊缝 X 射线检测",
+        "text_level": 2,
+        "bbox": [
+            117,
+            128,
+            290,
+            144
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "5.5.1 焊缝 X 射线检测应在截取力学试样之前进行，检测前应去掉垫板。",
+        "bbox": [
+            117,
+            156,
+            668,
+            171
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "5.5.2 焊缝 X 射线检测按 GB/T 3323.1 进行。",
+        "bbox": [
+            117,
+            175,
+            473,
+            188
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "5.5.3 在评定焊缝 X 射线底片时，试件两端 25 mm 应不予考虑。",
+        "bbox": [
+            117,
+            193,
+            608,
+            207
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "6 复验",
+        "text_level": 2,
+        "bbox": [
+            119,
+            230,
+            186,
+            245
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "当任何一项检验不合格时，该项应加倍复验。对于化学分析，仅复验那些不满足要求的元素。当复验拉伸试验时，抗拉强度、屈服强度及断后伸长率同时作为复验项目。其试样可在原试件上截取，也可在新焊制的试件上截取。加倍复验结果均应符合该项检验的规定。",
+        "bbox": [
+            117,
+            267,
+            890,
+            320
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "在试验过程中或试验完成后,如果能够确认试验没有按照规定进行,则试验无效,需按规定重新进行。在此种情况下,不要求加倍复验。",
+        "bbox": [
+            117,
+            323,
+            890,
+            358
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "7 供货技术条件",
+        "text_level": 2,
+        "bbox": [
+            119,
+            378,
+            257,
+            394
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "供货技术条件按 GB/T 25775 和 GB/T 25778 的规定。",
+        "bbox": [
+            154,
+            415,
+            566,
+            431
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            737,
+            85,
+            890,
+            99
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_number",
+        "text": "9",
+        "bbox": [
+            858,
+            915,
+            870,
+            926
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "附录A",
+        "bbox": [
+            452,
+            152,
+            542,
+            167
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "(资料性附录)",
+        "bbox": [
+            440,
+            169,
+            551,
+            186
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "本标准与 ISO 636:2017 相比的结构变化情况",
+        "bbox": [
+            324,
+            188,
+            668,
+            205
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "本标准与 ISO 636:2017 相比, 章条编号发生了变化, 具体对照情况参见表 A.1。",
+        "bbox": [
+            146,
+            217,
+            739,
+            233
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "table",
+        "img_path": "images/f206237868d89d162e30e7bfa63402468acd00614d02d8d6b6165e93e211f75e.jpg",
+        "table_caption": [
+            "表 A.1 本标准与 ISO 636:2017 的章条编号对照情况"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>本标准章条编号</td><td>对应ISO标准章条编号</td></tr><tr><td>3</td><td>4.1B,5.1,5.2B,5.3B,5.4,11B</td></tr><tr><td>4.1</td><td>-</td></tr><tr><td>4.2</td><td>-</td></tr><tr><td>4.3</td><td>5.4</td></tr><tr><td>4.4</td><td>5.2B,5.3B</td></tr><tr><td>4.5</td><td>-</td></tr><tr><td>4.6</td><td>-</td></tr><tr><td>5.1</td><td>-</td></tr><tr><td>5.2</td><td>-</td></tr><tr><td>5.3</td><td>7</td></tr><tr><td>5.4</td><td>6B,6.1B,6.2B,6.3B</td></tr><tr><td>5.5</td><td>-</td></tr><tr><td>6</td><td>9</td></tr><tr><td>7</td><td>10</td></tr><tr><td>附录A</td><td>-</td></tr><tr><td>附录B</td><td>-</td></tr><tr><td>附录C</td><td>-</td></tr></table>",
+        "bbox": [
+            112,
+            271,
+            878,
+            656
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            112,
+            91,
+            263,
+            105
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "page_number",
+        "text": "10",
+        "bbox": [
+            132,
+            918,
+            152,
+            929
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "附录 B",
+        "text_level": 2,
+        "bbox": [
+            460,
+            148,
+            551,
+            163
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "(资料性附录)",
+        "bbox": [
+            450,
+            167,
+            559,
+            182
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "本标准与 ISO 636:2017 的技术性差异及其原因",
+        "bbox": [
+            322,
+            185,
+            685,
+            200
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "本标准与 ISO 636:2017 的技术性差异及其原因参见表 B.1。",
+        "bbox": [
+            152,
+            214,
+            608,
+            229
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "table",
+        "img_path": "images/dc448feffb1d2974aac31265b978d7b727c76a598b6ef020d5bea9ce9637babe.jpg",
+        "table_caption": [
+            "表 B.1 本标准与 ISO 636:2017 的技术性差异及其原因"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>本标准的章条编号</td><td>技术性差异</td><td>原因</td></tr><tr><td>2</td><td>关于规范性引用文件,本标准做了具有技术性差异的调整,以适应我国的技术条件,调整的情况集中反映在第2章“规范性引用文件”中,具体调整如下:用等同采用国际标准的GB/T 18591代替ISO 13916(见5.4.2.2);用修改采用国际标准的GB/T 25774.1代替ISO 15792-1(见5.4.2.1,5.4.3,5.4.4.1);用修改采用国际标准的GB/T 25775代替ISO 544(见4.1,5.1.2,第7章);用修改采用国际标准的GB/T 25778代替ISO 14344(见第7章);用修改采用国际标准的GB/T 39255-2020代替ISO 14175(见表5);增加引用了GB/T 2650(见5.4.4.3);增加引用了GB/T 2652(见5.4.3);增加引用了GB/T 3323.1(见5.5.2);增加引用了GB/T 37910.1-2019(见4.6);删除了ISO 80000-1:2009</td><td>适用我国技术要求</td></tr><tr><td>3.2</td><td>增加了4H、7H两个冲击试验温度代号;增加了附加可选代号,无镀铜代号N;增加了AP表示在焊态和焊后热处理条件下试验均可</td><td>适用我国技术要求</td></tr><tr><td>4.3</td><td>增加了“焊丝成分代号”;化学成分分类2、3、4、6的焊丝化学成分,S由“0.035%”调整为“0.025%”;增加了10一个化学成分分类;化学成分分类“G”改为“Z”</td><td>我国实际生产情况</td></tr><tr><td>4.15.1</td><td>增加了焊丝尺寸及表面质量的技术要求</td><td>适用我国技术要求</td></tr><tr><td>4.25.2</td><td>增加了焊丝松弛直径和翘距的技术要求</td><td>适用我国技术要求</td></tr><tr><td>4.5</td><td>增加了焊丝送丝性能的技术要求</td><td>适用我国技术要求</td></tr><tr><td>4.65.5</td><td>增加了焊缝X射线检测的技术要求</td><td>适用我国技术要求</td></tr><tr><td rowspan=\"2\">5.4.2</td><td>试件类型由1.3型调整为1.1型</td><td>与其他实心填充丝标准保持一致</td></tr><tr><td>增加了ø2.5mm焊丝的参考焊接规范</td><td>适用我国技术要求</td></tr></table>",
+        "bbox": [
+            122,
+            269,
+            890,
+            901
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            737,
+            86,
+            890,
+            100
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "page_number",
+        "text": "11",
+        "bbox": [
+            850,
+            916,
+            870,
+            927
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "附录 C",
+        "text_level": 2,
+        "bbox": [
+            450,
+            150,
+            542,
+            167
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "(资料性附录)",
+        "bbox": [
+            440,
+            169,
+            551,
+            185
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "焊丝型号对照",
+        "bbox": [
+            438,
+            188,
+            552,
+            204
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "为便于应用,提供了本标准常用实心焊丝型号与其他相关标准焊丝型号之间的对应关系,参见表 C.1。在实际应用中并不限制采用其他保护气体类型,当采用其他保护气体类型时,其力学性能可能会发生变化。",
+        "bbox": [
+            109,
+            217,
+            882,
+            270
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "table",
+        "img_path": "images/cd473e4a347de17a1c3223eb71abe11f1eda99eb115917dafec785f436f63377.jpg",
+        "table_caption": [
+            "表 C.1 焊丝型号对照表"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>序号</td><td>本标准</td><td>ISO 636:2017(B系列)</td><td>ANSI/AWS A5.18M:2017ANSI/AWS A5.28M:2005(R2015)</td><td>GB/T 8110-2008</td></tr><tr><td>1</td><td>W49A32</td><td>W49A32</td><td>ER49S-2</td><td>ER50-2</td></tr><tr><td>2</td><td>W49A23</td><td>W49A23</td><td>ER49S-3</td><td>ER50-3</td></tr><tr><td>3</td><td>W49AZ4</td><td>W49AZ4</td><td>ER49S-4</td><td>ER50-4</td></tr><tr><td>4</td><td>W49A36</td><td>W49A36</td><td>ER49S-6</td><td>ER50-6</td></tr><tr><td>5</td><td>W49AYU10</td><td>-</td><td>-</td><td>ER49-1</td></tr><tr><td>6</td><td>W××12</td><td>W××12</td><td>-</td><td>-</td></tr><tr><td>7</td><td>W××16</td><td>W××16</td><td>-</td><td>-</td></tr><tr><td>8</td><td>W49PZ1M3</td><td>W49PZ1M3</td><td>ER49S-A1</td><td>ER49-A1</td></tr><tr><td>9</td><td>W××2M3</td><td>W××2M3</td><td>-</td><td>-</td></tr><tr><td>10</td><td>W××2M31</td><td>W××2M31</td><td>-</td><td>-</td></tr><tr><td>11</td><td>W××2M32</td><td>W××2M32</td><td>-</td><td>-</td></tr><tr><td>12</td><td>W××3M1T</td><td>W××3M1T</td><td>-</td><td>-</td></tr><tr><td>13</td><td>W××3M3</td><td>W××3M3</td><td>-</td><td>-</td></tr><tr><td>14</td><td>W××4M3</td><td>W××4M3</td><td>-</td><td>-</td></tr><tr><td>15</td><td>W××4M31</td><td>W××4M31</td><td>-</td><td>-</td></tr><tr><td>16</td><td>W××4M3T</td><td>W××4M3T</td><td>-</td><td>-</td></tr><tr><td>17</td><td>W××N1</td><td>W××N1</td><td>-</td><td>-</td></tr><tr><td>18</td><td>W55A4HN2</td><td>W55A×N2</td><td>ER55S-Ni1</td><td>ER55-Ni1</td></tr><tr><td>19</td><td>W××N3</td><td>W××N3</td><td>-</td><td>-</td></tr><tr><td>20</td><td>W55P6N5</td><td>W55P6N5</td><td>ER55S-Ni2</td><td>ER55-Ni2</td></tr><tr><td>21</td><td>W××N7</td><td>W××N7</td><td>-</td><td>-</td></tr><tr><td>22</td><td>W55P7HN71</td><td>W55P×N71</td><td>ER55S-Ni3</td><td>ER55-Ni3</td></tr><tr><td>23</td><td>W××N9</td><td>W××N9</td><td>-</td><td>-</td></tr><tr><td>24</td><td>W××NCC</td><td>W××NCC</td><td>-</td><td>-</td></tr><tr><td>25</td><td>W××NCC1</td><td>W××NCC1</td><td>-</td><td>-</td></tr><tr><td>26</td><td>W××NCCT</td><td>W××NCCT</td><td>-</td><td>-</td></tr><tr><td>序号</td><td>本标准</td><td>ISO 636:2017(B系列)</td><td>ANSI/AWS A5.18M:2017ANSI/AWS A5.28M:2005(R2015)</td><td>GB/T 8110—2008</td></tr><tr><td>27</td><td>W××NCCT1</td><td>W××NCCT1</td><td>—</td><td>—</td></tr><tr><td>28</td><td>W××NCCT2</td><td>W××NCCT2</td><td>—</td><td>—</td></tr><tr><td>29</td><td>W××N1M2T</td><td>W××N1M2T</td><td>—</td><td>—</td></tr><tr><td>30</td><td>W××N1M3</td><td>W××N1M3</td><td>—</td><td>—</td></tr><tr><td>31</td><td>W××N2M3</td><td>W××N2M3</td><td>—</td><td>—</td></tr></table>",
+        "bbox": [
+            112,
+            309,
+            878,
+            903
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            112,
+            90,
+            263,
+            105
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "page_number",
+        "text": "12",
+        "bbox": [
+            132,
+            916,
+            154,
+            929
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "table",
+        "img_path": "",
+        "table_caption": [
+            ""
+        ],
+        "table_footnote": [],
+        "bbox": [
+            119,
+            155,
+            887,
+            307
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "header",
+        "text": "GB/T 39280—2020",
+        "bbox": [
+            737,
+            87,
+            889,
+            102
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "footer",
+        "text": "库七七 www.kqqw.com 标准下载",
+        "bbox": [
+            376,
+            972,
+            621,
+            986
+        ],
+        "page_idx": 15
+    }
+]

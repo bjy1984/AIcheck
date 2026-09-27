@@ -28,3 +28,12 @@
 - 当前工作区未找到 `NB/T 47013.8-2025` 的完整 PDF；按用户要求，已在 `standards/` 中放入 `NB_T 47013.8-2025 承压设备无损检测 第8部分 泄漏检测（临时替代-更新变化记录）.md`，暂时替代完整 PDF 用于规则库检索。取得完整 PDF 后应替换为正式标准文件。
 - `NB/T 47013` 目录中已包含当前工作区已有的 `NB/T 47013.3-2023`、`NB/T 47013.11-2023` 等新增分册文件。
 - 2026-07-02 复核后补入 `特种设备检验人员考核规则.docx`，用于覆盖 `TSG Z8001-2019` 的第1号修改单引用；详见 `reports/rules_standard_completeness_recheck.md`。
+
+## 2026-09-27 补充 GB/T 39280-2020
+
+- 原件：`standards/GB∕T 39280-2020 钨极惰性气体保护电弧焊用非合金钢及细晶粒钢实心焊丝.pdf`，16页。
+- 原件 SHA-256：`25346ab8161238ad8f9322ba4ffe0a4a7b34db7dcc40c515423e680f0ceea675`。
+- OCR 复用 `scripts/rules_standards_mineru_ocr.py` 和现有 MinerU 配置，保留原始返回内容。
+- 产物：`results/mineru_sidecar/KF-KB-4B082F453E/` 下的 `full.md`、`content_list.json`、`layout.json`、`full.zip`、`meta.json`。
+- 兼容正文：`results/GB∕T 39280-2020 钨极惰性气体保护电弧焊用非合金钢及细晶粒钢实心焊丝.pdf.md`。
+- 16页均有结构化内容，共12个表格块。表4含跨页合并，续表行需回查PDF第7–9页；OCR起始页不能替代每行的原页定位。

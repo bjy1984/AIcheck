@@ -55,12 +55,12 @@ class ProtocolTest(unittest.TestCase):
                     return self.send({"mode": "local-input-only", "retention": {"serverStoresInput": False}})
                 if path == "/api/inspection-services/rules":
                     return self.send({"source": "server", "nodes": [{"nodeId": 24, "code": "R24"}]})
-                if path == "/api/knowledge/clauses":
-                    return self.send({"items": [{"fileId": "K1", "clauseNo": "2.1", "standardName": "fixture"}], "total": 1})
-                if path == "/api/knowledge/files/K1/canonical":
+                if path == "/api/inspection-services/standards":
+                    return self.send({"items": [{"fileId": "KF-KB-K1", "clauseNo": "2.1", "standardName": "fixture"}], "total": 1})
+                if path == "/api/inspection-services/standards/KF-KB-K1/canonical":
                     if cls.state.get("missing_standard"):
                         return self.send(code=40404, message="No canonical record")
-                    return self.send({"document": {"id": "K1"}, "blocks": [{"pageNo": 2, "text": "test standard full text"}],
+                    return self.send({"document": {"id": "KF-KB-K1"}, "blocks": [{"pageNo": 2, "text": "test standard full text"}],
                                       "provenance": [{"sourceId": "SOURCE", "pageNo": 2}]})
                 return self.send(status=404, code=40404)
 
@@ -77,7 +77,7 @@ class ProtocolTest(unittest.TestCase):
                                       "authenticityChecked": False})
                 if path == "/api/inspection-services/certificate-registry":
                     return self.send({"kind": body["kind"], "records": [], "authenticityConclusion": "manual_confirmation_required"})
-                if path == "/api/std-samr/standards/verify":
+                if path == "/api/inspection-services/standard-status":
                     return self.send({"status": "COMPLETED", "citedRef": body["standardRef"], "verdict": "current",
                                       "matched": {"detailUrl": "https://std.samr.gov.cn/gb/search/gbDetailed?id=PUBLIC_STANDARD_001"}})
                 return self.send(status=404, code=40404)
@@ -132,14 +132,24 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(client.invoke("connection", {"projectId": "P"})["error"]["code"], "invalidArguments")
         self.assertEqual(self.state["requests"], [])
 
-    def test_connection_calls_only_stateless_capabilities_with_auth(self):
+    def test_connection_calls_only_stateless_capabilities_without_auth(self):
         result = client.invoke("connection", {})
         self.assertTrue(result["ok"], result)
         self.assertFalse(result["data"]["retention"]["serverStoresInput"])
         self.assertEqual(len(self.state["requests"]), 1)
         method, path, headers = self.state["requests"][0]
         self.assertEqual((method, path), ("GET", "/api/inspection-services/capabilities"))
-        self.assertEqual(headers["Authorization"], "Bearer test-secret")
+        self.assertNotIn("Authorization", headers)
+
+    def test_loopback_bypasses_system_proxy_but_remote_keeps_proxy(self):
+        for base, local in (("http://127.0.0.1:8000", True), ("http://localhost:8000", True),
+                            ("http://[::1]:8000", True), ("https://example.com", False)):
+            with patch.dict(os.environ, {"AICHECK_BASE_URL": base}), patch.object(client.request, "build_opener") as build:
+                client.Client(require_token=False)
+                proxies = [handler for handler in build.call_args.args if isinstance(handler, client.request.ProxyHandler)]
+                self.assertEqual(len(proxies), int(local))
+                if local:
+                    self.assertEqual(proxies[0].proxies, {})
 
     def test_business_error_http_200_is_failure_and_redacted(self):
         self.state["business_error"] = True
@@ -212,7 +222,7 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(client.invoke("standards", {"query": "焊工", "pageSize": 201})["error"]["code"], "invalidArguments")
 
     def test_standard_canonical_keeps_provenance_and_missing_is_not_summary_fallback(self):
-        args = {"fileId": "K1", "pageNo": 2, "section": "2.1"}
+        args = {"fileId": "KF-KB-K1", "pageNo": 2, "section": "2.1"}
         result = client.invoke("standard_content", args)
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["data"]["provenance"][0]["sourceId"], "SOURCE")
@@ -227,7 +237,7 @@ class ProtocolTest(unittest.TestCase):
         arguments = {"standardRef": "GB/T 20801.1-2020", "reviewDate": "2026-09-22"}
         result = client.invoke("standard_status", arguments)
         self.assertTrue(result["ok"], result)
-        self.assertEqual(self.state["requests"][-1][:2], ("POST", "/api/std-samr/standards/verify"))
+        self.assertEqual(self.state["requests"][-1][:2], ("POST", "/api/inspection-services/standard-status"))
         self.assertEqual(self.state["requests"][-1][3], arguments)
         self.assertEqual(result["data"]["matched"]["detailUrl"],
                          "https://std.samr.gov.cn/gb/search/gbDetailed?id=PUBLIC_STANDARD_001")
@@ -258,16 +268,16 @@ class ProtocolTest(unittest.TestCase):
         self.assertFalse(client.invoke("certificate_validity", {"certificates": [], "referenceDate": "today"})["ok"])
         self.assertEqual(self.state["requests"], [])
 
-    def test_registry_requires_explicit_external_query_consent(self):
+    def test_registry_defaults_to_query_without_confirmation(self):
         arguments = {"kind": "organization_license", "identifier": "TS0000000-2026"}
-        self.assertFalse(client.invoke("certificate_registry", arguments)["ok"])
         self.assertFalse(client.invoke("certificate_registry", {**arguments, "allowExternalQuery": False})["ok"])
         self.assertFalse(client.invoke("certificate_registry", {**arguments, "allowExternalQuery": 1})["ok"])
         self.assertEqual(self.state["requests"], [])
         result = client.invoke("certificate_registry", {**arguments, "allowExternalQuery": True})
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["data"]["authenticityConclusion"], "manual_confirmation_required")
-        self.assertEqual(len(self.state["requests"]), 1)
+        self.assertTrue(client.invoke("certificate_registry", arguments)["ok"])
+        self.assertEqual(len(self.state["requests"]), 2)
 
     def test_api_redirect_rejected_without_retry_or_auth_leak(self):
         self.state["redirect"] = True
@@ -301,7 +311,7 @@ class ProtocolTest(unittest.TestCase):
             self.assertEqual(token_file.read_text().strip(), "fresh-token")
             self.assertEqual(stat.S_IMODE(token_file.stat().st_mode), 0o600)
             self.assertTrue(client.invoke("connection", {})["ok"])
-            self.assertEqual(self.state["requests"][-1][2]["Authorization"], "Bearer fresh-token")
+            self.assertNotIn("Authorization", self.state["requests"][-1][2])
         login_request = next(row for row in self.state["requests"] if row[0] == "POST")
         self.assertNotIn("Authorization", login_request[2])
         self.assertEqual(login_request[3]["tenantId"], "tenant")

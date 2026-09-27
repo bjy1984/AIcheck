@@ -338,6 +338,7 @@ def build_sidecar_parse_result(
         document_type="standard_reference",
         provider_task_id=f"standard-sidecar:{file_id}",
         markdown_present=(directory / "full.md").is_file(),
+        preserve_source_tables=True,
     )
     version_id = str(version["id"])
     parse_result_id = f"PARSE-STANDARD-{version_id.removeprefix('KDV-')}"

@@ -204,6 +204,7 @@ class StdSamrVerifyResult:
     standard_references: tuple[Mapping[str, Any], ...]
     detail: StdSamrDetail | None = None
     queried_at: str = ""
+    review_date: str = ""
 
     def to_dict(self, *, origin: str = DEFAULT_ORIGIN) -> Mapping[str, Any]:
         return {
@@ -211,6 +212,11 @@ class StdSamrVerifyResult:
             "citedRef": self.cited_ref,
             "canonicalRef": self.canonical_ref,
             "verdict": self.verdict,
+            "reviewDate": self.review_date,
+            "verdictBasis": "as_of_review_date",
+            "registryStatusBasis": "current_query",
+            "manualConfirmationRequired": self.verdict in {"not_found", "ambiguous"},
+            "resultMeaning": "本次平台查询未检出，不代表标准无效。" if self.verdict == "not_found" else "平台事实与指定日期核验，不直接生成工程结论。",
             "matched": None if self.matched is None else dict(self.matched.to_dict(origin=origin)),
             "currentExecution": (
                 None
@@ -625,6 +631,7 @@ class StdSamrClient:
                 current_execution=None,
                 standard_references=(),
                 queried_at=queried_at,
+                review_date=as_of.isoformat(),
             )
 
         matched: StdSamrBrief | None
@@ -641,6 +648,7 @@ class StdSamrClient:
                 current_execution=_pick_current(siblings),
                 standard_references=(),
                 queried_at=queried_at,
+                review_date=as_of.isoformat(),
             )
         else:
             return StdSamrVerifyResult(
@@ -651,6 +659,7 @@ class StdSamrClient:
                 current_execution=_pick_current(siblings),
                 standard_references=(),
                 queried_at=queried_at,
+                review_date=as_of.isoformat(),
             )
 
         assert matched is not None
@@ -671,20 +680,18 @@ class StdSamrClient:
         effective_date = _parse_iso_date(effective_from)
         withdrawn_date = _parse_iso_date(withdrawn_on)
 
-        if status == STATUS_UPCOMING and effective_date is not None and effective_date > as_of:
+        # Registry status describes today; the verdict describes the requested date.
+        if effective_date is not None and as_of < effective_date:
             verdict = "not_yet_effective"
-        elif status in {STATUS_WITHDRAWN, STATUS_REPLACED}:
+        elif withdrawn_date is not None and as_of >= withdrawn_date:
             verdict = "superseded"
-        elif status == STATUS_CURRENT:
-            if effective_date is not None and effective_date > as_of:
-                verdict = "not_yet_effective"
-            elif withdrawn_date is not None and as_of >= withdrawn_date:
-                verdict = "superseded"
-            elif current is not None and current.code != matched.code and current.status == STATUS_CURRENT:
-                verdict = "superseded"
-                replaced_by = current.code
-            else:
-                verdict = "current"
+        elif effective_date is not None and withdrawn_date is not None:
+            verdict = "current"
+        elif status in {STATUS_WITHDRAWN, STATUS_REPLACED}:
+            # Without a withdrawal date today's status cannot prove historical status.
+            verdict = "superseded" if as_of >= business_today() else "ambiguous"
+        elif status == STATUS_CURRENT and effective_date is not None:
+            verdict = "current" if as_of <= business_today() else "ambiguous"
         else:
             verdict = "ambiguous"
 
@@ -704,4 +711,5 @@ class StdSamrClient:
             standard_references=(reference,),
             detail=detail,
             queried_at=queried_at,
+                review_date=as_of.isoformat(),
         )

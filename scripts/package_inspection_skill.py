@@ -15,6 +15,8 @@ FILES = (
     "references/business-nodes-v3.md", "references/review-contract.md",
     "references/backend-workflow.md", "references/platform-setup.md",
     "scripts/aicheck_client.py", "scripts/mcp_server.py",
+    "scripts/report.py", "assets/report.html",
+    "references/report.schema.json", "references/report.example.json", "references/report-output.md",
 )
 
 

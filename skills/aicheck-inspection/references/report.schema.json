@@ -1,0 +1,430 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "inspection-report@1",
+      "type": "string"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reportDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "scopeNote": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ruleSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "materials": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/material"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/service"
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "project",
+    "reportDate",
+    "scopeNote",
+    "ruleSha256",
+    "nodes",
+    "materials",
+    "evidence",
+    "services",
+    "checks",
+    "issues"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "material": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "hashReason": {
+          "type": "string"
+        },
+        "readStatus": {
+          "type": "string",
+          "enum": [
+            "read",
+            "partial",
+            "unread"
+          ]
+        },
+        "pages": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "path",
+        "sha256",
+        "hashReason",
+        "readStatus",
+        "pages"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "materialId": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "page": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locationVerified": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "materialId",
+        "page",
+        "locator",
+        "quote",
+        "locationVerified"
+      ],
+      "additionalProperties": false
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "queriedAt": {
+          "type": "string",
+          "minLength": 1,
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "success",
+            "failed",
+            "unsupported",
+            "not_run"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "tool",
+        "queriedAt",
+        "status",
+        "summary",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "period": {
+      "type": "object",
+      "properties": {
+        "validFrom": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "validUntil": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "eventStart": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "eventEnd": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+          }
+        }
+      },
+      "required": [
+        "validFrom",
+        "validUntil",
+        "eventStart",
+        "eventEnd",
+        "evidenceIds"
+      ],
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "node": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "method": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "object": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "type": "string",
+          "enum": [
+            "not_run",
+            "completed",
+            "failed",
+            "waiting"
+          ]
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "warning",
+            "insufficient",
+            "manual",
+            "not_applicable",
+            "pending"
+          ]
+        },
+        "actual": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requirement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "basisVerified": {
+          "type": "boolean"
+        },
+        "conditionsMet": {
+          "type": "boolean"
+        },
+        "conditionNote": {
+          "type": "string"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+          }
+        },
+        "serviceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+          }
+        },
+        "period": {
+          "$ref": "#/$defs/period"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "comparison",
+            "period",
+            "official",
+            "scope"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "node",
+        "method",
+        "object",
+        "title",
+        "execution",
+        "result",
+        "actual",
+        "requirement",
+        "basisVerified",
+        "conditionsMet",
+        "conditionNote",
+        "evidenceIds",
+        "serviceIds",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "issue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "checkIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+          },
+          "minItems": 1
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "recognize",
+            "supply",
+            "retry",
+            "basis",
+            "rectify"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "completion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "checkIds",
+        "priority",
+        "kind",
+        "title",
+        "action",
+        "completion"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "title": "本地监检辅助报告"
+}
