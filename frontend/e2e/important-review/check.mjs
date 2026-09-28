@@ -1,5 +1,6 @@
 import { chromium, expect } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
+import assert from 'node:assert/strict'
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
 page.setDefaultTimeout(20000)
@@ -43,6 +44,10 @@ const docs = Array.from({ length: 11 }, (_, i) => ({
   bodyUploaded: true
 }))
 let result = []
+let documentRequests = 0,
+  runRequests = 0
+let holdDocuments, releaseDocuments
+await page.clock.install()
 await page.route('http://127.0.0.1:4407/api/**', async (route) => {
   const url = new URL(route.request().url()),
     path = url.pathname
@@ -65,6 +70,8 @@ await page.route('http://127.0.0.1:4407/api/**', async (route) => {
   } else if (path.endsWith('/important-review'))
     data = { nodes: rules, enabled: true, disabledReason: '' }
   else if (path.endsWith('/documents')) {
+    documentRequests++
+    if (holdDocuments) await holdDocuments
     const p = Number(url.searchParams.get('page') || 1)
     data = {
       items: path.includes('P-OTHER') ? [] : docs.slice((p - 1) * 10, p * 10),
@@ -97,7 +104,7 @@ await page.route('http://127.0.0.1:4407/api/**', async (route) => {
         id: 'A1',
         nodeId: 24,
         reviewRunId: 'R1',
-        status: 'waiting_human_review',
+        status: 'running',
         startedAt: '2026-09-22 10:00:00',
         documents: [
           { documentId: 'D0', versionId: 'V0', fileName: docs[0].fileName },
@@ -132,9 +139,10 @@ await page.route('http://127.0.0.1:4407/api/**', async (route) => {
         findingDrafts: []
       }
     ]
-  } else if (path.endsWith('/important-review/runs'))
+  } else if (path.endsWith('/important-review/runs')) {
+    runRequests++
     data = { items: path.includes('P-OTHER') ? [] : result }
-  else if (path.endsWith('/original')) {
+  } else if (path.endsWith('/original')) {
     await route.fulfill({
       status: 404,
       contentType: 'application/json',
@@ -156,13 +164,33 @@ await page.route('http://127.0.0.1:4407/api/**', async (route) => {
 try {
   await page.goto('http://127.0.0.1:4407/e2e/important-review/index.html')
   await expect(page.getByRole('heading', { name: '工程资料', exact: true })).toBeVisible()
-  await page
-    .locator('input[type=file]')
-    .setInputFiles({
-      name: '监检补充资料.pdf',
-      mimeType: 'application/pdf',
-      buffer: Buffer.from('%PDF-1.4 test upload')
-    })
+  await expect(page.getByText('已解析', { exact: true })).toHaveCount(10)
+  await expect.poll(() => runRequests).toBe(1)
+  await page.clock.runFor(17000)
+  assert.equal(documentRequests, 1, 'idle documents must not poll or load twice initially')
+  assert.equal(runRequests, 1, 'idle reviews must not poll')
+  docs[0].currentOcrStatus = '识别中'
+  await page.getByRole('button', { name: '刷新资料', exact: true }).click()
+  await expect(page.getByText('解析中', { exact: true })).toBeVisible()
+  holdDocuments = new Promise((resolve) => {
+    releaseDocuments = resolve
+  })
+  await page.clock.runFor(8100)
+  await expect.poll(() => documentRequests).toBe(3)
+  await expect(page.locator('.el-loading-mask')).toBeHidden()
+  docs[0].currentOcrStatus = '已识别'
+  holdDocuments = undefined
+  releaseDocuments()
+  await expect(page.getByText('已解析', { exact: true })).toHaveCount(10)
+  await page.clock.runFor(17000)
+  assert.equal(documentRequests, 3, 'completed parsing must stop polling')
+  assert.equal(runRequests, 1, 'parsing must not poll idle reviews')
+
+  await page.locator('input[type=file]').setInputFiles({
+    name: '监检补充资料.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4 test upload')
+  })
   await expect(page.getByText('资料已上传，解析完成后可用于审查。')).toBeVisible()
   if (
     uploads.length !== 3 ||
@@ -184,16 +212,23 @@ try {
   await node.getByRole('button', { name: '审查规则', exact: true }).click()
   await expect(page.getByText('核对证书与作业记录；缺少施焊日期不得默认通过。')).toBeVisible()
   mkdirSync('../output/important-review', { recursive: true })
-  await page.waitForTimeout(400)
+  await page.clock.runFor(400)
   await page.screenshot({ path: '../output/important-review/rules.png', fullPage: true })
   await page.locator('.el-drawer__close-btn:visible').click()
   await page.getByRole('button', { name: /开始审查（已选 1 个节点，2 份文件）/ }).click()
+  await expect(page.getByRole('button', { name: '展开资料', exact: true })).toBeVisible()
+  const beforeCompletion = runRequests
+  result[0].status = 'waiting_human_review'
+  await page.clock.runFor(8100)
+  await expect.poll(() => runRequests).toBe(beforeCompletion + 1)
   await expect(page.getByText('有效期覆盖施焊日期', { exact: true })).toBeVisible()
+  await page.clock.runFor(17000)
+  assert.equal(runRequests, beforeCompletion + 1, 'completed reviews must stop polling')
   await expect(page.getByText('证据不足', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: '展开资料', exact: true })).toBeVisible()
   if (JSON.stringify(starts) !== JSON.stringify([{ inputDocumentVersionIds: ['V0', 'V10'] }]))
     throw new Error('Selection scope changed')
-  await page.waitForTimeout(400)
+  await page.clock.runFor(400)
   await page.screenshot({ path: '../output/important-review/results.png', fullPage: true })
   await page
     .locator('.important-outcomes')
@@ -210,7 +245,7 @@ try {
   await expect(page.getByText('尚未开始审查，请先选择资料并确认审查范围')).toBeVisible()
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'PASS: upload lifecycle, unbound cross-page selection, rules, run scope, results, evidence, view preservation, project reset'
+    'PASS: idle polling stopped, silent parsing refresh, polling restarts and stops on review completion, upload lifecycle, unbound cross-page selection, rules, run scope, results, evidence, view preservation, project reset'
   )
 } catch (error) {
   console.error(errors)
