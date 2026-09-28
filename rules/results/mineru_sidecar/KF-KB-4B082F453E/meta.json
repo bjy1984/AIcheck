@@ -1,0 +1,31 @@
+{
+  "knowledgeFileId": "KF-KB-4B082F453E",
+  "source": "/Users/mac/Documents/AIcheck/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-4B082F453E/GB∕T 39280-2020 钨极惰性气体保护电弧焊用非合金钢及细晶粒钢实心焊丝.pdf",
+  "artifact_files": [
+    "abd2cb33-e0f2-4524-b3b0-d4d697c74b1e_content_list.json",
+    "abd2cb33-e0f2-4524-b3b0-d4d697c74b1e_content_list_v2.json",
+    "abd2cb33-e0f2-4524-b3b0-d4d697c74b1e_model.json",
+    "abd2cb33-e0f2-4524-b3b0-d4d697c74b1e_origin.pdf",
+    "full.md",
+    "images/222eeb236bd25508ab1a93c8cd8691e8be09465be161327e8a1af9f4f8fed95e.jpg",
+    "images/285f937aa59fa6604df85fe0ebddb33ed9e6680f71ec6fc015457edda7827645.jpg",
+    "images/3ca97b832607e0834a5171ee9d175e76462128334a0258521cec2ced357445b5.jpg",
+    "images/401cfa9271a11c9d986eca1103f9ce335de302a7411d3f489c9f354dca064c89.jpg",
+    "images/693713c6c8a3a9a951dfda29fe2f9eda9d69b5c9bb83fe17b5c9511430fa09b0.jpg",
+    "images/841c4f379f3c03ed68bb3aff32348cce2f7c4c36a8ebe78438c5cfea604e4fa8.jpg",
+    "images/a18f56be26d452f7f0469f7ae328b8d293375de1e8faaae1083095e6f1e7dc20.jpg",
+    "images/a2a2e61ee1a6545b6ebf0d0d1323b3349f22cca5a408da0533dba66a6963027f.jpg",
+    "images/af9daed3edabe7b2a437fec9643839ef61f092953032d6f3e9e97eab27cb044e.jpg",
+    "images/cd473e4a347de17a1c3223eb71abe11f1eda99eb115917dafec785f436f63377.jpg",
+    "images/cf99c6776d1b675a311a84cb5df44375cbd168e17344fdbbb900c6ab76fcb0cf.jpg",
+    "images/d6e9adaf04d5aeceb690e504049693aeb56db5706ecfb3ff2f24aa1c16a4b879.jpg",
+    "images/dc448feffb1d2974aac31265b978d7b727c76a598b6ef020d5bea9ce9637babe.jpg",
+    "images/f206237868d89d162e30e7bfa63402468acd00614d02d8d6b6165e93e211f75e.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "abd2cb33-e0f2-4524-b3b0-d4d697c74b1e_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-09-27T14:43:51.189247+00:00"
+}

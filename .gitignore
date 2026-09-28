@@ -68,3 +68,30 @@ scripts/r01_r69_pack/node_modules
 Scan.zip
 # 写错的重定向留下的空文件（`> 127.0.0.1:8001` 之类）
 127.0.0.1:*
+
+# Rebuildable local read-only standard corpus.
+output/inspection-standard-corpus/
+
+# Generated videos, review reports and their intermediate assets stay local.
+/video/
+/output/video*/
+/output/inspection-test*/
+/output/important-review/
+/AIcheck审查报告*/
+/技能与服务调用核查_*
+/output/standard-*-qa/
+/output/standard-*-import.json
+# Keep distributable skill packages, exclude local acceptance/review artifacts.
+/output/skills/*
+!/output/skills/*.zip
+!/output/skills/*.manifest.json
+
+# Ignore output except distributable Skill archives and manifests.
+/output/*
+!/output/skills/
+/output/skills/*
+!/output/skills/*.zip
+!/output/skills/*.manifest.json
+
+# Local launcher for generated demonstration videos.
+/scripts/start-video-demo.zsh

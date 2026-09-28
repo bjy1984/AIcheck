@@ -205,3 +205,26 @@ def test_std_samr_search_route_exposes_contract(monkeypatch) -> None:
     response = client.post("/api/std-samr/standards/search", json={"query": "GB/T 12771"})
     assert response.status_code == 200
     assert response.json()["data"]["total"] == 3
+
+
+@pytest.mark.parametrize('as_of,verdict', [
+    ('2008-10-31','not_yet_effective'), ('2008-11-01','current'),
+    ('2020-08-31','current'), ('2020-09-01','superseded'), ('2026-09-23','superseded')])
+def test_historical_verdict_uses_effective_and_withdrawal_boundaries(as_of, verdict):
+    def handler(request):
+        name = 'stdpage_gbt_12771.html' if request.url.path.endswith('/search/stdPage') else 'gb_detail_12771_2008.html'
+        return httpx.Response(200,text=fixture_text(name))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        result=StdSamrClient(client=http_client).verify('GB/T 12771-2008',review_date=date.fromisoformat(as_of)).to_dict()
+    assert result['verdict']==verdict
+    assert result['reviewDate']==as_of
+    assert result['registryStatusBasis']=='current_query'
+    assert result['standardReferences'][0]['status']=='废止'
+
+
+def test_historical_withdrawn_without_date_is_ambiguous():
+    def handler(request):
+        return httpx.Response(200,text=fixture_text('stdpage_gbt_12771.html')) if request.url.path.endswith('/search/stdPage') else httpx.Response(404)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        result=StdSamrClient(client=http_client).verify('GB/T 12771-2008',review_date=date(2019,1,1)).to_dict()
+    assert result['verdict']=='ambiguous'

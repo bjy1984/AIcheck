@@ -48,23 +48,23 @@ def action(description: str, properties: dict, required: tuple = (), read_only: 
 
 ACTIONS = {
     "connection": action("检查标准、规则和证件审查服务的可用性与处理留存说明。", {}),
-    "standards": action("检索公共标准依据，保留来源与版本；不读取工程资料，不证明标准现行性。",
+    "standards": action("检索公共标准依据；显式标准编号限定文件身份，无词面命中返回空集。核对返回标准身份，不证明现行性。",
                         {"query": TEXT, **PAGING}, ("query",)),
-    "standard_content": action("读取标准规范化原文及来源，供核对条款；不能以标准列表摘要代替原文。",
+    "standard_content": action("读取标准规范化原文及来源；使用检索返回的standardContentArguments/fileId，不能传kbDocId或文件路径。原文未就绪不能用摘要替代。",
                                {"fileId": TEXT, "pageNo": NODE, "section": TEXT}, ("fileId",)),
     "standard_status": action("通过标准公共服务核验指定标准在审查日期的有效状态，不上传工程资料。",
                               {"standardRef": TEXT, "reviewDate": DATE}, ("standardRef",)),
     "rules": action("读取本地v3规则；source=server读取服务器公共审查规则及版本。无需工程身份或资料编号。",
                     {"nodeId": NODE, "source": {"type": "string", "enum": ["local", "server"]}}),
-    "certificate_validity": action("对用户本地资料提取的证件字段核验有效期、主体与范围；不存储资料，不代表证件真伪或官方登记已核验。必须提供referenceDate或完整periodStart+periodEnd，日期为YYYY-MM-DD。",
+    "certificate_validity": action("对用户本地资料提取的证件字段核验有效期、主体与范围（仅完整字符串匹配，不做等级包含或技术互认）；不存储资料，不代表证件真伪或官方登记已核验。必须提供referenceDate或完整periodStart+periodEnd，日期为YYYY-MM-DD。",
                                    {"certificates": {"type": "array", "items": CERTIFICATE, "maxItems": 100},
                                     "expectedHolder": TEXT, "requiredScopes": STRINGS,
                                     "periodStart": DATE, "periodEnd": DATE, "referenceDate": DATE},
                                    ("certificates",)),
-    "certificate_registry": action("明确获用户授权后，将最少的证件标识发送官方登记查询；不存储查询结果，第三方留存依其政策；查不到或服务失败不能判为假证。",
+    "certificate_registry": action("证件审查默认执行官方登记查询，无需另行确认；仅发送必要证件标识；不存储查询结果，第三方留存依其政策；查不到或服务失败不能判为假证。",
                                    {"kind": {"type": "string", "enum": ["person", "organization_license"]},
-                                    "identifier": TEXT, "allowExternalQuery": {"type": "boolean", "enum": [True]}},
-                                   ("kind", "identifier", "allowExternalQuery")),
+                                    "identifier": TEXT, "allowExternalQuery": {"type": "boolean", "enum": [True], "description": "旧版兼容参数，可省略；无需询问用户，缺省执行查询。"}},
+                                   ("kind", "identifier")),
 }
 
 
@@ -170,12 +170,22 @@ class Client:
             raise ClientError("notAuthenticated", "请提供AICHECK_TOKEN_FILE或AICHECK_TOKEN，或运行login。")
         if "\n" in self.token or "\r" in self.token:
             raise ClientError("invalidToken", "令牌文件格式无效。")
-        self.redactions = [self.token] if self.token else []
+        self.redactions = [value for value in (self.token, os.getenv("AICHECK_TOKEN", "").strip()) if value]
         try:
             self.timeout = max(1.0, min(float(os.getenv("AICHECK_TIMEOUT", "60")), 300.0))
         except ValueError as exc:
             raise ClientError("invalidConfiguration", "AICHECK_TIMEOUT须为秒数。") from exc
-        self.opener = request.build_opener(_NoRedirect())
+        hostname = parse.urlsplit(self.base).hostname
+        try:
+            local_service = ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            local_service = hostname.lower() == "localhost"
+        # Desktop system proxies may intercept localhost even without proxy env vars.
+        # Keep local service calls on this machine; remote HTTPS retains normal proxies.
+        handlers = [_NoRedirect()]
+        if local_service:
+            handlers.append(request.ProxyHandler({}))
+        self.opener = request.build_opener(*handlers)
 
     def safe(self, value: Any) -> Any:
         if isinstance(value, dict):
@@ -233,7 +243,7 @@ class Client:
         if status >= 400 or not isinstance(payload, dict) or payload.get("code") != 0:
             if isinstance(payload, dict) and "code" in payload:
                 business_data = payload.get("data")
-                raise ClientError(str(payload.get("code")), self.safe(str(payload.get("message") or "服务器业务请求失败。")),
+                raise ClientError(str((business_data.get("serviceReason") if isinstance(business_data, dict) else None) or payload.get("code")), self.safe(str(payload.get("message") or "服务器业务请求失败。")),
                                   httpStatus=status, operationId=self.safe(payload.get("operationId")),
                                   reason=self.safe(business_data.get("reason") if isinstance(business_data, dict) else None))
             raise ClientError("httpError" if status >= 400 else "invalidResponse", "后台未返回有效成功响应。", httpStatus=status)
@@ -267,7 +277,8 @@ def _local_rules(arguments: dict) -> dict:
     if not rows:
         raise ClientError("rulesUnavailable", "本地v3文档没有该节点规则。")
     return {"source": "local", "reference": "references/business-nodes-v3.md",
-            "version": hashlib.sha256(text.encode()).hexdigest(), "nodes": rows}
+            "version": hashlib.sha256(text.encode()).hexdigest(),
+            "ruleVersion": hashlib.sha256(text.encode()).hexdigest(), "versionScope": "rule_document", "nodes": rows}
 
 
 def _validate_certificate_dates(arguments: dict) -> None:
@@ -301,11 +312,13 @@ def invoke(action_name: str, arguments: dict) -> dict:
             return {"ok": True, "data": _local_rules(arguments)}
         if action_name == "certificate_validity":
             _validate_certificate_dates(arguments)
-        client = Client()
+        if action_name == "standard_content" and not re.fullmatch(r"KF-KB-[A-Za-z0-9_-]+", arguments["fileId"]):
+            raise ClientError("invalidArguments", "fileId 必须使用检索返回的文件 ID，不能使用 kbDocId 或文件路径。")
+        client = Client(require_token=False)
         if action_name == "connection":
             result = client.api("GET", "inspection-services/capabilities", capability=True)
         elif action_name == "standards":
-            result = client.api("GET", "knowledge/clauses", query={"keyword": arguments["query"],
+            result = client.api("GET", "inspection-services/standards", query={"keyword": arguments["query"],
                                 "page": arguments.get("page", 1), "pageSize": arguments.get("pageSize", 20)})
             result["warnings"] = ["当前total仅为检索截断后的匹配条目数，不代表标准库完整总量；未命中不证明不存在相应标准。"]
         elif action_name == "standard_content":
@@ -314,20 +327,20 @@ def invoke(action_name: str, arguments: dict) -> dict:
                 if key in arguments:
                     query[key] = arguments[key]
             try:
-                result = client.api("GET", "knowledge/files/" + _segment(arguments["fileId"]) + "/canonical", query=query)
+                result = client.api("GET", "inspection-services/standards/" + _segment(arguments["fileId"]) + "/canonical", query=query)
             except ClientError as exc:
                 if exc.code == "40404" or exc.details.get("httpStatus") == 404:
                     raise ClientError("standardEvidenceUnavailable", "标准原文尚不可用或无权访问，不能据摘要确定条款或数值要求。") from exc
                 raise
         elif action_name == "standard_status":
-            result = client.api("POST", "std-samr/standards/verify", body=arguments)
+            result = client.api("POST", "inspection-services/standard-status", body=arguments)
         elif action_name == "rules":
             result = client.api("GET", "inspection-services/rules",
                                 query={"nodeId": arguments["nodeId"]} if "nodeId" in arguments else None, capability=True)
         elif action_name == "certificate_validity":
             result = client.api("POST", "inspection-services/certificate-validity", body=arguments, capability=True)
         elif action_name == "certificate_registry":
-            result = client.api("POST", "inspection-services/certificate-registry", body=arguments, capability=True)
+            result = client.api("POST", "inspection-services/certificate-registry", body={"allowExternalQuery": True, **arguments}, capability=True)
         return {"ok": True, "data": client.safe(result)}
     except ClientError as exc:
         payload = {"code": exc.code, "message": exc.message, **exc.details}

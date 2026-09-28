@@ -21,7 +21,7 @@ class PackageTests(unittest.TestCase):
             with zipfile.ZipFile(archive_path) as archive:
                 names = archive.namelist()
                 self.assertTrue(all(name.startswith("aicheck-inspection/") for name in names))
-                self.assertEqual(len(names), 8)
+                self.assertEqual(len(names), 13)
                 self.assertFalse(any(".env" in name or "__pycache__" in name or "/tests/" in name for name in names))
                 self.assertEqual(archive.read("aicheck-inspection/references/business-nodes-v3.md"),
                                  (ROOT / "docs/业务节点描述v3.md").read_bytes())
@@ -30,6 +30,11 @@ class PackageTests(unittest.TestCase):
             # This interpreter starts outside the repo and has no backend dependencies or config.
             completed = subprocess.run([sys.executable, str(extracted / "scripts/aicheck_client.py"), "rules", "--json", "{}"],
                 cwd=folder, env={"PATH": str(Path(sys.executable).parent)}, check=True, capture_output=True, text=True)
+            report_run = subprocess.run([sys.executable, str(extracted / "scripts/report.py"), "render",
+                str(extracted / "references/report.example.json"), "--output", str(Path(folder) / "report")],
+                cwd=folder, env={"PATH": str(Path(sys.executable).parent)}, check=True, capture_output=True, text=True)
+            self.assertTrue(json.loads(report_run.stdout)["ok"])
+            self.assertTrue((Path(folder) / "report/report.html").is_file())
             payload = json.loads(completed.stdout)
             self.assertTrue(payload["ok"])
             self.assertEqual([row["nodeId"] for row in payload["data"]["nodes"]], [4, 5, 6, 7, 8, 9, 12, 13, 16, 24, 25, 26])

@@ -2,7 +2,7 @@
 
 本 skill 的名称是 `aicheck-inspection`。同一份规则和资料审查流程可用于 Claude Code、Cursor 以及支持 Agent Skills 的其他平台。工程资料由用户在本地或当前会话提供，读取、OCR、字段整理和审查由宿主 AI 完成，报告保存在本地或会话中。MCP 按需提供标准依据、规则和证件核验能力，不提供工程资料库、OCR 或后台审查任务。
 
-导入 skill 不会自动登录后台，也不会自动配置 MCP。以下命令中的路径、地址均为示例，请替换为本机实际值；不要把生产 `.env`、SSH 私钥、口令或 token 放进 skill 文件夹或分发 ZIP。
+导入 skill 不会自动配置后台地址或 MCP；当前审查服务无需登录或令牌。以下命令中的路径、地址均为示例，请替换为本机实际值；不要把生产 `.env`、SSH 私钥、口令或 token 放进 skill 文件夹或分发 ZIP。
 
 ## 1. 安装 skill
 
@@ -54,23 +54,20 @@ aicheck-inspection.zip
 
 本地桥接脚本要求 Python 3.10 或更高版本，只使用 Python 标准库，无需复制或安装 AIcheck 后端工程。优先使用已有的 HTTPS 后台地址。若服务器仅可通过 SSH 访问，可使用用户已授权的 SSH 隧道，将服务转到本机 loopback，再使用 `http://127.0.0.1:<port>`；不在 skill 中保存 SSH 私钥。
 
-在本机终端设置以下变量。`AICHECK_BASE_URL` 可以是服务 origin，也可以以 `/api` 结尾，由客户端统一处理；不要附加具体业务接口路径。token 文件应位于 skill 和仓库之外，使用绝对路径：
+设置 `AICHECK_BASE_URL` 即可，无需 `AICHECK_TOKEN`、`AICHECK_TOKEN_FILE` 或执行 `login`。地址可以是服务 origin，也可以以 `/api` 结尾；不要附加具体业务接口路径。本机后台确实运行于 8000 端口时可用以下示例：
 
 ```sh
-export AICHECK_BASE_URL="https://aicheck.example.com"
-export AICHECK_TOKEN_FILE="$HOME/.config/aicheck/inspection-token.json"
-
+export AICHECK_BASE_URL="http://127.0.0.1:8000"
 python3 "/absolute/path/to/aicheck-inspection/scripts/aicheck_client.py" connection --json '{}'
-python3 "/absolute/path/to/aicheck-inspection/scripts/aicheck_client.py" login
 ```
 
-`connection` 用于连接诊断；尚未登录时出现需要认证的提示，应先完成登录再检查。`login` 会交互询问用户名，并用隐藏输入读取密码；登录凭据写入 `AICHECK_TOKEN_FILE`，不要将用户名和口令直接拼入命令。登录后可再运行 `connection` 检查。
+`connection` 成功后应返回 `ok: true` 和 `data.authenticationRequired: false`；另检查 `data.standardContent.available`，连接成功不代表标准原文数据已就绪。当前 MCP 审查调用不使用旧令牌鉴权，不读取旧令牌文件，也不发送令牌。服务地址按实际部署填写，不猜测生产地址；其他电脑或云端平台的 localhost 不指向你的电脑。
 
-服务地址必须由部署信息或用户提供，不猜测生产地址。已有受限服务 token 时也可设置 `AICHECK_TOKEN`，此时不要再提供另一份不一致的 token 文件。不要把 token 贴进聊天、示例 JSON、截图、日志或版本库；MCP 配置推荐仅引用 token 文件路径。身份过期或被撤销时重新登录，不能换用管理员凭据绕过权限。服务连接无需后台工程 ID，登录只用于授权使用审查能力。
+若更新客户端后仍收到 401/403，确认后台也已更新并重启，且地址指向新版本审查服务；不要用登录来掩盖版本不一致。工程管理页面仍沿用原有登录鉴权。CLI 的 `login` 仅保留兼容用途，当前审查流程不使用。
 
 ## 3. 让 AI 平台使用 MCP 工具
 
-MCP 运行脚本为 `scripts/mcp_server.py`，采用 stdio。Python 命令与脚本路径都应使用本机绝对路径；不要假设 AI 平台进程继承了终端中的环境变量。下面把后台地址和 token 文件路径显式传给子进程，且不嵌入实际 token。
+MCP 运行脚本为 `scripts/mcp_server.py`，采用 stdio。Python 命令与脚本路径都应使用本机绝对路径；不要假设 AI 平台进程继承了终端中的环境变量。下面把后台地址显式传给子进程。
 
 ### Claude Code 配置
 
@@ -84,8 +81,7 @@ MCP 运行脚本为 `scripts/mcp_server.py`，采用 stdio。Python 命令与脚
       "command": "/absolute/path/to/python3",
       "args": ["/absolute/path/to/aicheck-inspection/scripts/mcp_server.py"],
       "env": {
-        "AICHECK_BASE_URL": "https://aicheck.example.com",
-        "AICHECK_TOKEN_FILE": "/absolute/path/to/private/inspection-token.json"
+        "AICHECK_BASE_URL": "http://127.0.0.1:8000"
       }
     }
   }
@@ -106,8 +102,7 @@ MCP 运行脚本为 `scripts/mcp_server.py`，采用 stdio。Python 命令与脚
       "command": "/absolute/path/to/python3",
       "args": ["/absolute/path/to/aicheck-inspection/scripts/mcp_server.py"],
       "env": {
-        "AICHECK_BASE_URL": "https://aicheck.example.com",
-        "AICHECK_TOKEN_FILE": "/absolute/path/to/private/inspection-token.json"
+        "AICHECK_BASE_URL": "http://127.0.0.1:8000"
       }
     }
   }
@@ -140,9 +135,9 @@ Claude Desktop 聊天可通过其开发者设置配置本地 MCP；在现有 `cl
 | `aicheck_standard_content` | 读取标准原文 | 标准或条款标识 |
 | `aicheck_standard_status` | 查询标准状态 | 标准号（含版本）和审查日期 |
 | `aicheck_certificate_validity` | 按已提供的事实检查有效期、范围等 | 必要证件字段及施工基准信息；不等于官方真实性核验 |
-| `aicheck_certificate_registry` | 独立的官方通道核验 | 用户已授权外发的最小身份字段 |
+| `aicheck_certificate_registry` | 独立的官方通道核验 | 资料中核验必需的最小身份字段 |
 
-先用 `connection` 检查新服务接口及具体能力，再用一个规则查询和一次标准查询验证响应。进程启动成功或工具列出成功都不能单独证明后端能力可用。宿主平台能否读取和识别用户资料须单独验证；证件外部查询需另有真实的授权与可用通道，不能用本地日期计算冒充验收。
+先用 `connection` 检查新服务接口及具体能力，再用一个规则查询和一次标准查询验证响应。进程启动成功或工具列出成功都不能单独证明后端能力可用。宿主平台能否读取和识别用户资料须单独验证；证件外部查询默认执行，但需具备可用通道，不能用本地日期计算冒充验收。
 
 可让平台执行下面这组调用作为连接验收；以下仅为工具参数示例：
 
@@ -155,9 +150,34 @@ aicheck_standards({"query": "工业管道焊接", "page": 1, "pageSize": 10})
 
 MCP 不接受 `filePath`、文件字节或完整 OCR 文本。用户资料需由当前 AI 平台直接读取；扫描页先使用该平台的 OCR／视觉识别能力，按 [审查输出与判定](review-contract.md) 保留来源与不确定标记。若平台没有相应能力、无法访问附件或识别不足，应请用户提供可检索 PDF／文字，或先在平台完成识别。skill 可在本地整理字段，再把必要核验字段交给 MCP；无需上传资料或启用远程整理工具。调用参数详见 [服务调用流程](backend-workflow.md)。
 
-`certificate_registry` 与 `certificate_validity` 分开使用：前者仅在已授权必要身份信息发往指定官方平台时设置 `allowExternalQuery: true`；后者依据用户提供事实计算，须明确 `referenceDate` 或完整的 `periodStart` 与 `periodEnd`，不证明证件真伪。日期应来自工程实际施工时间，缺失时不能用今天代替。系统不缓存本次查询输入或结果；该约束不代表政府核验平台或宿主 AI 平台零留存。
+`certificate_registry` 与 `certificate_validity` 分开使用：前者在证件审查中默认执行，只需 kind 与 identifier，无需另行确认；allowExternalQuery 为旧版兼容参数，不是必填授权步骤；后者依据用户提供事实计算，须明确 `referenceDate` 或完整的 `periodStart` 与 `periodEnd`，不证明证件真伪。日期应来自工程实际施工时间，缺失时不能用今天代替。系统不缓存本次查询输入或结果；该约束不代表政府核验平台或宿主 AI 平台零留存。
 
-## 5. 服务器版本与失败处理
+## 5. 已配置但平台显示未连接
+
+**配置已保存，不等于客户端已信任、启用并启动 MCP。** 用户在 WorkBuddy 的实测反馈中，解释器和脚本正常，`source=local` 可离线读取，但客户端尚未信任／启用连接器。遇到相同症状应先核对客户端状态，不把这一次原因泛化为所有未连接问题，也不直接改服务地址或要求重新安装。
+
+1. **确认客户端实际加载的配置与授权状态。** 在当前平台的 MCP／连接器管理中找到 `aicheck-inspection`，确认配置属于当前账号、工作区或配置范围；核对该连接器是否启用，以及是否有待确认的信任、启动或工具授权。Skill 已启用不能证明 MCP 已启用。由用户确认具体连接器的授权，不为排障关闭全局安全检查或绕过组织策略。
+2. **应用状态后重新连接。** 完成信任／启用后，使用平台提供的重新连接或刷新工具列表入口；必要时新建会话或重启客户端，再检查工具列表。界面入口因平台版本而异，不假定存在某个固定按钮。已确认解释器和脚本正常时先做这一步，不反复更换路径或重装。
+3. **仍不可用时，区分脚本与 MCP 协议。** 使用配置中的同一个解释器和 skill 路径运行下面的离线命令。成功只证明客户端脚本及随包规则可用，不证明平台已完成 MCP 握手：
+
+   ```sh
+   "/absolute/path/to/python3" "/absolute/path/to/aicheck-inspection/scripts/aicheck_client.py" rules --json '{"nodeId":24,"source":"local"}'
+   ```
+
+   成功响应应有 `ok: true` 和 `data.source: "local"`，无需服务地址或令牌。若失败，按错误检查解释器、文件访问权限及完整目录结构。直接运行 `mcp_server.py` 后等待输入、没有立即显示内容，是本脚本读取 stdio 请求的正常行为，不能仅凭无输出判定挂起或连接成功。
+4. **在平台内验证工具，再检查后台。** 确认 MCP 的 `initialize` 和 `tools/list` 成功，并能发现七个工具；在当前会话实际调用 `aicheck_rules({"nodeId":24,"source":"local"})`。仅在终端调用 CLI 成功不能代替这一步。平台内本地规则调用成功后，再调用 `aicheck_connection({})` 检查后台服务；后者不是本地 MCP 传输连接的测试。
+
+| 观察到的现象 | 排查位置与下一步 |
+| --- | --- |
+| 离线规则可读，但平台没有工具或显示未连接 | 先检查连接器信任、启用、配置范围及会话是否刷新；仍失败再查看客户端启动／握手错误。 |
+| 进程未启动或立即退出 | 根据客户端错误检查命令、脚本路径、访问权限和运行环境，不先排查后台账号。 |
+| 进程可启动，但握手或工具发现失败 | 查看协议错误、平台实际启动参数和 stdout 是否被其他输出污染；进程存活不等于 MCP 可用。 |
+| 平台内本地规则调用成功，`connection` 返回 `notConfigured`、401/403 或超时 | MCP 本地链路已可用；分别处理后台地址配置、后台版本／网关鉴权或网络问题，不将其解释为连接器未信任。 |
+| 工具可用，但工程附件无法读取或识别 | 属于宿主平台的文件访问／OCR 问题，按资料预处理流程处理，不上传到后台 OCR 补救。 |
+
+排障记录分开写明客户端启用／信任状态、启动／握手、工具发现、平台内本地规则调用及后台能力结果；没有观察到的状态标为未确认。无法在平台内调用时，可继续使用随包规则审查本地资料，但明确 MCP 调用尚未完成。若组织策略阻止启用，说明具体限制并由管理员处理，不绕过限制。
+
+## 6. 服务器版本与失败处理
 
 部署中的后台可能尚未提供新的无持久存储审查服务。出现接口不存在、能力未启用或版本不匹配时，应根据连接诊断和真实响应说明缺失能力，不把空结果写成业务不存在，也不把本地分析包装成服务调用成功。
 

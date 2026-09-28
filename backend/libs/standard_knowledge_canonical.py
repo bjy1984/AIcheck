@@ -236,6 +236,7 @@ def canonical_evidence(item: dict[str, Any], *, authority: str) -> dict[str, Any
         "parseResultId": item.get("parseResultId"),
         "documentVersionId": str(item.get("documentVersionId") or ""),
         "pageNo": item.get("pageNo"),
+        "sourceOrder": item.get("sourceOrder"),
         "bbox": normalize_bbox(item.get("bbox")),
         "quotedText": str(item.get("quotedText") or item.get("text") or item.get("value") or ""),
         "confidence": item.get("confidence"),
@@ -252,6 +253,7 @@ def canonical_public_content(kind: str, item: dict[str, Any]) -> dict[str, Any]:
         "title",
         "text",
         "blockType",
+        "sourceOrder",
         "type",
         "clauseNo",
         "sectionPath",
@@ -395,10 +397,9 @@ def merge_structured_items(kind: str, candidates: list[dict[str, Any]]) -> list[
     for item in candidates:
         identity = structured_identity(kind, item)
         grouped.setdefault(identity, []).append(item)
-    return [
-        select_structured_item(kind, identity, values)
-        for identity, values in sorted(grouped.items())
-    ]
+    selected = [select_structured_item(kind, identity, values) for identity, values in sorted(grouped.items())]
+    return sorted(selected, key=lambda item: (item.get("pageNo") or 10**9,
+        item.get("sourceOrder") if item.get("sourceOrder") is not None else 10**9, item["id"]))
 
 
 def require_keys(values: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
@@ -484,7 +485,7 @@ def canonical_completeness(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def collect_standard_sources(
-    state: dict[str, Any], file_id: str, repo_root: Path
+    state: dict[str, Any], file_id: str, repo_root: Path, *, include_supplemental: bool = True
 ) -> dict[str, Any]:
     file = _one(state.get("knowledge_files", []), id=file_id)
     if not file or file.get("sourceId") != "KS-STANDARD-RULES":
@@ -519,10 +520,10 @@ def collect_standard_sources(
         "legacyEvidence": _by_version(state.get("evidence_links", []), version["id"]),
         "visualExtraction": _read_optional_json(
             repo_root / "backend/data/visual_extractions" / f"{file_id}.json"
-        ),
+        ) if include_supplemental else None,
         "legacyRuleSidecar": _read_optional_json(
             repo_root / "backend/data/rules_ocr_sidecars" / f"{file_id}.json"
-        ),
+        ) if include_supplemental else None,
         "chunks": _by_file(state.get("knowledge_chunks", []), file_id),
         "clauses": _by_file(state.get("knowledge_clauses", []), file_id),
         "pageIndexNodes": _page_nodes_for_path(state, file.get("sourceRelativePath")),
@@ -535,9 +536,9 @@ def collect_standard_sources(
 
 
 def build_standard_knowledge_record(
-    state: dict[str, Any], file_id: str, repo_root: Path
+    state: dict[str, Any], file_id: str, repo_root: Path, *, include_supplemental: bool = True
 ) -> dict[str, Any]:
-    sources = collect_standard_sources(state, file_id, repo_root)
+    sources = collect_standard_sources(state, file_id, repo_root, include_supplemental=include_supplemental)
     field_candidates = _canonical_field_candidates(sources)
     fields = {
         key: selected
@@ -1233,7 +1234,9 @@ def _structured_candidate(
 
 def _append_clause_candidate(clauses: list[dict[str, Any]], candidate: dict[str, Any]) -> None:
     clause_no = str(candidate.get("clauseNo") or "").strip()
-    if not clause_no:
+    # Explicit hierarchy classification has already rejected quantities/TOC lines.
+    # Do not undo that decision with the generic numeric-prefix fallback.
+    if not clause_no and "sectionPath" not in candidate:
         match = _CLAUSE_NUMBER.match(str(candidate.get("text") or ""))
         clause_no = match.group(1) if match else ""
     if clause_no:
