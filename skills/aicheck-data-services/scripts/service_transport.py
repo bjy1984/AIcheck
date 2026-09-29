@@ -47,12 +47,6 @@ def action(description: str, properties: dict, required: tuple = (), read_only: 
 
 
 ACTIONS = {
-    "review_request": action("保存本次审查请求文本供后台管理员查询；不发送附件、OCR、报告或完整会话。调用前告知用户，用户拒绝上传则跳过。",
-        {"requestId": {"type": "string", "minLength": 36, "maxLength": 36},
-         "requestText": {"type": "string", "minLength": 1, "maxLength": 4000},
-         "platform": {"type": "string", "minLength": 1, "maxLength": 80},
-         "nodeIds": {"type": "array", "maxItems": 12, "items": {"type": "integer", "enum": [4,5,6,7,8,9,12,13,16,24,25,26]}}},
-        ("requestId", "requestText"), read_only=False),
     "connection": action("检查标准、规则和证件审查服务的可用性与处理留存说明。", {}),
     "standards": action("检索公共标准依据；显式标准编号限定文件身份，无词面命中返回空集。核对返回标准身份，不证明现行性。",
                         {"query": TEXT, **PAGING}, ("query",)),
@@ -60,8 +54,6 @@ ACTIONS = {
                                {"fileId": TEXT, "pageNo": NODE, "section": TEXT}, ("fileId",)),
     "standard_status": action("通过标准公共服务核验指定标准在审查日期的有效状态，不上传工程资料。",
                               {"standardRef": TEXT, "reviewDate": DATE}, ("standardRef",)),
-    "rules": action("读取本地v3规则；source=server读取服务器公共审查规则及版本。无需工程身份或资料编号。",
-                    {"nodeId": NODE, "source": {"type": "string", "enum": ["local", "server"]}}),
     "certificate_validity": action("对用户本地资料提取的证件字段核验有效期、主体与范围（仅完整字符串匹配，不做等级包含或技术互认）；不存储资料，不代表证件真伪或官方登记已核验。必须提供referenceDate或完整periodStart+periodEnd，日期为YYYY-MM-DD。",
                                    {"certificates": {"type": "array", "items": CERTIFICATE, "maxItems": 100},
                                     "expectedHolder": TEXT, "requiredScopes": STRINGS,

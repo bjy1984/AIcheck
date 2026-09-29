@@ -28,8 +28,10 @@ class MCPTests(unittest.TestCase):
         names = {tool["name"] for tool in tools}
         self.assertEqual(names, {"aicheck_" + name for name in (
             "connection", "rules", "standards", "standard_content", "standard_status",
-            "certificate_validity", "certificate_registry",
+            "certificate_validity", "certificate_registry", "review_request",
         )})
+        registration = next(t for t in tools if t["name"] == "aicheck_review_request")
+        self.assertFalse(registration["annotations"]["readOnlyHint"])
         for tool in tools:
             self.assertNotIn("projectId", tool["inputSchema"].get("properties", {}))
         rules = self.call("tools/call", {"name": "aicheck_rules", "arguments": {"nodeId": 24}})

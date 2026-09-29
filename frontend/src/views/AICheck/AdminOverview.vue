@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SkillRequestRecords from './SkillRequestRecords.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -238,6 +239,7 @@ const adminTabRouteMap = {
   'report-template': '/admin/report-templates',
   'fine-config': '/admin/fine-config',
   integration: '/admin/integration',
+  'skill-requests': '/admin/skill-requests',
   audit: '/admin/audit'
 } as const
 
@@ -255,6 +257,7 @@ const adminRouteTabMap: Record<string, AdminTabKey> = {
   '/admin/report-templates': 'report-template',
   '/admin/fine-config': 'fine-config',
   '/admin/integration': 'integration',
+  '/admin/skill-requests': 'skill-requests',
   '/admin/audit': 'audit'
 }
 
@@ -413,6 +416,7 @@ const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }
     title: '联调清单',
     subtitle: '核对前后端字段、接口契约和阻断项'
   },
+  'skill-requests': { title: 'Skill 请求记录', subtitle: '查询通过 MCP 登记的审查请求文本' },
   audit: {
     title: '审计日志',
     subtitle: '查看后台配置变更、发布和操作审计记录'
@@ -5196,6 +5200,10 @@ onMounted(() => {
               @size-change="resetTablePage('integration')"
             />
           </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="Skill 请求记录" name="skill-requests">
+          <SkillRequestRecords v-if="activeTab === 'skill-requests'" />
         </ElTabPane>
 
         <ElTabPane label="审计日志" name="audit">

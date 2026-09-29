@@ -239,7 +239,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def attach_operation_id(request: Request, call_next):
-    authorization = "" if public_review_request(request.method, canonical_path(request.url.path)) else request.headers.get("Authorization", "")
+    from libs.security.data_service_test_mode import allows as test_data_access
+    anonymous_service = test_data_access(request.method, request.url.path) or public_review_request(
+        request.method, canonical_path(request.url.path)
+    )
+    authorization = "" if anonymous_service else request.headers.get("Authorization", "")
     predecoded_claims = decode_token(authorization) if authorization else None
     claimed_tenant_id = str((predecoded_claims or {}).get("tid") or configured_tenant_id())
     if predecoded_claims is None and request.method == "POST" and canonical_path(request.url.path) == "/auth/login":
@@ -310,7 +314,8 @@ async def handle_request(
     # 实测整套单测因此从 100 秒涨到 350 秒。
     if postgres_persistence_configured():
         await asyncio.to_thread(refresh_state_if_stale, tenant_id)
-    if not public_review_request(request.method, canonical_path(request.url.path)) and (auth_required_for_path(request) or request.headers.get("Authorization")):
+    from libs.security.data_service_test_mode import allows as test_data_access
+    if not test_data_access(request.method, request.url.path) and not public_review_request(request.method, canonical_path(request.url.path)) and (auth_required_for_path(request) or request.headers.get("Authorization")):
         claims = predecoded_claims
         if claims is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), errors.AUTH_REQUIRED.reason)
@@ -558,6 +563,9 @@ def is_public_registration_request(request: Request) -> bool:
 
 
 def auth_required_for_path(request: Request) -> bool:
+    from libs.security.data_service_test_mode import allows as test_data_access
+    if test_data_access(request.method, request.url.path):
+        return False
     if public_review_request(request.method, canonical_path(request.url.path)):
         return False
     if not authentication_enforced():

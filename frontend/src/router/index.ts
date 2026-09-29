@@ -367,6 +367,12 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         }
       },
       {
+        path: 'skill-requests',
+        component: AdminOverview,
+        name: 'AdminSkillRequests',
+        meta: { title: 'Skill 请求记录', noCache: true, roles: ['admin'] }
+      },
+      {
         path: 'audit',
         component: AdminOverview,
         name: 'AdminAudit',

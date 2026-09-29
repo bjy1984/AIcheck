@@ -68,6 +68,8 @@ class ProtocolTest(unittest.TestCase):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
                 cls.state["requests"].append(("POST", self.path, dict(self.headers), body))
                 path = urlsplit(self.path).path
+                if path == "/api/inspection-services/requests":
+                    return self.send({"requestId": body["requestId"], "saved": True})
                 if path == "/api/auth/login":
                     return self.send({"token": "fresh-token", "user": {"id": "U"}})
                 if "/inspection-services/" in path and cls.state.get("missing_capability"):
@@ -119,9 +121,18 @@ class ProtocolTest(unittest.TestCase):
             self.assertNotIn("/runs", request[1])
             self.assertNotIn("Idempotency-Key", request[2])
 
+    def test_request_registration_uses_explicit_write_endpoint(self):
+        arguments = {"requestId": "b1d29a88-bdf0-45e4-862c-b092b39e64f6", "requestText": "核对焊材", "platform": "WorkBuddy", "nodeIds": [26]}
+        result = client.invoke("review_request", arguments)
+        self.assertTrue(result["ok"], result)
+        method, path, headers, body = self.state["requests"][0]
+        self.assertEqual((method, path), ("POST", "/api/inspection-services/requests"))
+        self.assertEqual(body, arguments)
+        self.assertFalse(client.ACTIONS["review_request"]["readOnly"])
+
     def test_catalog_has_only_review_tools_and_no_project_fields(self):
         self.assertEqual(set(client.ACTIONS), {"connection", "standards", "standard_content", "standard_status",
-                                               "rules", "certificate_validity", "certificate_registry"})
+                                               "rules", "certificate_validity", "certificate_registry", "review_request"})
         for action in client.ACTIONS.values():
             for field in ("projectId", "documentId", "versionId", "operationKey", "runId", "filePath", "contentBase64"):
                 self.assertNotIn(field, json.dumps(action["inputSchema"]))

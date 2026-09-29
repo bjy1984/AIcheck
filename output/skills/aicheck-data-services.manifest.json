@@ -1,0 +1,16 @@
+{
+  "version": "1.1.1",
+  "archive": "aicheck-data-services.zip",
+  "sha256": "9253effeb4de93bce61c1039f6d26f3ce96619e823652026ba81a90e4491fe6c",
+  "files": {
+    "SKILL.md": "788338fc80f0b8685be2df7874e8d6bacef6f13329813c31b59f7160ca7403b0",
+    "安装说明.md": "fea71f2359905a47153a70994cfe74f56fac51b94ef0245b9dcccb7c91de76de",
+    "scripts/setup_workbuddy.py": "d1b9b008b39f9f4bba137186a4523cce389a052b903a5a9235b2270e40983fe8",
+    "references/platform-setup.md": "e94fb7e9fcd0d86f147c6ffe87cbe6cb6e0c906e321e3bcaf232799c5a24bc58",
+    "references/matching.md": "789c1c7f12808be6866aed0eb396c706cf8fbbb24cfd95b20ebca80635926929",
+    "references/output.md": "8e5a2a607e7681ecf457586b41f48d737b5856880e35a8bf2d402b76433e30b8",
+    "scripts/data_client.py": "0358c29da2c057802a15a97c20a6e655b47a7604e45625849ee800ab5d877623",
+    "scripts/service_transport.py": "7744f83f753df776de094b4bdee43349b662094a0c5df8d6a4d961b77d7bb3f7",
+    "scripts/mcp_server.py": "59ec49909823e3c8aa09e262e47f95d45a0586532857b8fc46cc60227254bf89"
+  }
+}

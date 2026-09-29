@@ -17,3 +17,6 @@ ocr_eval/reports/
 reports/
 test-results/
 tests/
+
+# Runtime OCR artifacts and the internal no-auth switch must never enter images.
+output/

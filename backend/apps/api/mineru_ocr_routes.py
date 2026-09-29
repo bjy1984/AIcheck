@@ -157,6 +157,9 @@ def get_mineru_task(request: Request, job_id: str):
 
 
 def request_actor(request: Request) -> tuple[str | None, str | None]:
+    from libs.security.data_service_test_mode import allows, ACTOR
+    if allows(request.method, request.url.path):
+        return ACTOR, "internal_test"
     claims = getattr(request.state, "auth", None) or {}
     actor_id = str(
         claims.get("sub")
@@ -200,6 +203,9 @@ def mineru_job_access_error(
     request: Request,
     job: dict[str, Any],
 ):
+    from libs.security.data_service_test_mode import allows, ACTOR
+    if allows(request.method, request.url.path) and (job.get("requestedBy") != ACTOR or job.get("documentId")):
+        return fail(errors.FORBIDDEN, request, message="免登录测试仅可读取共享测试身份的独立任务。")
     document_id = str(job.get("documentId") or "")
     if document_id:
         return mineru_document_scope_error(request, job)
@@ -569,3 +575,28 @@ def _validate_options(options: dict[str, Any]) -> None:
         or float(tolerance) < 0
     ):
         raise MinerUApiError("cacheTolerance 必须是非负数。")
+
+
+@router.get("/internal/ocr/mineru/tasks/{job_id}/result")
+def get_mineru_task_result(request: Request, job_id: str, pageNo: int | None = None):
+    """Owned, projectless normalized OCR data; no business conclusion or storage secrets."""
+    load_state({"ocr_jobs", "ocr_parse_results"})
+    job = repo.find_one("ocr_jobs", job_id)
+    if not job or job.get("provider") != "mineru":
+        return fail(errors.NOT_FOUND, request, message="MinerU OCR Job 不存在。")
+    if access_error := mineru_job_access_error(request, job):
+        return access_error
+    if not request_actor(request)[0]:
+        return fail(errors.AUTH_REQUIRED, request, http_status=401)
+    parsed = next((row for row in repo.state.get("ocr_parse_results", [])
+                   if job.get("parseResultId") and (row.get("id") or row.get("parseResultId")) == job["parseResultId"]), None)
+    if not parsed:
+        return ok({"jobId": job_id, "status": job.get("status"), "resultAvailable": False}, request)
+    keys = ("pages", "fragments", "fields", "tables", "layoutBlocks", "seals", "signatures")
+    pages = parsed.get("pages") or []
+    page_count = max([int(p.get("pageNo") or 0) for p in pages] or [0])
+    if pageNo is not None and (pageNo < 1 or pageNo > page_count):
+        return fail(errors.VALIDATION_ERROR, request, message="pageNo 超出可定位的原件页码范围。", http_status=400)
+    content = {key: [row for row in parsed.get(key, []) if pageNo is None or row.get("pageNo") == pageNo] for key in keys}
+    return ok({"jobId": job_id, "status": job.get("status"), "resultAvailable": True,
+               "pageCount": page_count, "quality": parsed.get("quality"), **content}, request)

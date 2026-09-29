@@ -4703,7 +4703,7 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
             "meta": {"title": "管理后台", "icon": "vi-ep:setting", "alwaysShow": True, "roles": ["admin"]},
             "children": [
                 {"path": item, "component": "views/AICheck/AdminOverview", "name": f"Admin{item.title().replace('-', '')}", "meta": {"title": "项目与权限配置", "roles": ["admin"]}}
-                for item in ["overview", "projects", "org", "business-packs", "permission", "rules", "material-review-points", "prompt-templates", "report-templates", "fine-config", "integration", "audit"]
+                for item in ["overview", "projects", "org", "business-packs", "permission", "rules", "material-review-points", "prompt-templates", "report-templates", "fine-config", "integration", "audit", "skill-requests"]
             ],
         },
         {

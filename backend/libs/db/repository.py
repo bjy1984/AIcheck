@@ -89,6 +89,7 @@ NODE_STATUS_FORBIDDEN_REOPEN_TARGETS = {"待提交", "部分提交", "需补正"
 
 
 STATE_COLLECTIONS = {
+    "inspection_requests": "inspection_requests",
     "projects": "projects",
     "tree_nodes": "project_nodes",
     "requirements": "node_requirements",
