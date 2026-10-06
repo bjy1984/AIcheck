@@ -82,10 +82,10 @@ def run(folder):
                 from apps.ocr_service.service import ocr_service
                 result=ocr_service.parse_document(str(snapshot),file_name=source.name,profile_id=profile_id)
         # Preserve engine output as evidence, but keep credentials/request payloads out of artifacts.
-        public={k:result.get(k) for k in ('status','outcomeStatus','parserVersion','profileId','documentType','pages','fragments','fields','tables','seals','signatures','layoutBlocks','quality') if k in result}
+        public={k:result.get(k) for k in ('status','outcomeStatus','parserVersion','profilePostprocessVersion','formalEvidenceReady','profileId','documentType','pages','fragments','fields','tables','seals','signatures','layoutBlocks','quality') if k in result}
         public['engine']=req.get('engine','runtime')
         public['source']={'fileName':source.name,'sha256':req['sha256'],'totalPages':total}
-        public['metadata']={k:v for k,v in (result.get('metadata') or {}).items() if k in {'providerMode','provider','model','selectedPageNos','recognitionPageCoverage','outputTruncated','budgetStopped','costCny','modelCallCount'}}
+        public['metadata']={k:v for k,v in (result.get('metadata') or {}).items() if k in {'providerMode','provider','model','selectedPageNos','recognitionPageCoverage','outputTruncated','budgetStopped','costCny','modelCallCount','requestedProfileId','detectedProfileId','profileRouteReason','profileRoutingVersion','postProcessing'}}
         fragments=public.get('fragments') or []
         seen={r.get('pageNo') for r in fragments if str(r.get('text') or '').strip()}
         seen|={r.get('pageNo') for r in public.get('tables') or [] if r.get('rows') or r.get('normalizedRows') or r.get('html') or r.get('text')}

@@ -14,7 +14,7 @@ def spec(description,properties,required=(),read_only=True):
 TEXT={'type':'string','minLength':1,'maxLength':4096}
 ACTIONS.update({
  'connection':spec('检查基础服务；OCR使用登录令牌，专项匹配由宿主按标准逐项核验，不提供节点整体审查。',{}),
- 'ocr_submit':spec('将用户指定本地PDF/图片上传到服务器MinerU。须事先说明外发及服务留存；不关联工程。相同requestId仅用于原样重试。',{'filePath':TEXT,'requestId':{'type':'string','minLength':16,'maxLength':80},'language':{'type':'string','enum':['ch','en']}},('filePath','requestId'),False),
+ 'ocr_submit':spec('将用户指定本地PDF/图片上传到服务器MinerU。须事先说明外发及服务留存；不关联工程。相同requestId仅用于原样重试。',{'filePath':TEXT,'requestId':{'type':'string','minLength':16,'maxLength':80},'language':{'type':'string','enum':['ch','en']},'profileId':{'type':'string','minLength':1,'maxLength':100}},('filePath','requestId'),False),
  'ocr_status':spec('查询服务器MinerU任务状态和产物清单；未完成不能报告识别成功。',{'jobId':TEXT},('jobId',)),
  'ocr_result':spec('读取本人的服务器OCR结构化结果，可按PDF物理页选择；不生成业务结论。',{'jobId':TEXT,'pageNo':{'type':'integer','minimum':1}},('jobId',)),
 })
@@ -39,6 +39,7 @@ def invoke(name,args):
             if not 0<p.stat().st_size<=100*1024*1024:raise ClientError('fileTooLarge','文件必须为1字节至100MB。')
             if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',args['requestId']):raise ClientError('invalidArguments','requestId使用16–80位字母数字、下划线或连字符。')
             meta={'fileName':p.name,'options':{'language':args.get('language','ch')}}
+            if args.get('profileId'):meta['profileId']=args['profileId']
             body=p.read_bytes()
             response=c.open('POST',c.url('internal/ocr/mineru/tasks/upload'),body=body,headers={'Content-Type':'application/octet-stream','Idempotency-Key':args['requestId'],'X-AICheck-Ocr-Metadata-B64':base64.b64encode(json.dumps(meta,ensure_ascii=False).encode()).decode()})
             data=c.decode(response);data['sourceSha256']=hashlib.sha256(body).hexdigest()

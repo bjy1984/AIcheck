@@ -1,16 +1,16 @@
 {
-  "version": "1.1.1",
+  "version": "2.3.1",
   "archive": "aicheck-data-services.zip",
-  "sha256": "9253effeb4de93bce61c1039f6d26f3ce96619e823652026ba81a90e4491fe6c",
+  "sha256": "7efa1525d4e217b1c6f536ee907324bb82addf347a71e1724a2d74f8453125c3",
   "files": {
-    "SKILL.md": "788338fc80f0b8685be2df7874e8d6bacef6f13329813c31b59f7160ca7403b0",
-    "安装说明.md": "fea71f2359905a47153a70994cfe74f56fac51b94ef0245b9dcccb7c91de76de",
-    "scripts/setup_workbuddy.py": "d1b9b008b39f9f4bba137186a4523cce389a052b903a5a9235b2270e40983fe8",
-    "references/platform-setup.md": "e94fb7e9fcd0d86f147c6ffe87cbe6cb6e0c906e321e3bcaf232799c5a24bc58",
+    "SKILL.md": "b8d211550f77960fa60b091bac4d330e0922c53ffc44dc3a7b4a1cb17bdaa7d0",
+    "安装说明.md": "7bc0f424079b15e3a6ffe74788df1599485034abae2b512bd338a533e76ce57b",
+    "mcp.workbuddy.json": "ca0938a084e04d021fd5ca55bce4b99d137e989e0cd70a5bd9729bda19fae834",
+    "references/platform-setup.md": "4e179477797de0b9307ba5e2099d31b91bd81ef1c7fc36f5d907f6017c36de24",
     "references/matching.md": "789c1c7f12808be6866aed0eb396c706cf8fbbb24cfd95b20ebca80635926929",
-    "references/output.md": "8e5a2a607e7681ecf457586b41f48d737b5856880e35a8bf2d402b76433e30b8",
-    "scripts/data_client.py": "0358c29da2c057802a15a97c20a6e655b47a7604e45625849ee800ab5d877623",
-    "scripts/service_transport.py": "7744f83f753df776de094b4bdee43349b662094a0c5df8d6a4d961b77d7bb3f7",
-    "scripts/mcp_server.py": "59ec49909823e3c8aa09e262e47f95d45a0586532857b8fc46cc60227254bf89"
+    "references/output.md": "11052bcb679fc69fc460d155645ed20475ce6d047a55d52dd17043bfd51fd308",
+    "references/ocr-result.md": "8e839077c685574211d1ac62182626b256ad65b57a810b800275f73051f4f48a",
+    "references/business-verification.md": "278ff0fb39f763d25f026ef06fb10b81ad94bf221645e3098972a582c949e23f",
+    "references/verification-example.md": "83cf58c6bcc0936097bc1775a6600361eff16c80b6acb517c39b39b29cc67fa9"
   }
 }

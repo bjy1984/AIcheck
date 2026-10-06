@@ -612,6 +612,11 @@ def build_mineru_result(
     enriched["modelManifest"] = provider_manifest
     enriched["engineRuns"] = provider_engine_runs
     enriched.setdefault("metadata", {}).update(provider_metadata)
+    enriched["metadata"]["postProcessing"] = {
+        "normalization": "applied", "profileExtraction": "applied", "fusionAndQuality": "applied",
+        "sealSecondaryRecognition": "not_run", "qualityAfterSealRecognition": "not_run",
+        "sourceTablesPreserved": preserve_source_tables,
+    }
     enriched_quality = enriched.setdefault("quality", {})
     enriched_quality["reasons"] = list(
         dict.fromkeys(
@@ -636,6 +641,42 @@ def build_mineru_result(
     if source_tables is not None:
         enriched["tables"] = source_tables
     return enriched
+
+
+def finalize_mineru_after_seals(bundle: MinerUNormalizedBundle) -> None:
+    """Reconcile newly read seals before persistence and refresh the normalized artifact."""
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    before = bundle.result
+    previous_quality = before.get("quality") or {}
+    result = fuse_parse_result(before, profile=profile_for(before.get("profileId"), before.get("documentType")))
+    # Provider/coordinate caveats remain applicable after a quality recomputation.
+    quality = result.setdefault("quality", {})
+    for key in ("reasons", "blockingReasons"):
+        caveats = [row for row in previous_quality.get(key) or []
+                   if (row.get("code") if isinstance(row, dict) else row) in {
+                       "provider_confidence_unavailable", "coordinate_transform_unmapped"}]
+        quality[key] = quality.get(key) or []
+        for row in caveats:
+            if row not in quality[key]:quality[key].append(row)
+    if (result.get("groundingValidation") or {}).get("unmappedCoordinateCount", 0):
+        quality["status"] = "needs_human_review"
+        result["outcomeStatus"] = "partial"
+        result["formalEvidenceReady"] = False
+    codes = {row.get("code") for row in result.get("diagnostics") or [] if isinstance(row, dict)}
+    processing = result.setdefault("metadata", {}).setdefault("postProcessing", {})
+    processing.update({"sealSecondaryRecognition": "failed" if "seal_vision_reading_failed" in codes else
+                       "completed" if "seal_vision_reading" in codes else "not_run",
+                       "sealPageScan": "failed" if "seal_page_scan_failed" in codes else
+                       "completed" if "seal_page_scan" in codes else "not_run",
+                       "qualityAfterSealRecognition": "applied"})
+    before.clear()
+    before.update(result)
+    payload = json.dumps(result, ensure_ascii=False, sort_keys=True).encode()
+    old = bundle.artifacts.get("normalized_json")
+    if old:
+        bundle.artifacts["normalized_json"] = MinerUArtifact(old.name, payload, old.content_type,
+                                                           hashlib.sha256(payload).hexdigest())
 
 
 def build_mineru_artifacts(

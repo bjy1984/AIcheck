@@ -20,6 +20,10 @@ def allows(method, path):
         return False
     if path.startswith('/api/'):
         path = path[4:]
+    if path == '/mcp/data-services' and method in {'POST', 'GET', 'DELETE'}:
+        return True
+    if method == 'PUT' and re.fullmatch(r'/mcp/data-services/uploads/[A-Za-z0-9_.-]{1,2048}', path):
+        return True
     if method == 'GET':
         return path in {'/inspection-services/capabilities', '/inspection-services/standards'} or bool(
             re.fullmatch(r'/inspection-services/standards/[A-Za-z0-9_-]+/canonical', path)

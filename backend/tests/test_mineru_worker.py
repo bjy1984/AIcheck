@@ -271,6 +271,7 @@ def test_mineru_worker_persists_artifacts_and_applies_bound_result(
     assert job["providerProgress"] == {
         "extractedPages": 1,
         "totalPages": 2,
+        "state": "running",
     }
     assert stored_names == [
         f"pipelines/mineru/{job['id']}/mineru-result.zip",
@@ -1129,3 +1130,36 @@ def test_slice_dispatch_failure_does_not_fail_the_ocr_job(
     assert output["status"] == "success", "切片派发失败把 OCR 判成失败了"
     assert output["nextDispatch"]["status"] == "not_dispatched"
     assert repository.find_one("ocr_jobs", job["id"])["status"] == "success"
+
+@pytest.mark.parametrize('retry_index,checkpoint,expect_retry', [(3, True, True), (24, True, False), (3, False, False)])
+def test_provider_timeout_has_bounded_checkpoint_recovery(monkeypatch, retry_index, checkpoint, expect_retry):
+    from libs.integrations.mineru_client import MinerUJobFailed
+    repository = InMemoryRepository()
+    job = repository.create_ocr_job_record(document_id='', version_id='', storage_key='sample.pdf', file_name='sample.pdf', provider='mineru', options={})
+    if checkpoint:
+        job.update(providerTaskId='existing-batch', providerTaskType='batch', providerUploadState='uploaded')
+    monkeypatch.setattr(tasks, 'repo', repository)
+    monkeypatch.setattr(tasks, 'refresh_worker_state', lambda *a: None)
+    monkeypatch.setattr(tasks, '_persist_mineru_job', lambda *a: None)
+    monkeypatch.setattr(tasks, '_finalize_mineru_pipeline', lambda *a: None)
+    monkeypatch.setattr(tasks, 'flush_state_records', lambda *a, **k: None)
+    monkeypatch.setenv('AICHECK_MINERU_WAIT_RETRIES', '24')
+    def fail(_job):
+        _job['stage'] = 'poll'
+        raise MinerUJobFailed('MINERU_JOB_TIMEOUT', 'timed out', retryable=True)
+    monkeypatch.setattr(tasks, 'run_mineru_job', fail)
+    class RetryScheduled(Exception): pass
+    class Context:
+        request = SimpleNamespace(retries=retry_index, called_directly=False)
+        def retry(self, **kw):
+            assert kw['max_retries'] == 24 and kw['countdown'] == 300
+            raise RetryScheduled()
+    if expect_retry:
+        with pytest.raises(RetryScheduled):
+            tasks._execute_mineru_ocr_extract(Context(), job['id'])
+        assert job['status'] == 'queued' and job['stage'] == 'waiting_provider'
+        assert job['providerTaskId'] == 'existing-batch'
+        assert not job.get('parseResultId')
+    else:
+        result = tasks._execute_mineru_ocr_extract(Context(), job['id'])
+        assert result['status'] == 'failed'

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aicheck-data-services": {
+      "type": "streamable-http",
+      "url": "http://39.108.65.148:8081/api/mcp/data-services",
+      "disabled": false
+    }
+  }
+}

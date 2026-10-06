@@ -2899,6 +2899,8 @@ class InMemoryRepository:
             "profileId": result.get("profileId") or job.get("profileId"),
             "documentType": result.get("documentType") or job.get("documentType"),
             "parserVersion": result.get("parserVersion"),
+            "profilePostprocessVersion": result.get("profilePostprocessVersion"),
+            "formalEvidenceReady": result.get("formalEvidenceReady"),
             "engineVersion": result.get("engineVersion"),
             "modelManifest": result.get("modelManifest") or {},
             "engineRuns": result.get("engineRuns") or [],

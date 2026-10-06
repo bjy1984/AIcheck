@@ -93,7 +93,9 @@ from libs.material_targeting import latest_parse_result
 from libs.mineru_ocr import (
     MinerUNormalizationError,
     MinerUNormalizedBundle,
+    MinerUArtifact,
     normalize_mineru_zip,
+    finalize_mineru_after_seals,
     validated_zip_members,
 )
 from libs.model_usage import model_cost_cny, normalize_model_usage
@@ -132,6 +134,9 @@ from libs.ocr_runtime import (
     official_ocr_enabled,
     official_ocr_primary_enabled,
 )
+from libs.pipeline_lock import assert_pipeline_lock_owned, PipelineLockUnavailable
+from libs.official_ocr_control import OfficialOcrControlUnavailable
+from libs.ocr_failover import MinerUPendingTimeout, observe_provider, select_qwen
 from libs.official_ocr_pipeline import official_ocr_extract, profile_result_complete
 from libs.pipeline_lock import pipeline_task_lock
 from libs.project_analysis import (
@@ -1300,6 +1305,7 @@ def mark_local_pipeline_stages(
 
 
 def _persist_mineru_job(job: dict[str, Any]) -> None:
+    assert_pipeline_lock_owned()
     flush_state_records({"ocr_jobs": [job]})
 
 
@@ -1383,7 +1389,7 @@ def _finalize_mineru_pipeline(
             if required_tables
             else "skipped"
         ),
-        engine_status={"mineru_vlm": {"status": "success"}},
+        engine_status=pipeline_engine_status(result),
         blocking_reasons=(
             []
             if not required_tables or result.get("tables")
@@ -1406,7 +1412,7 @@ def _finalize_mineru_pipeline(
             if seal_required
             else "skipped"
         ),
-        engine_status={"mineru_vlm": {"status": "success"}},
+        engine_status=pipeline_engine_status(result),
         blocking_reasons=(
             []
             if not seal_required or formal_seal
@@ -1429,16 +1435,16 @@ def _finalize_mineru_pipeline(
     run.update(
         {
             "providerMode": "explicit_remote",
-            "provider": "mineru",
-            "model": "vlm",
-            "cloudGrounded": True,
+            "provider": (result.get("metadata") or {}).get("provider", "mineru"),
+            "model": (result.get("metadata") or {}).get("model", "vlm"),
+            "cloudGrounded": bool((result.get("metadata") or {}).get("cloudGrounded")),
             "parseResultId": (
                 (result_record or {}).get("parseResultId")
                 or result.get("parseResultId")
             ),
             "artifactUrls": {
                 **(run.get("artifactUrls") or {}),
-                "mineru": deepcopy(job.get("artifactReferences") or {}),
+                str(job.get("activeProvider") or "mineru"): deepcopy(job.get("artifactReferences") or {}),
             },
         }
     )
@@ -1451,9 +1457,9 @@ def _finalize_mineru_pipeline(
         recommended_action=(
             None
             if outcome_status == "completed"
-            else "复核 MinerU 未满足的必填证据。"
+            else "复核 OCR 未满足的必填证据。"
         ),
-        formal_evidence_ready=outcome_status == "completed",
+        formal_evidence_ready=bool(result.get("formalEvidenceReady", outcome_status == "completed")),
     )
 
 
@@ -1493,6 +1499,7 @@ def _read_seal_texts_from_zip(
                 "retryable": True,
             }
         )
+        _scan_missed_seal_pages(job, bundle, seals)
         return
     (bundle.result.setdefault("diagnostics", [])).append(
         {
@@ -1523,11 +1530,12 @@ def _scan_missed_seal_pages(job: dict[str, Any], bundle: Any, seals: list) -> No
         return
     if not seal_scan_enabled():
         return
-    source_path, temp_root = mineru_source_path(job)
-    if not source_path or not source_path.is_file():
-        return
+    temp_root = None
     started = time.time()
     try:
+        source_path, temp_root = mineru_source_path(job)
+        if not source_path or not source_path.is_file():
+            return
         scanned = scan_document_seals_via_service(source_path.read_bytes())
         merged = merge_scanned_seals(seals, scanned)
         bundle.result["seals"] = seals
@@ -1649,7 +1657,7 @@ def _store_mineru_artifacts(
     for artifact_key, artifact in bundle.artifacts.items():
         safe_name = Path(artifact.name).name
         object_name = (
-            f"pipelines/mineru/{job['id']}/{safe_name}"
+            f"pipelines/{job.get('activeProvider') or 'mineru'}/{job['id']}/{safe_name}"
         )
         storage_url = object_storage.put_bytes(
             "ocr-artifacts",
@@ -1678,7 +1686,113 @@ def _store_mineru_artifacts(
     return references
 
 
+def run_qwen_fallback_job(job: dict[str, Any]) -> dict[str, Any]:
+    """Execute the existing official OCR pipeline for bound and standalone jobs."""
+    from apps.ocr_service.service import enrich_parse_result
+
+    runtime = ocr_runtime_config(env={**os.environ, "AICHECK_OCR_PROVIDER_MODE": "official"}, validate=True)
+    profile = default_profile(job.get("profileId"), job.get("documentType"))
+    if job.get("sourceType") == "url":
+        from libs.ocr_source import download_public_ocr_source
+        source_temp = Path(tempfile.mkdtemp(prefix="aicheck-qwen-source-"))
+        try:
+            source_path = download_public_ocr_source(str(job.get("sourceUrl") or ""), source_temp / Path(str(job.get("fileName") or "document.pdf")).name)
+        except Exception:
+            shutil.rmtree(source_temp, ignore_errors=True)
+            raise
+    else:
+        source_path, source_temp = mineru_source_path(job)
+    if not source_path or not source_path.is_file():
+        raise MinerUNormalizationError("QWEN_SOURCE_MISSING", "Original OCR source is unavailable")
+    work = temporary_pipeline_directory(str(job["id"]) + "-qwen")
+    checkpoint_run = {**job, "id": str(job["id"]), "officialPageCheckpoints": job.get("officialPageCheckpoints") or {}}
+    job.update(activeProvider="qwen", activeModel=runtime["official"]["primaryModel"], qwenAttemptCount=int(job.get("qwenAttemptCount") or 0) + 1)
+    repo.update_ocr_job_record(job, status="running", stage="qwen_ocr", progress=25)
+    _persist_mineru_job(job)
+
+    def completed(page_no: int, count: int, total: int, calls: list[dict[str, Any]]) -> None:
+        url, digest = store_ocr_pipeline_artifact(checkpoint_run, f"official_page_{page_no}", {"pageNo": page_no, "calls": calls})
+        job.setdefault("officialPageCheckpoints", {})[str(page_no)] = {"artifactUrl": url, "artifactHash": digest}
+        job["pageProgress"] = {"completed": count, "total": total, "currentPage": page_no}
+        repo.update_ocr_job_record(job, status="running", stage="qwen_ocr", progress=min(85, 25 + int(60 * count / max(total, 1))))
+        _persist_mineru_job(job)
+
+    try:
+        if source_path.suffix.lower().lstrip(".") in {"doc", "docx", "xls", "xlsx", "ppt", "pptx"}:
+            from libs.office_preview import convert_office_to_pdf
+            converted = work / "source.pdf"
+            converted.write_bytes(convert_office_to_pdf(source_path.read_bytes(), source_path.name))
+            source_path = converted
+        if source_path.suffix.lower() not in {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}:
+            raise MinerUNormalizationError("QWEN_SOURCE_FORMAT_UNSUPPORTED", "Qwen fallback requires PDF or image input")
+        ranges = (job.get("options") or {}).get("pageRanges")
+        if ranges:
+            selected: set[int] = set()
+            for token in str(ranges).split(","):
+                values = token.strip().split("-")
+                start, end = int(values[0]), int(values[-1])
+                if start < 1 or end < start or end - start >= 200:
+                    raise ValueError("PAGE_RANGE_INVALID")
+                selected.update(range(start, end + 1))
+            if len(selected) > 200 or (source_path.suffix.lower() != ".pdf" and selected != {1}):
+                raise ValueError("PAGE_RANGE_INVALID")
+            runtime["render"]["requestedPageNos"] = sorted(selected)
+        result = official_ocr_extract(
+            source_path, profile=profile, runtime=runtime, work_directory=work,
+            page_call_cache=_load_official_page_checkpoints(checkpoint_run), page_completed=completed,
+            attempt_recorder=lambda raw: _persist_official_ocr_attempt(checkpoint_run, raw),
+            budget_key=str(job["id"]),
+        )
+        if result.get("status") != "success":
+            raise MinerUNormalizationError("QWEN_RESULT_FAILED", "Qwen returned no usable result")
+        job["providerRequestIds"] = (result.get("metadata") or {}).get("providerRequestIds") or []
+        original = deepcopy(result)
+        result = enrich_parse_result(result, profile=profile, document_version_id=None, business_pack_id=None,
+                                    model_manifest={"provider": "aliyun_model_studio", "model": runtime["official"]["primaryModel"]})
+        # Keep cloud table geometry and all provider quality blockers after shared enrichment.
+        result["tables"] = original.get("tables") or []
+        result["engineRuns"] = original.get("engineRuns") or []
+        result["parserVersion"] = original.get("parserVersion")
+        result["engineVersion"] = "aliyun-qwen-ocr"
+        result.setdefault("metadata", {}).update(original.get("metadata") or {})
+        result["metadata"].update(fallback=deepcopy(job.get("fallback")), postProcessing={
+            "normalization": "applied", "profileExtraction": "applied", "fusionAndQuality": "applied", "sourceTablesPreserved": True,
+        })
+        quality = result.setdefault("quality", {})
+        for key in ("reasons", "blockingReasons"):
+            target = quality.setdefault(key, [])
+            for value in (original.get("quality") or {}).get(key) or []:
+                if value not in target:
+                    target.append(value)
+        result.update(storageKey=job.get("storageKey"), fileName=job.get("fileName"), parseResultId=f"PARSE-QWEN-{job['id']}")
+        result["groundingValidation"] = original.get("groundingValidation") or {}
+        if quality.get("blockingReasons") or original.get("outcomeStatus") != "completed":
+            quality["status"] = "needs_human_review"
+            result["outcomeStatus"] = "partial"
+            result["formalEvidenceReady"] = False
+        elif not (original.get("metadata") or {}).get("formalReadinessProfileAllowed"):
+            result["formalEvidenceReady"] = False
+        raw = json.dumps(original, ensure_ascii=False, sort_keys=True).encode()
+        normalized = json.dumps(result, ensure_ascii=False, sort_keys=True).encode()
+        markdown = "\n\n".join(str(x.get("text") or "") for x in result.get("fragments") or []).encode()
+        artifacts = {key: MinerUArtifact(name, data, mime, hashlib.sha256(data).hexdigest()) for key, name, data, mime in (
+            ("raw_qwen_json", "qwen-result.json", raw, "application/json"),
+            ("normalized_json", "normalized-result.json", normalized, "application/json"),
+            ("markdown", "full.md", markdown, "text/markdown"),
+        )}
+        references = _store_mineru_artifacts(job, MinerUNormalizedBundle(result, artifacts))
+        result["metadata"]["artifactReferences"] = deepcopy(references)
+        _persist_mineru_job(job)
+        return result
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        if source_temp:
+            shutil.rmtree(source_temp, ignore_errors=True)
+
+
 def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
+    if job.get("activeProvider") == "qwen":
+        return run_qwen_fallback_job(job)
     client = MinerUClient()
     source_temp_root: Path | None = None
     try:
@@ -1788,15 +1902,20 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
 
         def progress_callback(status: dict[str, Any]) -> None:
             provider_progress = _mineru_provider_progress(status)
-            if provider_progress is not None:
-                job["providerProgress"] = provider_progress
+            job["providerProgress"] = {
+                **(provider_progress or {}),
+                "state": str(status.get("state") or "unknown"),
+            }
             repo.update_ocr_job_record(
                 job,
                 status="running",
                 stage="poll",
                 progress=_mineru_progress_value(status),
             )
+            should_switch = observe_provider(job, str(status.get("state") or "unknown"))
             _persist_mineru_job(job)
+            if should_switch:
+                raise MinerUPendingTimeout("MinerU pending budget exhausted")
 
         provider_result = client.wait_for_result(
             submission,
@@ -1841,6 +1960,7 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
         # 靠的正是章上的单位名。裁图就在这份 zip 里，直接送视觉模型读，
         # 不重新渲染 PDF，也就不引入坐标换算这层新的出错机会。
         _read_seal_texts_from_zip(job, bundle, zip_bytes)
+        finalize_mineru_after_seals(bundle)
         repo.update_ocr_job_record(
             job,
             status="running",
@@ -1856,6 +1976,10 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
             result["metadata"] = metadata
         metadata["artifactReferences"] = deepcopy(artifact_references)
         return result
+    except MinerUPendingTimeout:
+        select_qwen(job)
+        _persist_mineru_job(job)
+        return run_qwen_fallback_job(job)
     finally:
         if source_temp_root is not None:
             shutil.rmtree(source_temp_root, ignore_errors=True)
@@ -1894,6 +2018,7 @@ def _mineru_failure_code(job: dict[str, Any], exc: Exception) -> str:
     }.get(str(job.get("stage") or ""), "MINERU_JOB_FAILED")
 
 
+@pipeline_task_lock("ocr-provider-execution", lambda _self, job_record_id, **_kw: f"{current_tenant_id()}:{job_record_id}", keepalive=True)
 def _execute_mineru_ocr_extract(
     self,
     job_record_id: str,
@@ -1906,6 +2031,8 @@ def _execute_mineru_ocr_extract(
         {
             "ocr_jobs",
             "ocr_parse_results",
+            "ocr_pipeline_runs",
+            "ocr_stage_runs",
             "documents",
             "versions",
             "auto_review_policies",
@@ -1969,8 +2096,12 @@ def _execute_mineru_ocr_extract(
     _persist_mineru_job(job)
     try:
         result = run_mineru_job(job)
+        assert_pipeline_lock_owned()
         result_record = repo.finish_ocr_job_record(job, result)
         _finalize_mineru_pipeline(job, result, result_record)
+        run = repo.find_one("ocr_pipeline_runs", str(job.get("pipelineRunId") or ""))
+        if run:
+            flush_state_records({"ocr_pipeline_runs": [run], "ocr_stage_runs": repo.ocr_pipeline_stages(str(run["id"]))})
         bound_document = (
             repo.find_one("documents", document_id) if document_id else None
         )
@@ -2047,8 +2178,10 @@ def _execute_mineru_ocr_extract(
             ),
         }
     except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
-        code = _mineru_failure_code(job, exc)
-        retryable = bool(getattr(exc, "retryable", False))
+        if isinstance(exc, PipelineLockUnavailable):
+            raise
+        code = ("QWEN_OCR_FAILED" if job.get("activeProvider") == "qwen" else _mineru_failure_code(job, exc))
+        retryable = isinstance(exc, (AliyunOcrRetryableError, OfficialOcrControlUnavailable)) or bool(getattr(exc, "retryable", False))
         failed_stage = str(job.get("stage") or "unknown")
         # 失败原因必须可归因：只记阶段码的话，线上看到 MINERU_SUBMIT_FAILED
         # 完全不知道为什么（2026-08-29 实测：6 份资料失败，诊断里除了阶段码
@@ -2072,19 +2205,32 @@ def _execute_mineru_ocr_extract(
         called_directly = bool(
             getattr(self.request, "called_directly", False)
         )
-        if retryable and not called_directly and retry_index < 3:
+        # Provider queue latency is not a parsing failure. Resume its checkpoint
+        # with a separate, bounded budget instead of uploading another batch.
+        provider_wait = code == "MINERU_JOB_TIMEOUT" and bool(job.get("providerTaskId"))
+        try:
+            wait_retries = min(48, max(3, int(os.getenv("AICHECK_MINERU_WAIT_RETRIES", "24"))))
+        except ValueError:
+            wait_retries = 24
+        retry_limit = wait_retries if provider_wait else 3
+        if job.get("activeProvider") == "qwen":
+            # MinerU may already have used many retries before the rollout.
+            retry_limit = retry_index + max(0, 3 - int(job.get("qwenAttemptCount") or 1))
+        if retryable and not called_directly and retry_index < retry_limit:
+            if provider_wait:
+                diagnostics[0]["level"] = "warning"
             repo.update_ocr_job_record(
                 job,
                 status="queued",
-                stage="retrying",
+                stage="waiting_provider" if provider_wait else "retrying",
                 progress=min(int(job.get("progress") or 0), 99),
                 diagnostics=diagnostics,
             )
             _persist_mineru_job(job)
-            countdown = (10, 30, 90)[min(retry_index, 2)]
+            countdown = 300 if provider_wait else (10, 30, 90)[min(retry_index, 2)]
             if retry_handler is not None:
                 retry_handler(countdown, deepcopy(diagnostics))
-            raise self.retry(exc=exc, countdown=countdown)
+            raise self.retry(exc=exc, countdown=countdown, max_retries=retry_limit)
         failure_result = {
             "storageKey": job.get("storageKey"),
             "fileName": job.get("fileName"),

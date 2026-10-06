@@ -29,6 +29,7 @@ from apps.api.important_review_routes import important_review_router
 from apps.api.inspection_service_routes import inspection_service_router, public_review_request
 from apps.api.knowledge_admin_routes import knowledge_admin_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
+from apps.api.data_service_mcp_routes import router as data_service_mcp_router
 from apps.api.org_delegation_routes import org_delegation_router
 from apps.api.project_analysis_routes import project_analysis_router
 from apps.api.project_registration_routes import project_registration_router
@@ -588,6 +589,10 @@ def auth_required_for_path(request: Request) -> bool:
 
 
 def is_ephemeral_inspection_request(request: Request) -> bool:
+    # The MCP facade delegates writes to existing APIs, which own their locks.
+    path = canonical_path(request.url.path)
+    if path == "/mcp/data-services" or re.fullmatch(r"/mcp/data-services/uploads/[A-Za-z0-9_.-]{1,2048}", path):
+        return True
     if public_review_request(request.method, canonical_path(request.url.path)):
         return True
     return canonical_path(request.url.path) in {
@@ -1515,6 +1520,7 @@ app.include_router(cnse_router)
 app.include_router(cnse_router, prefix="/api")
 app.include_router(std_samr_router)
 app.include_router(std_samr_router, prefix="/api")
+app.include_router(data_service_mcp_router, prefix="/api")
 app.include_router(mineru_ocr_router)
 app.include_router(mineru_ocr_router, prefix="/api")
 

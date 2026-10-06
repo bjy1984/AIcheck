@@ -1,54 +1,29 @@
-# 安装和服务器连接
+# 远程 MCP 连接与部署
 
-用户发布版优先使用 [安装说明](../安装说明.md) 中的配置向导，自动填写 Python、脚本及本机资料目录；以下 JSON 用于手动配置。
+用户安装见 [安装说明](../安装说明.md)，配置文件见 [mcp.workbuddy.json](../mcp.workbuddy.json)。发布包无需本地执行脚本。仓库保留 scripts/ 中的旧 stdio 实现供兼容测试，不作为远程版用户安装步骤。
 
-如果脚本自检成功但平台仍显示未连接，请在 WorkBuddy 中检查该 MCP 是否已启用、已信任，以及配置是否保存到当前使用的环境；重新加载连接器或重启平台后再次实际调用 connection。离线文件读取成功不代表 MCP 已连接。不要因此重复上传资料。
+## 服务契约
 
-解压到固定目录，导入SKILL.md。MCP使用Python 3.10+标准库，不需要用户安装项目后端或MinerU模型。此版本为本地stdio桥接远程HTTP服务，不是已上架的WorkBuddy连接器，也不宣称已提供远程Streamable HTTP MCP。
+- 地址：`http://39.108.65.148:8081/api/mcp/data-services`
+- 传输：Streamable HTTP，JSON响应，无会话存储。协商2025-06-18或2025-03-26协议；GET不提供SSE流，返回405。
+- 9个工具：connection、standards、standard_content、standard_status、certificate_registry、certificate_validity、ocr_submit、ocr_status、ocr_result，统一aicheck_前缀。
+- ocr_submit只签发临时PUT上传地址，上传完成才返回jobId。不能接收服务器路径、任意远程URL或代为读取用户电脑。
+- 浏览器Origin默认拒绝，管理员可用AICHECK_MCP_ALLOWED_ORIGINS明确配置允许列表。
 
-合并以下配置到宿主MCP配置；用真实服务器地址、脚本位置和允许读取目录替换示例：
+## 版本更新
 
-```json
-{
-  "mcpServers": {
-    "aicheck-data-services": {
-      "type": "stdio",
-      "command": "python3",
-      "args": ["/absolute/path/aicheck-data-services/scripts/mcp_server.py"],
-      "env": {
-        "AICHECK_BASE_URL": "https://your-aicheck-server.example",
-        "AICHECK_TOKEN_FILE": "/absolute/private/path/aicheck-token.txt",
-        "AICHECK_DATA_ALLOWED_ROOTS": "[\"/absolute/path/user-selected-files\"]"
-      },
-      "disabled": false
-    }
-  }
-}
-```
+2.3.1 增加问题导向的专项求证与输出样例，仅更新 Skill 指令和参考资料；MCP 工具名称、参数及远程地址不变。导入新版后新建对话读取新约定，不需要重配连接器。
 
-远程使用HTTPS，本地联调可使用http://127.0.0.1:8000。OCR使用服务器账号登录令牌，标准/证书服务保持各自现有鉴权策略；配置文件不得包含服务器MinerU供应商密钥。无需给用户项目源码路径。
+2.2.0 同步服务端自动切换策略：MinerU 连续 pending 默认 60 秒后由千问接管，保留原 jobId。Skill 指导读取实际引擎、切换原因、逐页进度以及质量状态，不宣称官方任务取消成功。已有远程连接无需改 URL 或凭据；更新 Skill 后新建对话，让宿主读取新版说明。工具名称和提交参数不变。
 
-启用并信任MCP后，重新加载工具列表。工具前缀为aicheck_，共9个：connection、ocr_submit、ocr_status、ocr_result、standards、standard_content、standard_status、certificate_registry、certificate_validity。其他同名MCP由宿主通过服务器名区分，避免选错旧审查连接器。
+2.1 新增 `ocr_submit.profileId` 和最终加工结果的来源、全文质量、未定位字段。更新 Skill 后重载连接器或新建对话，刷新平台缓存的工具定义；远程 URL 和原有连接配置不用改。若平台仍提示 profileId 为多余参数，先刷新工具定义，不将其误报为服务无法识别资料。已有任务没有处理来源记录时会明确标记，不会自动重新 OCR。
 
-## 服务器部署要求
+## 管理员部署
 
-复用现有 `/api/internal/ocr/mineru/tasks/upload` 和任务状态接口，需运行项目API、持久化、存储及MinerU任务worker，配置供应商凭据。新增加 `/api/internal/ocr/mineru/tasks/{jobId}/result` 供授权用户读取规范化结果，服务器须部署本次代码后才可用。没有projectId/documentId，不创建工程或工程文件版本。
+后端新增 `apps/api/data_service_mcp_routes.py` 和生成契约 `libs/data_service_mcp_contract.py`。工具契约变更后运行 `scripts/sync_remote_mcp_contract.py` 更新生成文件。
 
-原始OCR产物遵循现有服务器artifactReferences，其结构可能与标准库sidecar目录不同。此包读取规范化JSON，不承诺下载本机不可访问的服务器路径。当前接口没有独立删除/取消和自动24小时过期承诺；原件、任务及产物按实际服务器策略保留，需运维清理。不要把原先方案建议的临时留存期限当成已实现功能。
+MCP通过固定回环地址 `http://127.0.0.1:8000/api` 复用已有接口。上传签名密钥自动生成于 `output/mcp/upload-signing.key`，目录需仅对服务账号可写并持久化，密钥不进镜像或发布包。`AICHECK_MCP_PUBLIC_BASE_URL` 配置外部上传入口，默认当前测试服务器地址。
 
-## 验收
+内部测试免登录沿用 `output/data-services-noauth.enabled` 开关，仅开放指定MCP与上传路径；关闭后恢复后台原有鉴权。前端客户端无需配置AICHECK_ALLOW_HTTP或AICHECK_DATA_TEST_NOAUTH。管理员及工程接口不放开。
 
-1. 调用connection检查标准全文能力；credentialsConfigured只说明配置项存在，不证明令牌有效。
-2. 用用户指定的测试文件调用ocr_submit，提供随机UUID作为requestId。
-3. 保存jobId，按返回状态轮询；成功后按pageNo读取ocr_result，与原件核对。
-4. 检索明确标准编号，再读取返回fileId的原文，核对版本及页码。
-5. 使用测试证件字段验证有效期覆盖和缺日期；官方登记只报告真实工具结果。
-6. 输入超出允许目录的路径、越界页码及其他账号任务，验证拒绝。
-
-任务失败保留原始错误码，不自动换供应商或反复重新上传。OCR原文过大时按页获取。格式仅支持PDF、PNG、JPEG，客户端限100MB。
-
-## 内部测试免登录模式
-
-仅当管理员已开启服务端测试开关时，在 MCP env 增加 `AICHECK_DATA_TEST_NOAUTH=1`；公网 HTTP 测试地址还需 `AICHECK_ALLOW_HTTP=1`。该模式不发送 OCR 令牌，共享测试身份的独立 OCR 任务可被其他测试者读取，已有用户/工程任务仍受保护。
-
-服务端在 API 工作目录的 `output/data-services-noauth.enabled` 写入 `enabled` 即开启；删除此文件即时关闭。仅放行标准、证件与独立 OCR 指定接口。关闭时同步移除客户端免登录变量并配置有效令牌。发布部署须包含 `libs/security/data_service_test_mode.py` 和对应路由改动；容器重建必须使用包含本次修改的镜像。
+沿用现有 OCR 队列、数据库及对象存储，增加千问接管分支。`AICHECK_MINERU_PENDING_TIMEOUT_SECONDS` 默认 60；千问使用专用 OCR 凭据，未配置时仅允许复用同一地域官方 DashScope 视觉凭据，不混用 Token Plan 密钥。客户端不负责配置后台的引擎密钥。任务和原件仍按已有策略留存，没有新增自动清理承诺。部署后需验证真实远程握手、工具调用和上传，不以本地单元测试替代服务器验收。

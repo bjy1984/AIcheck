@@ -29,7 +29,10 @@ def _read(path: str, modified: int, size: int) -> dict:
 def standard_state(fallback: dict) -> dict:
     configured = os.getenv("AICHECK_INSPECTION_CORPUS", "").strip()
     if not configured:
-        return fallback
+        default = Path("output/inspection-standard-corpus/corpus.json")
+        if not default.is_file():
+            return fallback
+        configured = str(default)
     path = Path(configured).expanduser().resolve()
     info = path.stat()
     return _read(str(path), info.st_mtime_ns, info.st_size)
