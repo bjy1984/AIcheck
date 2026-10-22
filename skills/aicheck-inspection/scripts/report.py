@@ -9,6 +9,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPORT_NAME = '压力管道监检材料审查'
+REPORT_AUTHOR = '珠海安粤科技'
 RESULT = {'passed':'符合','failed':'不符合','warning':'预警','insufficient':'证据不足','manual':'需人工核查','not_applicable':'不适用','pending':'未判定'}
 EXECUTION = {'not_run':'未执行','completed':'已完成','failed':'执行失败','waiting':'待补充'}
 KINDS = {'recognize':'待识别','supply':'待补资料','retry':'查询待重试','basis':'依据待核实','rectify':'待整改'}
@@ -191,7 +193,9 @@ def render(data, output):
     def links(value):
         # Only internally generated IDs become links, never document-supplied URLs.
         return re.sub(r'\b[A-Za-z][A-Za-z0-9_-]*\b',lambda m:f'<a href="#{m[0]}">{m[0]}</a>' if m[0] in known else m[0],escaped(value))
-    md=['# 监检辅助审查报告',''];body=[]
+    report_name=data.get('skillName',REPORT_NAME)
+    report_author=data.get('skillAuthor',REPORT_AUTHOR)
+    md=[f'# {escaped(report_name)}','',f'作者：{escaped(report_author)}',''];body=[]
     check_ids={c['id'] for c in data['checks']}
     group_open=False
     for anchor,title,lines,headers,rows in parts:
@@ -221,7 +225,10 @@ def render(data, output):
             body.append(f'<details class="check" data-node="{check["node"]}" data-result="{check["result"]}" id="{anchor}" open><summary>{escaped(title)} <span class="badge {check["result"]}">{RESULT[check["result"]]}</span></summary>{content}</details>')
         else:body.append(f'<section id="{anchor}"><h2>{escaped(title)}</h2>{content}</section>')
     template=(ROOT/'assets/report.html').read_text()
-    document=template.replace('<!--OPTIONS-->',''.join(f'<option value="{n}">{n}</option>' for n in data['nodes'])).replace('<!--BODY-->','\n'.join(body))
+    document=(template.replace('<!--REPORT_NAME-->',escaped(report_name))
+              .replace('<!--REPORT_AUTHOR-->',escaped(report_author))
+              .replace('<!--OPTIONS-->',''.join(f'<option value="{n}">{n}</option>' for n in data['nodes']))
+              .replace('<!--BODY-->','\n'.join(body)))
     output.mkdir(parents=True,exist_ok=True)
     (output/'report.html').write_text(document)
     (output/'report.md').write_text('\n'.join(md)+'\n')
@@ -239,7 +246,7 @@ def main():
         if args.input.exists():parser.error('不覆盖已有输入文件')
         rules=catalog()
         if any(n not in rules for n in args.nodes):parser.error('未知节点')
-        data={'schemaVersion':'inspection-report@1','project':'待填写工程名称','reportDate':date.today().isoformat(),'scopeNote':'待填写本次文件和节点范围',
+        data={'schemaVersion':'inspection-report@1','skillName':REPORT_NAME,'skillAuthor':REPORT_AUTHOR,'project':'待填写工程名称','reportDate':date.today().isoformat(),'scopeNote':'待填写本次文件和节点范围',
               'ruleSha256':hashlib.sha256((ROOT/'references/business-nodes-v3.md').read_bytes()).hexdigest(),'nodes':list(dict.fromkeys(args.nodes)),
               'materials':[],'evidence':[],'services':[],'checks':[],'issues':[]}
         for node in data['nodes']:
