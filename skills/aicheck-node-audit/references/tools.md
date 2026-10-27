@@ -50,7 +50,7 @@ Office 原件直接读不了：用 `node_audit text --file <原件>` 转成文�
 
 | 文件 | 来源 | 内容 |
 |---|---|---|
-| `workspace.json` | GET `/api/projects/{P}/inspection/nodes/{N}/audit-workspace` | 资料要求、已提交挂载、文件与 OCR 就绪度、抽取字段（`ocr.extractedFields`）、证据就绪度与链接、审查运行列表、人工意见 |
+| `workspace.json` | GET `/api/projects/{P}/inspection/nodes/{N}/audit-workspace`（服务器把内容放在 `content` 下，存进包时已摊平，下面的键都在顶层） | 资料要求、已提交挂载、文件与 OCR 就绪度、抽取字段（`ocr.extractedFields`）、证据就绪度与链接、审查运行列表、人工意见 |
 | `server-rule.json` | GET `…/rules/current-version` | 服务器当前给该节点的规则（用来查错位） |
 | `standards.json` | GET `…/standards` | 固定依据条款 |
 | `evidence-chain.json` | GET `…/evidence-chain` | 证据链 |

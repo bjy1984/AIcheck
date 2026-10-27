@@ -22,10 +22,11 @@ TOKEN = "test-token-not-real"
 PDF = b"%PDF-1.4 fake\n"
 ID = "11010519491231002X"  # 校验位正确的虚构号码
 NODE = "/api/projects/P-S/inspection/nodes/24"
-WORKSPACE = {"submission": {"documents": [
+# 服务器真实返回：资料在 content.submission 下（见 test_node_audit.WORKSPACE 的说明）。
+WORKSPACE = {"schemaVersion": "InspectionAuditWorkspace@1.0.0", "node": {"nodeId": 24}, "items": [], "content": {"submission": {"documents": [
     {"id": "DOC-1", "fileName": "焊工证.pdf", "currentVersionId": "V-1", "bindings": [{"documentVersionId": "V-1"}]},
     {"id": "DOC-2", "fileName": "施工方案.pdf", "currentVersionId": "V-2", "bindings": [{"documentVersionId": "V-2"}]},
-]}}
+]}}}
 EVIDENCE_CHAIN = {"links": [
     {"id": "NEL-1", "documentVersionId": "V-1", "manualStatus": "confirmed", "pageNo": 2, "bbox": [10, 20, 180, 42], "quotedText": "2025-12"},
     {"id": "NEL-3", "documentVersionId": "V-1", "manualStatus": "confirmed", "pageNo": 1, "bbox": [10, 60, 180, 82],

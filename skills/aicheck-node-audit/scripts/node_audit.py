@@ -381,6 +381,17 @@ def cell(value: Any) -> str:
     return str("" if value is None else value).replace("|", "\\|").replace("\n", " ")
 
 
+def flatten_workspace(payload: Any) -> dict[str, Any]:
+    """服务器 audit-workspace 把 submission / ocr / evidence / aiReview 等放在 `content` 下；
+    包里和后面各处都按顶层键读，所以这里摊平。已经是平铺的（本地 --workspace 模拟文件）原样返回。"""
+    if not isinstance(payload, dict):
+        return {}
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        return payload
+    return {**{k: v for k, v in payload.items() if k != "content"}, **content}
+
+
 def write_digest(root: Path, manifest: dict[str, Any], rules: dict[str, Any], workspace: dict[str, Any]) -> None:
     """A compact first read for the assistant; full JSON stays alongside."""
     rule = rules["rule"]
@@ -449,11 +460,14 @@ def cmd_fetch(args: argparse.Namespace) -> Any:
     api = Api(args.base_url)
     project, node = args.project, args.node
     node_path = f"/projects/{parse.quote(project, safe='')}/inspection/nodes/{node}"
-    workspace = api.call("GET", f"{node_path}/audit-workspace", auth=True) or {}
+    workspace = flatten_workspace(api.call("GET", f"{node_path}/audit-workspace", auth=True))
     root = bundle_dir(project, node, args.out)
     private_dir(root)
     write_private(root / "workspace.json", dump(workspace))
     warnings: list[str] = []
+    if not any(key in workspace for key in ("submission", "ocr", "aiReview")):
+        warnings.append("服务器 audit-workspace 的返回里没有 submission / ocr / aiReview（也不在 content 下），"
+                        "接口结构可能变了：下面“没有挂载资料”“没有审查运行”可能是读不到而不是真没有，先看 workspace.json 再信。")
     parts = {"workspace": "workspace.json"}
     optional = (("serverRule", "rules/current-version", "server-rule.json"),
                 ("standards", "standards", "standards.json"),
@@ -554,7 +568,7 @@ def cmd_local_init(args: argparse.Namespace) -> Any:
     workspace: dict[str, Any] = {}
     if args.workspace:
         workspace = json.loads(Path(args.workspace).expanduser().read_text(encoding="utf-8"))
-        workspace = workspace.get("data", workspace)
+        workspace = flatten_workspace(workspace.get("data", workspace))
     private_dir(root)
     write_private(root / "workspace.json", dump(workspace))
     files = []

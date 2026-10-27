@@ -21,7 +21,7 @@ SPEC.loader.exec_module(na)
 
 TOKEN = "test-token-not-real"
 PDF = b"%PDF-1.4 fake certificate\n"
-WORKSPACE = {
+WORKSPACE_FLAT = {
     "node": {"nodeId": 24},
     "submission": {"documents": [{
         "id": "DOC-1", "fileName": "焊工证/张三.pdf", "currentVersionId": "V-2", "materialTypeCode": "welder_certificate",
@@ -33,6 +33,13 @@ WORKSPACE = {
     "aiReview": {"reviewRuns": [{"reviewRunId": "RRUN-OLD", "updatedAt": "2026-09-01"},
                                 {"reviewRunId": "RRUN-NEW", "updatedAt": "2026-10-01"}]},
 }
+# 服务器真实返回（2026-10 对生产只读核对）：外层是 schemaVersion/project/node/items 等，
+# 资料、OCR、证据、AI 审查在 content 下；只有 include_content 的接口才有 content。
+WORKSPACE = {
+    "schemaVersion": "InspectionAuditWorkspace@1.0.0", "project": {"id": "P-T"}, "node": WORKSPACE_FLAT["node"],
+    "items": [], "latestActivityAt": None, "dataAsOf": "2026-10-26T00:00:00+08:00", "businessBasis": {},
+    "content": {k: v for k, v in WORKSPACE_FLAT.items() if k != "node"},
+}
 
 
 class FakeServer:
@@ -41,6 +48,7 @@ class FakeServer:
         self.server_rule = {"sourceRuleId": "R26", "nodeIds": [24]}
         self.gateway_failures = 0  # 下一次登记查询先回几次 502
         self.registry_unavailable = 0  # 下一次登记查询先回几次 503（公示平台暂不可查询）
+        self.workspace = WORKSPACE
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -82,7 +90,7 @@ class FakeServer:
                 if not self.authed():
                     return
                 if path == f"{node}/audit-workspace":
-                    self.send_json(WORKSPACE)
+                    self.send_json(outer.workspace)
                 elif path == f"{node}/rules/current-version":
                     self.send_json({"rule": outer.server_rule})
                 elif path == f"{node}/standards":
@@ -188,11 +196,35 @@ class NodeAuditTest(unittest.TestCase):
         digest = (out_dir / "digest.md").read_text(encoding="utf-8")
         self.assertIn("AC-R24-05", digest)
         self.assertIn("TS-1\\|2", digest)
+        # 服务器把内容放在 content 下：包里的 workspace.json 已摊平，文件、OCR 字段、服务器结论都读得到。
+        stored = json.loads((out_dir / "workspace.json").read_text(encoding="utf-8"))
+        self.assertNotIn("content", stored)
+        self.assertEqual({"submission", "ocr", "evidence", "aiReview"} - set(stored), set())
+        self.assertNotIn("接口结构可能变了", warnings)
         # 挂载版本而不是当前版本；令牌不跟着跳转去对象存储。
         original = next(r for r in self.server.requests if r[1].startswith("/api/projects/P-T/documents/DOC-1/original"))
         self.assertEqual(parse_qs(urlsplit(original[1]).query)["versionId"], ["V-1"])
         blob = next(r for r in self.server.requests if r[1] == "/storage/blob")
         self.assertNotIn("Authorization", blob[2])
+
+    def test_flatten_workspace_accepts_nested_and_flat(self):
+        flat = na.flatten_workspace(WORKSPACE)
+        self.assertNotIn("content", flat)
+        self.assertEqual(flat["submission"]["documents"][0]["id"], "DOC-1")
+        self.assertEqual(flat["project"], {"id": "P-T"})  # 外层的键保留
+        self.assertIs(na.flatten_workspace(WORKSPACE_FLAT), WORKSPACE_FLAT)  # 本地 --workspace 模拟文件是平铺的
+        self.assertEqual(na.flatten_workspace(None), {})
+        self.assertEqual(na.flatten_workspace({"content": None, "node": 1}), {"content": None, "node": 1})
+
+    def test_fetch_warns_when_workspace_shape_unknown(self):
+        self.login()
+        self.server.workspace = {"schemaVersion": "InspectionAuditWorkspace@2.0.0", "node": {"nodeId": 24}, "body": {"documents": []}}
+        out_dir = Path(self.tmp.name) / "bundle-unknown"
+        code, out = run("fetch", "--project", "P-T", "--node", "24", "--out", str(out_dir))
+        self.assertEqual(code, 0, out)
+        manifest = json.loads((out_dir / "bundle.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["files"], [])
+        self.assertTrue(any("接口结构可能变了" in w for w in manifest["warnings"]), manifest["warnings"])
 
     def test_token_not_sent_to_other_server(self):
         na.write_private(self.session, json.dumps({"baseUrl": "http://127.0.0.1:1", "token": TOKEN}))
