@@ -10,6 +10,45 @@ def test_auth_failures_mean_the_key_is_wrong(status):
     assert classify_failure(status, "Incorrect API key provided") == "invalid_key"
 
 
+# 2026-10-27 生产 Token Plan 的原文（去掉请求 id）。
+UNPURCHASED_BODY = (
+    '{"error":{"message":"Access to model denied. Please make sure you are eligible '
+    'for using the model.","type":"AccessDenied.Unpurchased"}}'
+)
+
+
+def test_an_unpurchased_plan_is_not_reported_as_a_bad_key():
+    """密钥是好的、套餐没买：叫人重新签发密钥是在指错方向。"""
+    assert classify_failure(403, UNPURCHASED_BODY) == "no_plan"
+
+
+def test_a_403_without_the_unpurchased_type_is_still_a_bad_key():
+    """no_plan 认的是专名，不是 403 本身。"""
+    assert classify_failure(403, '{"error":{"message":"Access denied","type":"AccessDenied"}}') == "invalid_key"
+    assert classify_failure(403, "") == "invalid_key"
+
+
+def test_the_unpurchased_type_wins_over_the_status_code():
+    """别的状态码带同一个专名也是套餐问题；欠费文案仍排在它前面。"""
+    assert classify_failure(400, UNPURCHASED_BODY) == "no_plan"
+    assert classify_failure(403, UNPURCHASED_BODY + " 余额不足") == "no_balance"
+
+
+def test_a_failed_probe_surfaces_the_unpurchased_plan_end_to_end():
+    class Denied(Exception):
+        code = 403
+
+        def read(self):
+            return UNPURCHASED_BODY.encode()
+
+    def deny(*_args):
+        raise Denied("HTTP Error 403: Forbidden")
+
+    result = probe_provider("primary", "https://x", "k", "m", opener=deny)
+    assert result["ok"] is False and result["reason"] == "no_plan" and result["status"] == 403
+    assert "primary=no_plan" in summarize([result])["message"]
+
+
 def test_payment_required_means_no_money():
     assert classify_failure(402, "") == "no_balance"
 

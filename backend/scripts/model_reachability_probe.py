@@ -54,7 +54,7 @@ def main() -> int:
             "provider": "vision",
             "base_url": os.getenv("AICHECK_LLM_VISION_API_BASE", ""),
             "api_key": os.getenv("AICHECK_LLM_VISION_API_KEY", ""),
-            "model": os.getenv("AICHECK_LLM_MODEL_VISION", "qwen-vl-max"),
+            "model": os.getenv("AICHECK_LLM_MODEL_VISION", "qwen3-vl-plus"),
         },
     ]
     results = [

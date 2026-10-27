@@ -90,7 +90,7 @@ DASHSCOPE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
 def test_有TokenPlan密钥时文本切到TokenPlan而视觉留在按量端点(tmp_path: pathlib.Path):
-    """三种百炼密钥与端点互不通用；按量端点才有 qwen-vl-max，视觉不该跟着切。"""
+    """三种百炼密钥与端点互不通用；按量端点才有专门的视觉模型，视觉不该跟着切。"""
     env = _build(tmp_path, {
         "AICHECK_POSTGRES_PASSWORD": "pw",
         "AICHECK_LLM_VISION_API_BASE": DASHSCOPE,
@@ -102,7 +102,8 @@ def test_有TokenPlan密钥时文本切到TokenPlan而视觉留在按量端点(t
     # 视觉凭证齐备就留在按量端点，用专门的视觉模型
     assert env["AICHECK_LLM_VISION_API_BASE"] == DASHSCOPE
     assert env["AICHECK_LLM_VISION_API_KEY"] == "sk-ws-payg"
-    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen-vl-max"
+    # qwen-vl-max 已在按量端点下架（404），不能再配回去
+    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3-vl-plus"
     # 文本模型名不动——它们在 Token Plan 上就是这些名字
     assert env["AICHECK_LLM_MODEL_REVIEW"] == "qwen3.7-plus"
     assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
@@ -146,7 +147,7 @@ def test_凭证里显式的embedding密钥优先(tmp_path: pathlib.Path):
 def test_没有TokenPlan密钥时一切照旧(tmp_path: pathlib.Path):
     env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-dashscope"})
     assert env["AICHECK_LLM_API_BASE"] == DASHSCOPE
-    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen-vl-max"
+    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3-vl-plus"
     assert "AICHECK_LLM_VISION_API_BASE" not in env
 
 

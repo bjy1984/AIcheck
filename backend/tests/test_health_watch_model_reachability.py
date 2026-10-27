@@ -42,6 +42,7 @@ def test_a_malformed_row_does_not_crash_the_audit():
     "reason,status,hint",
     [
         ("invalid_key", 401, "重新签发"),
+        ("no_plan", 403, "续订"),
         ("no_balance", 402, "充值"),
         ("not_configured", None, "没配"),
         ("unreachable", 503, "先观察"),

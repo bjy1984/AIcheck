@@ -115,7 +115,9 @@ runtime = {
     # 等于声明了一个不存在的能力——印章读字上线第一次实跑就栽在这里。
     # 地址与密钥在凭证文件里（AICHECK_LLM_VISION_API_BASE / _API_KEY），
     # 两个都配齐才生效，只配一半会退回主供应商。
-    "AICHECK_LLM_MODEL_VISION": "qwen-vl-max",
+    # 2026-10-27：按量端点的 qwen-vl-max 已下架（404 model_not_found，/models 里也没有），
+    # 改 qwen3-vl-plus；同日在生产视觉端点实测能读图（生成的测试图原样读对）。
+    "AICHECK_LLM_MODEL_VISION": "qwen3-vl-plus",
     # OCR 分工：正文/表格走 MinerU 云端 API，印章由视觉模型读字。
     #
     # 密钥 AICHECK_MINERU_API_KEY 在凭证文件里，由下面的 update 带进来。
@@ -193,8 +195,8 @@ if secrets.get("AICHECK_TOKEN_PLAN_API_KEY"):
     token_plan_key = secrets["AICHECK_TOKEN_PLAN_API_KEY"]
     runtime["AICHECK_LLM_API_BASE"] = TOKEN_PLAN_BASE
     runtime["AICHECK_LLM_API_KEY"] = token_plan_key
-    # 视觉不跟着切：按量端点有 qwen-vl-max（专门的视觉模型，印章读字就是为它配的），
-    # Token Plan 没有，只能退而用 qwen3.7-plus 读图。凭证文件里地址与密钥**两个都齐**
+    # 视觉不跟着切：按量端点有专门的视觉模型 qwen3-vl-plus（原先是 qwen-vl-max，已下架；
+    # 印章读字就是为视觉模型配的），Token Plan 没有，只能退而用 qwen3.7-plus 读图。凭证文件里地址与密钥**两个都齐**
     # 才认（沿用 vision_override 的老规矩：只配一半会拼出"新地址配旧密钥"）；
     # 缺任一个才整体退回 Token Plan。
     if not (secrets.get("AICHECK_LLM_VISION_API_BASE") and secrets.get("AICHECK_LLM_VISION_API_KEY")):

@@ -63,6 +63,14 @@ MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
         "needsThinkingOff": False,
         "supportsTools": False,
     },
+    # 视觉角色现用模型（2026-10-27 起取代已下架的 qwen-vl-max）。必须单列：
+    # 不写就会落到下面 "qwen3-" 前缀，被套上 enable_thinking=false 与 16384 的输出上限。
+    "qwen3-vl-plus": {
+        "maxOutputTokens": 8192,
+        "contextTokens": 131072,
+        "needsThinkingOff": False,
+        "supportsTools": False,
+    },
     "qwen3-30b": {
         "maxOutputTokens": 32768,
         "contextTokens": 131072,
@@ -117,6 +125,7 @@ UNPRICED_MODELS: dict[str, str] = {
     "deepseek-v4-pro": "DeepSeek 2026-09 公开价未核实；用它计费前必须补价，否则按 qwen 全局单价错算",
     "deepseek-v4-flash": "同上",
     "qwen3.7-max": "百炼价目未核实",
+    "qwen3-vl-plus": "百炼价目未核实（2026-10-27 才接入视觉角色，未查到可核对的公开价）",
     "qwen3-": "前缀占位条目，不是真实模型",
 }
 

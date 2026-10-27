@@ -18,6 +18,15 @@ def test_capability_table_matches_longest_prefix_and_provider_label() -> None:
     assert capabilities_for("some-unknown-model") is None
 
 
+def test_the_vision_model_has_its_own_entry_not_the_generic_qwen3_prefix() -> None:
+    """视觉模型落到 "qwen3-" 前缀会被注入 enable_thinking=false、输出上限也变；要单列。"""
+    caps = capabilities_for("qwen3-vl-plus")
+    assert caps["matchedPrefix"] == "qwen3-vl-plus"
+    assert caps["needsThinkingOff"] is False
+    adjusted, changes = apply_model_capabilities("qwen3-vl-plus", {"max_tokens": 4000})
+    assert "enable_thinking" not in adjusted and changes == {}
+
+
 def test_apply_model_capabilities_clamps_and_injects_thinking_flag() -> None:
     adjusted, changes = apply_model_capabilities(
         "qwen-plus", {"max_tokens": 48000, "temperature": 0.1}

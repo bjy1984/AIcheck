@@ -7,12 +7,17 @@
 判定要分清三件事，因为处置方式完全不同：
 
 - `invalid_key`：密钥本身不对（HTTP 401/403）。要人去控制台重新签发。
+- `no_plan`：密钥是好的，但套餐/模型没购买或已过期（阿里云 Token Plan 回
+  HTTP 403，type 为 `AccessDenied.Unpurchased`）。要人去控制台购买或续订，
+  重新签发密钥没用。
 - `no_balance`：密钥好的，账户没钱（HTTP 402，或 DeepSeek 那种 400 带
   Insufficient Balance）。要人去充值。
 - `unreachable`：连不上、超时、5xx。可能是网络或供应商侧，通常会自愈。
 
 2026-09-10 就栽在没分清上：主供应商密钥失效，但回退指着一个欠费的 DeepSeek，
 错误先冒出来的是 402，看起来像「充值就好」，实际上充了也没用。
+2026-10-27 又栽了一次：Token Plan 套餐未购买，`/models` 还能列出模型、密钥也被
+认出来，聊天却全是 403，被归成 `invalid_key` 后文案叫人去重新签发，方向是错的。
 """
 
 from __future__ import annotations
@@ -22,14 +27,20 @@ import re
 from typing import Any
 
 _BALANCE_RE = re.compile(r"insufficient[\s_-]*balance|余额不足|欠费", re.IGNORECASE)
+# 阿里云对「套餐/模型没买或已到期」的回法。认的是 type 这个专名，
+# 不认 403 本身——403 同样会出现在密钥真的不对的时候。
+_UNPURCHASED_RE = re.compile(r"AccessDenied\.Unpurchased", re.IGNORECASE)
 
 
 def classify_failure(status: Any, body: Any = "") -> str:
-    """把一次失败的调用归到三类之一；判不出来就说判不出来，不猜。"""
+    """把一次失败的调用归到几类之一；判不出来就说判不出来，不猜。"""
     text = body if isinstance(body, str) else str(body or "")
     if _BALANCE_RE.search(text):
         # 有的供应商用 400 报欠费，光看状态码会误判成请求写错了。
         return "no_balance"
+    if _UNPURCHASED_RE.search(text):
+        # 必须排在按状态码判 invalid_key 之前，否则 403 会把它吞掉。
+        return "no_plan"
     code = status if isinstance(status, int) else None
     if code in (401, 403):
         return "invalid_key"

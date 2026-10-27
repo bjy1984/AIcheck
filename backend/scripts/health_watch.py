@@ -231,6 +231,7 @@ def model_reachability_alerts(attempts: list, now: datetime) -> list[str]:
         return []
     hint = {
         "invalid_key": "密钥无效，要在供应商控制台重新签发（退避重试修不好）",
+        "no_plan": "套餐未购买或已过期，要去供应商控制台购买/续订（密钥本身是好的，重新签发没用）",
         "no_balance": "账户余额不足，要充值",
         "not_configured": "地址或密钥没配",
     }.get(str(result.get("reason")), "供应商侧不可用或网络不通，先观察")
