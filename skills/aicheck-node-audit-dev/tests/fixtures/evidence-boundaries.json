@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "offline-evidence-cases@1",
+  "notice": "全部为合成案例。expected 是人工编写的测试答案，不是模型输出；只能验证评估器区分已知错误，不能证明模型会读图或关联主体。不得折入运行时 skill。",
+  "cases": [
+    {
+      "id": "visual-anti-copy", "category": "visual",
+      "input": "合成质证页的红字是‘复印无效’。没有材料证明提交件是原件还是复印件，检查要求确认原件或符合要求的复印件。",
+      "document": "质证页.txt", "verdict": "human_review_required",
+      "reason": "字面为复印无效，不能据此认定是复印件；提交件性质仍需人工确认。",
+      "fact": "可见红字：复印无效", "tokens": ["复印无效"],
+      "mutations": [
+        {"name": "把防复印字样读成复印件并判失败", "verdict": "failed", "fact": "可见红字：复印件", "reason": "文件为复印件，未见规定的印章。", "critical": true, "missingFact": true},
+        {"name": "防复印字样当作原件证明", "verdict": "passed", "critical": true}
+      ]
+    },
+    {
+      "id": "visual-unreadable", "category": "visual",
+      "input": "合成页的关键牌号在高分辨率裁切后仍无法辨读，没有其他清晰来源。",
+      "document": "模糊质证.txt", "verdict": "evidence_insufficient",
+      "reason": "关键牌号无法辨读，需要清晰原页。", "fact": "牌号：无法辨读", "tokens": ["无法辨读"],
+      "mutations": [{"name": "读不清直接判违反", "verdict": "failed", "critical": true}]
+    },
+    {
+      "id": "visual-explicit-copy", "category": "visual",
+      "input": "合成规则明确要求复印件有供货单位确认章。页面明确标注‘复印件’，全页清晰且确认章栏为空。",
+      "document": "明确复印件.txt", "verdict": "failed",
+      "reason": "已明确是复印件且规定的确认章缺失，属于可见违反。",
+      "fact": "复印件；确认章栏为空", "tokens": ["复印件", "确认章栏为空"],
+      "mutations": [{"name": "明确违反仍一律待人工", "verdict": "human_review_required", "critical": false}]
+    },
+    {
+      "id": "entity-drawing-project", "category": "entity",
+      "input": "合成工程标识是 DEMO-P100，设计图图签标识 DEMO-P900，无版本替代或项目关联证明。本项确认图纸属于本工程。",
+      "document": "图签与项目对照.txt", "verdict": "evidence_insufficient",
+      "reason": "工程与图签标识不同，需补项目关联或替代说明，不能直接据此使用图纸。",
+      "fact": "工程 DEMO-P100；图签 DEMO-P900；关联未证实", "tokens": ["DEMO-P100", "DEMO-P900", "关联未证实"],
+      "mutations": [
+        {"name": "忽略图签差异直接通过", "verdict": "passed", "critical": true},
+        {"name": "未记录关键主体关联", "omitFact": true, "reason": "材料待补充。", "missingFact": true},
+        {"name": "正确名称但引用了无关文件", "wrongSource": true, "wrongCitation": true}
+      ]
+    },
+    {
+      "id": "entity-customer-chain-missing", "category": "entity",
+      "input": "合成质证客户为丙方贸易，施工单位为甲方安装，制造单位为乙方制造。批号相同但没有供货、移交关系资料。客户与施工单位并不要求天然同名；本项确认产品流转至本工程。",
+      "document": "交易链对照.txt", "verdict": "evidence_insufficient",
+      "reason": "客户和施工单位角色不同；缺供货移交链，尚不能证明该批产品用于本工程。",
+      "fact": "客户丙方贸易；施工甲方安装；制造乙方制造；缺供货移交链", "tokens": ["客户丙方贸易", "施工甲方安装", "缺供货移交链"],
+      "mutations": [
+        {"name": "不同角色同名当成强制要求", "verdict": "failed", "critical": true},
+        {"name": "制造单位同名就视为项目关联完成", "verdict": "passed", "critical": true},
+        {"name": "漏记客户施工关联", "omitFact": true, "reason": "材料待补充。", "missingFact": true}
+      ]
+    },
+    {
+      "id": "entity-customer-chain-established", "category": "entity",
+      "input": "同样的三个合成主体，另有确认有效的采购合同与签收记录，批号、规格、数量逐项一致，清晰证明丙方贸易向甲方安装交付本工程产品。本例只判断关联链。",
+      "document": "供货移交链.txt", "verdict": "passed",
+      "reason": "角色与交易链已核对，客户名称不同不妨碍本项关联成立。",
+      "fact": "丙方贸易向甲方安装交付；批号规格数量一致", "tokens": ["丙方贸易", "甲方安装", "批号规格数量一致"],
+      "mutations": [{"name": "已有关联证明仍因客户不同判失败", "verdict": "failed", "critical": true}]
+    },
+    {
+      "id": "classification-missing-rule", "category": "classification",
+      "input": "合成产品要求尚未取得，两个标准版本适用范围未核清，无法完成产品符合性判断。",
+      "document": "取证记录.txt", "verdict": "evidence_insufficient",
+      "reason": "规则和适用版本缺口未解决，应补取证后判断。", "fact": "产品要求未取得；适用版本未核清", "tokens": ["产品要求未取得", "适用版本未核清"],
+      "mutations": [{"name": "只因提到冲突就改成人工确认", "verdict": "human_review_required", "critical": false}]
+    },
+    {
+      "id": "classification-human-authenticity", "category": "classification",
+      "input": "合成规则与必要字段齐全、无矛盾，但本项必须由现场人员核验实物签章真伪。",
+      "document": "签章记录.txt", "verdict": "human_review_required",
+      "reason": "资料事实齐全，剩余判断是现场真伪核验。", "fact": "必要字段齐全；实物签章待现场核验", "tokens": ["必要字段齐全", "待现场核验"],
+      "mutations": [{"name": "所有人工判断都记作缺材料", "verdict": "evidence_insufficient", "critical": false}]
+    },
+    {
+      "id": "classification-visible-violation", "category": "classification",
+      "input": "合成规则明确最低壁厚 4.0 mm，可信测量记录为 3.0 mm，适用性和测量有效性已确认。",
+      "document": "测量记录.txt", "verdict": "failed",
+      "reason": "可信测量低于明确要求。", "fact": "要求4.0mm；测量3.0mm", "tokens": ["要求4.0mm", "测量3.0mm"],
+      "mutations": [{"name": "已证实违反仍判缺证据", "verdict": "evidence_insufficient", "critical": false}]
+    },
+    {
+      "id": "classification-not-applicable", "category": "classification",
+      "input": "合成检查仅适用现场焊接部件。可信项目清单证实本项部件为无焊缝整体成形件。",
+      "document": "适用性记录.txt", "verdict": "not_applicable",
+      "reason": "已有明确的不适用依据。", "fact": "无焊缝整体成形件", "tokens": ["无焊缝整体成形件"],
+      "mutations": [{"name": "不适用等同没执行", "verdict": "not_executed", "critical": false}]
+    },
+    {
+      "id": "classification-not-executed", "category": "classification",
+      "input": "合成环境中工具启动失败，检查没有执行，也没有取得任何材料读取结果。",
+      "document": "执行失败记录.txt", "verdict": "not_executed",
+      "reason": "技术故障导致检查未执行，不据此推断材料缺失。", "fact": "工具启动失败；检查未执行", "tokens": ["工具启动失败", "检查未执行"],
+      "mutations": [{"name": "没执行就声称原件缺失", "verdict": "evidence_insufficient", "critical": false}]
+    }
+  ]
+}

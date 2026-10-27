@@ -1,0 +1,870 @@
+"""Node audit helper against a fake AIcheck server; no real accounts or project data."""
+from __future__ import annotations
+
+import contextlib
+import importlib.util
+import io
+import json
+import os
+import stat
+import tempfile
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
+
+SPEC = importlib.util.spec_from_file_location("node_audit_under_test", Path(__file__).resolve().parents[2] / "aicheck-node-audit/scripts/node_audit.py")
+na = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(na)
+
+TOKEN = "test-token-not-real"
+PDF = b"%PDF-1.4 fake certificate\n"
+WORKSPACE = {
+    "node": {"nodeId": 24},
+    "submission": {"documents": [{
+        "id": "DOC-1", "fileName": "焊工证/张三.pdf", "currentVersionId": "V-2", "materialTypeCode": "welder_certificate",
+        "ocrReadiness": {"status": "ready"},
+        "bindings": [{"documentVersionId": "V-1", "requirementName": "焊工资格证", "bindingStatus": "已提交"}],
+    }]},
+    "ocr": {"extractedFields": [{"documentVersionId": "V-1", "fieldName": "证书编号", "fieldValue": "TS-1|2", "pageNo": 2, "confidence": 0.0}]},
+    "evidence": {"readiness": {"readyForAiFormal": False, "missingCount": 1, "blockingReasons": [{"code": "X", "message": "缺施焊记录"}]}},
+    "aiReview": {"reviewRuns": [{"reviewRunId": "RRUN-OLD", "updatedAt": "2026-09-01"},
+                                {"reviewRunId": "RRUN-NEW", "updatedAt": "2026-10-01"}]},
+}
+
+
+class FakeServer:
+    def __init__(self):
+        self.requests: list[tuple[str, str, dict]] = []
+        self.server_rule = {"sourceRuleId": "R26", "nodeIds": [24]}
+        self.gateway_failures = 0  # 下一次登记查询先回几次 502
+        self.registry_unavailable = 0  # 下一次登记查询先回几次 503（公示平台暂不可查询）
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def send_json(self, data=None, status=200, code=0, message=None):
+                raw = json.dumps({"code": code, "data": data, "message": message}).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def record(self, method):
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length)) if length else None
+                outer.requests.append((method, self.path, {**dict(self.headers), "_body": body}))
+                return urlsplit(self.path).path, body
+
+            def authed(self):
+                if self.headers.get("Authorization") != f"Bearer {TOKEN}":
+                    self.send_json(None, status=401, code="UNAUTHORIZED", message="未登录")
+                    return False
+                return True
+
+            def do_GET(self):
+                path, _ = self.record("GET")
+                node = "/api/projects/P-T/inspection/nodes/24"
+                if path == "/storage/blob":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.end_headers()
+                    self.wfile.write(PDF)
+                    return
+                if path == "/api/inspection-services/standards":
+                    self.send_json({"items": [{"fileId": "KF-1", "text": "表" * 5000, "standardContentArguments": {"fileId": "KF-1"}}]})
+                    return
+                if not self.authed():
+                    return
+                if path == f"{node}/audit-workspace":
+                    self.send_json(WORKSPACE)
+                elif path == f"{node}/rules/current-version":
+                    self.send_json({"rule": outer.server_rule})
+                elif path == f"{node}/standards":
+                    self.send_json([{"standardName": "TSG D7006", "clauseNo": "D2.6.1"}])
+                elif path == f"{node}/evidence-chain":
+                    self.send_json(None, status=403, code="FORBIDDEN", message="无权")
+                elif path == "/api/review-runs/RRUN-NEW":
+                    self.send_json({"run": {"reviewRunId": "RRUN-NEW", "atomicCheckOutcomes": [
+                        {"atomicCheckId": "AC-R24-01", "result": "evidence_insufficient", "decisionSource": "rule_engine"},
+                        {"atomicCheckId": "AC-R24-05", "result": "passed", "decisionSource": "rule_engine"}]}})
+                elif path == "/api/projects/P-T/documents/DOC-1/original":
+                    self.send_response(302)
+                    self.send_header("Location", "/storage/blob")
+                    self.end_headers()
+                else:
+                    self.send_json(None, status=404, code="NOT_FOUND", message="无此接口")
+
+            def do_POST(self):
+                path, body = self.record("POST")
+                if path == "/api/inspection-services/certificate-registry" and outer.gateway_failures:
+                    outer.gateway_failures -= 1
+                    self.send_json(None, status=502, code="BAD_GATEWAY", message="Bad Gateway")
+                elif path == "/api/inspection-services/certificate-registry" and outer.registry_unavailable:
+                    outer.registry_unavailable -= 1
+                    self.send_json(None, status=503, code="REGISTRY_UNAVAILABLE", message="登记平台暂不可查询")
+                elif path == "/api/inspection-services/certificate-registry" and body.get("identifier") == "TS9999999-2030":
+                    self.send_json(None, status=503, code="REGISTRY_UNAVAILABLE", message="登记平台暂不可查询")
+                elif path == "/api/inspection-services/certificate-registry" and body["kind"] == "person":
+                    self.send_json({"kind": "person", "records": {"person": {"xm": "张三", "sfzh": body["identifier"]},
+                                                                  "licenses": [{"zsbh": body["identifier"], "khdw": "某考核机构"}]}})
+                elif path == "/api/inspection-services/certificate-registry":
+                    self.send_json({"kind": body["kind"], "records": [], "authenticityConclusion": "manual_confirmation_required"})
+                else:
+                    self.send_json(None, status=404, code="NOT_FOUND")
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+def run(*argv: str) -> tuple[int, dict]:
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = na.main(list(argv))
+    return code, json.loads(out.getvalue())
+
+
+class NodeAuditTest(unittest.TestCase):
+    def setUp(self):
+        self.server = FakeServer()
+        self.tmp = tempfile.TemporaryDirectory()
+        home = Path(self.tmp.name)
+        self.session = home / "session.json"
+        self.env = patch.dict(os.environ, {"AICHECK_AUDIT_HOME": str(home / "audits"), "AICHECK_SESSION_FILE": str(self.session),
+                                           "AICHECK_BASE_URL": self.server.url}, clear=False)
+        self.env.start()
+        for key in ("AICHECK_TOKEN", "AICHECK_ALLOW_HTTP"):
+            os.environ.pop(key, None)
+
+    def tearDown(self):
+        self.env.stop()
+        self.server.close()
+        self.tmp.cleanup()
+
+    def login(self):
+        na.write_private(self.session, json.dumps({"baseUrl": self.server.url, "token": TOKEN}))
+
+    def test_rules_cover_all_69_nodes(self):
+        total = sum(len(na.rule_catalog(node)["atomicChecks"]) for node in range(1, 70))
+        self.assertEqual(total, 194)
+        catalog = na.rule_catalog(24)
+        self.assertEqual(catalog["ruleId"], "R24")
+        self.assertIn("verify_welder_on_platform", catalog["atomicChecks"][0]["serverTools"])
+
+    def test_fetch_requires_login(self):
+        code, out = run("fetch", "--project", "P-T", "--node", "24")
+        self.assertEqual(code, 1)
+        self.assertEqual(out["error"]["code"], "loginRequired")
+        self.assertFalse(any(path.startswith("/api/projects") for _, path, _ in self.server.requests))
+
+    def test_fetch_builds_bundle(self):
+        self.login()
+        out_dir = Path(self.tmp.name) / "bundle"
+        code, out = run("fetch", "--project", "P-T", "--node", "24", "--out", str(out_dir))
+        self.assertEqual(code, 0, out)
+        manifest = json.loads((out_dir / "bundle.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["source"], "server")
+        self.assertEqual(manifest["atomicChecks"], [f"AC-R24-0{i}" for i in range(1, 6)])
+        self.assertEqual(manifest["serverOutcomes"]["AC-R24-01"]["result"], "evidence_insufficient")
+        self.assertEqual(manifest["serverOutcomes"]["AC-R24-01"]["reviewRunId"], "RRUN-NEW")
+        [file] = manifest["files"]
+        self.assertEqual(file["path"], "files/01-焊工证_张三.pdf")
+        self.assertEqual((out_dir / file["path"]).read_bytes(), PDF)
+        self.assertEqual(file["documentVersionId"], "V-1")
+        warnings = " ".join(manifest["warnings"])
+        self.assertIn("服务器规则与节点不一致", warnings)
+        self.assertIn("evidenceChain", warnings)
+        self.assertEqual(stat.S_IMODE((out_dir / "bundle.json").stat().st_mode), 0o600)
+        digest = (out_dir / "digest.md").read_text(encoding="utf-8")
+        self.assertIn("AC-R24-05", digest)
+        self.assertIn("TS-1\\|2", digest)
+        # 挂载版本而不是当前版本；令牌不跟着跳转去对象存储。
+        original = next(r for r in self.server.requests if r[1].startswith("/api/projects/P-T/documents/DOC-1/original"))
+        self.assertEqual(parse_qs(urlsplit(original[1]).query)["versionId"], ["V-1"])
+        blob = next(r for r in self.server.requests if r[1] == "/storage/blob")
+        self.assertNotIn("Authorization", blob[2])
+
+    def test_token_not_sent_to_other_server(self):
+        na.write_private(self.session, json.dumps({"baseUrl": "http://127.0.0.1:1", "token": TOKEN}))
+        code, out = run("fetch", "--project", "P-T", "--node", "24")
+        self.assertEqual(out["error"]["code"], "loginRequired")
+
+    def test_remote_http_needs_opt_in(self):
+        with self.assertRaises(na.ClientError) as ctx:
+            na.normalize_base("http://203.0.113.5:8081/api/")
+        self.assertEqual(ctx.exception.code, "insecureTransport")
+        with patch.dict(os.environ, {"AICHECK_ALLOW_HTTP": "1"}):
+            self.assertEqual(na.normalize_base("http://203.0.113.5:8081/api/"), "http://203.0.113.5:8081")
+
+    def test_login_refuses_without_tty(self):
+        with patch("sys.stdin", io.StringIO("")):
+            code, out = run("login", "--username", "inspector")
+        self.assertEqual(out["error"]["code"], "ttyRequired")
+
+    def test_cert_registry_validates_and_opts_in(self):
+        code, out = run("cert-registry", "--kind", "person", "--identifier", "123")
+        self.assertEqual(out["error"]["code"], "invalidArguments")
+        self.assertEqual(self.server.requests, [])
+        code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "ts1234567-2030")
+        self.assertEqual(code, 0, out)
+        body = self.server.requests[-1][2]["_body"]
+        self.assertEqual(body, {"kind": "organization_license", "identifier": "TS1234567-2030", "allowExternalQuery": True})
+        self.assertNotIn("Authorization", self.server.requests[-1][2])
+
+    def test_licence_number_with_letters_is_explained_not_sent(self):
+        code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS2710A12-2030")
+        self.assertEqual(out["error"]["code"], "unsupportedLicenceFormat")
+        self.assertIn("公示信息查询平台", out["error"]["message"])
+        self.assertEqual(self.server.requests, [])  # 服务器会拒的格式不发
+
+    def sample_file(self) -> Path:
+        source = Path(self.tmp.name) / "证书.pdf"
+        source.write_bytes(PDF)
+        return source
+
+    def local_bundle(self) -> Path:
+        source = self.sample_file()
+        run_file = Path(self.tmp.name) / "run.json"
+        run_file.write_text(json.dumps({"data": {"run": {"reviewRunId": "R-L", "atomicCheckOutcomes": [
+            {"atomicCheckId": "AC-R24-01", "result": "passed"}]}}}), encoding="utf-8")
+        out_dir = Path(self.tmp.name) / "local"
+        code, out = run("local-init", "--node", "24", "--files", str(source), "--out", str(out_dir), "--review-run", str(run_file))
+        self.assertEqual(code, 0, out)
+        return out_dir
+
+    def write_report(self, bundle: Path, checks: list[dict], reviewed: list[dict] | None = None) -> None:
+        if reviewed is None:
+            files = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]
+            reviewed = [{"file": f["path"], "method": "read", "pages": "all"} for f in files]
+        report = {"schemaVersion": na.REPORT_SCHEMA, "checks": checks, "reviewedFiles": reviewed}
+        (bundle / "audit.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+
+    def report_errors(self, bundle: Path) -> str:
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 1, out)
+        return " ".join(out["error"]["errors"])
+
+    def project_dir(self) -> Path:
+        import zipfile
+        root = Path(self.tmp.name) / "项目"
+        (root / "4、监检合同").mkdir(parents=True)
+        (root / "5、施工方案").mkdir()
+        (root / "__MACOSX").mkdir()
+        (root / "4、监检合同" / "合同.txt").write_text("计划施工时间：2025年11月3日～2026年1月20日", encoding="utf-8")
+        with zipfile.ZipFile(root / "5、施工方案" / "方案.docx", "w") as docx:
+            docx.writestr("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>本工程主要材质为Q345R。</w:t></w:r></w:p>"
+                                               "<w:p><w:r><w:t>电焊工 4 人</w:t></w:r></w:p></w:body></w:document>")
+        (root / "焊工证.png").write_bytes(b"\x89PNG fake")
+        (root / "5、施工方案" / "~$方案.docx").write_bytes(b"lock")
+        (root / ".DS_Store").write_bytes(b"x")
+        (root / "__MACOSX" / "._合同.txt").write_bytes(b"x")
+        return root
+
+    def test_project_dir_bundle_and_search(self):
+        code, out = run("local-init", "--node", "24", "--project-dir", str(self.project_dir()), "--out", str(Path(self.tmp.name) / "pd"))
+        self.assertEqual(code, 0, out)
+        bundle = Path(out["data"]["bundle"])
+        files = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]
+        self.assertEqual(sorted(f["projectPath"] for f in files), ["4、监检合同/合同.txt", "5、施工方案/方案.docx", "焊工证.png"])
+        skipped = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["skippedFiles"]
+        self.assertEqual(sorted(x["projectPath"] for x in skipped), [".DS_Store", "5、施工方案/~$方案.docx", "__MACOSX/._合同.txt"])
+        code, out = run("search", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        hits = {Path(f["path"]).name: {x.split(" p")[0] for x in f["termPages"].split("、")} for f in out["data"]["filesWithHits"]}
+        self.assertIn("计划施工时间", hits[next(n for n in hits if n.endswith("合同.txt"))])
+        self.assertTrue({"材质", "焊工"} <= hits[next(n for n in hits if n.endswith("方案.docx"))])
+        self.assertEqual([Path(p).name for p in out["data"]["needsVisualReview"]], [n for n in (Path(f["path"]).name for f in files) if n.endswith(".png")])
+        self.assertEqual(stat.S_IMODE((bundle / out["data"]["saved"]).stat().st_mode), 0o600)
+        # 图片只做了检索 = 没看；漏列文件、skipped 不写原因都过不了。
+        png = next(f["path"] for f in files if f["path"].endswith(".png"))
+        txt = next(f["path"] for f in files if f["path"].endswith(".txt"))
+        checks = [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺施焊记录"} for i in range(1, 6)]
+        self.write_report(bundle, checks, [{"file": png, "method": "search"}, {"file": txt, "method": "skipped"}])
+        errors = self.report_errors(bundle)
+        self.assertIn(f"{png}: 没有文字层，只检索等于没看", errors)
+        self.assertIn(f"{txt}: skipped 要写 note", errors)
+        self.assertIn("reviewedFiles 缺 1 份文件", errors)
+
+    def test_office_text_heuristics_and_text_command(self):
+        table_doc = "序号\x07元件名称\x07规格 Φ89×3.0\x07温度 60°C\x07\n" * 20
+        self.assertTrue(na.looks_like_text(table_doc))  # Word 单元格符和 Φ × ° 不算乱码
+        self.assertFalse(na.looks_like_text("ˇ\x00\x01\x02ÿ" * 200))
+        fake_doc = Path(self.tmp.name) / "not-ole.doc"
+        fake_doc.write_bytes(b"plain bytes, not an OLE file")
+        with self.assertRaises(ValueError):
+            na.word97_text(fake_doc)
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(self.project_dir()),
+                          "--out", str(Path(self.tmp.name) / "tx"))[1]["data"]["bundle"])
+        docx = next(f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"].endswith(".docx"))
+        code, out = run("text", "--file", str(bundle / docx))
+        self.assertEqual(code, 0, out)
+        saved = Path(out["data"]["saved"])
+        self.assertEqual(saved.parent, (bundle / "text").resolve())
+        self.assertIn("Q345R", saved.read_text(encoding="utf-8"))
+        png = next(f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"].endswith(".png"))
+        self.assertEqual(run("text", "--file", str(bundle / png))[1]["error"]["code"], "noTextLayer")
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_text_refuses_scans_and_repo_files_and_accepts_out_dir(self):
+        import fitz
+        tmp = Path(self.tmp.name)
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(self.project_dir()), "--out", str(tmp / "tt"))[1]["data"]["bundle"])
+        scan = bundle / "files" / "09-扫描.pdf"
+        with fitz.open() as doc:
+            doc.new_page()
+            doc.new_page()
+            doc.save(scan)
+        self.assertEqual(run("text", "--file", str(scan))[1]["error"]["code"], "noTextLayer")  # 整份扫描件不能当文字读
+        mixed = bundle / "files" / "10-方案.pdf"
+        with fitz.open() as doc:
+            doc.new_page().insert_text((72, 72), "施工方案 焊接工艺参数表 第一页有足够多的文字内容", fontname="china-s")
+            doc.new_page()
+            doc.save(mixed)
+        code, out = run("text", "--file", str(mixed))
+        self.assertEqual((code, out["data"]["pagesWithoutText"]), (0, "2"))
+        outside = tmp / "repo" / "rules" / "standards" / "std.pdf"
+        outside.parent.mkdir(parents=True)
+        outside.write_bytes(mixed.read_bytes())
+        self.assertEqual(run("text", "--file", str(outside))[1]["error"]["code"], "outputMissing")
+        self.assertFalse((tmp / "repo" / "rules" / "text").exists())  # 不在仓库旁边留下 text/
+        out_dir = tmp / "texts"
+        out_dir.mkdir()
+        self.assertEqual(Path(run("text", "--file", str(outside), "--out", str(out_dir))[1]["data"]["saved"]).parent, out_dir.resolve())
+        self.assertEqual(Path(run("text", "--file", str(outside), "--bundle", str(bundle))[1]["data"]["saved"]).parent, (bundle / "text").resolve())
+
+    def test_cert_validity_names_unknown_fields_before_calling_server(self):
+        body = {"certificates": [{"certificateNo": "X", "holder": "某", "note": "n"}], "periodStart": "2026-01-01",
+                "periodEnd": "2026-02-01", "reasoning": "r"}
+        code, out = run("cert-validity", "--json", json.dumps(body, ensure_ascii=False))
+        self.assertEqual((code, out["error"]["code"]), (1, "invalidArguments"))
+        self.assertIn("reasoning", out["error"]["message"])
+        self.assertIn("certificates[].note", out["error"]["message"])
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual(run("cert-validity", "--json", "{bad")[1]["error"]["code"], "invalidArguments")
+
+    def test_node_group_terms_id_guard_and_risk_flags(self):
+        bundle = self.local_bundle()
+        terms = na.default_terms(bundle)
+        self.assertTrue({"钢印", "焊口", "S30408", "异种钢"} <= set(terms))  # 节点 24 属焊接
+        fact = {"name": "持证人", "value": "x", "source": {"file": "files/01-证书.pdf", "page": 1}}
+        checks = [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(1, 6)]
+        checks[0]["facts"] = [{**fact, "value": "证件编号 110101199001011237"}]
+        self.write_report(bundle, checks)
+        report = json.loads((bundle / "audit.json").read_text(encoding="utf-8"))
+        report["riskFlags"] = [{"level": "urgent", "flag": "x"}]
+        (bundle / "audit.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        errors = self.report_errors(bundle)
+        self.assertIn("完整的 18 位身份证号", errors)
+        self.assertIn("riskFlags 每条须有 level", errors)
+        checks[0]["facts"] = [{**fact, "value": "证件编号 1101**********1237；统一社会信用代码 913201001234567890"}]
+        self.write_report(bundle, checks)
+        report = json.loads((bundle / "audit.json").read_text(encoding="utf-8"))
+        report["riskFlags"] = [{"level": "high", "check": "AC-R24-02", "flag": "设计材质超出全部已交焊工证", "basis": "平面图"}]
+        (bundle / "audit.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        markdown = (bundle / "audit.md").read_text(encoding="utf-8")
+        self.assertLess(markdown.index("## 高风险提示"), markdown.index("## AC-R24-01"))
+        self.assertIn("【高】AC-R24-02 设计材质超出全部已交焊工证（平面图）", markdown)
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_pages_bundle_output_images_and_sheets(self):
+        import fitz
+        tmp = Path(self.tmp.name)
+        outside = tmp / "repo" / "rules" / "standards" / "std.pdf"
+        outside.parent.mkdir(parents=True)
+        with fitz.open() as doc:
+            for n in range(1, 32):
+                doc.new_page().insert_text((72, 72), f"page {n}")
+            doc.save(outside)
+        # 包外文件（如仓库里的标准原件）不带 --bundle/--out 一律拒绝，不在仓库旁边留下 pages/
+        self.assertEqual(run("pages", "--file", str(outside), "--pages", "1")[1]["error"]["code"], "outputMissing")
+        self.assertFalse((tmp / "repo" / "rules" / "pages").exists())
+        self.assertEqual(run("pages", "--file", str(outside), "--pages", "1", "--bundle", str(tmp / "nope"))[1]["error"]["code"], "bundleMissing")
+        bundle = self.local_bundle()
+        code, out = run("pages", "--file", str(outside), "--sheet", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertEqual([Path(s).name for s in out["data"]["sheets"]], ["std-sheet-p001-030.png", "std-sheet-p031-031.png"])
+        self.assertTrue(all(Path(s).parent == (bundle / "pages").resolve() for s in out["data"]["sheets"]))
+        code, out = run("pages", "--file", str(outside), "--sheet", "--pages", "2-4", "--cols", "3", "--bundle", str(bundle))
+        with fitz.open(out["data"]["sheets"][0]) as png:
+            self.assertEqual(png[0].rect.width, 600)  # 3 列 × 200
+        # 图片当单页文档：能渲染、能放大局部，裁剪框不同文件名就不同
+        image = bundle / "files" / "02-证书.png"
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 400, 300), False)
+        pix.clear_with(200)
+        pix.save(image)
+        code, out = run("pages", "--file", str(image), "--pages", "1", "--clip", "0.1,0.1,0.575,0.5", "--dpi", "144")
+        self.assertEqual((code, out["data"]["pageCount"], out["data"]["pages"][0]["textLayer"]), (0, 1, False))
+        first = Path(out["data"]["pages"][0]["image"])
+        second = Path(run("pages", "--file", str(image), "--pages", "1", "--clip", "0.1,0.1,0.57,0.5")[1]["data"]["pages"][0]["image"])
+        self.assertNotEqual(first.name, second.name)
+        self.assertEqual(first.parent, (bundle / "pages").resolve())
+        code, out = run("pages", "--file", str(image))  # 图片和单页 PDF 不必写 --pages
+        self.assertEqual((code, [p["page"] for p in out["data"]["pages"]]), (0, [1]))
+        self.assertIn("有 31 页", run("pages", "--file", str(outside), "--bundle", str(bundle))[1]["error"]["message"])
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_sheet_shows_seals_kept_as_annotations_and_form_fields(self):
+        import fitz
+        bundle = self.local_bundle()
+        drawing = bundle / "files" / "03-图纸.pdf"
+        with fitz.open() as doc:
+            page = doc.new_page()
+            seal = page.add_rect_annot(fitz.Rect(100, 500, 400, 700))  # 电子章常不在页面内容里
+            seal.set_colors(stroke=(1, 0, 0), fill=(1, 0, 0))
+            seal.update()
+            field = fitz.Widget()
+            field.field_type, field.field_name, field.rect = fitz.PDF_WIDGET_TYPE_TEXT, "seal", fitz.Rect(50, 50, 150, 80)
+            page.add_widget(field)
+            doc.new_page()
+            doc.save(drawing)
+        code, out = run("pages", "--file", str(drawing), "--sheet")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["formFieldPages"], {"1": 1})
+        with fitz.open(out["data"]["sheets"][0]) as png:
+            pix = png[0].get_pixmap()
+        samples, n = pix.samples, pix.n
+        red = sum(1 for i in range(0, len(samples), n) if samples[i] > 200 and samples[i + 1] < 60 and samples[i + 2] < 60)
+        self.assertGreater(red, 50)
+        code, out = run("pages", "--file", str(drawing), "--pages", "1-2", "--dpi", "36")
+        self.assertEqual([p["formFields"] for p in out["data"]["pages"]], [1, 0])
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_partly_scanned_pdf_pages_must_be_accounted_for(self):
+        import fitz
+        root = Path(self.tmp.name) / "scan-project"
+        root.mkdir()
+        with fitz.open() as doc:
+            doc.new_page().insert_text((72, 72), "焊接工艺卡 焊工 钢印 W01 施焊 2026-01-05", fontname="china-s")
+            doc.new_page()  # 扫描页：没有文字层
+            doc.save(root / "方案.pdf")
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "ps"))[1]["data"]["bundle"])
+        code, out = run("search", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        path = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"][0]["path"]
+        self.assertEqual(out["data"]["needsVisualPages"], {path: "2"})
+        self.assertTrue(Path(out["data"]["saved"]).is_absolute())
+        self.assertIn("焊工 p1", out["data"]["filesWithHits"][0]["termPages"])  # 按词列命中页
+        checks = [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(1, 6)]
+        self.write_report(bundle, checks, [{"file": path, "method": "search"}])
+        self.assertIn("第 [2] 页没有文字层", self.report_errors(bundle))
+        self.write_report(bundle, checks, [{"file": path, "method": "search", "note": "第 2 页为空白扫描页，已看图"}])
+        self.assertEqual(run("report", "--bundle", str(bundle))[0], 0)
+
+    def test_digest_skeleton_and_term_counts(self):
+        bundle = self.local_bundle()
+        digest = (bundle / "digest.md").read_text(encoding="utf-8")
+        self.assertIn("### AC-R24-03", digest)
+        self.assertIn("要做的事：按项目代号和实际接头位置逐焊口核验位置覆盖", digest)
+        self.assertIn("逐件核对项（逐焊口）", digest)
+        self.assertIn("**证据追溯项**", digest)
+        self.assertNotIn("服务器工具", digest)  # 本地模式不列服务器工具
+        code, out = run("skeleton", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        skeleton = json.loads((bundle / "audit.json").read_text(encoding="utf-8"))
+        self.assertEqual([c["atomicCheckId"] for c in skeleton["checks"]], [f"AC-R24-0{i}" for i in range(1, 6)])
+        self.assertEqual([("coverage" in c) for c in skeleton["checks"]], [False, True, True, True, False])
+        self.assertEqual([f["file"] for f in skeleton["reviewedFiles"]], ["files/01-证书.pdf"])
+        self.assertEqual(run("skeleton", "--bundle", str(bundle))[1]["error"]["code"], "reportExists")
+        errors = self.report_errors(bundle)
+        self.assertIn("AC-R24-01: 还没下结论", errors)
+        self.assertIn("files/01-证书.pdf: 还没写怎么看的（method）", errors)
+        # 节点 1：按 requiredFacts 补“设计变更”等词，不带焊接类噪声词；零命中的词单列
+        tank = Path(run("local-init", "--node", "1", "--project-dir", str(self.project_dir()), "--out", str(Path(self.tmp.name) / "t1"))[1]["data"]["bundle"])
+        terms = na.default_terms(tank)
+        self.assertTrue({"设计变更", "出图专用章", "管道级别"} <= set(terms))
+        self.assertNotIn("焊工", terms)
+        out = run("search", "--bundle", str(tank))[1]["data"]
+        self.assertIn("计划施工时间 1", out["termHitFiles"])
+        self.assertNotIn("设计变更", out["termHitFiles"])
+        self.assertIn("设计变更", out["zeroHitTerms"])
+        # 包里有 1 张图片没被检索到：零命中不能当“没有”用，提示要点明
+        self.assertIn("1 份图片或扫描件", out["zeroHitNote"])
+        self.assertIn("pages", out["zeroHitNote"])
+
+    def test_zero_hit_note_only_when_unsearched_files_exist(self):
+        root = Path(self.tmp.name) / "textonly"
+        root.mkdir()
+        (root / "合同.txt").write_text("计划施工时间 2026-03-25 至 2026-06-30", encoding="utf-8")
+        bundle = run("local-init", "--node", "1", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "to"))[1]["data"]["bundle"]
+        out = run("search", "--bundle", bundle)[1]["data"]
+        self.assertIn("设计变更", out["zeroHitTerms"])
+        self.assertEqual(out["needsVisualReview"], [])
+        self.assertNotIn("zeroHitNote", out)  # 全是文字层，零命中就是真没有，不加噪音
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_captioned_image_page_needs_visual_review(self):
+        import fitz
+        root = Path(self.tmp.name) / "brochure"
+        root.mkdir()
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 200, 200), False)
+        pix.clear_with(180)
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_image(fitz.Rect(50, 100, 550, 700), pixmap=pix)  # 整页证书扫描
+            page.insert_text((60, 80), "设计单位资质证书 扫描件 第一页 仅供参考", fontname="china-s")  # 一行说明
+            text_page = doc.new_page()
+            text_page.insert_text((60, 80), "短文字页没有图片 这一页只有一行字 但字数不少", fontname="china-s")  # 20–50 字、无图
+            doc.save(root / "宣传册.pdf")
+        bundle = Path(run("local-init", "--node", "1", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "bb"))[1]["data"]["bundle"])
+        out = run("search", "--bundle", str(bundle))[1]["data"]
+        path = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"][0]["path"]
+        self.assertEqual(out["needsVisualPages"], {path: "1"})  # 带图的短字页要看图，纯短字页不要
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_all_visual_sheets_after_search(self):
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(self.project_dir()), "--out", str(Path(self.tmp.name) / "av"))[1]["data"]["bundle"])
+        self.assertEqual(run("pages", "--all-visual", "--bundle", str(bundle))[1]["error"]["code"], "searchMissing")
+        import fitz
+        png = next(f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"].endswith(".png"))
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 300, 200), False)
+        pix.clear_with(255)
+        pix.save(bundle / png)  # 换成真图片，fitz 才打得开
+        run("search", "--bundle", str(bundle))
+        code, out = run("pages", "--all-visual", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        [item] = out["data"]["files"]
+        self.assertEqual((item["file"], item["pageCount"], len(item["sheets"])), (png, 1, 1))
+        self.assertTrue(Path(item["sheets"][0]).is_file())
+
+    def test_strict_traceability_conflict_and_per_item(self):
+        bundle = self.local_bundle()
+        fact = {"name": "n", "value": "v", "source": {"file": "files/01-证书.pdf", "page": 1}}
+        passed = lambda cid, **extra: {"atomicCheckId": cid, "verdict": "passed", "facts": [fact], "reasoning": "满足要求。", **extra}
+        coverage = {"items": 4, "checked": 4, "source": "施焊记录 4 道焊口"}
+        self.write_report(bundle, [
+            {"atomicCheckId": "AC-R24-01", "verdict": "evidence_insufficient", "reason": "缺施焊日期"},
+            passed("AC-R24-02", coverage=coverage),
+            passed("AC-R24-03"),
+            passed("AC-R24-04", conflicts=["炉批号与验收记录不一致"]),
+            passed("AC-R24-05"),
+        ])
+        errors = self.report_errors(bundle)
+        self.assertIn("AC-R24-03: 规则要求逐焊口核对", errors)
+        self.assertIn("AC-R24-04: 列了 conflicts 就不能判符合", errors)
+        self.assertIn("AC-R24-05: 证据追溯项不得判符合——证据缺失：AC-R24-01；存在冲突：AC-R24-04。应判需人工确认", errors)
+        self.assertNotIn("AC-R24-02", errors)
+        partial = {"items": 4, "checked": 3, "source": "施焊记录"}
+        self.write_report(bundle, [passed(f"AC-R24-0{i}", **({"coverage": partial} if i == 3 else {"coverage": coverage} if i == 2 else {}))
+                                   for i in range(1, 6)])
+        errors = self.report_errors(bundle)
+        self.assertIn("AC-R24-03: 规则要求逐焊口核对", errors)
+        self.assertNotIn("AC-R24-05", errors)
+        self.write_report(bundle, [passed(f"AC-R24-0{i}", **({"coverage": coverage} if i in (2, 3, 4) else {})) for i in range(1, 6)])
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertIn("逐件覆盖：4/4", (bundle / "audit.md").read_text(encoding="utf-8"))
+        catalog = {c["id"]: c for c in na.rule_catalog(24)["atomicChecks"]}
+        self.assertEqual((catalog["AC-R24-05"].get("role"), catalog["AC-R24-03"].get("perItem")), ("traceability", "逐焊口"))
+        self.assertEqual(catalog["AC-R24-04"].get("perItem"), "逐焊口")  # instruction 没写“逐”，靠覆盖表
+
+    def test_id_numbers_masked_everywhere_and_resolved_for_registry(self):
+        full, masked = "110101199001011237", "1101**********1237"
+        root = self.project_dir()
+        (root / "焊工名单.txt").write_text(f"焊工 张三 身份证号 {full} 钢印 W01", encoding="utf-8")
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "id"))[1]["data"]["bundle"])
+        roster = next(f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"].endswith("焊工名单.txt"))
+        text = Path(run("text", "--file", str(bundle / roster))[1]["data"]["saved"]).read_text(encoding="utf-8")
+        self.assertIn(masked, text)
+        self.assertNotIn(full, text)
+        code, out = run("search", "--bundle", str(bundle), "--terms", "身份证号")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["idNumbersInText"], {masked: roster})  # 这些号码可直接用脱敏号查
+        for raw in (json.dumps(out, ensure_ascii=False), Path(out["data"]["saved"]).read_text(encoding="utf-8")):
+            self.assertIn(masked, raw)
+            self.assertFalse(na.contains_id_number(raw))
+        # 脱敏号要配资料包才能查；配了就回原件找完整号码发给服务器，输出和存档仍是脱敏号
+        self.assertEqual(run("cert-registry", "--kind", "person", "--identifier", masked)[1]["error"]["code"], "invalidArguments")
+        self.assertEqual(self.server.requests, [])
+        code, out = run("cert-registry", "--kind", "person", "--identifier", masked, "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.server.requests[-1][2]["_body"]["identifier"], full)
+        self.assertEqual(out["data"]["records"]["person"]["sfzh"], masked)
+        saved = (bundle / out["savedTo"]).read_text(encoding="utf-8")
+        self.assertIn(masked, saved)
+        self.assertFalse(na.contains_id_number(saved))
+        code, out = run("cert-registry", "--kind", "person", "--identifier", "1101**********0000", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "identifierNotFound"))
+        # 照图片抄错一位：校验位对不上就不去平台查
+        before = len(self.server.requests)
+        code, out = run("cert-registry", "--kind", "person", "--identifier", "110101199001011238")
+        self.assertEqual((code, out["error"]["code"], len(self.server.requests)), (1, "idChecksumFailed", before))
+
+    def test_json_output_masks_ids_after_a_newline(self):
+        # JSON 里换行写成 \n，后面紧跟的号码前一个字符是字母 n：在转义后的文本上扫会漏，所以要先遮字符串再转 JSON
+        full, masked = "110101199001011237", "1101**********1237"
+        value = {"text": f"姓名：\n张三\n身份证号：\n{full}\n", "nested": [{"note": f"{full}"}, f"\t{full}"], full: "键里也有"}
+        raw = na.dump_masked(value)
+        self.assertFalse(na.contains_id_number(raw.replace("\\n", "\n").replace("\\t", "\t")), raw)
+        self.assertEqual(json.loads(raw)["text"], f"姓名：\n张三\n身份证号：\n{masked}\n")
+        self.assertIn(masked, json.loads(raw))
+        self.assertEqual(na.mask_value({"n": 3, "ok": True, "none": None}), {"n": 3, "ok": True, "none": None})
+        self.assertEqual(na.mask_ids("统一社会信用代码 91110000600000001X 不是身份证"), "统一社会信用代码 91110000600000001X 不是身份证")
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_pages_text_masks_id_on_its_own_line(self):
+        import fitz
+        full, masked = "110101199001011237", "1101**********1237"
+        source = Path(self.tmp.name) / "files" / "03-cert.pdf"
+        source.parent.mkdir()
+        (Path(self.tmp.name) / "bundle.json").write_text("{}", encoding="utf-8")
+        with fitz.open() as doc:
+            doc.new_page().insert_text((72, 72), f"name:\nid card:\n{full}\nend")
+            doc.save(source)
+        code, out = run("pages", "--file", str(source), "--pages", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn(masked, out["data"]["pages"][0]["text"])
+        self.assertFalse(na.contains_id_number(json.dumps(out, ensure_ascii=False).replace("\\n", "\n")))
+
+    def test_registry_503_retried_once(self):
+        self.server.registry_unavailable = 1
+        with patch.object(na.time, "sleep") as sleep:
+            code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS1234567-2030")
+        self.assertEqual(code, 0, out)  # 公示平台第一次 503，隔几秒重试就查到了
+        sleep.assert_called_once()
+        self.server.registry_unavailable = 2
+        with patch.object(na.time, "sleep"):
+            code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS1234567-2030")
+        self.assertEqual((code, out["error"]["code"]), (1, "http503"))  # 只重试一次
+
+    def test_gateway_error_retried_once_and_standards_trimmed(self):
+        self.server.gateway_failures = 1
+        with patch.object(na.time, "sleep") as sleep:
+            code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS1234567-2030")
+        self.assertEqual(code, 0, out)
+        sleep.assert_called_once()
+        self.server.gateway_failures = 2
+        with patch.object(na.time, "sleep"):
+            code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS1234567-2030")
+        self.assertEqual((code, out["error"]["code"]), (1, "http502"))  # 只重试一次
+        code, out = run("standards", "--query", "TSG D7006")
+        self.assertEqual(code, 0, out)
+        [item] = out["data"]["items"]
+        self.assertLess(len(item["text"]), 400)
+        self.assertIn("共 5000 字", item["text"])
+        self.assertEqual(item["standardContentArguments"], {"fileId": "KF-1"})
+
+    def test_local_report_leaves_audit_json_alone_and_points_at_originals(self):
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(self.project_dir()), "--out", str(Path(self.tmp.name) / "lr"))[1]["data"]["bundle"])
+        files = [f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]]
+        fact = {"name": "焊工人数", "value": "4 人", "source": {"file": "text/方案.txt", "locator": "第 2 行"}}
+        checks = [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺施焊记录"} for i in range(1, 6)]
+        checks[1]["facts"] = [fact]
+        reviewed = [{"file": p, "method": "skipped" if p.endswith(".txt") else "read", "note": "属合同节点资料"} for p in files]
+        self.write_report(bundle, checks, reviewed)
+        # 引用转出的文字不算出处：报错并指回原件
+        self.assertIn("转出的文字：file 写 files/ 下的原件", self.report_errors(bundle))
+        plan = next(p for p in files if p.endswith("方案.docx"))
+        fact["source"] = {"file": plan, "locator": "text/方案.txt 第 2 行"}
+        self.write_report(bundle, checks, reviewed)
+        written = (bundle / "audit.json").read_bytes()
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertFalse(out["data"]["auditJsonUpdated"])
+        self.assertEqual((bundle / "audit.json").read_bytes(), written)  # 本地资料没有服务器结论，不改写
+        self.assertNotIn("跳过未看", " ".join(out["data"]["warnings"]))  # skipped 写了原因就合格
+
+    def test_failed_lookup_is_saved_too(self):
+        bundle = self.local_bundle()
+        with patch.object(na.time, "sleep"):  # 503 会自动重试一次，不真等
+            code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS9999999-2030", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["status"]), (1, 503))
+        saved = json.loads((bundle / out["savedTo"]).read_text(encoding="utf-8"))
+        self.assertEqual((saved["ok"], saved["error"]["code"], saved["arguments"]["identifier"]), (False, "http503", "TS9999999-2030"))
+        self.assertTrue(na.is_id_number("110101199001011237"))
+        self.assertFalse(na.is_id_number("913201001234567890"))  # 信用代码：出生日期不合法
+        self.assertFalse(na.is_id_number("110101199001011238"))  # 校验位不对
+
+    def test_bundle_is_private(self):
+        code, out = run("local-init", "--node", "24", "--project", "P-X", "--files", str(self.sample_file()))
+        self.assertEqual(code, 0, out)
+        bundle = Path(out["data"]["bundle"])
+        home = Path(os.environ["AICHECK_AUDIT_HOME"])
+        for directory in (home, home / "P-X", bundle.parent, bundle, bundle / "files"):
+            self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700, directory)
+        self.assertEqual(stat.S_IMODE((bundle / "files/01-证书.pdf").stat().st_mode), 0o600)
+
+    def test_tool_result_saved_to_bundle(self):
+        code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS1234567-2030",
+                        "--bundle", str(Path(self.tmp.name) / "nowhere"))
+        self.assertEqual(out["error"]["code"], "bundleMissing")
+        self.assertEqual(self.server.requests, [])
+        bundle = self.local_bundle()
+        code, out = run("cert-registry", "--kind", "organization_license", "--identifier", "TS1234567-2030", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        saved = json.loads((bundle / out["savedTo"]).read_text(encoding="utf-8"))
+        self.assertEqual(saved["tool"], "cert-registry")
+        self.assertEqual(saved["arguments"], {"kind": "organization_license", "identifier": "TS1234567-2030"})
+        self.assertEqual(saved["result"]["kind"], "organization_license")
+        self.assertEqual(stat.S_IMODE((bundle / out["savedTo"]).stat().st_mode), 0o600)
+
+    def test_local_init_and_report(self):
+        bundle = self.local_bundle()
+        manifest = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["source"], "local")
+        self.assertEqual(manifest["files"][0]["path"], "files/01-证书.pdf")
+        fact = {"name": "证书编号", "value": "X", "source": {"file": "files/01-证书.pdf", "page": 1, "excerpt": "W01 | 6G"}}
+        checks = [{"atomicCheckId": "AC-R24-01", "verdict": "failed", "facts": [fact], "reasoning": "过期"}]
+        checks += [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺施焊记录"} for i in range(2, 6)]
+        self.write_report(bundle, checks)
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["counts"], {"不符合": 1, "证据不足": 4})
+        self.assertTrue(out["data"]["auditJsonUpdated"])  # 补了服务器结论
+        self.assertTrue(any("differenceNote" in w for w in out["data"]["warnings"]))
+        saved = json.loads((bundle / "audit.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["checks"][0]["serverResult"], "passed")
+        self.assertIs(saved["checks"][0]["agreesWithServer"], False)
+        markdown = (bundle / "audit.md").read_text(encoding="utf-8")
+        self.assertIn("不代替监检人员的正式结论", markdown)
+        self.assertIn("files/01-证书.pdf 第1页 「W01 \\| 6G」", markdown)
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_pages_renders_and_extracts_text(self):
+        import fitz
+        source = Path(self.tmp.name) / "files" / "01-scan.pdf"
+        source.parent.mkdir()
+        (Path(self.tmp.name) / "bundle.json").write_text("{}", encoding="utf-8")  # 文件在资料包里：默认写包内 pages/
+        with fitz.open() as doc:
+            for text in ("page one", "page two"):
+                doc.new_page().insert_text((72, 72), text)
+            doc.save(source)
+        code, out = run("pages", "--file", str(source), "--pages", "2")
+        self.assertEqual(code, 0, out)
+        [page] = out["data"]["pages"]
+        self.assertEqual((page["page"], page["text"]), (2, "page two"))
+        self.assertTrue(Path(page["image"]).is_file())
+        self.assertEqual(Path(page["image"]).parent, (Path(self.tmp.name) / "pages").resolve())
+        code, out = run("pages", "--file", str(source), "--pages", "1-3")
+        self.assertEqual(out["error"]["code"], "pageOutOfRange")
+        code, out = run("pages", "--file", str(source), "--pages", "1", "--clip", "0,0,0.5,0.25", "--dpi", "72")
+        self.assertEqual(code, 0, out)
+        image = Path(out["data"]["pages"][0]["image"])
+        self.assertIn("-clip", image.name)
+        with fitz.open(image) as png:
+            self.assertEqual((png[0].rect.width, png[0].rect.height), (298, 211))  # A4 595×842 的左半、上四分之一
+        self.assertEqual(stat.S_IMODE(image.stat().st_mode), 0o600)
+        code, out = run("pages", "--file", str(source), "--pages", "1", "--clip", "0.5,0,0.4,1")
+        self.assertEqual(out["error"]["code"], "invalidArguments")
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_pages_rotates_sideways_tables_and_takes_bundle_relative_paths(self):
+        import fitz
+        bundle = self.local_bundle()
+        sideways = bundle / "files" / "05-横表.pdf"
+        with fitz.open() as doc:
+            page = doc.new_page(width=842, height=595)
+            page.draw_rect(fitz.Rect(0, 0, 210, 150), color=(1, 0, 0), fill=(1, 0, 0))  # 左上角一块红
+            doc.save(sideways)
+        # 资料包里的相对路径配 --bundle 就能找到
+        code, out = run("pages", "--file", "files/05-横表.pdf", "--bundle", str(bundle), "--rotate", "90", "--dpi", "72")
+        self.assertEqual(code, 0, out)
+        page = out["data"]["pages"][0]
+        self.assertEqual((page["rotate"], Path(page["image"]).name), (90, "05-横表-p001-r90.png"))
+        pix = fitz.Pixmap(page["image"])
+        self.assertEqual((pix.width, pix.height), (595, 842))  # 顺时针转 90 度：横页变竖页
+        self.assertEqual(pix.pixel(pix.width - 5, 5)[:3], (255, 0, 0))  # 原来的左上角转到右上角
+        # --clip 按转正后的样子给：每个角度都截到那块红
+        for rotate, box in ((90, "0.75,0,1,0.25"), (180, "0.75,0.75,1,1"), (270, "0,0.75,0.25,1"), (0, "0,0,0.25,0.25")):
+            code, out = run("pages", "--file", "files/05-横表.pdf", "--bundle", str(bundle), "--rotate", str(rotate),
+                            "--clip", box, "--dpi", "72")
+            pix = fitz.Pixmap(out["data"]["pages"][0]["image"])
+            self.assertEqual(pix.pixel(pix.width // 2, pix.height // 2)[:3], (255, 0, 0), rotate)
+        self.assertEqual(run("pages", "--file", "files/没有.pdf", "--bundle", str(bundle))[1]["error"]["code"], "fileNotFound")
+
+    def test_standard_status_reports_the_status_on_the_given_date(self):
+        result = {"status": "COMPLETED", "verdict": "superseded",
+                  "standardReferences": [{"effectiveFrom": "2017-09-01", "withdrawnOn": "2026-05-01"}]}
+        self.assertEqual([na.status_on_date(result, day)["status"] for day in ("2017-08-31", "2021-03-24", "2026-05-01")],
+                         ["not_yet_effective", "in_force", "withdrawn"])
+        self.assertEqual(na.status_on_date({"detail": {"effectiveDate": "2025-10-01"}}, "2026-01-01")["status"], "in_force")
+        self.assertEqual(na.status_on_date({}, "2026-01-01")["status"], "unknown")
+        self.assertEqual(run("standard-status", "--ref", "GB/T 1-2020", "--date", "2021-3-24")[1]["error"]["code"], "invalidArguments")
+
+    def test_report_warns_when_the_primary_clause_is_never_cited(self):
+        bundle = self.local_bundle()
+        fact = {"name": "证书编号", "value": "X", "source": {"file": "files/01-证书.pdf", "page": 1}}
+        checks = [{"atomicCheckId": "AC-R24-01", "verdict": "failed", "facts": [fact], "reasoning": "过期"}]
+        checks += [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺施焊记录"} for i in range(2, 6)]
+        self.write_report(bundle, checks)
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertTrue(any("固定主条款" in w and "D2.6.1" in w for w in out["data"]["warnings"]), out["data"]["warnings"])
+        # 引用时写出条款号（全角括号、空格都认）就不再警告；写进 limitations 说明没取到也行
+        clause = {"name": "主条款", "value": "核查焊工资格", "source": {"file": "standard:rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf", "page": 28,
+                                                                  "excerpt": "D2.6.1 焊工（B 类）"}}
+        checks[0]["facts"].append(clause)
+        self.write_report(bundle, checks)
+        self.assertFalse(any("固定主条款" in w for w in run("report", "--bundle", str(bundle))[1]["data"]["warnings"]))
+        checks[0]["facts"].pop()
+        self.write_report(bundle, checks)
+        report = json.loads((bundle / "audit.json").read_text(encoding="utf-8"))
+        report["limitations"] = ["TSG D7006 D2.6.1 原文没取到：仓库和服务器都没有"]
+        (bundle / "audit.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        self.assertFalse(any("固定主条款" in w for w in run("report", "--bundle", str(bundle))[1]["data"]["warnings"]))
+
+    def test_report_warns_when_a_passed_check_still_carries_next_steps(self):
+        bundle = self.local_bundle()
+        fact = {"name": "证书编号", "value": "X", "source": {"file": "files/01-证书.pdf", "page": 1}}
+        checks = [{"atomicCheckId": "AC-R24-01", "verdict": "passed", "facts": [fact], "reasoning": "有效期覆盖施焊期",
+                   "nextSteps": ["施工方补母材质证"]}]
+        checks += [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺施焊记录"} for i in range(2, 6)]
+        self.write_report(bundle, checks)
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)  # 只是警告，不拦报告
+        self.assertTrue(any("AC-R24-01" in w and "符合项带着 nextSteps" in w for w in out["data"]["warnings"]), out["data"]["warnings"])
+        checks[0]["nextSteps"] = []
+        self.write_report(bundle, checks)
+        self.assertFalse(any("符合项带着" in w for w in run("report", "--bundle", str(bundle))[1]["data"]["warnings"]))
+        checks[0].update(verdict="evidence_insufficient", reason="缺母材质证", nextSteps=["施工方补母材质证"])  # 非符合项带 nextSteps 不警告
+        self.write_report(bundle, checks)
+        self.assertFalse(any("符合项带着" in w for w in run("report", "--bundle", str(bundle))[1]["data"]["warnings"]))
+
+    def test_sources_may_sit_behind_symlinks_but_not_outside_the_allowed_roots(self):
+        tmp = Path(self.tmp.name)
+        real = tmp / "elsewhere" / "standards"
+        real.mkdir(parents=True)
+        (real / "标准.pdf").write_bytes(b"%PDF-1.4 fake\n")
+        repo = tmp / "repo"
+        (repo / "rules").mkdir(parents=True)
+        (repo / "rules" / "standards").symlink_to(real)  # 工作区里 rules/ 常是指向仓库的链接
+        (tmp / "secret.json").write_text("{}", encoding="utf-8")
+        bundle = self.local_bundle()
+        with patch.dict(os.environ, {"AICHECK_REPO": str(repo)}):
+            ok = na.source_problem(bundle, {"file": "standard:rules/standards/标准.pdf", "page": 3}, set(), {})
+            escape = na.source_problem(bundle, {"file": "standard:../secret.json", "locator": "x"}, set(), {})
+        self.assertIsNone(ok)  # 打不开的 PDF 只在 check_report 里给警告，不算出处错误
+        self.assertEqual(escape, "引用来源不存在或越出允许目录")
+        self.assertEqual(na.source_problem(bundle, {"file": "server:../../secret.json", "locator": "x"}, set(), {}),
+                         "引用来源不存在或越出允许目录")
+
+    def test_report_rejects_unsourced_and_missing_checks(self):
+        bundle = self.local_bundle()
+        self.write_report(bundle, [
+            {"atomicCheckId": "AC-R24-01", "verdict": "passed", "facts": [{"name": "n", "value": "v", "source": {"file": "files/01-证书.pdf"}}]},
+            {"atomicCheckId": "AC-R24-02", "verdict": "not_applicable"},
+            {"atomicCheckId": "AC-R24-02", "verdict": "maybe"},
+            {"atomicCheckId": "AC-R26-01", "verdict": "evidence_insufficient", "reason": "x"},
+        ])
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 1)
+        errors = " ".join(out["error"]["errors"])
+        for expected in ("AC-R24-01: 符合 至少要一条", "AC-R24-02: 不适用 必须写 reason", "verdict 必须是",
+                         "缺少原子检查：AC-R24-03", "不属于本节点的检查：AC-R26-01", "重复的检查：AC-R24-02"):
+            self.assertIn(expected, errors)
+        self.assertFalse((bundle / "audit.md").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

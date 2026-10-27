@@ -1,0 +1,16 @@
+请在仓库 {repo} 里，严格按本地 skill `skills/aicheck-node-audit/SKILL.md` 对一份本地测试资料做工程节点审计。先完整读 SKILL.md 和它引用的 references/ 文件，再按其流程执行。
+
+- 项目目录（用户提供的本地测试资料）：{project_dir}
+- 节点：{node}
+- 项目标签：{project_label}
+- 资料包输出目录：必须用 `--out {out_dir}`
+- 环境变量（每条命令都带上）：`AICHECK_AUDIT_HOME={run_home}`、`AICHECK_BASE_URL={base_url}`、`AICHECK_ALLOW_HTTP=1`（服务器是明文 HTTP，我已知悉并接受；本地模式不需要登录）。
+- 需要 PyMuPDF 的命令用 `{python}` 运行。
+- 看图：`pages` 等命令返回的是 PNG 路径，请用你自己的看图能力把图片载入对话来读。如果你在这个环境里没法查看图片，立刻停下，只回复“无法看图”，不要用猜测或别的办法代替。
+
+要求：
+- 不要向我提问，遇到需要判断的地方按 skill 的口径自行判断，并在报告里写明理由。
+- 只使用这个项目目录里的资料、skill 及其脚本调用的服务器接口；不要读取电脑上其他位置已有的审计结果或报告。
+- 最后 `report` 校验必须通过（有 errors 就改到通过）。
+
+完成后回复：audit.md 的路径；每个原子检查各自的结论和一句理由；以及你在执行中觉得 skill 哪里说得不清楚、不好用或缺了什么（具体到步骤或命令），这部分是给 skill 的改进反馈。
