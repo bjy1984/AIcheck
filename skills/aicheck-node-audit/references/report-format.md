@@ -30,7 +30,7 @@
       "facts": [
         {"name": "证书编号", "value": "…", "source": {"file": "files/01-焊工证.pdf", "page": 2, "excerpt": "证书编号：…"}},
         {"name": "有效期至", "value": "2027-03", "source": {"file": "files/01-焊工证.pdf", "page": 2, "excerpt": "有效期至2027年3月"}},
-        {"name": "发证机关印章", "value": "某某市市场监督管理局（圆章）", "source": {"file": "tool:vlm", "locator": "tool-results/20261022-151500-vlm.json；第 2 页右下角印章"}},
+        {"name": "发证机关印章", "value": "某某市市场监督管理局", "source": {"file": "files/01-焊工证.pdf", "page": 2, "excerpt": "[印章：某某市市场监督管理局]"}},
                 {"name": "平台记录", "value": "licList 3 条，含同号证书", "source": {"file": "tool:cert-registry", "locator": "tool-results/20261022-152000-cert-registry.json；对应本证查询"}}
       ],
       "reasoning": "按什么要求、怎样比、得出什么。",
@@ -44,7 +44,7 @@
   "relatedNodeSuggestions": ["R29：施焊记录与焊工钢印号对应关系需在节点 29 复核"],
   "limitations": ["原件第 7–9 页为扫描件且模糊，未能确认证书照片与本人一致"],
   "reviewedFiles": [
-    {"file": "files/01-焊工证.pdf", "method": "ocr", "pages": "1–2 读 OCR；第 2 页印章问过 vlm"},
+    {"file": "files/01-焊工证.pdf", "method": "ocr", "pages": "1–2 读 OCR"},
     {"file": "files/05-质量计划.pdf", "method": "search", "pages": "4、9 细读", "note": "只细读检索命中本节点关键词的页"},
     {"file": "files/09-无损检测资质.pdf", "method": "skipped", "note": "属节点 03/38 资料，检索无本节点关键词"}
   ]
@@ -55,15 +55,15 @@
 
 判不了但风险高的事项（设计材质超出全部已交证书、计划人数多于交证人数等）加报告级 `"riskFlags": [{"level": "high", "check": "AC-R24-02", "flag": "一句话说明", "basis": "依据或出处"}]`，`level` 为 high 或 medium，会显示在 `audit.md` 开头。
 
-`report` 另外强制：报告里不得出现完整 18 位身份证号；`reviewedFiles` 覆盖包里每一份文件（`method` 为 text/ocr/vlm/search/skipped，skipped 要写 `note`，没有文字层又没 OCR 的文件不能只标 search；旧写法 read/pages/thumbs 仍收）；证据追溯项与逐件核对项按 [audit-method.md](audit-method.md) 的严格口径。
+`report` 另外强制：报告里不得出现完整 18 位身份证号；`reviewedFiles` 覆盖包里每一份文件（`method` 为 text/ocr/search/skipped，skipped 要写 `note`，没有文字层又没 OCR 的文件不能只标 search；旧写法 read/pages/thumbs 仍收）；证据追溯项与逐件核对项按 [audit-method.md](audit-method.md) 的严格口径。
 
 转成文字的 Office 文件：`file` 写原件 `files/…`，`locator` 写 `"text/<文件名>.txt 第 N 行"`。`reviewedFiles.method` 还接受旧写法 `textutil`（同 `text`）。
 
 `serverResult`、`agreesWithServer` 只在服务器节点由 `report` 写入，不用自己填；`auditor` 写你自己的助手名和所用模型名；先跑 `skeleton` 生成骨架再填空最省事。`verdict` 取值：`passed`、`failed`、`evidence_insufficient`、`human_review_required`、`not_applicable`、`not_executed`。
 
-符合／不符合项引用的扫描件或扫描页，必须有这一页的 OCR 文字（跑过 `ocr`、这一页 OCR 不是空的）或视觉模型记录（`vlm` 问过这一页）。`report` 按资料包里的 OCR、视觉模型存档核对，不看 `method` 怎么写；原件改过（哈希变了）的旧 OCR 不算。没有检索存档时仍检查所引 PDF 页的文字层；`report` 不替你跑 OCR。缺证结论仍可交付，须说明未读或未获证据的原因。校验器不自动补造旧报告的事实；重新校验发现缺项时报告原因。
+符合／不符合项引用的扫描件或扫描页，必须有这一页的 OCR 文字（跑过 `ocr`、这一页 OCR 不是空的）。`report` 按资料包里的 OCR 存档核对，不看 `method` 怎么写；原件改过（哈希变了）的旧 OCR 不算。没有检索存档时仍检查所引 PDF 页的文字层；`report` 不替你跑 OCR。缺证结论仍可交付，须说明未读或未获证据的原因。校验器不自动补造旧报告的事实；重新校验发现缺项时报告原因。
 
 出处写法：
 
 - 文字层或 OCR 文字：`file` 写 `files/` 下的原件，`page` 写物理页，`excerpt` 抄 `text` 转出的那一句（OCR 的页 `text` 标了“（OCR）”）。不要把 `text/…` 或 `ocr/…` 写进 `file`。
-- 视觉模型的回答（印章、签名、手写、勾选）：`file` 写 `tool:vlm`，`locator` 写 `vlm` 输出的 `savedTo`（`tool-results/<时间>-vlm.json`）和页上的位置；或 `file` 写原件、`page` 写页码，`excerpt` 抄回答里的那一句。只有视觉模型读到的编号、代号，`limitations` 写明“仅视觉模型读出，未经 OCR 核对”。
+- 印章、签名：`file` 写原件、`page` 写页码，`excerpt` 抄 OCR 文字里 `[印章：…]`、`[签名：…]` 那一行。文件是服务器用千问兜底识别的（`.ocr.txt` 开头写着），只靠它的编号、代号在 `limitations` 注明。

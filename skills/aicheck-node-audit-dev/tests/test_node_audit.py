@@ -1,6 +1,7 @@
 """Node audit helper against a fake AIcheck server; no real accounts or project data."""
 from __future__ import annotations
 
+import base64
 import contextlib
 import importlib.util
 import io
@@ -20,8 +21,6 @@ na = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(na)
 
 TOKEN = "test-token-not-real"
-MINERU_KEY = "mineru-test-key-not-real"
-VLM_KEY = "sk-vlm-test-key-not-real"
 PDF = b"%PDF-1.4 fake certificate\n"
 WORKSPACE_FLAT = {
     "node": {"nodeId": 24},
@@ -51,14 +50,12 @@ class FakeServer:
         self.gateway_failures = 0  # 下一次登记查询先回几次 502
         self.registry_unavailable = 0  # 下一次登记查询先回几次 503（公示平台暂不可查询）
         self.workspace = WORKSPACE
-        # MinerU 与视觉模型的测试桩（同一个本机地址，不连外网）
-        self.mineru_batches: list[dict] = []  # 收到的 file-urls/batch 请求体
-        self.uploads: list[tuple[str, bytes, dict]] = []
-        self.mineru_running_polls = 0  # 结果查询先回几次 running
-        self.mineru_zip = b""
-        self.vlm_requests: list[dict] = []
-        self.vlm_answer = "印章文字：某某建设有限公司 合同专用章（圆章）"
-        self.vlm_error: tuple[int, dict] | None = None
+        # 服务器 OCR 接口的测试桩：上传、查状态、取结果（同 apps/api/mineru_ocr_routes）
+        self.ocr_uploads: list[tuple[dict, bytes]] = []  # (请求头, 正文)
+        self.ocr_jobs: dict[str, str] = {}  # Idempotency-Key → jobId
+        self.ocr_running_polls = 0  # 状态查询先回几次 running
+        self.ocr_final = {"status": "success", "provider": "mineru"}
+        self.ocr_result: dict = {}
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -72,27 +69,6 @@ class FakeServer:
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
-
-            def send_raw(self, data, status=200):
-                raw = json.dumps(data, ensure_ascii=False).encode()
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(raw)))
-                self.end_headers()
-                self.wfile.write(raw)
-
-            def service_authed(self, key):
-                if self.headers.get("Authorization") != f"Bearer {key}":
-                    self.send_raw({"error": {"message": "Incorrect API key provided", "code": "invalid_api_key"}}, status=401)
-                    return False
-                return True
-
-            def do_PUT(self):
-                length = int(self.headers.get("Content-Length") or 0)
-                outer.uploads.append((self.path, self.rfile.read(length), dict(self.headers)))
-                self.send_response(200)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
 
             def record(self, method):
                 length = int(self.headers.get("Content-Length") or 0)
@@ -109,24 +85,6 @@ class FakeServer:
             def do_GET(self):
                 path, _ = self.record("GET")
                 node = "/api/projects/P-T/inspection/nodes/24"
-                if path.startswith("/api/v4/extract-results/batch/"):
-                    if not self.service_authed(MINERU_KEY):
-                        return
-                    batch_id = path.rsplit("/", 1)[-1]
-                    files = next(b for b in outer.mineru_batches if b["_id"] == batch_id)["files"]
-                    running = outer.mineru_running_polls > 0
-                    outer.mineru_running_polls -= 1 if running else 0
-                    self.send_json({"batch_id": batch_id, "extract_result": [
-                        {"file_name": f["name"], "data_id": f["data_id"], "state": "running" if running else "done",
-                         **({} if running else {"full_zip_url": f"{outer.url}/zip/{batch_id}"})} for f in files]})
-                    return
-                if path.startswith("/zip/"):
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/zip")
-                    self.send_header("Content-Length", str(len(outer.mineru_zip)))
-                    self.end_headers()
-                    self.wfile.write(outer.mineru_zip)
-                    return
                 if path == "/storage/blob":
                     self.send_response(200)
                     self.send_header("Content-Type", "application/pdf")
@@ -137,6 +95,16 @@ class FakeServer:
                     self.send_json({"items": [{"fileId": "KF-1", "text": "表" * 5000, "standardContentArguments": {"fileId": "KF-1"}}]})
                     return
                 if not self.authed():
+                    return
+                if path.startswith("/api/internal/ocr/mineru/tasks/") and path.endswith("/result"):
+                    self.send_json(outer.ocr_result)
+                    return
+                if path.startswith("/api/internal/ocr/mineru/tasks/"):
+                    running = outer.ocr_running_polls > 0
+                    outer.ocr_running_polls -= 1 if running else 0
+                    self.send_json({"jobId": path.rsplit("/", 1)[-1], "recommendedPollSeconds": 0,
+                                    **({"status": "running", "provider": "mineru", "statusMessage": "MinerU 正在处理文件。"}
+                                       if running else outer.ocr_final)})
                     return
                 if path == f"{node}/audit-workspace":
                     self.send_json(outer.workspace)
@@ -158,23 +126,18 @@ class FakeServer:
                     self.send_json(None, status=404, code="NOT_FOUND", message="无此接口")
 
             def do_POST(self):
+                if urlsplit(self.path).path == "/api/internal/ocr/mineru/tasks/upload":
+                    length = int(self.headers.get("Content-Length") or 0)
+                    raw = self.rfile.read(length)
+                    outer.requests.append(("POST", self.path, dict(self.headers)))
+                    if not self.authed():
+                        return
+                    key = self.headers.get("Idempotency-Key")
+                    outer.ocr_uploads.append((dict(self.headers), raw))
+                    job = outer.ocr_jobs.setdefault(key, f"OCRJ-{len(outer.ocr_jobs) + 1}")
+                    self.send_json({"jobId": job, "status": "queued", "recommendedPollSeconds": 0})
+                    return
                 path, body = self.record("POST")
-                if path == "/api/v4/file-urls/batch":
-                    if not self.service_authed(MINERU_KEY):
-                        return
-                    batch_id = f"B-{len(outer.mineru_batches) + 1}"
-                    outer.mineru_batches.append({**body, "_id": batch_id})
-                    self.send_json({"batch_id": batch_id, "file_urls": [f"{outer.url}/upload/{batch_id}-{i}" for i in range(len(body["files"]))]})
-                    return
-                if path == "/v1/chat/completions":
-                    if not self.service_authed(VLM_KEY):
-                        return
-                    outer.vlm_requests.append(body)
-                    if outer.vlm_error:
-                        self.send_raw(outer.vlm_error[1], status=outer.vlm_error[0])
-                    else:
-                        self.send_raw({"choices": [{"message": {"role": "assistant", "content": outer.vlm_answer}}]})
-                    return
                 if path == "/api/inspection-services/certificate-registry" and outer.gateway_failures:
                     outer.gateway_failures -= 1
                     self.send_json(None, status=502, code="BAD_GATEWAY", message="Bad Gateway")
@@ -214,12 +177,9 @@ class NodeAuditTest(unittest.TestCase):
         home = Path(self.tmp.name)
         self.session = home / "session.json"
         self.env = patch.dict(os.environ, {"AICHECK_AUDIT_HOME": str(home / "audits"), "AICHECK_SESSION_FILE": str(self.session),
-                                           "AICHECK_BASE_URL": self.server.url,
-                                           "AICHECK_OCR_CONFIG_FILE": str(home / "ocr.json"),
-                                           "AICHECK_MINERU_BASE_URL": self.server.url,
-                                           "AICHECK_VLM_BASE_URL": f"{self.server.url}/v1"}, clear=False)
+                                           "AICHECK_BASE_URL": self.server.url}, clear=False)
         self.env.start()
-        for key in ("AICHECK_TOKEN", "AICHECK_ALLOW_HTTP", "AICHECK_MINERU_API_KEY", "AICHECK_VLM_API_KEY", "AICHECK_VLM_MODEL"):
+        for key in ("AICHECK_TOKEN", "AICHECK_ALLOW_HTTP"):
             os.environ.pop(key, None)
 
     def tearDown(self):
@@ -965,18 +925,9 @@ class NodeAuditTest(unittest.TestCase):
             self.assertIn(expected, errors)
         self.assertFalse((bundle / "audit.md").exists())
 
-    # ------------------------------------------------------------ OCR（MinerU）与读图兜底（视觉模型）
+    # ------------------------------------------------------------ OCR（经服务器：MinerU，排队超时自动改千问）
 
     FULL_ID, MASKED_ID = "110101199001011237", "1101**********1237"
-
-    def mineru_result(self, pages: list[list[dict]]) -> bytes:
-        import zipfile
-        content = [{**block, "page_idx": index} for index, blocks in enumerate(pages) for block in blocks]
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w") as archive:
-            archive.writestr("hash_content_list.json", json.dumps(content, ensure_ascii=False))
-            archive.writestr("full.md", "整份 markdown（有 content_list 时不用）")
-        return buffer.getvalue()
 
     def scan_bundle(self, name: str = "ocr") -> tuple[Path, str]:
         root = Path(self.tmp.name) / f"{name}-project"
@@ -987,10 +938,18 @@ class NodeAuditTest(unittest.TestCase):
         png = next(f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"].endswith(".png"))
         return bundle, png
 
-    def with_keys(self):
-        return patch.dict(os.environ, {"AICHECK_MINERU_API_KEY": MINERU_KEY, "AICHECK_VLM_API_KEY": VLM_KEY})
+    def certificate_result(self) -> dict:
+        return {"resultAvailable": True, "pageCount": 1, "documentType": "welder_certificate",
+                "processing": {"provider": "mineru"}, "quality": {"status": "usable"},
+                "fragments": [
+                    {"pageNo": 1, "readingOrder": 2, "text": f"证书编号 {self.FULL_ID} 有效期至 $2027$ 年 3 月"},
+                    {"pageNo": 1, "readingOrder": 1, "text": "特种设备作业人员证"},
+                    {"pageNo": 1, "readingOrder": 3, "text": "项目代号 GTAW-FeⅡ-6G-3/60-FefS-02/10/12", "blockType": "table",
+                     "tableHtml": "<table><tr><td>项目代号</td><td>GTAW-FeⅡ-6G-3/60-FefS-02/10/12</td></tr></table>"}],
+                "seals": [{"pageNo": 1, "text": "某某市市场监督管理局"}],
+                "documentFields": [{"fieldName": "证书编号", "fieldValue": self.FULL_ID}]}
 
-    def test_latex_and_merged_table_cells_become_plain_rows(self):
+    def test_latex_merged_cells_and_server_result_become_plain_page_text(self):
         cases = {"厚度为 $14\\mathrm{mm}$ 的Q345R": "厚度为 14mm 的Q345R", "$14 \\mathrm{~mm}$": "14mm", "$CO_{2}$": "CO2",
                  "$\\mathrm{CO}_{2}$": "CO2", "$25\\leqslant D <76$": "25≤D<76", "$8D\\sim 10D$": "8D~10D",
                  "$\\geq D+100$": "≥D+100", "${L}_{1}$": "L1", "$60^{\\circ}$": "60°", "$\\phi 89\\times 3.0$": "φ89×3.0"}
@@ -1000,51 +959,49 @@ class NodeAuditTest(unittest.TestCase):
                 '<tr><td>机动焊</td></tr><tr><td>管</td><td colspan="2">&lt;25</td></tr></table>')
         # 合并单元格在所跨的每一行都重复：逐行读就知道“机动焊”这一行的厚度也是“自定”
         self.assertEqual(na.table_text(html).splitlines(), ["板 | 手工焊 | 自定", "板 | 机动焊 | 自定", "管 | <25 | <25"])
-        # 说明、列表项可能是 {"text": …}；公式块的 LaTeX 可能在 latex 键里（同 backend libs/mineru_ocr）
-        pages = na.content_list_pages([
-            {"type": "list", "page_idx": 0, "list_items": [{"text": "① 焊接方法"}, "② 母材类别"]},
-            {"type": "image", "page_idx": 1, "image_caption": [{"text": "图 A-1 试件"}]},
-            {"type": "equation", "page_idx": 1, "latex": "$\\delta \\geq 3$"},
-        ])
-        self.assertEqual(pages, {1: ["① 焊接方法\n② 母材类别"], 2: ["[图片：图 A-1 试件]", "δ≥3"]})
+        pages = na.server_ocr_pages({"pageCount": 3, "fragments": [
+            {"pageNo": 1, "readingOrder": 2, "text": "第二段"}, {"pageNo": 1, "readingOrder": 1, "text": "第一段"},
+            {"pageNo": 2, "readingOrder": 1, "text": "板 手工焊 自定 板 机动焊", "tableHtml": html}],
+            "seals": [{"pageNo": 2}], "signatures": [{"pageNo": 1, "text": "张三"}]})
+        self.assertEqual(pages[1], "第一段\n第二段\n[签名：张三]")  # 按阅读顺序，签名排在本页文字后
+        self.assertEqual(pages[2].splitlines()[1], "板 | 机动焊 | 自定")  # 表格用原 HTML 展开，不用服务器压平的文字
+        self.assertIn("[印章：服务器未读出章上的字]", pages[2])
+        self.assertEqual(pages[3], "")  # 空白页也占位，页码不错位
 
-    def test_ocr_needs_keys_and_local_consent_then_feeds_text_search_and_registry(self):
+    def test_ocr_needs_login_and_local_consent_then_feeds_text_search_and_registry(self):
         bundle, png = self.scan_bundle()
         code, out = run("ocr", "--bundle", str(bundle))
-        self.assertEqual((code, out["error"]["code"]), (1, "ocrNotConfigured"))
-        with self.with_keys():
-            code, out = run("ocr", "--bundle", str(bundle))
-            self.assertEqual((code, out["error"]["code"]), (1, "egressNotApproved"))  # 本地资料先问用户
-            self.assertEqual(self.server.mineru_batches, [])
-            self.server.mineru_zip = self.mineru_result([[
-                {"type": "title", "text": "特种设备作业人员证"},
-                {"type": "text", "text": f"证书编号 {self.FULL_ID} 有效期至 $2027$ 年 3 月"},
-                {"type": "table", "table_body": "<table><tr><td>项目代号</td><td>GTAW-FeⅡ-6G-3/60-FefS-02/10/12</td></tr></table>"},
-                {"type": "image", "image_caption": []},
-            ]])
-            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
-            self.assertEqual(code, 0, out)
-            [done] = out["data"]["done"]
-            self.assertEqual((done["file"], done["pages"]), (png, 1))
-            [batch] = self.server.mineru_batches
-            sha = next(f["sha256"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"] == png)
-            [sent] = batch["files"]
-            self.assertEqual(sent["name"], f"{sha[:16]}.png")  # 上传名只用哈希，不带文件名里的人名
-            self.assertEqual((batch["model_version"], batch["enable_table"]), ("vlm", True))
-            self.assertEqual(len(self.server.uploads), 1)
-            self.assertNotIn("Content-Type", self.server.uploads[0][2])  # 签名地址不能带 Content-Type
-            self.assertNotIn("合同", json.dumps(batch, ensure_ascii=False))  # 有文字层的文件不送
-            self.assertTrue((bundle / "ocr" / "egress-approved.json").exists())
-            record = bundle / "ocr" / f"{na.ocr_key(png)}.json"
-            self.assertEqual(stat.S_IMODE(record.stat().st_mode), 0o600)
-            readable = Path(done["saved"]).read_text(encoding="utf-8")
-            self.assertIn(self.MASKED_ID, readable)
-            self.assertNotIn(self.FULL_ID, readable)
-            self.assertIn("项目代号 | GTAW-FeⅡ-6G-3/60-FefS-02/10/12", readable)
-            self.assertIn("有效期至 2027 年 3 月", readable)
-            self.assertIn("[图片]", readable)  # 图里的字（印章）OCR 不读，提示要问 vlm
-            code, out = run("ocr", "--bundle", str(bundle))  # 已同意过；原件没变就不重做
-            self.assertEqual((code, out["data"]["cached"], len(self.server.mineru_batches)), (0, [png], 1))
+        self.assertEqual((code, out["error"]["code"]), (1, "loginRequired"))
+        self.login()
+        code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "egressNotApproved"))  # 本地资料先问用户
+        self.assertEqual(self.server.ocr_uploads, [])
+        self.server.ocr_result = self.certificate_result()
+        code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        [done] = out["data"]["done"]
+        self.assertEqual((done["file"], done["pages"], done["provider"]), (png, 1, "mineru"))
+        [(raw_headers, body)] = self.server.ocr_uploads
+        headers = {k.lower(): v for k, v in raw_headers.items()}  # HTTP 头不分大小写；urllib 会改写成 X-aicheck-…
+        self.assertEqual(body, (bundle / png).read_bytes())  # 传的是原件字节
+        sha = next(f["sha256"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"] == png)
+        meta = json.loads(base64.urlsafe_b64decode(headers["x-aicheck-ocr-metadata-b64"]))
+        self.assertEqual(meta, {"fileName": f"{sha[:16]}.png", "options": {"language": "ch"}})  # 上传名只用哈希，不带人名
+        self.assertEqual((headers["content-type"], headers["authorization"]), ("application/octet-stream", f"Bearer {TOKEN}"))
+        self.assertEqual(headers["idempotency-key"], f"aicheck-node-audit-{sha[:48]}")
+        self.assertTrue((bundle / "ocr" / "egress-approved.json").exists())
+        record = bundle / "ocr" / f"{na.ocr_key(png)}.json"
+        self.assertEqual(stat.S_IMODE(record.stat().st_mode), 0o600)
+        readable = Path(done["saved"]).read_text(encoding="utf-8")
+        self.assertIn(self.MASKED_ID, readable)
+        self.assertNotIn(self.FULL_ID, readable)
+        self.assertLess(readable.index("特种设备作业人员证"), readable.index("证书编号"))  # 按阅读顺序
+        self.assertIn("项目代号 | GTAW-FeⅡ-6G-3/60-FefS-02/10/12", readable)
+        self.assertIn("有效期至 2027 年 3 月", readable)
+        self.assertIn("[印章：某某市市场监督管理局]", readable)
+        self.assertIn("服务器抽取的字段", readable)
+        code, out = run("ocr", "--bundle", str(bundle))  # 已同意过；原件没变就不重做
+        self.assertEqual((code, out["data"]["cached"], len(self.server.ocr_uploads)), (0, [png], 1))
         code, out = run("text", "--file", png, "--bundle", str(bundle))
         self.assertEqual((code, out["data"]["status"], out["data"]["ocrPages"]), (0, "ocr", "1"))
         self.assertIn("--- 第 1 页（OCR） ---", Path(out["data"]["saved"]).read_text(encoding="utf-8"))
@@ -1059,24 +1016,38 @@ class NodeAuditTest(unittest.TestCase):
         self.assertEqual(self.server.requests[-1][2]["_body"]["identifier"], self.FULL_ID)  # 完整号码只从 OCR 原文回查
         for path in bundle.rglob("*"):
             if path.is_file():
-                self.assertNotIn(MINERU_KEY.encode(), path.read_bytes(), path)  # 密钥不进资料包
+                self.assertNotIn(TOKEN.encode(), path.read_bytes(), path)  # 令牌不进资料包
 
-    def test_ocr_resumes_a_pending_batch_without_reuploading(self):
+    def test_ocr_resumes_a_pending_job_and_marks_the_qwen_fallback(self):
         bundle, png = self.scan_bundle("resume")
-        self.server.mineru_zip = self.mineru_result([[{"type": "text", "text": "焊工证 扫描件"}]])
-        self.server.mineru_running_polls = 2
-        with self.with_keys(), patch.object(na, "OCR_POLL_SECONDS", 0):
+        self.login()
+        self.server.ocr_result = {**self.certificate_result(), "processing": {"provider": "qwen", "fallback": {"from": "mineru", "to": "qwen"}}}
+        self.server.ocr_running_polls = 2
+        self.server.ocr_final = {"status": "success", "provider": "qwen"}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
             code, out = run("ocr", "--bundle", str(bundle), "--allow-egress", "--timeout", "0")
             self.assertEqual(code, 0, out)
-            self.assertEqual([p["file"] for p in out["data"]["pending"]], [png])
+            self.assertEqual([(p["file"], p["state"]) for p in out["data"]["pending"]], [(png, "running")])
             self.assertIn("接着等", out["data"]["nextStep"])
             code, out = run("ocr", "--bundle", str(bundle), "--timeout", "30")
             self.assertEqual(code, 0, out)
-            self.assertEqual([d["file"] for d in out["data"]["done"]], [png])
-        self.assertEqual((len(self.server.mineru_batches), len(self.server.uploads)), (1, 1))
+        [done] = out["data"]["done"]
+        self.assertEqual((done["file"], done["provider"]), (png, "qwen"))
+        self.assertEqual(len(self.server.ocr_uploads), 1)  # 续等不重传
         self.assertFalse((bundle / "ocr" / "pending.json").exists())
+        self.assertIn("识别：千问", Path(done["saved"]).read_text(encoding="utf-8"))
 
-    def test_report_needs_ocr_or_vlm_for_a_scanned_page_it_rests_on(self):
+    def test_ocr_reports_a_failed_job_and_keeps_no_text(self):
+        bundle, png = self.scan_bundle("fail")
+        self.login()
+        self.server.ocr_final = {"status": "failed", "diagnostics": [{"code": "QWEN_OCR_FAILED", "level": "error"}]}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["failed"], [{"file": png, "reason": "服务器 OCR failed：QWEN_OCR_FAILED"}])
+        self.assertFalse((bundle / "ocr" / f"{na.ocr_key(png)}.json").exists())
+
+    def test_report_needs_ocr_for_a_scanned_page_it_rests_on(self):
         bundle, png = self.scan_bundle("gate")
         run("search", "--bundle", str(bundle))
         fact = {"name": "证书", "value": "焊工证在", "source": {"file": png, "page": 1, "excerpt": "特种设备作业人员证"}}
@@ -1084,78 +1055,13 @@ class NodeAuditTest(unittest.TestCase):
                   *({"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(2, 6))]
         files = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]
         self.write_report(bundle, checks, [{"file": f["path"], "method": "ocr" if f["path"] == png else "text"} for f in files])
-        self.assertIn(f"AC-R24-01: 确定结论引用的扫描页 {png} 第 1 页没有 OCR 文字，也没有问过视觉模型", self.report_errors(bundle))
-        self.server.mineru_zip = self.mineru_result([[{"type": "text", "text": "特种设备作业人员证"}]])
-        with self.with_keys():
+        self.assertIn(f"AC-R24-01: 确定结论引用的扫描页 {png} 第 1 页没有 OCR 文字", self.report_errors(bundle))
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
             self.assertEqual(run("ocr", "--bundle", str(bundle), "--allow-egress")[0], 0)
         code, out = run("report", "--bundle", str(bundle))
         self.assertEqual(code, 0, out)
-
-    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
-    def test_vlm_asks_about_one_page_and_archives_the_answer(self):
-        import fitz
-        bundle, png = self.scan_bundle("vlm")
-        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 300, 200), False)
-        pix.clear_with(255)
-        pix.save(bundle / png)  # 换成真图片，才渲染得出页图
-        question = "右下角印章上写的单位名称是什么？"
-        code, out = run("vlm", "--bundle", str(bundle), "--file", png, "--question", question)
-        self.assertEqual((code, out["error"]["code"]), (1, "vlmNotConfigured"))
-        with self.with_keys():
-            code, out = run("vlm", "--bundle", str(bundle), "--file", png, "--question", question)
-            self.assertEqual((code, out["error"]["code"]), (1, "egressNotApproved"))
-            self.server.vlm_answer = f"合同专用章，持证人身份证号 {self.FULL_ID}"
-            code, out = run("vlm", "--bundle", str(bundle), "--file", png, "--question", question, "--clip", "0.5,0.5,1,1", "--allow-egress")
-            self.assertEqual(code, 0, out)
-            [sent] = self.server.vlm_requests
-            self.assertEqual((sent["model"], sent["temperature"]), ("qwen3-vl-plus", 0))
-            user = sent["messages"][-1]["content"]
-            self.assertTrue(user[0]["image_url"]["url"].startswith("data:image/png;base64,"))
-            self.assertEqual(user[1]["text"], question)
-            self.assertIn("不要猜", sent["messages"][0]["content"])
-            self.assertEqual((out["data"]["page"], out["data"]["clip"]), (1, [0.5, 0.5, 1.0, 1.0]))
-            self.assertIn(self.MASKED_ID, out["data"]["answer"])  # 输出脱敏
-            self.assertIn("大小写", out["data"]["caution"])
-            archive = json.loads((bundle / out["savedTo"]).read_text(encoding="utf-8"))
-            self.assertEqual(archive["tool"], "vlm")
-            self.assertFalse(na.contains_id_number(json.dumps(archive, ensure_ascii=False)))
-            self.server.vlm_error = (403, {"error": {"message": "Access to model denied.", "type": "AccessDenied.Unpurchased"}})
-            code, out = run("vlm", "--bundle", str(bundle), "--file", png, "--question", question)
-            self.assertEqual((code, out["error"]["code"]), (1, "vlmNoPlan"))  # 套餐问题不说成密钥无效
-        # 完整号码只留在本机原文存档里，可用脱敏号回查；报告引用这一页的确定结论有了视觉模型记录
-        code, out = run("cert-registry", "--kind", "person", "--identifier", self.MASKED_ID, "--bundle", str(bundle))
-        self.assertEqual((code, self.server.requests[-1][2]["_body"]["identifier"]), (0, self.FULL_ID))
-        pages, asked = na.ocr_coverage(bundle, [png])
-        self.assertEqual((pages, asked), ({}, {(png, 1)}))
-
-    def test_ocr_setup_needs_a_terminal_and_connection_reports_only_flags(self):
-        with patch.object(na.sys.stdin, "isatty", return_value=False):
-            code, out = run("ocr-setup")
-        self.assertEqual((code, out["error"]["code"]), (1, "ttyRequired"))
-        with self.with_keys():
-            code, out = run("connection")
-        self.assertEqual(code, 0, out)
-        self.assertEqual({k: out["data"]["ocr"][k] for k in ("mineru", "vlm", "vlmModel")}, {"mineru": True, "vlm": True, "vlmModel": "qwen3-vl-plus"})
-        raw = json.dumps(out, ensure_ascii=False)
-        self.assertNotIn(MINERU_KEY, raw)
-        self.assertNotIn(VLM_KEY, raw)
-        with patch.object(na.sys.stdin, "isatty", return_value=True), patch.object(na.getpass, "getpass", side_effect=[MINERU_KEY, ""]):
-            code, out = run("ocr-setup", "--vlm-model", "qwen-vl-ocr")
-        self.assertEqual(code, 0, out)
-        saved = Path(os.environ["AICHECK_OCR_CONFIG_FILE"])
-        self.assertEqual(stat.S_IMODE(saved.stat().st_mode), 0o600)
-        self.assertEqual((out["data"]["mineru"], out["data"]["vlm"], out["data"]["vlmModel"]), (True, False, "qwen-vl-ocr"))
-        self.assertNotIn(MINERU_KEY, json.dumps(out, ensure_ascii=False))
-
-    def test_service_errors_say_what_to_do(self):
-        self.assertEqual(na.service_error("vlm", 403, '{"type":"AccessDenied.Unpurchased"}').code, "vlmNoPlan")
-        self.assertEqual(na.service_error("vlm", 401, "Incorrect API key").code, "vlmKeyInvalid")
-        self.assertEqual(na.service_error("vlm", 404, '{"code":"model_not_found"}').code, "vlmModelNotFound")
-        self.assertEqual(na.service_error("mineru", 401, "").code, "mineruKeyInvalid")
-        with self.assertRaises(na.ClientError) as ctx:
-            na.service_url("http://mineru.example.com", "MinerU")
-        self.assertEqual(ctx.exception.code, "insecureTransport")  # 密钥不走远程明文
-
 
 if __name__ == "__main__":
     unittest.main()
