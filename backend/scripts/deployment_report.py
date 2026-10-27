@@ -91,6 +91,14 @@ READ_ONLY_POST_ROUTES = {
     ("POST", "/api/inspection-services/certificate-validity"),
     ("POST", "/inspection-services/certificate-registry"),
     ("POST", "/api/inspection-services/certificate-registry"),
+    # 审计结果渲染成图：摘要进、PNG 出，输入和结果都不存，不写任何状态，因此没有幂等键可言
+    # （路由在 ephemeral 集合里：不抢租户写锁、不记审计、不 flush）。
+    ("POST", "/inspection-services/audit-result-image"),
+    ("POST", "/api/inspection-services/audit-result-image"),
+    # 标准在某日的有效状态：直接委托 verify_std_samr_standard（与下面 /std-samr/standards/verify 同一个函数），
+    # 只查询、不写状态。
+    ("POST", "/inspection-services/standard-status"),
+    ("POST", "/api/inspection-services/standard-status"),
     # Node recommendations inspect selected versions without creating review state.
     ("POST", "/projects/{project_id}/inspection/important-review/analyze"),
     ("POST", "/api/projects/{project_id}/inspection/important-review/analyze"),
