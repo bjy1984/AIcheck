@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from apps.api.audit_result_image_routes import audit_result_image_router
 from apps.api.auto_review_routes import auto_review_router
 from apps.api.batch_review_routes import batch_review_router
 from apps.api.blind_review_routes import blind_review_router
@@ -586,6 +587,9 @@ def is_ephemeral_inspection_request(request: Request) -> bool:
         "/inspection-services/capabilities", "/inspection-services/rules",
         "/inspection-services/certificate-validity",
         "/inspection-services/certificate-registry",
+        # 非公开（要登录、要 ai:recheck），但同样不落盘、不记审计、不抢租户写锁：渲染一次要几秒，
+        # 抢了锁会把同租户所有写操作都堵住。
+        "/inspection-services/audit-result-image",
     }
 
 
@@ -1485,6 +1489,8 @@ app.include_router(important_review_router)
 app.include_router(important_review_router, prefix="/api")
 app.include_router(inspection_service_router)
 app.include_router(inspection_service_router, prefix="/api")
+app.include_router(audit_result_image_router)
+app.include_router(audit_result_image_router, prefix="/api")
 app.include_router(review_plugin_router)
 app.include_router(review_plugin_router, prefix="/api")
 app.include_router(batch_review_router)

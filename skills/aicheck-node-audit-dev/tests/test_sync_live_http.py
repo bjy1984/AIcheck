@@ -137,6 +137,30 @@ class SyncLiveHttpTest(unittest.TestCase):
         refused = cli("sync", "--bundle", str(self.bundle), "--confirm", "--preview-hash", preview["data"]["previewHash"], env=unauth)
         self.assertTrue(not refused["ok"] or refused["data"]["failed"], refused)
 
+    def test_render_returns_a_real_png_from_the_real_backend(self):
+        """skill 的 render 对真后端：要登录、监检角色才行；摘要发过去，回来的是白底 PNG（内容少就一页，按内容取高度），服务器不留任何记录。"""
+        import io
+
+        from PIL import Image
+        self.assertTrue(cli("report", "--bundle", str(self.bundle), env=self.env)["ok"])
+        audits_before = len(repo.state.get("audit_logs", []))
+        done = cli("render", "--bundle", str(self.bundle), env=self.env)
+        self.assertTrue(done["ok"], done)
+        paths = [Path(p) for p in done["data"]["images"]]
+        count = done["data"]["pageCount"]  # 总览加 5 张检查卡一页放不下：分页，总览一页、逐项结论在后
+        self.assertEqual((count, [p.name for p in paths]), (len(paths), ["audit.png"] if count == 1 else [f"audit-{n}.png" for n in range(1, count + 1)]))
+        images = [Image.open(io.BytesIO(p.read_bytes())) for p in paths]
+        self.assertEqual(({im.format for im in images}, done["data"]["outcome"]), ({"PNG"}, "不通过"))
+        self.assertTrue(all(im.width > 1000 and im.height > 400 for im in images), [im.size for im in images])
+        self.assertEqual(len({im.size for im in images[:-1]}), min(len(images) - 1, 1))  # 除最后一页外页面一样大
+        self.assertEqual(len(repo.state.get("audit_logs", [])), audits_before)  # 不记审计、不留输入
+        refused = cli("render", "--bundle", str(self.bundle), "--out", str(self.bundle / "denied.png"),
+                      env=dict(self.env, AICHECK_TOKEN="dev-token-contractor"))
+        self.assertEqual((refused["ok"], refused["error"]["code"]), (False, "forbidden"))  # 施工方账号不能用
+        self.assertFalse((self.bundle / "denied.png").exists())
+        anonymous = cli("render", "--bundle", str(self.bundle), env={k: v for k, v in self.env.items() if k != "AICHECK_TOKEN"})
+        self.assertEqual(anonymous["error"]["code"], "loginRequired")
+
 
 if __name__ == "__main__":
     unittest.main()

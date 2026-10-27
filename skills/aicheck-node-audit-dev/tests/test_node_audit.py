@@ -21,6 +21,8 @@ na = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(na)
 
 TOKEN = "test-token-not-real"
+# 1×1 的合法 PNG：服务器渲染接口的测试桩返回它
+PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 PDF = b"%PDF-1.4 fake certificate\n"
 WORKSPACE_FLAT = {
     "node": {"nodeId": 24},
@@ -56,6 +58,10 @@ class FakeServer:
         self.ocr_running_polls = 0  # 状态查询先回几次 running
         self.ocr_final = {"status": "success", "provider": "mineru"}
         self.ocr_result: dict = {}
+        self.image_mode = "png"  # png | missing（服务器没部署）| auth200（HTTP 200 里藏着没登录的 JSON）| garbled（页内容不是 PNG）
+        self.image_pages = 1  # 服务器这次渲染出几页
+        self.image_requests: list[dict] = []
+        self.image_gateway_failures = 0
         self.ocr_status_failures = 0  # 查状态、取结果先回几次 502（API 重启中）
         self.ocr_upload_failures = 0  # 上传先回几次 502
         outer = self
@@ -132,6 +138,24 @@ class FakeServer:
                     self.send_json(None, status=404, code="NOT_FOUND", message="无此接口")
 
             def do_POST(self):
+                if urlsplit(self.path).path == "/api/inspection-services/audit-result-image":
+                    _, image_body = self.record("POST")
+                    if outer.image_gateway_failures > 0:
+                        outer.image_gateway_failures -= 1
+                        self.send_json(None, status=502, code="BAD_GATEWAY", message="Bad Gateway")
+                    elif outer.image_mode == "auth200":
+                        self.send_json({"reason": "AUTH_REQUIRED"}, status=200, code=401, message="请先登录。")
+                    elif not self.authed():
+                        pass
+                    elif outer.image_mode == "missing":
+                        self.send_json(None, status=404, code="NOT_FOUND", message="无此接口")
+                    else:
+                        outer.image_requests.append(image_body)
+                        content = b"not a png" if outer.image_mode == "garbled" else PNG
+                        pages = [{"pageNo": n, "imageBase64": base64.b64encode(content + bytes([n])).decode()}
+                                 for n in range(1, outer.image_pages + 1)]
+                        self.send_json({"pageCount": len(pages), "contentType": "image/png", "pages": pages})
+                    return
                 if urlsplit(self.path).path == "/api/internal/ocr/mineru/tasks/upload":
                     length = int(self.headers.get("Content-Length") or 0)
                     raw = self.rfile.read(length)
@@ -1186,6 +1210,130 @@ class NodeAuditTest(unittest.TestCase):
             self.assertEqual(run("ocr", "--bundle", str(bundle), "--allow-egress")[0], 0)
         code, out = run("report", "--bundle", str(bundle))
         self.assertEqual(code, 0, out)
+    # ------------------------------------------------------------ 结果图（服务器用 HTML 模板渲染成 PNG）
+
+    def audited_bundle(self, bundle: Path | None = None) -> Path:
+        bundle = bundle or self.local_bundle()
+        fact = {"name": "有效期至", "value": "2025-12", "source": {"file": "files/01-证书.pdf", "page": 1, "excerpt": "有效期至2025年12月"}}
+        checks = [{"atomicCheckId": "AC-R24-01", "verdict": "failed", "facts": [fact], "reasoning": "证书有效期早于施焊日期。其余说明。",
+                   "nextSteps": ["请施工方更换在有效期内的焊工"]},
+                  *({"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺施焊记录。",
+                     "nextSteps": ["请施工方补施焊记录"]} for i in range(2, 6))]
+        self.write_report(bundle, checks)
+        return bundle
+
+    def test_audit_image_body_mirrors_the_markdown_report_and_masks_ids(self):
+        bundle = self.audited_bundle()
+        manifest, report, errors_, _ = na.check_report(bundle)
+        self.assertEqual(errors_, [])
+        report["checks"][0]["agreesWithServer"], report["checks"][1]["agreesWithServer"] = False, True
+        report["riskFlags"] = [{"level": "high", "flag": "设计材质超出全部已交证书", "basis": "AC-R24-02"}]
+        body = na.audit_image_body(manifest, report, "焊工资格")
+        self.assertEqual((body["outcome"], body["nodeId"], body["nodeName"], body["ruleId"]), ("failed", 24, "焊工资格", "R24"))
+        self.assertEqual(body["outcomeExplain"], na.node_outcome(report["checks"])["explain"])
+        first = body["checks"][0]
+        self.assertEqual((first["atomicCheckId"], first["verdict"], first["reason"]), ("AC-R24-01", "failed", "证书有效期早于施焊日期。"))
+        self.assertEqual(first["evidence"], na.check_evidence(report["checks"][0], limit=3))
+        self.assertEqual([c["differsFromServer"] for c in body["checks"][:3]], [True, False, None])  # 服务器结论：不同／一致／没有
+        self.assertTrue(all("**" not in step for step in body["nextSteps"]) and body["nextSteps"])  # markdown 粗体不进图
+        self.assertEqual(body["riskFlags"], [{"level": "high", "flag": "设计材质超出全部已交证书", "basis": "AC-R24-02"}])
+        report["summary"] = f"证件 {self.FULL_ID} 的持证人"
+        self.assertNotIn(self.FULL_ID, json.dumps(na.audit_image_body(manifest, report), ensure_ascii=False))  # 证号再脱敏一遍
+
+    def test_render_sends_only_the_summary_and_saves_the_image_privately(self):
+        bundle = self.audited_bundle()
+        self.login()
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        target = bundle / "audit.png"
+        data = out["data"]
+        self.assertEqual(([Path(p).resolve() for p in data["images"]], data["pageCount"], data["outcome"], data["bytes"]),
+                         ([target.resolve()], 1, "不通过", len(PNG) + 1))
+        self.assertEqual((target.read_bytes(), stat.S_IMODE(target.stat().st_mode)), (PNG + b"\x01", 0o600))
+        [sent] = self.server.image_requests
+        self.assertEqual((sent["outcome"], len(sent["checks"])), ("failed", 5))
+        self.assertNotIn("facts", json.dumps(sent))  # 只发摘要，不发每项的事实全文
+        self.assertEqual(self.server.requests[-1][2]["Authorization"], f"Bearer {TOKEN}")
+        custom = Path(self.tmp.name) / "out" / "result.png"
+        code, out = run("render", "--bundle", str(bundle), "--out", str(custom))
+        self.assertEqual((code, custom.read_bytes(), [Path(p).resolve() for p in out["data"]["images"]]), (0, PNG + b"\x01", [custom.resolve()]))
+
+    def test_a_long_result_comes_back_as_several_pages_saved_in_order_and_replacing_the_old_ones(self):
+        bundle = self.audited_bundle()
+        self.login()
+        self.server.image_pages = 3
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        names = [Path(p).name for p in out["data"]["images"]]
+        self.assertEqual((names, out["data"]["pageCount"]), (["audit-1.png", "audit-2.png", "audit-3.png"], 3))
+        self.assertEqual([(bundle / n).read_bytes() for n in names], [PNG + bytes([n]) for n in (1, 2, 3)])  # 页序没乱
+        self.assertTrue(all(stat.S_IMODE((bundle / n).stat().st_mode) == 0o600 for n in names))
+        self.assertFalse((bundle / "audit.png").exists())
+        self.server.image_pages = 2  # 重新审计后内容变短：上次多出来的第 3 页不能留着，否则会被当成这次结果的一部分
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual(sorted(p.name for p in bundle.glob("audit*.png")), ["audit-1.png", "audit-2.png"])
+        self.server.image_pages = 1  # 变成一页：回到 audit.png，分页文件全部清掉
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual(sorted(p.name for p in bundle.glob("audit*.png")), ["audit.png"])
+        custom = Path(self.tmp.name) / "out" / "result.png"  # --out 多页：在文件名后加页码，不动目录里别的文件
+        (custom.parent).mkdir(parents=True)
+        (custom.parent / "keep-me.png").write_bytes(b"x")
+        self.server.image_pages = 2
+        code, out = run("render", "--bundle", str(bundle), "--out", str(custom))
+        self.assertEqual((code, sorted(p.name for p in custom.parent.iterdir())), (0, ["keep-me.png", "result-1.png", "result-2.png"]))
+
+    def test_render_refuses_a_response_that_is_not_a_set_of_png_pages(self):
+        bundle = self.audited_bundle()
+        self.login()
+        self.server.image_mode = "garbled"
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "badResponse"))
+        self.assertEqual(list(bundle.glob("audit*.png")), [])  # 不留任何半成品
+        self.server.image_mode = "png"
+        self.server.image_pages = na.MAX_IMAGE_PAGES + 1
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "badResponse"))
+        self.assertEqual(list(bundle.glob("audit*.png")), [])
+
+    def test_render_needs_a_valid_report_and_a_login_and_sends_nothing_otherwise(self):
+        bundle = self.local_bundle()
+        self.login()
+        self.write_report(bundle, [{"atomicCheckId": "AC-R24-01", "verdict": "passed"}])  # 缺检查、缺事实
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "reportInvalid"))
+        good = self.audited_bundle(bundle)  # 同一个资料包改成合格的审计结果
+        self.session.unlink()
+        code, out = run("render", "--bundle", str(good))
+        self.assertEqual((code, out["error"]["code"]), (1, "loginRequired"))
+        self.assertEqual(self.server.image_requests, [])
+        self.assertEqual(list(good.glob("audit*.png")), [])
+
+    def test_render_explains_a_server_without_the_endpoint_and_an_expired_login(self):
+        bundle = self.audited_bundle()
+        self.login()
+        self.server.image_mode = "missing"
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "renderNotDeployed"))
+        self.assertIn("audit.md", out["error"]["message"])
+        self.server.image_mode = "auth200"  # 这个服务器的业务错误是 HTTP 200 + JSON（code 401），不能当成图片存下来
+        code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "loginRequired"))
+        self.assertIn("重新 login", out["error"]["message"])
+        self.assertEqual(list(bundle.glob("audit*.png")), [])
+
+    def test_render_waits_out_one_gateway_error_during_a_restart(self):
+        bundle = self.audited_bundle()
+        self.login()
+        with patch.object(na, "GATEWAY_RETRY_SECONDS", 0):
+            self.server.image_gateway_failures = 1
+            code, out = run("render", "--bundle", str(bundle))
+            self.assertEqual((code, (bundle / "audit.png").read_bytes()), (0, PNG + b"\x01"))
+            (bundle / "audit.png").unlink()
+            self.server.image_gateway_failures = 2  # 重试一次还是 502：报错，不留半张图
+            code, out = run("render", "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"]), (1, "http502"))
+        self.assertEqual(list(bundle.glob("audit*.png")), [])
+
 
 if __name__ == "__main__":
     unittest.main()

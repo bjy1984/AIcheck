@@ -39,6 +39,8 @@ VERDICTS = {
 }
 NEEDS_SOURCE = {"passed", "failed"}
 MAX_DOWNLOAD_BYTES = 300 * 1024 * 1024
+MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 每页
+MAX_IMAGE_PAGES = 16
 GATEWAY_ERRORS = {"http502", "http503", "http504"}
 GATEWAY_RETRY_SECONDS = 5
 RULE_FIELDS = ("id", "sourceRuleId", "name", "nodeIds", "version", "status", "inspectionClass",
@@ -2404,6 +2406,98 @@ def cmd_report(args: argparse.Namespace) -> Any:
                      if manifest.get("source") == "server" else "本地资料包没有对应的服务器节点，不能同步")}
 
 
+# ---------------------------------------------------------------- result image (rendered by the server)
+
+IMAGE_PATH = "/inspection-services/audit-result-image"
+
+
+def audit_image_body(manifest: dict[str, Any], report: dict[str, Any], rule_name: str = "") -> dict[str, Any]:
+    """发给服务器画图的摘要：和 audit.md 同一套结论、理由、依据，只要摘要，不带全文。证号再脱敏一遍。"""
+    checks = report["checks"]
+    outcome = node_outcome(checks)
+    steps, _ = priority_steps(checks, cap=6)
+    flags = [{"level": f.get("level"), "flag": f.get("flag") or "", "basis": f.get("basis") or ""}
+             for f in report.get("riskFlags") or [] if isinstance(f, dict) and f.get("flag")]
+    body = {
+        "nodeId": manifest["nodeId"], "nodeName": rule_name, "ruleId": manifest.get("ruleId") or "",
+        "projectLabel": str(manifest.get("projectId") or ""), "outcome": outcome["outcome"], "outcomeExplain": outcome["explain"],
+        "auditedAt": short_time(report.get("auditedAt")) if report.get("auditedAt") else "", "auditor": str(report.get("auditor") or ""),
+        "source": "服务器资料包" if manifest.get("source") == "server" else "本地资料包",
+        "checks": [{"atomicCheckId": c["atomicCheckId"], "title": str(c.get("name") or "").split("·", 1)[-1],
+                    "verdict": c["verdict"], "reason": check_reason(c), "evidence": check_evidence(c, limit=3),
+                    "differsFromServer": (not c["agreesWithServer"]) if isinstance(c.get("agreesWithServer"), bool) else None}
+                   for c in checks],
+        "nextSteps": [re.sub(r"\*\*(.+?)\*\*", r"\1", step) for step in steps],
+        "missingMaterials": [str(m) for m in report.get("missingMaterials") or []][:10],
+        "riskFlags": flags[:8], "summary": clip_text(str(report.get("summary") or ""), 600),
+    }
+    return json.loads(dump_masked(body))
+
+
+def decode_image_pages(data: Any) -> list[bytes]:
+    """服务器一次回所有页：{pages: [{pageNo, imageBase64}]}。每页必须是合法 base64 的 PNG，页数和大小有上限。"""
+    pages = data.get("pages") if isinstance(data, dict) else None
+    if not isinstance(pages, list) or not 1 <= len(pages) <= MAX_IMAGE_PAGES:
+        raise ClientError("badResponse", "服务器返回的图片页数不对。", path=IMAGE_PATH)
+    decoded = []
+    for page in pages:
+        try:
+            raw = base64.b64decode(page["imageBase64"], validate=True)
+        except (KeyError, TypeError, ValueError):
+            raise ClientError("badResponse", "服务器返回的图片不是合法的 base64。", path=IMAGE_PATH) from None
+        if not raw.startswith(b"\x89PNG") or len(raw) > MAX_IMAGE_BYTES:
+            raise ClientError("badResponse", "服务器返回的不是 PNG，或单页超过 8MB。", path=IMAGE_PATH)
+        decoded.append(raw)
+    return decoded
+
+
+def image_targets(base: Path, count: int) -> list[Path]:
+    """一页就是 base 本身；多页在文件名后加页码：audit.png → audit-1.png、audit-2.png…"""
+    if count == 1:
+        return [base]
+    return [base.with_name(f"{base.stem}-{number}{base.suffix}") for number in range(1, count + 1)]
+
+
+def cmd_render(args: argparse.Namespace) -> Any:
+    """把审计结果的摘要发给服务器，由它用 HTML 模板渲染成白底的图（内容多就分页），存进资料包。"""
+    bundle = Path(args.bundle).expanduser().resolve()
+    manifest, report, errors_, warnings = check_report(bundle)
+    if errors_:
+        raise ClientError("reportInvalid", "audit.json 未通过校验：先修正并跑 report，再生成结果图。", errors=errors_, warnings=warnings)
+    api = Api(args.base_url)
+    if not api.token:
+        raise ClientError("loginRequired", "结果图由服务器渲染，要监检账号令牌：请用户在自己的终端执行 login。")
+    rule = (json.loads((bundle / "rules.json").read_text(encoding="utf-8")).get("rule") or {}) if (bundle / "rules.json").exists() else {}
+    try:
+        data = api.call("POST", IMAGE_PATH, body=audit_image_body(manifest, report, rule.get("name") or ""), auth=True)
+    except ClientError as exc:
+        # 这个服务器的业务错误常是 HTTP 200 加 JSON，错误码是数字：401 没登录、403 无权。
+        if exc.code == "notFound":
+            raise ClientError("renderNotDeployed", "服务器还没有结果图片接口（要部署新版后端）：先用 audit.md，部署后再生成图片。") from None
+        if exc.code == "401":
+            raise ClientError("loginRequired", f"{exc.message}（令牌缺失或过期：请用户在自己的终端重新 login）", **exc.details) from None
+        if exc.code == "403":
+            raise ClientError("forbidden", exc.message, **exc.details) from None
+        raise
+    pages = decode_image_pages(data)
+    base = Path(args.out).expanduser().resolve() if args.out else bundle / "audit.png"
+    targets = image_targets(base, len(pages))
+    private_dir(base.parent)
+    if not args.out:  # 默认位置：上一次留下的 audit.png / audit-N.png 不能和这次的混在一起
+        for old in bundle.iterdir():
+            if re.fullmatch(r"audit(-\d+)?\.png", old.name) and old not in targets:
+                old.unlink()
+    for target, png in zip(targets, pages, strict=True):
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(png)
+        os.chmod(target, 0o600)
+    outcome = node_outcome(report["checks"])
+    return {"images": [str(t) for t in targets], "pageCount": len(pages), "bytes": sum(len(p) for p in pages),
+            "outcome": outcome["label"],
+            "next": "把图片路径告诉用户；你所在的环境能显示图片就按页码顺序一并展示。图只是摘要，完整依据在 audit.md。"}
+
+
 # ---------------------------------------------------------------- sync to server
 
 SYNC_VERDICTS = {"failed", "human_review_required", "evidence_insufficient", "not_executed"}
@@ -2700,6 +2794,10 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("report", help="校验 audit.json 并生成 audit.md")
     p.add_argument("--bundle", required=True)
     p.set_defaults(func=cmd_report)
+    p = sub.add_parser("render", help="把审计结果摘要发给服务器，用 HTML 模板渲染成白底的图 audit.png（内容多自动分页为 audit-1.png…；需登录）")
+    p.add_argument("--bundle", required=True)
+    p.add_argument("--out", help="图片保存路径；默认资料包里的 audit.png（多页加页码）")
+    p.set_defaults(func=cmd_render)
     p = sub.add_parser("sync", help="把审计结果同步到服务器（先预览；用户同意后加 --confirm）")
     p.add_argument("--bundle", required=True)
     p.add_argument("--confirm", action="store_true", help="用户已明确同意同步")

@@ -6,6 +6,7 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/inspection-services/(certificate-validity|certificate-registry)$", "ai:recheck"),
+    ("POST", r"/inspection-services/audit-result-image$", "ai:recheck"),  # 非公开：渲染吃 CPU 内存，要登录
     ("POST", r"/projects/[^/]+/review-handoffs$", "review:save"),
     ("POST", r"/projects/[^/]+/review-handoffs/[^/]+/verifications$", "review:save"),
     ("POST", r"/projects/[^/]+/rules/draft-suggestion$", "review:save"),
