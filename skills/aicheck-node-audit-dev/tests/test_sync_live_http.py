@@ -162,5 +162,48 @@ class SyncLiveHttpTest(unittest.TestCase):
         self.assertEqual(anonymous["error"]["code"], "loginRequired")
 
 
+    def test_web_login_gets_a_real_token_from_the_real_backend(self):
+        """login --web 对真后端：浏览器里已登录的监检点授权 → 授权码回调本机 → skill 凭 PKCE 换回能用的令牌。"""
+        import base64
+        import contextlib
+        import importlib.util
+        import io
+        from unittest.mock import patch
+
+        spec = importlib.util.spec_from_file_location("node_audit_live", SCRIPT)
+        na = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(na)
+        session = Path(self.tmp.name) / "web-session.json"
+
+        def browser(url: str) -> bool:  # 已登录的监检在授权页上点了「授权」
+            payload = url.split("#/skill-authorize/", 1)[1]
+            asked = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+
+            def click():
+                req = urllib.request.Request(f"{self.base}/api/auth/skill/authorize", method="POST",
+                                             data=json.dumps({"redirectUri": asked["r"], "codeChallenge": asked["c"],
+                                                              "codeChallengeMethod": "S256"}).encode(),
+                                             headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    code = json.loads(resp.read())["data"]["code"]
+                urllib.request.urlopen(f"{asked['r']}?code={code}&state={asked['s']}", timeout=30).read()
+
+            threading.Thread(target=click, daemon=True).start()
+            return True
+
+        env = {"AICHECK_BASE_URL": self.base, "AICHECK_SESSION_FILE": str(session), "AICHECK_TOKEN": ""}
+        out = io.StringIO()
+        with patch.dict(os.environ, env), patch("webbrowser.open", browser), contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code = na.main(["login", "--web", "--timeout", "60"])
+        done = json.loads(out.getvalue())
+        self.assertEqual((code, done["data"]["role"]), (0, "inspection"), done)
+        token = json.loads(session.read_text(encoding="utf-8"))["token"]
+        self.assertFalse(token.startswith("dev-token"))  # 是后端签的真令牌，不是测试令牌
+        req = urllib.request.Request(f"{self.base}/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            self.assertEqual(json.loads(resp.read())["data"]["username"], "inspection")
+
+
 if __name__ == "__main__":
     unittest.main()

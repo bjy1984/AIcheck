@@ -12,6 +12,7 @@ import base64
 import functools
 import getpass
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -228,27 +229,133 @@ def http_error(exc: error.HTTPError, path: str) -> ClientError:
 
 # ---------------------------------------------------------------- auth
 
-def cmd_login(args: argparse.Namespace) -> Any:
-    if not sys.stdin.isatty():
-        raise ClientError("ttyRequired", "login 只能在用户自己的终端里运行：口令由 getpass 读取，不经过对话。")
+def login_base(args: argparse.Namespace) -> str:
     base = args.base_url or os.getenv("AICHECK_BASE_URL") or load_session().get("baseUrl")
     if not base:
         raise ClientError("baseUrlMissing", "未配置服务器地址：加 --base-url 或设置 AICHECK_BASE_URL。")
-    base = normalize_base(base)
+    return normalize_base(base)
+
+
+def save_login(base: str, token: str, user: dict[str, Any], *, method: str) -> dict[str, Any]:
+    write_private(session_path(), dump({"baseUrl": base, "token": token, "username": user.get("username"),
+                                        "role": user.get("role"), "savedAt": now(), "method": method}))
+    role = user.get("role")
+    result = {"baseUrl": base, "username": user.get("username"), "role": role, "sessionFile": str(session_path())}
+    if role not in {"inspection", "admin"}:
+        result["warning"] = "节点审计工作区只对监检（inspection）或管理员开放，当前角色可能取不到节点资料。"
+    return result
+
+
+def cmd_login(args: argparse.Namespace) -> Any:
+    if args.web:
+        return cmd_login_web(args)
+    if not args.username:
+        raise ClientError("usernameRequired", "口令登录要加 --username；或改用 login --web 在浏览器里授权。")
+    if not sys.stdin.isatty():
+        raise ClientError("ttyRequired", "口令登录只能在用户自己的终端里运行（getpass 读口令，不经过对话）；助手可以改用 login --web。")
+    base = login_base(args)
     api = Api(base)
     password = getpass.getpass(f"{args.username} @ {base} 口令（不回显）: ")
     body: dict[str, Any] = {"username": args.username, "password": password}
     if args.tenant_id:
         body["tenantId"] = args.tenant_id
     data = api.call("POST", "/auth/login", body=body)
-    user = (data or {}).get("user") or {}
-    write_private(session_path(), dump({"baseUrl": base, "token": data["token"], "username": args.username,
-                                        "role": user.get("role"), "savedAt": now()}))
-    role = user.get("role")
-    result = {"baseUrl": base, "username": args.username, "role": role, "sessionFile": str(session_path())}
-    if role not in {"inspection", "admin"}:
-        result["warning"] = "节点审计工作区只对监检（inspection）或管理员开放，当前角色可能取不到节点资料。"
-    return result
+    user = {"username": args.username, **((data or {}).get("user") or {})}
+    return save_login(base, data["token"], user, method="password")
+
+
+WEB_LOGIN_TIMEOUT_SECONDS = 300
+CALLBACK_PAGE = """<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>AIcheck 节点审计</title>
+<body style="font-family:system-ui,sans-serif;max-width:32em;margin:15vh auto;padding:0 1em;color:#24364f">
+<h2>{title}</h2><p>{detail}</p></body></html>"""
+
+
+def pkce_pair() -> tuple[str, str]:
+    """RFC 7636：校验码随机 32 字节，challenge = base64url(sha256(校验码))，都去掉末尾的 =。"""
+    verifier = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b"=").decode("ascii")
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
+def web_authorize_url(base: str, redirect_uri: str, state: str, challenge: str) -> str:
+    """授权请求整体编码进路径（/#/skill-authorize/<base64url(JSON)>）：平台未登录时守卫只把路径带进登录页，查询串会丢。"""
+    raw = json.dumps({"r": redirect_uri, "s": state, "c": challenge}, separators=(",", ":")).encode("ascii")
+    return f"{base}/#/skill-authorize/{base64.urlsafe_b64encode(raw).rstrip(b'=').decode('ascii')}"
+
+
+def callback_handler(state: str, outcome: dict[str, str]) -> type:
+    """本机回调处理器。state 对不上的请求回 400 并继续等（可能是别的程序在敲这个端口）。"""
+    from http.server import BaseHTTPRequestHandler
+
+    class Callback(BaseHTTPRequestHandler):
+        def log_message(self, *args: Any) -> None:  # 不往 stderr 打访问日志
+            return
+
+        def reply(self, status: int, title: str, detail: str) -> None:
+            body = CALLBACK_PAGE.format(title=title, detail=detail).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self) -> None:
+            url = parse.urlsplit(self.path)
+            query = dict(parse.parse_qsl(url.query))
+            if url.path != "/callback" or not hmac.compare_digest(query.get("state", "").encode(), state.encode()):
+                self.reply(400, "这不是本次授权的回调", "请回到助手重新运行 login --web。")
+            elif query.get("error"):
+                outcome["error"] = query["error"]
+                self.reply(200, "已拒绝授权", "skill 没有拿到任何权限，可以关闭这个页面。")
+            elif query.get("code"):
+                outcome["code"] = query["code"]
+                self.reply(200, "授权成功", "可以关闭这个页面，回到助手继续。")
+            else:
+                self.reply(400, "回调缺少授权码", "请回到助手重新运行 login --web。")
+
+    return Callback
+
+
+def wait_for_web_callback(server: Any, outcome: dict[str, str], timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    while not outcome and time.monotonic() < deadline:
+        server.timeout = max(0.1, min(1.0, deadline - time.monotonic()))
+        server.handle_request()
+
+
+def cmd_login_web(args: argparse.Namespace) -> Any:
+    """浏览器授权：平台上已登录的监检或管理员点「授权」，一次性授权码回调到本机端口，再凭 PKCE 校验码换令牌。
+    口令只在浏览器里输入，不经过 skill 和助手，所以这个命令助手可以自己运行。"""
+    from http.server import HTTPServer
+
+    base = login_base(args)
+    verifier, challenge = pkce_pair()
+    state = base64.urlsafe_b64encode(os.urandom(24)).rstrip(b"=").decode("ascii")
+    outcome: dict[str, str] = {}
+    server = HTTPServer(("127.0.0.1", 0), callback_handler(state, outcome))
+    try:
+        redirect_uri = f"http://127.0.0.1:{server.server_address[1]}/callback"
+        url = web_authorize_url(base, redirect_uri, state, challenge)
+        print(f"在浏览器里打开下面的链接，用监检或管理员账号登录平台后点「授权」（{args.timeout} 秒内有效）：\n{url}",
+              file=sys.stderr, flush=True)
+        opened = False
+        if not args.no_browser:
+            import webbrowser
+
+            opened = bool(webbrowser.open(url))
+        wait_for_web_callback(server, outcome, args.timeout)
+    finally:
+        server.server_close()
+    if outcome.get("error"):
+        raise ClientError("webLoginDenied", "在浏览器里点了拒绝，没有登录。要登录就重新运行 login --web。")
+    if not outcome.get("code"):
+        hint = "" if opened or args.no_browser else "浏览器没能自动打开：把上面的链接发给用户，让他自己打开。"
+        raise ClientError("webLoginTimeout", f"{args.timeout} 秒内没收到浏览器授权。{hint}重新运行 login --web 会生成新链接。",
+                          authorizeUrl=url)
+    data = Api(base).call("POST", "/auth/skill/token", body={"code": outcome["code"], "codeVerifier": verifier,
+                                                               "redirectUri": redirect_uri})
+    return save_login(base, data["token"], (data or {}).get("user") or {}, method="web")
 
 
 def cmd_logout(args: argparse.Namespace) -> Any:
@@ -2695,8 +2802,11 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--base-url", help="服务器 origin；默认 AICHECK_BASE_URL 或登录时保存的地址")
     sub = root.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("login", help="用户在自己的终端登录（getpass 读口令）")
-    p.add_argument("--username", required=True)
+    p = sub.add_parser("login", help="登录：--web 在浏览器里授权（助手可运行）；或 --username 在用户自己的终端输口令")
+    p.add_argument("--web", action="store_true", help="打开平台授权页，用户在浏览器里登录并点「授权」，令牌回调到本机")
+    p.add_argument("--no-browser", action="store_true", help="--web 时不自动打开浏览器，只打印链接")
+    p.add_argument("--timeout", type=int, default=WEB_LOGIN_TIMEOUT_SECONDS, help="--web 时最多等几秒，默认 300")
+    p.add_argument("--username")
     p.add_argument("--tenant-id")
     p.set_defaults(func=cmd_login)
     sub.add_parser("logout").set_defaults(func=cmd_logout)

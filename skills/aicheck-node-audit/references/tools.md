@@ -19,7 +19,8 @@
 
 | 命令 | 需登录 | 服务器接口 | 说明 |
 |---|---|---|---|
-| `login --username U [--tenant-id T]` | — | POST `/api/auth/login` | 只能在用户终端运行（getpass）；保存令牌与角色 |
+| `login --web [--no-browser] [--timeout S]` | — | 浏览器打开 `/#/skill-authorize/…`；POST `/api/auth/skill/token` | 网页授权，助手可以自己运行：在本机 `127.0.0.1` 随机端口等回调，打开平台授权页（链接同时打到 stderr）；用户在浏览器里登录监检或管理员账号并点「授权」后，平台把一次性授权码（120 秒、只能用一次）回调到本机，skill 凭只有它知道的 PKCE 校验码（S256）换令牌，口令不经过 skill 和助手。保存令牌与角色（会话文件 `method: web`）。`webLoginDenied`：用户点了拒绝；`webLoginTimeout`：超时（默认 300 秒），返回里带 `authorizeUrl` |
+| `login --username U [--tenant-id T]` | — | POST `/api/auth/login` | 口令登录，只能在用户终端运行（getpass）；网页授权用不了时的后备。保存令牌与角色 |
 | `logout` | 是 | POST `/api/auth/logout` | 删除会话文件 |
 | `connection` | 否 | GET `/api/readyz`、`/api/inspection-services/capabilities`、`/api/auth/me` | 连通性、服务能力、当前账号角色 |
 | `rules --node N` | 否 | 无（本地业务包） | 规则原文、资料要求、原子检查（含服务器端绑定的工具名）、固定主条款 |

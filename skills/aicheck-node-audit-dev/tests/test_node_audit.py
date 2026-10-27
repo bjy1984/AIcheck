@@ -60,6 +60,7 @@ class FakeServer:
         self.ocr_result: dict = {}
         self.image_mode = "png"  # png | missing（服务器没部署）| auth200（HTTP 200 里藏着没登录的 JSON）| garbled（页内容不是 PNG）
         self.image_pages = 1  # 服务器这次渲染出几页
+        self.skill_codes: dict[str, tuple[str, str]] = {}  # 网页授权：授权码 → (code_challenge, 回调地址)
         self.image_requests: list[dict] = []
         self.image_gateway_failures = 0
         self.ocr_status_failures = 0  # 查状态、取结果先回几次 502（API 重启中）
@@ -172,7 +173,17 @@ class FakeServer:
                     self.send_json({"jobId": job, "status": "queued", "recommendedPollSeconds": 0})
                     return
                 path, body = self.record("POST")
-                if path == "/api/inspection-services/certificate-registry" and outer.gateway_failures:
+                if path == "/api/auth/skill/token":
+                    import hashlib as _h
+
+                    challenge, redirect = outer.skill_codes.pop(str(body.get("code")), ("", ""))
+                    verifier = str(body.get("codeVerifier") or "")
+                    expected = base64.urlsafe_b64encode(_h.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+                    if challenge and expected == challenge and body.get("redirectUri") == redirect:
+                        self.send_json({"token": "web-token", "user": {"username": "zhang", "role": "inspection"}})
+                    else:
+                        self.send_json(None, status=400, code=40001, message="授权码无效、已用过或已过期")
+                elif path == "/api/inspection-services/certificate-registry" and outer.gateway_failures:
                     outer.gateway_failures -= 1
                     self.send_json(None, status=502, code="BAD_GATEWAY", message="Bad Gateway")
                 elif path == "/api/inspection-services/certificate-registry" and outer.registry_unavailable:
@@ -1378,6 +1389,93 @@ class NodeAuditTest(unittest.TestCase):
             self.assertEqual((code, out["ok"], out["error"]["code"]), (1, False, "bundleMissing"), command)
             self.assertIn("fetch", out["error"]["message"])
         self.assertEqual(self.server.requests, [])  # 路径不对就什么都不发
+
+
+    # ------------------------------------------------------------ login --web（浏览器授权，回调本机）
+
+    def fake_browser(self, action: str = "approve", wrong_state_first: bool = False):
+        """替代 webbrowser.open：解开授权链接，像用户在网页上点了授权/拒绝那样请求本机回调地址。"""
+        from urllib.error import HTTPError
+        from urllib.request import urlopen
+
+        seen: dict = {}
+
+        def open_(url: str) -> bool:
+            payload = url.split("#/skill-authorize/", 1)[1]
+            request_ = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+            seen.update(url=url, request=request_)
+            if action == "ignore":
+                return True
+
+            def click():
+                if wrong_state_first:
+                    try:
+                        urlopen(f"{request_['r']}?code=STOLEN&state=not-the-state", timeout=5)
+                    except HTTPError as exc:
+                        seen["wrongStateStatus"] = exc.code
+                if action == "deny":
+                    urlopen(f"{request_['r']}?error=access_denied&state={request_['s']}", timeout=5).read()
+                    return
+                code = "CODE-" + request_["s"][:12]
+                self.server.skill_codes[code] = (request_["c"], request_["r"])
+                urlopen(f"{request_['r']}?code={code}&state={request_['s']}", timeout=5).read()
+
+            threading.Thread(target=click, daemon=True).start()
+            return True
+
+        return seen, patch("webbrowser.open", open_)
+
+    def test_web_login_saves_a_token_without_any_password_and_needs_no_terminal(self):
+        seen, browser = self.fake_browser()
+        with browser, patch("sys.stdin", io.StringIO("")):  # 没有终端也能跑：口令只在浏览器里输
+            code, out = run("login", "--web", "--timeout", "20")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["data"]["username"], out["data"]["role"]), ("zhang", "inspection"))
+        saved = json.loads(self.session.read_text(encoding="utf-8"))
+        self.assertEqual((saved["token"], saved["baseUrl"], saved["method"]), ("web-token", self.server.url, "web"))
+        self.assertEqual(stat.S_IMODE(self.session.stat().st_mode), 0o600)
+        request_ = seen["request"]
+        self.assertRegex(request_["r"], r"^http://127\.0\.0\.1:\d+/callback$")  # 只回调本机
+        self.assertTrue(seen["url"].startswith(f"{self.server.url}/#/skill-authorize/"))
+        [(_, _, headers)] = [r for r in self.server.requests if r[1] == "/api/auth/skill/token"]
+        self.assertNotIn("Authorization", headers)  # 换令牌这一步不带任何令牌
+        self.assertEqual(headers["_body"]["redirectUri"], request_["r"])
+        self.assertNotIn(headers["_body"]["codeVerifier"], seen["url"])  # 校验码从没出现在浏览器链接里
+
+    def test_web_login_ignores_a_callback_with_the_wrong_state(self):
+        seen, browser = self.fake_browser(wrong_state_first=True)
+        with browser:
+            code, out = run("login", "--web", "--timeout", "20")
+        self.assertEqual((code, seen["wrongStateStatus"]), (0, 400), out)
+        self.assertEqual(json.loads(self.session.read_text(encoding="utf-8"))["token"], "web-token")
+
+    def test_web_login_reports_a_denial_and_a_timeout_and_saves_nothing(self):
+        _, browser = self.fake_browser("deny")
+        with browser:
+            code, out = run("login", "--web", "--timeout", "20")
+        self.assertEqual((code, out["error"]["code"]), (1, "webLoginDenied"))
+        _, browser = self.fake_browser("ignore")
+        with browser:
+            code, out = run("login", "--web", "--timeout", "1")
+        self.assertEqual((code, out["error"]["code"]), (1, "webLoginTimeout"))
+        self.assertIn("#/skill-authorize/", out["error"]["authorizeUrl"])  # 超时也把链接给出来，方便手动打开
+        self.assertFalse(self.session.exists())
+
+    def test_web_login_prints_the_link_and_can_skip_opening_a_browser(self):
+        err = io.StringIO()
+        with patch("webbrowser.open") as opener, contextlib.redirect_stderr(err):
+            _, out = run("login", "--web", "--no-browser", "--timeout", "1")
+        opener.assert_not_called()
+        self.assertEqual(out["error"]["code"], "webLoginTimeout")
+        self.assertIn("#/skill-authorize/", err.getvalue())  # 链接先打到 stderr，助手可以发给用户
+
+    def test_password_login_still_needs_a_username_and_a_terminal(self):
+        _, out = run("login")
+        self.assertEqual(out["error"]["code"], "usernameRequired")
+        with patch("sys.stdin", io.StringIO("")):
+            _, out = run("login", "--username", "inspector")
+        self.assertEqual(out["error"]["code"], "ttyRequired")
+        self.assertIn("login --web", out["error"]["message"])
 
 
 if __name__ == "__main__":

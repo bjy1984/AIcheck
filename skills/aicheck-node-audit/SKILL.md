@@ -15,7 +15,7 @@ argument-hint: <projectId> <nodeId>  或  local <nodeId> <项目目录>
 ## 边界
 
 - 只审用户点名的工程和节点；换工程或扩到别的节点先问。
-- 口令永远不经过对话：要登录时让用户在自己的终端执行 `login`（见“准备”），不要索要、复述或代填口令和令牌。
+- 口令永远不经过对话：要登录时用 `login --web` 让用户在浏览器里登录并授权（见“准备”），或让用户在自己的终端执行口令登录；不要索要、复述或代填口令和令牌。
 - `ocr` 把原件（含证件上的身份证号）上传到 AIcheck 服务器，服务器会留存原件，并交 MinerU、千问识别。服务器节点的资料本来就在服务器上，用户点名审计即可；本地资料包第一次用前先问用户是否同意，同意后加 `--allow-egress`（每个资料包一次）。不同意就只读有文字层的文件，扫描件相关的检查判证据不足并写进 `limitations`。
 - 身份证号、许可证号只发给 `cert-registry`；它经服务器去公示平台查登记。用户点名审计某个节点，就是同意对该节点资料里的证件做这项查询，不必再问。命令输出、检索结果、转出的文字里身份证号已自动脱敏。查人员登记：号码在 `search` 的 `idNumbersInText` 里（跑过 `ocr` 后，扫描证件上的号码也在），就直接传脱敏号加 `--bundle $B`（脱敏号要加单引号，如 `--identifier '1101**********1237'`，否则 zsh 把星号当通配符，命令发不出去），脚本回原件文字、OCR 原文找完整号码；OCR 也没读出的，这张证的登记查询交人工，写进 `limitations`。回复、报告、`notes.md` 里号码一律写成前 4 位 + `**********` + 后 4 位，你手里也只有脱敏号。
 - 原件文字一律用 `text`、`search` 取（扫描件先 `ocr`）：这些命令会给身份证号脱敏。不要自己写脚本（PyMuPDF、`cat`、`strings` 等）打印原件或标准的文字，也不要读资料包 `ocr/` 目录里的存档（那是含完整证号的原文，只给脚本回查用），那样会绕过脱敏，把完整号码带进对话。
@@ -34,7 +34,7 @@ argument-hint: <projectId> <nodeId>  或  local <nodeId> <项目目录>
    远程明文 HTTP 会明文传输口令和令牌，第一次用时向用户说明一次。如果每次执行命令都是新 shell（变量不保留），就把这三行写成一行，放在每条命令前面。
 2. 本地测试资料不需要登录，直接做“流程”；只有 `cnse-org-search`（按单位名查许可）要登录，没登录就用证上的 TS 号跑 `cert-registry`，没有 TS 号就写进 `limitations`。服务器节点要监检（inspection）或管理员账号：
    - `$PY $S connection`，看 `user.role`；
-   - 没有令牌或返回 `loginRequired` 时，用 Terminal 面板工具在用户终端起 `AICHECK_BASE_URL=… AICHECK_ALLOW_HTTP=1 python3 skills/aicheck-node-audit/scripts/node_audit.py login --username <监检账号>`，请用户自己输口令，再读终端看结果。登录失败几次会锁 15 分钟，别连试。
+   - 没有令牌或返回 `loginRequired` 时，**优先用网页授权**：你自己运行 `AICHECK_BASE_URL=… AICHECK_ALLOW_HTTP=1 $PY $S login --web`。它会打开浏览器进入平台的授权页（同时把链接打到 stderr），用户在浏览器里登录监检或管理员账号、核对后点「授权」，令牌回调到本机，命令随即返回（最多等 300 秒，`--timeout` 可改）。浏览器打不开、或你和用户不在同一台电脑时，加 `--no-browser` 并在后台运行，把 stderr 里的链接发给用户；超时返回的 `authorizeUrl` 也是这个链接。返回 `webLoginDenied` 是用户点了拒绝，`webLoginTimeout` 是没等到授权，都别自己重试，问用户。令牌与登录一样 12 小时过期。网页授权用不了时（旧版服务器没有授权页），再用 Terminal 面板工具在用户终端起 `AICHECK_BASE_URL=… AICHECK_ALLOW_HTTP=1 python3 skills/aicheck-node-audit/scripts/node_audit.py login --username <监检账号>`，请用户自己输口令，再读终端看结果。口令登录失败几次会锁 15 分钟，别连试。
 3. 包里有扫描件、图片时（本地资料也一样）要登录：OCR 由服务器做，用的是监检账号的令牌，本机不需要任何 OCR 密钥。用户不登录就只审有文字层的文件，扫描件相关的检查判证据不足，`limitations` 写明没有 OCR。
 
 ## 流程（按顺序做，一步都不跳）
