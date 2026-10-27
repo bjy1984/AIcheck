@@ -2445,6 +2445,8 @@ def fresh_state() -> dict[str, Any]:
         "ocr_profile_versions": deepcopy(OCR_PROFILE_VERSIONS),
         "ocr_jobs": [],
         "ocr_parse_results": [],
+        # /inspection-services/requests 登记的审查请求（STATE_COLLECTIONS 里有，种子里也得有）
+        "inspection_requests": [],
         "ocr_corrections": [],
         "ocr_eval_runs": [],
         "ocr_annotation_tasks": [
