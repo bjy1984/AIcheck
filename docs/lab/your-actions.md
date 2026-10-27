@@ -6,6 +6,8 @@
 
 ## ~~1. 把生產切到 Token Plan~~　【已完成 2026-09-11：探針兩路綠，R43 真實端到端已跑通】
 
+> **2026-10-28 更新：已停用 Token Plan。** 套餐未續（403 `AccessDenied.Unpurchased`），按你的要求從生產憑證檔刪掉 `AICHECK_TOKEN_PLAN_API_KEY`，生成器裡切換 Token Plan 的程式也已移除。現在文本、視覺（`qwen3-vl-plus`）、向量化都走按量計費端點，用同一把 `sk-ws-` 密鑰。下面是當時的記錄。
+
 **結論更正**：你重新生成的 `sk-sp-…` key **是好的**。之前 401 是因為我把它打到按量計費端點
 （後來又錯打 Coding Plan 端點）。Token Plan 有自己的域名，三種產品的 key 與地址完全隔離：
 

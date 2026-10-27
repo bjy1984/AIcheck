@@ -85,52 +85,41 @@ def test_部署脚本用的是仓库里的这份生成器():
     assert "cp deploy/build_runtime_env.py" in script
 
 
-TOKEN_PLAN = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 DASHSCOPE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
-def test_有TokenPlan密钥时文本切到TokenPlan而视觉留在按量端点(tmp_path: pathlib.Path):
-    """三种百炼密钥与端点互不通用；按量端点才有专门的视觉模型，视觉不该跟着切。"""
+def test_文本视觉向量化都走按量端点(tmp_path: pathlib.Path):
+    """2026-10-28 起不再用 Token Plan：一把按量 sk- 密钥管文本、视觉、向量化。"""
+    env = _build(tmp_path, {
+        "AICHECK_POSTGRES_PASSWORD": "pw",
+        "AICHECK_LLM_VISION_API_BASE": DASHSCOPE,
+        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
+    })
+    assert env["AICHECK_LLM_API_BASE"] == DASHSCOPE
+    assert env["AICHECK_LLM_API_KEY"] == "sk-ws-payg"
+    assert env["AICHECK_LLM_VISION_API_BASE"] == DASHSCOPE
+    assert env["AICHECK_LLM_VISION_API_KEY"] == "sk-ws-payg"
+    assert env["AICHECK_EMBEDDING_API_BASE"] == DASHSCOPE
+    assert env["AICHECK_EMBEDDING_API_KEY"] == "sk-ws-payg"
+    # qwen-vl-max 已在按量端点下架（404），不能再配回去
+    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3-vl-plus"
+    assert env["AICHECK_LLM_MODEL_REVIEW"] == "qwen3.7-plus"
+    assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
+
+
+def test_凭证里残留的TokenPlan密钥被忽略_既不接管也不进容器(tmp_path: pathlib.Path):
+    """凭证文件里忘了删的 AICHECK_TOKEN_PLAN_API_KEY 不能把文本切回套餐端点，也不能透传进运行环境。"""
     env = _build(tmp_path, {
         "AICHECK_POSTGRES_PASSWORD": "pw",
         "AICHECK_LLM_VISION_API_BASE": DASHSCOPE,
         "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
         "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
     })
-    assert env["AICHECK_LLM_API_BASE"] == TOKEN_PLAN
-    assert env["AICHECK_LLM_API_KEY"] == "sk-sp-token-plan"
-    # 视觉凭证齐备就留在按量端点，用专门的视觉模型
-    assert env["AICHECK_LLM_VISION_API_BASE"] == DASHSCOPE
-    assert env["AICHECK_LLM_VISION_API_KEY"] == "sk-ws-payg"
-    # qwen-vl-max 已在按量端点下架（404），不能再配回去
-    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3-vl-plus"
-    # 文本模型名不动——它们在 Token Plan 上就是这些名字
-    assert env["AICHECK_LLM_MODEL_REVIEW"] == "qwen3.7-plus"
-    assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
-
-
-def test_没有按量视觉凭证时视觉才退回TokenPlan(tmp_path: pathlib.Path):
-    """只配一半（有密钥没地址）也算不齐，退回 Token Plan，不拼出错配的组合。"""
-    env = _build(tmp_path, {
-        "AICHECK_POSTGRES_PASSWORD": "pw",
-        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
-        "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
-    })
-    assert env["AICHECK_LLM_VISION_API_BASE"] == TOKEN_PLAN
-    assert env["AICHECK_LLM_VISION_API_KEY"] == "sk-sp-token-plan"
-    assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3.7-plus"
-
-
-def test_TokenPlan不接管embeddings(tmp_path: pathlib.Path):
-    """Token Plan 没有 text-embedding-v4（404）；向量化必须留在按量端点。"""
-    env = _build(tmp_path, {
-        "AICHECK_POSTGRES_PASSWORD": "pw",
-        "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
-        "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
-    })
-    assert env["AICHECK_EMBEDDING_API_BASE"] == DASHSCOPE
-    assert env["AICHECK_EMBEDDING_API_KEY"] == "sk-ws-payg"
-    assert env["AICHECK_EMBEDDING_API_KEY"] != env["AICHECK_LLM_API_KEY"]
+    assert env["AICHECK_LLM_API_BASE"] == DASHSCOPE
+    assert env["AICHECK_LLM_API_KEY"] == "sk-ws-payg"
+    assert not any(k.startswith("AICHECK_TOKEN_PLAN_") for k in env)
+    assert not any(v.startswith("sk-sp-") for v in env.values())
+    assert not any("token-plan" in v for v in env.values())
 
 
 def test_凭证里显式的embedding密钥优先(tmp_path: pathlib.Path):
@@ -138,13 +127,13 @@ def test_凭证里显式的embedding密钥优先(tmp_path: pathlib.Path):
     env = _build(tmp_path, {
         "AICHECK_POSTGRES_PASSWORD": "pw",
         "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
-        "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
         "AICHECK_EMBEDDING_API_KEY": "sk-new-payg",
     })
     assert env["AICHECK_EMBEDDING_API_KEY"] == "sk-new-payg"
+    assert env["AICHECK_LLM_API_KEY"] == "sk-ws-payg"
 
 
-def test_没有TokenPlan密钥时一切照旧(tmp_path: pathlib.Path):
+def test_只配视觉密钥时其余照旧(tmp_path: pathlib.Path):
     env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-dashscope"})
     assert env["AICHECK_LLM_API_BASE"] == DASHSCOPE
     assert env["AICHECK_LLM_MODEL_VISION"] == "qwen3-vl-plus"
@@ -157,8 +146,8 @@ def test_生产开启工位模式(tmp_path: pathlib.Path):
     assert env["AICHECK_WORKSTATIONS_ENABLED"] == "true"
 
 
-def test_备用供应商是通义按量计费_不再用DeepSeek(tmp_path: pathlib.Path):
-    """2026-09-24：Token Plan 限流 429 转 DeepSeek 又 402 欠费；用户要求只用通义。"""
+def test_主供应商就是按量端点_不配备胎也不用DeepSeek(tmp_path: pathlib.Path):
+    """备胎指回同一个端点毫无意义；2026-09-24 起只用通义，凭证里的 DeepSeek 密钥不进容器。"""
     env = _build(tmp_path, {
         "AICHECK_POSTGRES_PASSWORD": "pw",
         "AICHECK_LLM_VISION_API_BASE": DASHSCOPE,
@@ -166,22 +155,8 @@ def test_备用供应商是通义按量计费_不再用DeepSeek(tmp_path: pathli
         "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
         "DEEPSEEK_API_KEY": "sk-deepseek",
     })
-    assert env["AICHECK_LLM_FALLBACK_API_BASE"] == DASHSCOPE
-    assert env["AICHECK_LLM_FALLBACK_API_KEY"] == "sk-ws-payg"
+    assert not any(k.startswith("AICHECK_LLM_FALLBACK_") for k in env)
     assert "sk-deepseek" not in env.values()
-    # 逐角色与主供应商同名；视觉不走文本备胎
-    for role in ("REVIEW", "DEFAULT", "PROJECT_REVIEW", "COMPARE_FAST", "DOCUMENT_CLASSIFIER"):
-        assert env[f"AICHECK_LLM_FALLBACK_MODEL_{role}"] == env[f"AICHECK_LLM_MODEL_{role}"]
-    assert "AICHECK_LLM_FALLBACK_MODEL_VISION" not in env
-
-
-def test_主供应商已是按量或没有按量密钥时不配备胎(tmp_path: pathlib.Path):
-    payg_primary = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-ws-payg",
-                                     "DEEPSEEK_API_KEY": "sk-deepseek"})
-    assert "AICHECK_LLM_FALLBACK_API_BASE" not in payg_primary
-    token_plan_only = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_TOKEN_PLAN_API_KEY": "sk-sp-token-plan",
-                                        "AICHECK_EMBEDDING_API_KEY": "sk-sp-wrong-kind"})
-    assert "AICHECK_LLM_FALLBACK_API_BASE" not in token_plan_only
 
 
 def test_有Jev密钥才开Jev_且只开走项目开关的阶段(tmp_path: pathlib.Path):
