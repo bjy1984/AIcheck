@@ -79,6 +79,14 @@ PUBLIC_MUTATION_ROUTES = {
     # skill 网页授权换令牌：凭一次性授权码 + PKCE 校验码，和登录一样不带令牌。
     ("POST", "/auth/skill/token"),
     ("POST", "/api/auth/skill/token"),
+    # 审查请求登记：在 public_review_request 的公开名单里；requestId 由调用方给 UUID，重试用同一个 ID（自带幂等）。
+    ("POST", "/inspection-services/requests"),
+    ("POST", "/api/inspection-services/requests"),
+    # 数据服务 MCP 门面：自身不写状态，转调的现有接口各自鉴权、加锁、幂等（见 main.is_ephemeral_inspection_request）。
+    ("POST", "/api/mcp/data-services"),
+    ("DELETE", "/api/mcp/data-services"),
+    # 数据服务上传：凭签名的上传票据，转交 OCR 上传接口时以票据里的 requestId 作 Idempotency-Key。
+    ("PUT", "/api/mcp/data-services/uploads/{token}"),
     ("POST", "/auth/logout"),
     ("POST", "/api/auth/logout"),
     ("POST", "/auth/change-password"),
