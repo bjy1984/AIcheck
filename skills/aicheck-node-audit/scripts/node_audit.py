@@ -1016,7 +1016,7 @@ def cmd_text(args: argparse.Namespace) -> Any:
     bundle = Path(args.bundle).expanduser().resolve() if args.bundle else find_bundle(path)
     relative = bundle_relative(bundle, path) if bundle else None
     status, _, pages, used = page_texts(bundle, relative, path)
-    ocr_hint = f"先跑 ocr --bundle <资料包>{'' if not relative or relative.startswith('files/') else ' --files ' + relative}（MinerU），再用 text 读 OCR 文字。"
+    ocr_hint = f"先跑 ocr --bundle <资料包>{'' if not relative or relative.startswith('files/') else ' --files ' + relative}（服务器 OCR），再用 text 读 OCR 文字。"
     if status not in {"text", "ocr"}:
         raise ClientError("noTextLayer", f"{path.name}：{status}，没有可取的文字——{ocr_hint}")
     empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < 20]
@@ -1029,9 +1029,9 @@ def cmd_text(args: argparse.Namespace) -> Any:
     result = {"file": str(path), "status": status, "pages": len(pages), "chars": sum(len(t) for t in pages), "saved": str(out)}
     if status == "ocr" or used:
         result["ocrPages"] = page_ranges(range(1, len(pages) + 1)) if status == "ocr" else page_ranges(used)
-        result["ocrNote"] = "标（OCR）的页是 MinerU 识别的文字；[图片] 处的字（印章等）要用 vlm 问。"
+        result["ocrNote"] = "标（OCR）的页是服务器识别的文字；[印章：…]、[签名：…] 是服务器识别的印章、签名，“服务器未读出章上的字”表示有章但没读出字，该事实交人工确认。"
     if empty and len(pages) > 1:
-        result["pagesWithoutText"] = page_ranges(empty)  # 这些页文字层和 OCR 里都没有字：跑 ocr，或用 vlm 问
+        result["pagesWithoutText"] = page_ranges(empty)  # 这些页文字层和 OCR 里都没有字：跑 ocr；跑过仍是空白的页，相关事实交人工确认
     return result
 
 
@@ -1079,7 +1079,7 @@ def cmd_search(args: argparse.Namespace) -> Any:
                     id_files.setdefault(mask_ids(match.group(1)), set()).add(item["path"])
         record: dict[str, Any] = {"path": item["path"], "status": status, "pages": len(pages),
                                   "textChars": sum(len(t.strip()) for t in pages), "hits": []}
-        # 扫描页按原件文字层算（报告据此要求 OCR 或 VLM 记录）；还缺字的页按补过 OCR 的文字算（要先跑 ocr）。
+        # 扫描页按原件文字层算（报告据此要求这一页有 OCR 文字）；还缺字的页按补过 OCR 的文字算（要先跑 ocr）。
         raw_empty = [n for n, text in enumerate(layer, start=1) if len(text.strip()) < 20]
         if status == "text" and item["path"].lower().endswith(".pdf"):
             raw_empty = sorted(set(raw_empty) | set(captioned_image_pages(path, layer)))

@@ -1018,6 +1018,26 @@ class NodeAuditTest(unittest.TestCase):
             if path.is_file():
                 self.assertNotIn(TOKEN.encode(), path.read_bytes(), path)  # 令牌不进资料包
 
+    def test_removed_local_ocr_commands_are_not_mentioned_anywhere_in_the_skill(self):
+        """本机密钥版（ocr-setup、vlm、本机直连 MinerU/百炼）已删；脚本提示和文档里不许再让 agent 去用它们。"""
+        skill = Path(na.__file__).resolve().parents[1]
+        stale = ("ocr-setup", "vlm", "AICHECK_MINERU", "AICHECK_VLM", "AICHECK_OCR_CONFIG", "qwen3-vl", "dashscope")
+        found = [f"{path.relative_to(skill)}: {word}" for path in sorted(skill.rglob("*"))
+                 if path.is_file() and path.suffix in {".py", ".md"} for word in stale
+                 if word in path.read_text(encoding="utf-8").lower()]
+        self.assertEqual(found, [])
+
+    def test_text_output_for_ocr_pages_points_at_the_server_result_not_a_removed_command(self):
+        bundle, png = self.scan_bundle("hint")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            run("ocr", "--bundle", str(bundle), "--allow-egress")
+        code, out = run("text", "--file", png, "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertIn("服务器识别", out["data"]["ocrNote"])
+        self.assertNotIn("vlm", json.dumps(out, ensure_ascii=False))
+
     def test_ocr_resumes_a_pending_job_and_marks_the_qwen_fallback(self):
         bundle, png = self.scan_bundle("resume")
         self.login()
