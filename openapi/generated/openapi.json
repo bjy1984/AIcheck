@@ -13806,6 +13806,83 @@
         "summary": "Validity"
       }
     },
+    "/api/inspection-services/requests": {
+      "get": {
+        "operationId": "list_review_requests_api_inspection_services_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Keyword",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Review Requests"
+      },
+      "post": {
+        "description": "Explicitly retained request text; never an engineering file upload.",
+        "operationId": "register_review_request_api_inspection_services_requests_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Register Review Request"
+      }
+    },
     "/api/inspection-services/rules": {
       "get": {
         "operationId": "rules_api_inspection_services_rules_get",
@@ -14112,6 +14189,63 @@
           }
         },
         "summary": "Get Mineru Task",
+        "tags": [
+          "MinerU OCR"
+        ]
+      }
+    },
+    "/api/internal/ocr/mineru/tasks/{job_id}/result": {
+      "get": {
+        "description": "Owned, projectless normalized OCR data; no business conclusion or storage secrets.",
+        "operationId": "get_mineru_task_result_api_internal_ocr_mineru_tasks__job_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageNo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pageno"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mineru Task Result",
         "tags": [
           "MinerU OCR"
         ]
@@ -16740,6 +16874,87 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/api/mcp/data-services": {
+      "delete": {
+        "operationId": "mcp_api_mcp_data_services_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp"
+      },
+      "get": {
+        "operationId": "mcp_api_mcp_data_services_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp"
+      },
+      "post": {
+        "operationId": "mcp_api_mcp_data_services_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp"
+      }
+    },
+    "/api/mcp/data-services/uploads/{token}": {
+      "put": {
+        "operationId": "upload_api_mcp_data_services_uploads__token__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload"
       }
     },
     "/api/messages": {
@@ -38362,6 +38577,83 @@
         "summary": "Validity"
       }
     },
+    "/inspection-services/requests": {
+      "get": {
+        "operationId": "list_review_requests_inspection_services_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Keyword",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Review Requests"
+      },
+      "post": {
+        "description": "Explicitly retained request text; never an engineering file upload.",
+        "operationId": "register_review_request_inspection_services_requests_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Register Review Request"
+      }
+    },
     "/inspection-services/rules": {
       "get": {
         "operationId": "rules_inspection_services_rules_get",
@@ -38668,6 +38960,63 @@
           }
         },
         "summary": "Get Mineru Task",
+        "tags": [
+          "MinerU OCR"
+        ]
+      }
+    },
+    "/internal/ocr/mineru/tasks/{job_id}/result": {
+      "get": {
+        "description": "Owned, projectless normalized OCR data; no business conclusion or storage secrets.",
+        "operationId": "get_mineru_task_result_internal_ocr_mineru_tasks__job_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageNo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pageno"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mineru Task Result",
         "tags": [
           "MinerU OCR"
         ]
