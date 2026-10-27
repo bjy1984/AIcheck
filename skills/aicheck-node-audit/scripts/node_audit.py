@@ -8,6 +8,7 @@ Only an explicitly confirmed sync writes draft AI findings back to the server.
 from __future__ import annotations
 
 import argparse
+import base64
 import functools
 import getpass
 import hashlib
@@ -20,6 +21,7 @@ import sys
 import time
 import unicodedata
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
@@ -267,6 +269,7 @@ def cmd_connection(args: argparse.Namespace) -> Any:
             result["user"] = {k: user.get(k) for k in ("username", "role", "displayName") if k in user}
         except ClientError as exc:
             result["user"] = {"error": exc.code, "message": exc.message}
+    result["ocr"] = ocr_readiness()  # 只报有没有密钥，不报密钥本身
     return result
 
 
@@ -643,6 +646,27 @@ def pages_out_dir(args: argparse.Namespace, path: Path) -> Path:
     return bundle / "pages"
 
 
+def parse_clip(value: str | None) -> list[float] | None:
+    if not value:
+        return None
+    try:
+        box = [float(v) for v in value.split(",")]
+    except ValueError:
+        box = []
+    if len(box) != 4 or not (0 <= box[0] < box[2] <= 1 and 0 <= box[1] < box[3] <= 1):
+        raise ClientError("invalidArguments", "--clip 须为 x0,y0,x1,y1，取值 0–1 的页面比例。")
+    return box
+
+
+def render_png(fitz: Any, page: Any, target: Path, *, dpi: int, rotate: int = 0, clip: Any = None) -> Path:
+    private_dir(target.parent)
+    pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72).prerotate(rotate), clip=clip)
+    pix.set_dpi(dpi, dpi)  # 用 matrix 渲染时 PNG 不记分辨率，补上，和 dpi= 渲染的一样
+    pix.save(target)
+    os.chmod(target, 0o600)
+    return target
+
+
 def clip_rect(fitz: Any, page: Any, box: list[float]) -> Any:
     r = page.rect
     return fitz.Rect(r.x0 + r.width * box[0], r.y0 + r.height * box[1], r.x0 + r.width * box[2], r.y0 + r.height * box[3])
@@ -716,8 +740,8 @@ def all_visual_sheets(fitz: Any, args: argparse.Namespace) -> Any:
     if not search:
         raise ClientError("searchMissing", "先跑 search，再用 --all-visual。")
     out_dir = Path(args.out).expanduser().resolve() if args.out else bundle / "pages"
-    targets = [(path, None) for path in search.get("needsVisualReview") or []]
-    targets += [(path, pages) for path, pages in (search.get("needsVisualPages") or {}).items()]
+    targets = [(path, None) for path in search.get("needsOcr", search.get("needsVisualReview")) or []]
+    targets += [(path, pages) for path, pages in (search.get("needsOcrPages", search.get("needsVisualPages")) or {}).items()]
     results, skipped = [], []
     for relative, pages in targets:
         try:
@@ -748,14 +772,7 @@ def cmd_pages(args: argparse.Namespace) -> Any:
         raise ClientError("fileNotFound", f"找不到文件：{path}")
     out_dir = pages_out_dir(args, path)
     rotate = args.rotate or 0
-    clip_box = None
-    if args.clip:
-        try:
-            clip_box = [float(v) for v in args.clip.split(",")]
-        except ValueError:
-            clip_box = []
-        if len(clip_box) != 4 or not (0 <= clip_box[0] < clip_box[2] <= 1 and 0 <= clip_box[1] < clip_box[3] <= 1):
-            raise ClientError("invalidArguments", "--clip 须为 x0,y0,x1,y1，取值 0–1 的页面比例。")
+    clip_box = parse_clip(args.clip)
     try:
         doc = fitz.open(path)  # PDF，或 png/jpg/tif 等图片（当作单页文档）
     except Exception:  # noqa: BLE001 -- unreadable or unsupported file
@@ -784,13 +801,8 @@ def cmd_pages(args: argparse.Namespace) -> Any:
                     item["clip"] = clip_box
                 if rotate:
                     item["rotate"] = rotate
-                target = out_dir / f"{stem}-p{number:03d}{suffix}.png"
-                private_dir(target.parent)
-                dpi = args.dpi or 150
-                pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72).prerotate(rotate), clip=clip)
-                pix.set_dpi(dpi, dpi)  # 用 matrix 渲染时 PNG 不记分辨率，补上，和 dpi= 渲染的一样
-                pix.save(target)
-                os.chmod(target, 0o600)
+                target = render_png(fitz, page, out_dir / f"{stem}-p{number:03d}{suffix}.png",
+                                    dpi=args.dpi or 150, rotate=rotate, clip=clip)
                 item["image"] = str(target)
             text = page.get_text().strip()
             item["text"] = text[:6000]
@@ -996,17 +1008,25 @@ def cmd_text(args: argparse.Namespace) -> Any:
     path = resolve_input(args)
     if not path.is_file():
         raise ClientError("fileNotFound", f"找不到文件：{path}")
-    status, pages = file_text(path)
-    if status != "text":
-        raise ClientError("noTextLayer", f"{path.name}：{status}，没有可取的文字——看图（pages）或请用户给 PDF。")
+    bundle = Path(args.bundle).expanduser().resolve() if args.bundle else find_bundle(path)
+    relative = bundle_relative(bundle, path) if bundle else None
+    status, _, pages, used = page_texts(bundle, relative, path)
+    ocr_hint = f"先跑 ocr --bundle <资料包>{'' if not relative or relative.startswith('files/') else ' --files ' + relative}（MinerU），再用 text 读 OCR 文字。"
+    if status not in {"text", "ocr"}:
+        raise ClientError("noTextLayer", f"{path.name}：{status}，没有可取的文字——{ocr_hint}")
     empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < 20]
     if pages and len(empty) == len(pages):
-        raise ClientError("noTextLayer", f"{path.name} 没有文字层（扫描件）——用 pages 看图。")
+        raise ClientError("noTextLayer", f"{path.name} 没有文字层（扫描件）——{ocr_hint}")
     out = text_out_path(args, path)
-    write_private(out, mask_ids("\n\n".join(f"--- 第 {n} 页 ---\n{t}" if len(pages) > 1 else t for n, t in enumerate(pages, start=1))))
+    label = lambda n: f"--- 第 {n} 页{'（OCR）' if status == 'ocr' or n in used else ''} ---"
+    body = "\n\n".join(f"{label(n)}\n{t}" if len(pages) > 1 or status == "ocr" else t for n, t in enumerate(pages, start=1))
+    write_private(out, mask_ids(body))
     result = {"file": str(path), "status": status, "pages": len(pages), "chars": sum(len(t) for t in pages), "saved": str(out)}
+    if status == "ocr" or used:
+        result["ocrPages"] = page_ranges(range(1, len(pages) + 1)) if status == "ocr" else page_ranges(used)
+        result["ocrNote"] = "标（OCR）的页是 MinerU 识别的文字；[图片] 处的字（印章等）要用 vlm 问。"
     if empty and len(pages) > 1:
-        result["pagesWithoutText"] = page_ranges(empty)  # 这些页是扫描页，文字里没有，要看图
+        result["pagesWithoutText"] = page_ranges(empty)  # 这些页文字层和 OCR 里都没有字：跑 ocr，或用 vlm 问
     return result
 
 
@@ -1044,23 +1064,35 @@ def cmd_search(args: argparse.Namespace) -> Any:
     terms = list(args.terms or []) if args.only else [*default_terms(bundle), *(args.terms or [])]
     terms = list(dict.fromkeys(t for t in terms if t.strip()))
     files, visual, visual_pages, id_files = [], [], {}, {}
+    scanned_files, scanned_pages = [], {}
     for item in manifest.get("files") or []:
-        status, pages = file_text(bundle / item["path"])
+        path = bundle / item["path"]
+        status, layer, pages, used = page_texts(bundle, item["path"], path)
         for text in pages:
             for match in ID_CANDIDATE.finditer(text):
                 if is_id_number(match.group(1)):
                     id_files.setdefault(mask_ids(match.group(1)), set()).add(item["path"])
         record: dict[str, Any] = {"path": item["path"], "status": status, "pages": len(pages),
                                   "textChars": sum(len(t.strip()) for t in pages), "hits": []}
-        empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < 20]
+        # 扫描页按原件文字层算（报告据此要求 OCR 或 VLM 记录）；还缺字的页按补过 OCR 的文字算（要先跑 ocr）。
+        raw_empty = [n for n, text in enumerate(layer, start=1) if len(text.strip()) < 20]
         if status == "text" and item["path"].lower().endswith(".pdf"):
-            empty = sorted(set(empty) | set(captioned_image_pages(bundle / item["path"], pages)))
+            raw_empty = sorted(set(raw_empty) | set(captioned_image_pages(path, layer)))
+        if status not in {"text"} or (layer and len(raw_empty) == len(layer)):
+            scanned_files.append(item["path"])
+        elif raw_empty:
+            scanned_pages[item["path"]] = raw_empty
+        empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < 20 and n not in used]
+        if status == "text" and item["path"].lower().endswith(".pdf"):
+            empty = sorted(set(empty) | (set(captioned_image_pages(path, layer)) - used))
+        if used:
+            record["ocrPages"] = page_ranges(used)
         if empty and len(pages) > 1:
             record["pagesWithoutText"] = empty if len(empty) <= 30 else f"{len(empty)} 页"
-        if status != "text" or (pages and len(empty) == len(pages)):
+        if status not in {"text", "ocr"} or (pages and len(empty) == len(pages)):
             visual.append(item["path"])
         elif empty and len(pages) > 1:
-            visual_pages[item["path"]] = empty  # 部分页是扫描件：检索看不到这些页
+            visual_pages[item["path"]] = empty  # 部分页是扫描件、也还没 OCR：检索看不到这些页
         per_term: dict[str, int] = {}
         for page_no, text in enumerate(pages, start=1):
             flat = re.sub(r"\s+", " ", text)
@@ -1076,7 +1108,8 @@ def cmd_search(args: argparse.Namespace) -> Any:
     id_numbers = {masked: sorted(paths) for masked, paths in sorted(id_files.items())}
     target = bundle / "search" / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
     write_private(target, dump_masked({"at": now(), "bundle": str(bundle), "terms": terms, "files": files,
-                                        "needsVisualReview": visual, "needsVisualPages": visual_pages,
+                                        "needsOcr": visual, "needsOcrPages": visual_pages,
+                                        "scannedFiles": scanned_files, "scannedPages": scanned_pages,
                                         "idNumbersInText": id_numbers}))
     files.sort(key=lambda f: -len(f["hits"]))
     term_files = {t: sorted({f["path"] for f in files for h in f["hits"] if h["term"] == t}) for t in terms}
@@ -1090,21 +1123,22 @@ def cmd_search(args: argparse.Namespace) -> Any:
         **({"zeroHitNote": zero_hit_note(len(visual), len(visual_pages))} if zero_hit and (visual or visual_pages) else {}),
         "filesWithHits": [{"path": f["path"], "hitCount": len(f["hits"]),
                            "termPages": "、".join(f"{t} p{page_ranges(p)}" for t, p in term_pages(f["hits"]).items()),
+                           **({"ocrPages": f["ocrPages"]} if f.get("ocrPages") else {}),
                            "sample": [f"p{h['page']} [{h['term']}] {h['snippet']}" for h in f["hits"][:args.sample]]}
                           for f in files if f["hits"]],
         "filesWithoutHits": [f["path"] for f in files if not f["hits"] and f["path"] not in visual],
-        "needsVisualReview": visual,
-        "needsVisualPages": {path: page_ranges(pages) for path, pages in visual_pages.items()},
+        "needsOcr": visual,
+        "needsOcrPages": {path: page_ranges(pages) for path, pages in visual_pages.items()},
         "idNumbersInText": {masked: "、".join(paths) for masked, paths in list(id_numbers.items())[:30]},
     }
 
 
 def zero_hit_note(scanned_files: int, partly_scanned: int) -> str:
-    """零命中只对有文字层的文件成立；扫描证照、图片、夹着扫描页的 PDF 没被检索到，不能凭零命中说“没有”。"""
-    parts = [f"{scanned_files} 份图片或扫描件（needsVisualReview）" if scanned_files else "",
-             f"{partly_scanned} 份文件的部分扫描页（needsVisualPages）" if partly_scanned else ""]
-    return ("零命中只对有文字层的文件有效；" + "、".join(p for p in parts if p)
-            + "没有被检索到，这些词可能在那里。要说“没有”，先用 pages 看完这些页。")
+    """零命中只对有文字（文字层或 OCR）的文件成立；还没 OCR 的扫描件没被检索到，不能凭零命中说“没有”。"""
+    parts = [f"{scanned_files} 份图片或扫描件（needsOcr）" if scanned_files else "",
+             f"{partly_scanned} 份文件的部分扫描页（needsOcrPages）" if partly_scanned else ""]
+    return ("零命中只对有文字的文件有效；" + "、".join(p for p in parts if p)
+            + "还没 OCR，没有被检索到，这些词可能在那里。要说“没有”，先跑 ocr 再检索。")
 
 
 def term_pages(hits: list[dict[str, Any]]) -> dict[str, set[int]]:
@@ -1123,6 +1157,684 @@ def page_ranges(numbers: Any) -> str:
         else:
             parts.append([n, n])
     return ",".join(str(a) if a == b else f"{a}-{b}" for a, b in parts)
+
+
+# ---------------------------------------------------------------- OCR（MinerU）与读图兜底（视觉模型）
+#
+# 扫描件、图片不让助手自己看图：先交 MinerU 出逐页文字（表格按格展开，公式写法转成普通文字），
+# 助手读文字；OCR 里没有、读不清，或要认印章、签名、手写、勾选时，再把那一页（或一块）发给
+# 视觉模型问一个具体问题。2026-10-27 用 TSG Z6002 两页实测：MinerU 项目代号逐字全对、合并单元格
+# 表格全对；qwen3-vl-plus 能读，但把 Fef3J 读成 FeF3J（6 个代号错 5 个）——编号、代号以 OCR 为准。
+
+DEFAULT_MINERU_BASE = "https://mineru.net"
+DEFAULT_VLM_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_VLM_MODEL = "qwen3-vl-plus"
+OCR_SETTINGS_ENV = {"mineruApiKey": "AICHECK_MINERU_API_KEY", "mineruBaseUrl": "AICHECK_MINERU_BASE_URL",
+                    "vlmApiKey": "AICHECK_VLM_API_KEY", "vlmBaseUrl": "AICHECK_VLM_BASE_URL", "vlmModel": "AICHECK_VLM_MODEL"}
+SERVICE_LABELS = {"mineru": "MinerU", "vlm": "视觉模型"}
+MINERU_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".ppt", ".pptx"}
+MINERU_MAX_BYTES = 200 * 1024 * 1024
+MINERU_BATCH = 50
+OCR_POLL_SECONDS = 3
+OCR_FILL_BELOW = 50  # 文字层不到这么多字的页（扫描页、整页证书配一行说明）用 OCR 文字补
+VLM_PROMPT = ("你在帮特种设备监检人员读工程资料的页面图片。只根据图片回答；看不清、被遮挡或图上没有的，"
+              "直接说“看不清”或“图上没有”，不要猜。编号、代号、日期、数字逐字照抄，注意字母大小写和 0/O、1/l。"
+              "问到印章时写出章上能读出的全部文字和章的形状；问到签名时写有没有手写签名、能认出的字。")
+VLM_CAUTION = ("视觉模型读编号、代号、字母大小写不可靠（实测会把小写 f 读成 F）：编号以 OCR 为准；"
+               "只有它读到、OCR 里没有的编号，写进 limitations 或交人工确认。")
+
+
+def ocr_config_path() -> Path:
+    return Path(os.getenv("AICHECK_OCR_CONFIG_FILE") or Path.home() / ".config/aicheck-node-audit/ocr.json").expanduser()
+
+
+def ocr_settings() -> dict[str, str]:
+    """环境变量优先，其次 ocr-setup 存的配置文件（0600）；密钥只在本机，不进资料包，也不进命令输出。"""
+    try:
+        saved = json.loads(ocr_config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    saved = saved if isinstance(saved, dict) else {}
+    settings = {key: (os.getenv(name) or str(saved.get(key) or "")).strip() for key, name in OCR_SETTINGS_ENV.items()}
+    settings["mineruBaseUrl"] = (settings["mineruBaseUrl"] or DEFAULT_MINERU_BASE).rstrip("/")
+    settings["vlmBaseUrl"] = (settings["vlmBaseUrl"] or DEFAULT_VLM_BASE).rstrip("/")
+    settings["vlmModel"] = settings["vlmModel"] or DEFAULT_VLM_MODEL
+    return settings
+
+
+def ocr_readiness() -> dict[str, Any]:
+    settings = ocr_settings()
+    return {"mineru": bool(settings["mineruApiKey"]), "vlm": bool(settings["vlmApiKey"]), "vlmModel": settings["vlmModel"],
+            "mineruBaseUrl": settings["mineruBaseUrl"], "vlmBaseUrl": settings["vlmBaseUrl"]}
+
+
+def cmd_ocr_setup(args: argparse.Namespace) -> Any:
+    if not sys.stdin.isatty():
+        raise ClientError("ttyRequired", "ocr-setup 只能在用户自己的终端里运行：密钥由 getpass 读取，不经过对话。")
+    try:
+        saved = json.loads(ocr_config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    saved = {k: v for k, v in (saved if isinstance(saved, dict) else {}).items() if k in OCR_SETTINGS_ENV}
+    for key, prompt in (("mineruApiKey", "MinerU API 密钥（mineru.net 申请；回车保持不变，不回显）: "),
+                        ("vlmApiKey", "视觉模型密钥（阿里云百炼按量计费 sk-…；回车保持不变，不回显）: ")):
+        value = getpass.getpass(prompt).strip()
+        if value:
+            saved[key] = value
+    for key, value in (("mineruBaseUrl", args.mineru_base_url), ("vlmBaseUrl", args.vlm_base_url), ("vlmModel", args.vlm_model)):
+        if value:
+            saved[key] = value.strip()
+    write_private(ocr_config_path(), dump({**saved, "savedAt": now()}))
+    return {"configFile": str(ocr_config_path()), **ocr_readiness()}
+
+
+def service_url(url: str, label: str) -> str:
+    """MinerU、视觉模型都是外部服务：只走 https（本机测试桩除外），密钥不能明文传。"""
+    parts = parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = host == "localhost"
+    if not host or parts.scheme not in {"https", "http"} or (parts.scheme == "http" and not loopback):
+        raise ClientError("insecureTransport", f"{label}地址须为 https：{url}")
+    return url.rstrip("/")
+
+
+def service_error(service: str, status: int, detail: str) -> ClientError:
+    """失效、没买套餐、没有这个模型处置完全不同，分开报（同 backend libs/model_reachability）。"""
+    label = SERVICE_LABELS[service]
+    if status in (401, 403) and "Unpurchased" in detail:
+        return ClientError(f"{service}NoPlan", f"{label}的密钥有效，但套餐或模型没购买、已过期：请用户到控制台续订。", status=status)
+    if status in (401, 403):
+        return ClientError(f"{service}KeyInvalid", f"{label}拒绝了密钥（HTTP {status}）：请用户在自己的终端重新运行 ocr-setup。", status=status)
+    if status == 404 and "model" in detail.lower():
+        return ClientError(f"{service}ModelNotFound", f"{label}没有这个模型（HTTP 404）：换 ocr-setup --vlm-model，或设置 AICHECK_VLM_MODEL。", status=status)
+    if status == 429:
+        return ClientError("rateLimited", f"{label}限流（HTTP 429），隔一会儿再试。", status=status)
+    return ClientError(f"{service}Failed", f"{label}返回 HTTP {status}。", status=status, detail=detail[:300])
+
+
+def service_json(method: str, url: str, key: str, service: str, *, body: Any = None, timeout: float = 60) -> Any:
+    data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
+    req = request.Request(url, data=data, method=method)
+    req.add_header("Accept", "application/json")
+    req.add_header("Authorization", f"Bearer {key}")
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read() or b"{}")
+    except error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", "replace")
+        except OSError:
+            detail = ""
+        finally:
+            exc.close()
+        raise service_error(service, exc.code, detail) from None
+    except (error.URLError, TimeoutError, OSError) as exc:
+        raise ClientError("unreachable", f"{SERVICE_LABELS[service]}不可达：{getattr(exc, 'reason', exc)}") from None
+    except ValueError:
+        raise ClientError("badResponse", f"{SERVICE_LABELS[service]}返回的不是 JSON。") from None
+
+
+def mineru_data(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict) or str(payload.get("code", 0)) not in {"0", ""}:
+        message = payload.get("msg") if isinstance(payload, dict) else payload
+        raise ClientError("mineruRejected", f"MinerU 拒绝请求：{message}"[:300])
+    data = payload.get("data")
+    return data if isinstance(data, dict) else {}
+
+
+def put_signed(url: str, content: bytes, attempts: int = 3) -> None:
+    """MinerU 给的是对象存储的签名地址，签名里没有 Content-Type；urllib 会自动加一个让签名对不上，所以用 http.client 只发正文。"""
+    import http.client
+    parts = parse.urlsplit(service_url(url, "MinerU 上传"))
+    connection_type = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+    last = ""
+    for _ in range(attempts):
+        conn = connection_type(parts.hostname, parts.port, timeout=300)
+        try:
+            conn.request("PUT", (parts.path or "/") + (f"?{parts.query}" if parts.query else ""), body=content)
+            resp = conn.getresponse()
+            resp.read()
+            if resp.status < 400:
+                return
+            last = f"HTTP {resp.status}"
+            if resp.status != 429 and resp.status < 500:
+                break
+        except (OSError, http.client.HTTPException) as exc:
+            last = str(exc)
+        finally:
+            conn.close()
+    raise ClientError("mineruUploadFailed", f"上传原件到 MinerU 失败：{last}")
+
+
+def download_bytes(url: str) -> bytes:
+    try:
+        with request.urlopen(request.Request(service_url(url, "MinerU 结果")), timeout=300) as resp:
+            chunks, size = [], 0
+            while chunk := resp.read(1 << 16):
+                size += len(chunk)
+                if size > MAX_DOWNLOAD_BYTES:
+                    raise ClientError("fileTooLarge", "MinerU 结果超过 300MB，未下载。")
+                chunks.append(chunk)
+            return b"".join(chunks)
+    except error.HTTPError as exc:
+        exc.close()
+        raise ClientError("mineruDownloadFailed", f"下载 MinerU 结果失败：HTTP {exc.code}") from None
+    except (error.URLError, TimeoutError, OSError) as exc:
+        raise ClientError("mineruDownloadFailed", f"下载 MinerU 结果失败：{getattr(exc, 'reason', exc)}") from None
+
+
+LATEX_SYMBOLS = {r"\geqslant": "≥", r"\leqslant": "≤", r"\geq": "≥", r"\leq": "≤", r"\ge": "≥", r"\le": "≤",
+                 r"\sim": "~", r"\times": "×", r"\pm": "±", r"\varphi": "φ", r"\phi": "φ", r"\Phi": "Φ",
+                 r"\circ": "°", r"\%": "%", r"\mu": "μ", r"\alpha": "α", r"\beta": "β", r"\delta": "δ",
+                 r"\Delta": "Δ", r"\sigma": "σ", r"\cdot": "·", r"\approx": "≈", r"\neq": "≠", r"\infty": "∞"}
+INLINE_MATH = re.compile(r"\$\$?([^$]{1,300}?)\$\$?")
+
+
+def latex_plain(expr: str) -> str:
+    """MinerU 把 14mm 写成 $14\\mathrm{mm}$、≥300 写成 $\\geqslant 300$：转回原件上的写法，检索才对得上。"""
+    text = expr.replace("~", " ")  # LaTeX 里 ~ 是空格；\sim 才是波浪号，下面再换
+    for _ in range(3):  # \mathrm{\mathbf{x}} 这类嵌套
+        text = re.sub(r"\\(?:mathrm|text|textrm|mathbf|mathit|operatorname|rm|bf|it)\s*\{([^{}]*)\}", r"\1", text)
+    text = re.sub(r"\^\s*\{?\s*\\circ\s*\}?", "°", text)
+    for command in sorted(LATEX_SYMBOLS, key=len, reverse=True):
+        text = re.sub(re.escape(command) + r"(?![A-Za-z])", LATEX_SYMBOLS[command], text)
+    text = re.sub(r"[_^]\s*\{([^{}]*)\}", r"\1", text)
+    text = re.sub(r"[_^]\s*(\w)", r"\1", text)
+    text = re.sub(r"\\[A-Za-z]+", "", text).replace("{", "").replace("}", "").replace("\\", "")
+    text = re.sub(r"\s*([≥≤<>±~×=·])\s*", r"\1", text)
+    text = re.sub(r"(?<=\d)\s+(?=[A-Za-z°%μ])", "", text)  # 14 mm → 14mm，和原件一致
+    text = re.sub(r"([φΦ])\s+(?=\d)", r"\1", text)  # φ 89 → φ89
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def plain_latex(text: str) -> str:
+    return INLINE_MATH.sub(lambda m: latex_plain(m.group(1)), text)
+
+
+class TableGrid(HTMLParser):
+    """MinerU 的表格是带 rowspan/colspan 的 HTML。"""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[tuple[str, int, int]]] = []
+        self.row: list[tuple[str, int, int]] | None = None
+        self.cell: list[str] | None = None
+        self.span = (1, 1)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "tr":
+            self.row = []
+        elif tag in ("td", "th"):
+            values = dict(attrs)
+            span = []
+            for name in ("rowspan", "colspan"):
+                try:
+                    span.append(min(max(int(values.get(name) or 1), 1), 100))
+                except ValueError:
+                    span.append(1)
+            self.cell, self.span = [], (span[0], span[1])
+        elif tag == "br" and self.cell is not None:
+            self.cell.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if self.cell is not None:
+            self.cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("td", "th") and self.cell is not None:
+            if self.row is None:
+                self.row = []
+            self.row.append((re.sub(r"\s+", " ", "".join(self.cell)).strip(), *self.span))
+            self.cell = None
+        elif tag == "tr" and self.row is not None:
+            self.rows.append(self.row)
+            self.row = None
+
+
+def table_text(html: str) -> str:
+    """合并单元格按格展开：值在所跨的每一行、每一列都重复一次，逐行读就知道每一行的完整取值。"""
+    grid = TableGrid()
+    grid.feed(html)
+    grid.close()
+    cells: dict[tuple[int, int], str] = {}
+    for r, row in enumerate(grid.rows):
+        c = 0
+        for text, rowspan, colspan in row:
+            while (r, c) in cells:
+                c += 1
+            for dr in range(rowspan):
+                for dc in range(colspan):
+                    cells[(r + dr, c + dc)] = text
+            c += colspan
+    if not cells:
+        return plain_latex(re.sub(r"<[^>]+>", " ", html))
+    width = max(c for _, c in cells) + 1
+    lines = []
+    for r in range(max(r for r, _ in cells) + 1):
+        values = [plain_latex(cells.get((r, c), "")) for c in range(width)]
+        while values and not values[-1]:
+            values.pop()
+        lines.append(" | ".join(values))
+    return "\n".join(lines)
+
+
+def block_text(value: Any) -> str:
+    """MinerU 的说明、列表项有时是字符串，有时是 {"text": …}，有时是它们的列表（同 backend libs/mineru_ocr）。"""
+    if isinstance(value, dict):
+        value = value.get("text")
+    if isinstance(value, list):
+        return " ".join(part for part in (block_text(v) for v in value) if part)
+    return str(value or "").strip()
+
+
+def content_list_pages(items: list[Any]) -> dict[int, list[str]]:
+    """MinerU content_list（每块带 page_idx）→ {物理页: [块文字]}。图片块只记位置：图里的字（印章等）OCR 不读，要用 vlm 问。"""
+    pages: dict[int, list[str]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            page = int(item.get("page_idx") or 0) + 1
+        except (TypeError, ValueError):
+            page = 1
+        kind = item.get("type")
+        if kind == "table":
+            body = str(item.get("table_body") or "")
+            parts = [block_text(item.get("table_caption")),
+                     table_text(body) if "<t" in body else plain_latex(body),
+                     block_text(item.get("table_footnote"))]
+        elif kind == "image":
+            caption = " ".join(t for t in (block_text(item.get(k)) for k in
+                                           ("image_caption", "img_caption", "image_footnote", "img_footnote")) if t)
+            parts = [f"[图片{'：' + caption if caption else ''}]"]
+        elif kind == "list":
+            parts = [block_text(x) for x in item.get("list_items") or []] or [block_text(item.get("text"))]
+        elif kind == "code":
+            parts = [block_text(item.get("code_body") or item.get("code"))]
+        else:
+            # equation 块把 LaTeX 放在 text 里（backend 实测 GB/T 33378 如此），个别版本放 latex、content
+            parts = [next((t for t in (block_text(item.get(k)) for k in ("text", "latex", "content")) if t), "")]
+        text = "\n".join(plain_latex(p) for p in parts if p.strip())
+        if text.strip():
+            pages.setdefault(page, []).append(text)
+    return pages
+
+
+def mineru_zip_pages(blob: bytes) -> tuple[dict[int, str], bool]:
+    """MinerU 结果包 → ({物理页: 文字}, 有没有页码)。只在内存里读 content_list 和 full.md，不解压到磁盘。"""
+    import io
+    import zipfile
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile:
+        raise ClientError("mineruBadResult", "MinerU 结果不是 zip。") from None
+    with archive:
+        members = {info.filename: info for info in archive.infolist() if not info.is_dir()}
+
+        def read(name: str) -> str:
+            if members[name].file_size > 64 * 1024 * 1024:
+                raise ClientError("mineruBadResult", f"MinerU 结果里 {name} 过大。")
+            return archive.read(members[name]).decode("utf-8", "replace")
+
+        content = next((n for n in members if n.endswith("_content_list.json")), None)
+        if content:
+            try:
+                items = json.loads(read(content))
+            except ValueError:
+                items = None
+            if isinstance(items, list):
+                return {page: "\n".join(parts) for page, parts in sorted(content_list_pages(items).items())}, True
+        markdown = next((n for n in members if n.endswith("full.md")), None) or next((n for n in members if n.endswith(".md")), None)
+        text = plain_latex(read(markdown)) if markdown else ""
+        return ({1: text} if text.strip() else {}), False
+
+
+SHA_CACHE: dict[tuple[str, int, int], str] = {}
+
+
+def cached_sha(path: Path) -> str:
+    info = path.stat()
+    key = (str(path), info.st_size, info.st_mtime_ns)
+    if key not in SHA_CACHE:
+        SHA_CACHE[key] = sha256_file(path)
+    return SHA_CACHE[key]
+
+
+def ocr_key(relative: str) -> str:
+    return safe_name(relative.replace("/", "__").replace(":", "_"))
+
+
+def ocr_record_path(bundle: Path, relative: str) -> Path:
+    return bundle / "ocr" / f"{ocr_key(relative)}.json"
+
+
+def ocr_text_path(bundle: Path, relative: str) -> Path:
+    return bundle / "text" / f"{safe_name(Path(relative).stem)}.ocr.txt"
+
+
+def load_ocr(bundle: Path | None, relative: str | None, path: Path) -> dict[str, Any] | None:
+    """本包里这份原件的 OCR 记录；原件改过（sha256 不同）就当没有。"""
+    if bundle is None or relative is None:
+        return None
+    try:
+        record = json.loads(ocr_record_path(bundle, relative).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or record.get("sha256") != cached_sha(path):
+        return None
+    return record
+
+
+def ocr_page_map(record: dict[str, Any]) -> dict[int, str]:
+    pages = {}
+    for item in record.get("pages") or []:
+        try:
+            pages[int(item["page"])] = str(item.get("text") or "")
+        except (KeyError, TypeError, ValueError):
+            continue
+    return pages
+
+
+def page_texts(bundle: Path | None, relative: str | None, path: Path) -> tuple[str, list[str], list[str], set[int]]:
+    """(状态, 文字层每页, 用 OCR 补过的每页, 用了 OCR 的页)。没有 OCR 记录时后两份同文字层。
+    状态 ocr 表示原件本身没有可取的文字，整份文字来自 OCR。"""
+    status, layer = file_text(path)
+    record = load_ocr(bundle, relative, path)
+    if not record:
+        return status, layer, layer, set()
+    ocr = ocr_page_map(record)
+    if status != "text" or not layer or all(len(t.strip()) < 20 for t in layer):
+        count = max([*ocr, len(layer)]) if ocr else len(layer)
+        return "ocr", layer, [ocr.get(n, "") for n in range(1, count + 1)], {n for n, t in ocr.items() if t.strip()}
+    merged, used = list(layer), set()
+    for number, text in ocr.items():
+        if 1 <= number <= len(layer) and text.strip() and len(layer[number - 1].strip()) < OCR_FILL_BELOW:
+            merged[number - 1] = f"{layer[number - 1].strip()}\n{text}".strip()
+            used.add(number)
+    return status, layer, merged, used
+
+
+def bundle_relative(bundle: Path, path: Path) -> str | None:
+    """资料包里的原件写 files/…；仓库里的标准原件写 standard:rules/…，和报告出处的写法一致。"""
+    resolved = path.resolve()
+    if resolved.is_relative_to(bundle.resolve()):
+        return str(resolved.relative_to(bundle.resolve()))
+    root = repo_root().resolve()
+    if resolved.is_relative_to(root):
+        return "standard:" + str(resolved.relative_to(root))
+    return None
+
+
+def ocr_reason(path: Path) -> str | None:
+    """这份原件为什么要 OCR；不需要（文字层齐）或交不了 MinerU 时返回 None。"""
+    status, layer = file_text(path)
+    if status == "pymupdf_missing":
+        raise ClientError("pymupdfMissing", "需要 PyMuPDF：用 backend/.venv/bin/python 运行本命令，或 pip install pymupdf。")
+    if status == "image":
+        return "图片"
+    if status == "office_unreadable" and path.suffix.lower() in MINERU_SUFFIXES:
+        return "转不出文字的 Office 文件"
+    if status == "text" and path.suffix.lower() == ".pdf":
+        empty = sorted({n for n, t in enumerate(layer, start=1) if len(t.strip()) < 20} | set(captioned_image_pages(path, layer)))
+        if empty:
+            return "扫描件" if len(empty) == len(layer) else f"第 {page_ranges(empty)} 页是扫描页"
+    return None
+
+
+def upload_payload(path: Path, sha: str) -> tuple[str, bytes]:
+    """上传名只用哈希：文件名里常有人名，没必要给外部服务。MinerU 不收的图片格式先转 PNG。"""
+    suffix = path.suffix.lower()
+    if suffix in MINERU_SUFFIXES:
+        return f"{sha[:16]}{suffix}", path.read_bytes()
+    if suffix not in IMAGE_SUFFIXES:
+        raise ClientError("unsupportedFile", f"{path.name}：MinerU 不收这种格式。")
+    try:
+        fitz = quiet_fitz()
+        pix = fitz.Pixmap(str(path))
+        if pix.alpha or pix.n > 3:
+            pix = fitz.Pixmap(fitz.csRGB, pix)
+        return f"{sha[:16]}.png", pix.tobytes("png")
+    except Exception:  # noqa: BLE001 -- 转不了就跳过这份，不让整批失败
+        raise ClientError("unsupportedFile", f"{path.name}：MinerU 不收这种图片格式，也转不成 PNG。") from None
+
+
+def check_egress(bundle: Path, manifest: dict[str, Any], allowed: bool) -> None:
+    """服务器节点的资料服务器自己就交 MinerU、视觉模型处理过；本地资料第一次外发要用户点头。"""
+    marker = bundle / "ocr" / "egress-approved.json"
+    if manifest.get("source") == "server" or marker.exists():
+        return
+    if not allowed:
+        raise ClientError("egressNotApproved", "本地资料包：ocr、vlm 会把原件或页图发给 MinerU 和视觉模型（阿里云百炼），里面可能有身份证号等个人信息。"
+                                               "先问用户是否同意；同意后加 --allow-egress（每个资料包只需一次）。")
+    write_private(marker, dump({"approvedAt": now(), "note": "用户同意把本资料包的原件、页图发给 MinerU 与视觉模型做 OCR、读图"}))
+
+
+def ocr_text(record: dict[str, Any]) -> str:
+    head = ("（MinerU OCR 文字，不是原件文字层。表格已按格展开：合并单元格的值在所跨的每一行重复；"
+            "[图片] 处的字（印章、照片里的字）OCR 不读，要用 vlm 问。）")
+    if not record.get("paged"):
+        head += "（MinerU 没给页码：整份文字记在第 1 页，引用时按原件定页。）"
+    body = "\n\n".join(f"--- 第 {p['page']} 页 ---\n{p['text']}" for p in record.get("pages") or [])
+    return f"{head}\n\n{body}\n"
+
+
+def store_ocr(bundle: Path, item: dict[str, Any], blob: bytes) -> dict[str, Any]:
+    pages, paged = mineru_zip_pages(blob)
+    record = {"file": item["file"], "sha256": item["sha256"], "engine": "mineru", "modelVersion": "vlm", "at": now(),
+              "paged": paged, "pages": [{"page": n, "text": t} for n, t in sorted(pages.items())]}
+    write_private(ocr_record_path(bundle, item["file"]), dump(record))  # 原文（含完整证号），只给脚本回查用
+    target = ocr_text_path(bundle, item["file"])
+    write_private(target, mask_ids(ocr_text(record)))
+    blank = [n for n, t in pages.items() if not t.strip()]
+    return {"file": item["file"], "pages": len(pages), "chars": sum(len(t) for t in pages.values()), "saved": str(target),
+            **({"note": "MinerU 没给页码：整份文字记在第 1 页"} if not paged else {}),
+            **({"blankPages": page_ranges(blank)} if blank else {})}
+
+
+def ocr_targets(bundle: Path, manifest: dict[str, Any], files: list[str] | None) -> tuple[list[tuple[str, Path]], list[dict[str, Any]]]:
+    skipped: list[dict[str, Any]] = []
+    if not files:
+        targets = []
+        for item in manifest.get("files") or []:
+            path = bundle / item["path"]
+            if ocr_reason(path):
+                targets.append((item["path"], path))
+        return targets, skipped
+    targets = []
+    for name in files:
+        path = repo_root() / name.removeprefix("standard:") if name.startswith("standard:") else bundle / name
+        if not path.exists() and Path(name).expanduser().exists():
+            path = Path(name).expanduser()
+        relative = bundle_relative(bundle, path) if path.is_file() else None
+        if relative is None:
+            skipped.append({"file": name, "reason": "找不到，或不在资料包、仓库里"})
+        else:
+            targets.append((relative, path.resolve()))
+    return targets, skipped
+
+
+def cmd_ocr(args: argparse.Namespace) -> Any:
+    bundle = Path(args.bundle).expanduser().resolve()
+    if not (bundle / "bundle.json").exists():
+        raise ClientError("bundleMissing", f"{bundle} 不是资料包（没有 bundle.json）。")
+    manifest = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))
+    settings = ocr_settings()
+    if not settings["mineruApiKey"]:
+        raise ClientError("ocrNotConfigured", "没有 MinerU 密钥：请用户在自己的终端运行 ocr-setup（密钥不经过对话），或设置 AICHECK_MINERU_API_KEY。")
+    base, key = service_url(settings["mineruBaseUrl"], "MinerU "), settings["mineruApiKey"]
+    targets, skipped = ocr_targets(bundle, manifest, args.files)
+    if any(not relative.startswith("standard:") for relative, _ in targets):
+        check_egress(bundle, manifest, args.allow_egress)
+    state_path = bundle / "ocr" / "pending.json"
+    try:
+        pending = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pending = []
+    waiting = {i["dataId"] for batch in pending for i in batch.get("items") or []}
+    cached, fresh = [], []
+    for relative, path in targets:
+        if not args.force and load_ocr(bundle, relative, path):
+            cached.append(relative)
+            continue
+        sha = cached_sha(path)
+        if f"aicheck-{sha[:32]}" in waiting:
+            continue  # 上次交了还没出结果：接着等，不重传
+        if path.stat().st_size > MINERU_MAX_BYTES:
+            skipped.append({"file": relative, "reason": "超过 200MB，MinerU 不收"})
+            continue
+        try:
+            name, content = upload_payload(path, sha)
+        except ClientError as exc:
+            skipped.append({"file": relative, "reason": exc.message})
+            continue
+        fresh.append({"file": relative, "sha256": sha, "dataId": f"aicheck-{sha[:32]}", "name": name, "content": content})
+    for start in range(0, len(fresh), MINERU_BATCH):
+        chunk = fresh[start:start + MINERU_BATCH]
+        data = mineru_data(service_json("POST", f"{base}/api/v4/file-urls/batch", key, "mineru", body={
+            "files": [{"name": t["name"], "data_id": t["dataId"], "is_ocr": True} for t in chunk],
+            "model_version": "vlm", "enable_formula": True, "enable_table": True, "language": "ch"}))
+        urls, batch_id = data.get("file_urls") or [], str(data.get("batch_id") or "")
+        if not batch_id or len(urls) != len(chunk):
+            raise ClientError("mineruBadResult", "MinerU 没给批次号或上传地址。")
+        for item, url in zip(chunk, urls):
+            put_signed(str(url), item["content"])
+        pending.append({"batchId": batch_id, "submittedAt": now(),
+                        "items": [{k: t[k] for k in ("file", "sha256", "dataId")} for t in chunk]})
+        write_private(state_path, dump(pending))
+    done, failed = [], []
+    deadline = time.monotonic() + max(args.timeout, 0)
+    while pending:
+        still = []
+        for batch in pending:
+            results = mineru_data(service_json("GET", f"{base}/api/v4/extract-results/batch/{parse.quote(batch['batchId'])}",
+                                               key, "mineru")).get("extract_result") or []
+            by_id = {str(r.get("data_id") or ""): r for r in results if isinstance(r, dict)}
+            left = []
+            for item in batch.get("items") or []:
+                result = by_id.get(item["dataId"]) or {}
+                state = str(result.get("state") or "").lower()
+                if state == "done" and result.get("full_zip_url"):
+                    try:
+                        done.append(store_ocr(bundle, item, download_bytes(str(result["full_zip_url"]))))
+                    except ClientError as exc:
+                        failed.append({"file": item["file"], "reason": exc.message})
+                elif state == "failed":
+                    failed.append({"file": item["file"], "reason": f"MinerU 解析失败：{result.get('err_msg') or '没说原因'}"})
+                else:
+                    left.append({**item, "state": state or "pending"})
+            if left:
+                still.append({**batch, "items": left})
+        pending = still
+        if pending:
+            write_private(state_path, dump(pending))
+        else:
+            state_path.unlink(missing_ok=True)
+        if not pending or time.monotonic() >= deadline:
+            break
+        time.sleep(OCR_POLL_SECONDS)
+    result: dict[str, Any] = {"bundle": str(bundle), "done": done, "cached": cached, "skipped": skipped, "failed": failed}
+    if pending:
+        result["pending"] = [{"file": i["file"], "state": i.get("state")} for batch in pending for i in batch["items"]]
+        result["nextStep"] = "MinerU 还在处理：过一两分钟再跑同一条 ocr 命令接着等，不会重新上传。"
+    elif done or cached:
+        result["nextStep"] = "重跑 search，检索就带上 OCR 文字；读某份文件用 text --file（扫描页给的是 OCR 文字）。"
+    if not targets:
+        result["note"] = "没有需要 OCR 的文件：包里的原件都有文字层。"
+    return result
+
+
+def cmd_vlm(args: argparse.Namespace) -> Any:
+    if not args.bundle:
+        raise ClientError("invalidArguments", "vlm 要配 --bundle <资料包>：页图和回答都存进资料包，报告据此引用。")
+    bundle = Path(args.bundle).expanduser().resolve()
+    manifest = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))
+    settings = ocr_settings()
+    if not settings["vlmApiKey"]:
+        raise ClientError("vlmNotConfigured", "没有视觉模型密钥：请用户在自己的终端运行 ocr-setup（密钥不经过对话），或设置 AICHECK_VLM_API_KEY。")
+    question = (args.question or "").strip()
+    if not question:
+        raise ClientError("invalidArguments", "--question 要写具体问题，如“这页右下角印章上写的单位名称是什么”。")
+    path = resolve_input(args)
+    relative = bundle_relative(bundle, path) if path.is_file() else None
+    if relative is None:
+        raise ClientError("fileNotFound", f"找不到文件，或不在资料包、仓库里：{args.file}")
+    if not relative.startswith("standard:"):
+        check_egress(bundle, manifest, args.allow_egress)
+    base = service_url(settings["vlmBaseUrl"], "视觉模型")
+    clip_box, rotate = parse_clip(args.clip), args.rotate or 0
+    try:
+        fitz = quiet_fitz()
+    except ImportError:
+        raise ClientError("pymupdfMissing", "需要 PyMuPDF：用 backend/.venv/bin/python 运行本命令，或 pip install pymupdf。") from None
+    try:
+        doc = fitz.open(path)
+    except Exception:  # noqa: BLE001 -- unreadable or unsupported file
+        raise ClientError("unsupportedFile", f"{path.name} 不是 PDF 或可识别的图片。") from None
+    with doc:
+        number = args.page or (1 if doc.page_count == 1 else None)
+        if number is None:
+            raise ClientError("invalidArguments", f"{path.name} 有 {doc.page_count} 页：给 --page。")
+        if not 1 <= number <= doc.page_count:
+            raise ClientError("pageOutOfRange", f"页码 {number} 超出 1–{doc.page_count}。")
+        page = doc[number - 1]
+        clip = clip_rect(fitz, page, unrotate_box(clip_box, rotate)) if clip_box else None
+        suffix = ("-clip" + "_".join(f"{v:g}" for v in clip_box)) if clip_box else ""
+        suffix += f"-r{rotate}" if rotate else ""
+        image = render_png(fitz, page, bundle / "pages" / f"{safe_name(path.stem)}-p{number:03d}{suffix}-vlm.png",
+                           dpi=args.dpi or (300 if clip_box else 200), rotate=rotate, clip=clip)
+    body = {"model": settings["vlmModel"], "temperature": 0, "max_tokens": args.max_tokens, "messages": [
+        {"role": "system", "content": VLM_PROMPT},
+        {"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(image.read_bytes()).decode()}},
+            {"type": "text", "text": question}]}]}
+    payload = service_json("POST", f"{base}/chat/completions", settings["vlmApiKey"], "vlm", body=body, timeout=180)
+    try:
+        content = payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        raise ClientError("badResponse", "视觉模型没有返回回答。") from None
+    answer = "".join(part.get("text", "") for part in content if isinstance(part, dict)) if isinstance(content, list) else str(content or "")
+    record = {"tool": "vlm", "file": relative, "page": number, "clip": clip_box, "rotate": rotate or None,
+              "model": settings["vlmModel"], "question": question, "answer": answer,
+              "image": str(image.relative_to(bundle)), "at": now()}
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d-%H%M%S-%f")
+    write_private(bundle / "ocr" / "vlm" / f"{stamp}-p{number}.json", dump(record))
+    return {"file": relative, "page": number, **({"clip": clip_box} if clip_box else {}), "model": settings["vlmModel"],
+            "question": question, "answer": answer, "caution": VLM_CAUTION}
+
+
+def ocr_coverage(bundle: Path, known: list[str]) -> tuple[dict[str, set[int]], set[tuple[str, int]]]:
+    """每份原件哪些页有 OCR 文字、哪些页问过视觉模型；报告里确定结论引用的扫描页必须落在这里。"""
+    pages: dict[str, set[int]] = {}
+    for relative in known:
+        path = bundle / relative
+        record = load_ocr(bundle, relative, path) if path.is_file() else None
+        if record:
+            pages[relative] = {n for n, t in ocr_page_map(record).items() if t.strip()}
+    asked: set[tuple[str, int]] = set()
+    for archive in sorted((bundle / "ocr" / "vlm").glob("*.json")) if (bundle / "ocr" / "vlm").is_dir() else []:
+        try:
+            record = json.loads(archive.read_text(encoding="utf-8"))
+            if str(record.get("answer") or "").strip():
+                asked.add((str(record["file"]), int(record["page"])))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return pages, asked
+
+
+def vlm_answers(bundle: Path) -> list[str]:
+    folder = bundle / "ocr" / "vlm"
+    answers = []
+    for archive in sorted(folder.glob("*.json")) if folder.is_dir() else []:
+        try:
+            answers.append(str(json.loads(archive.read_text(encoding="utf-8")).get("answer") or ""))
+        except (OSError, ValueError):
+            continue
+    return answers
 
 
 # ---------------------------------------------------------------- server tools
@@ -1227,7 +1939,8 @@ def cmd_node_standards(args: argparse.Namespace) -> Any:
 # ---------------------------------------------------------------- report
 
 # 资料包里的派生文件不是出处：事实要指回原件或工具。
-SOURCE_HINTS = (("text/", "转出的文字：file 写 files/ 下的原件，text/… 第 N 行写进 locator"),
+SOURCE_HINTS = (("text/", "转出的文字（含 OCR 文字）：file 写 files/ 下的原件，page 写页码，text/… 写进 locator"),
+                ("ocr/", "OCR 或视觉模型的存档：file 写 files/ 下的原件（视觉模型回答也可写 tool:vlm），page 写页码"),
                 ("search/", "检索结果：file 写 tool:search，search/<时间>.json 和检索词写进 locator"),
                 ("tool-results/", "工具结果：file 写 tool:<命令名>，存档路径写进 locator"),
                 ("pages/", "页图：file 写 files/ 下的原件，page 写页码"))
@@ -1422,7 +2135,9 @@ def check_strict_rules(checks: list[dict[str, Any]], roles: dict[str, dict[str, 
                                + f"。应判{expected}")
 
 
-REVIEW_METHODS = {"read", "pages", "thumbs", "search", "text", "textutil", "skipped"}
+# ocr：读了 MinerU 的 OCR 文字；vlm：就某几页问过视觉模型。read/pages/thumbs 是助手自己看图的旧写法，仍收，
+# 但扫描页上的确定结论只认 OCR 文字或视觉模型记录（见 check_reading_coverage）。
+REVIEW_METHODS = {"ocr", "vlm", "read", "pages", "thumbs", "search", "text", "textutil", "skipped"}
 ID_CANDIDATE = re.compile(r"(?<![0-9A-Za-z])(\d{17}[\dXx])(?![0-9A-Za-z])")
 ID_WEIGHTS = (7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2)
 
@@ -1466,12 +2181,13 @@ MASKED_ID = re.compile(r"\d{4}\*{4,}\d{3}[\dX]")
 
 
 def resolve_masked_id(masked: str, bundle_arg: str | None) -> str:
-    """模型手里只有脱敏号：回资料包原件的文字层（和服务器抽取字段）里找前后 4 位都对上的那一个完整号码。"""
+    """模型手里只有脱敏号：回资料包原件的文字层、OCR 文字、视觉模型的回答（和服务器抽取字段）里找前后 4 位都对上的那一个完整号码。"""
     if not bundle_arg:
         raise ClientError("invalidArguments", "脱敏号码要配 --bundle <资料包>，从包里原件找回完整号码再查。")
     bundle = Path(bundle_arg).expanduser().resolve()
     manifest = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))
-    texts = [text for item in manifest.get("files") or [] for text in file_text(bundle / item["path"])[1]]
+    texts = [text for item in manifest.get("files") or [] for text in page_texts(bundle, item["path"], bundle / item["path"])[2]]
+    texts += vlm_answers(bundle)
     if (bundle / "workspace.json").exists():
         texts.append((bundle / "workspace.json").read_text(encoding="utf-8"))
     head, tail = masked[:4], masked[-4:]
@@ -1480,8 +2196,9 @@ def resolve_masked_id(masked: str, bundle_arg: str | None) -> str:
     if len(found) == 1:
         return found.pop()
     if not found:
-        raise ClientError("identifierNotFound", f"资料包文字层里没有与 {masked} 前后 4 位都对上的身份证号；号码只在图片上时，照原件填完整号码。")
-    raise ClientError("identifierAmbiguous", f"资料包里有 {len(found)} 个身份证号与 {masked} 前后 4 位相同，分不出是哪个；照原件填完整号码。")
+        raise ClientError("identifierNotFound", f"资料包的文字层、OCR 文字和视觉模型回答里都没有与 {masked} 前后 4 位都对上的身份证号；"
+                                                 "号码只在图上而 OCR 没读出时，先用 vlm 问那一页的身份证号（输出会脱敏），再用脱敏号查。")
+    raise ClientError("identifierAmbiguous", f"资料包里有 {len(found)} 个身份证号与 {masked} 前后 4 位相同，分不出是哪个；这张证的登记查询交人工，写进 limitations。")
 
 
 RISK_LEVELS = ("high", "medium")
@@ -1513,14 +2230,19 @@ def check_reading_coverage(bundle: Path, manifest: dict[str, Any], report: dict[
     if not search:
         warnings.append("没有跑过 search：全包检索能找出没想到的文件里的工期、材质、人员等事实")
         search = {}
-    visual = set(search.get("needsVisualReview") or [])
-    partial = search.get("needsVisualPages") or {}
+    unread = set(search.get("needsOcr", search.get("needsVisualReview")) or [])
+    unread_pages = search.get("needsOcrPages", search.get("needsVisualPages")) or {}
+    # 扫描件与扫描页按原件文字层算（旧存档没有 scannedFiles，退回“当时还缺字”的清单）。
+    visual = set(search.get("scannedFiles") or []) | unread
+    partial = {**unread_pages, **(search.get("scannedPages") or {})}
+    ocr_pages, vlm_pages = ocr_coverage(bundle, known)
     image_only: dict[tuple[str, int], bool] = {}
     for path, entry in listed.items():
-        if path in visual and entry.get("method") == "search":
-            errors_.append(f"reviewedFiles {path}: 没有文字层，只检索等于没看——用 read/pages 看图，或标 skipped 写原因")
-        elif path in partial and entry.get("method") == "search" and not str(entry.get("note") or "").strip():
-            errors_.append(f"reviewedFiles {path}: 第 {partial[path]} 页没有文字层，检索看不到——看图后在 pages 写明，或在 note 说明为何不看")
+        if path in unread and entry.get("method") == "search" and not ocr_pages.get(path):
+            errors_.append(f"reviewedFiles {path}: 没有文字层也没 OCR，只检索等于没看——先跑 ocr 再读 OCR 文字（method 写 ocr），或标 skipped 写原因")
+        elif path in unread_pages and entry.get("method") == "search" and not str(entry.get("note") or "").strip() \
+                and not ocr_pages.get(path):
+            errors_.append(f"reviewedFiles {path}: 第 {unread_pages[path]} 页没有文字层，检索看不到——跑 ocr 后在 pages 写明，或在 note 说明为何不看")
     for check in report.get("checks") or []:
         if check.get("verdict") not in NEEDS_SOURCE:
             continue
@@ -1544,8 +2266,10 @@ def check_reading_coverage(bundle: Path, manifest: dict[str, Any], report: dict[
                         image_only[key] = False
                         warnings.append(f"{check['atomicCheckId']}: {path} 第 {page} 页打不开，没核对它是不是扫描页、阅读记录够不够")
                 scanned = image_only[key]
-            if scanned and (listed.get(path) or {}).get("method") not in {"read", "pages"}:
-                errors_.append(f"{check['atomicCheckId']}: 确定结论引用的扫描页 {path} 须有 read/pages 阅读记录；缩略图不作取证")
+            number = page if type(page) is int and page > 0 else 1
+            if scanned and path in known and number not in ocr_pages.get(path, set()) and (path, number) not in vlm_pages:
+                errors_.append(f"{check['atomicCheckId']}: 确定结论引用的扫描页 {path} 第 {number} 页没有 OCR 文字，也没有问过视觉模型"
+                               "——先跑 ocr；OCR 里没有这一处（印章、手写、看不清）再用 vlm 问这一页")
 
 
 OUTCOME_LABELS = {"passed": "通过", "failed": "不通过", "pending": "暂不能判定通过"}
@@ -2082,7 +2806,32 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--out", help="输出文件或目录")
     p.set_defaults(func=cmd_text)
 
-    p = sub.add_parser("search", help="在资料包全部文件的文字层里检索规则关键词与常见事实（需 PyMuPDF 读 PDF）")
+    p = sub.add_parser("ocr-setup", help="用户在自己的终端填 MinerU 与视觉模型密钥（getpass，不经过对话）")
+    p.add_argument("--mineru-base-url", help=f"默认 {DEFAULT_MINERU_BASE}")
+    p.add_argument("--vlm-base-url", help=f"默认 {DEFAULT_VLM_BASE}（阿里云百炼按量计费，OpenAI 兼容接口）")
+    p.add_argument("--vlm-model", help=f"默认 {DEFAULT_VLM_MODEL}")
+    p.set_defaults(func=cmd_ocr_setup)
+
+    p = sub.add_parser("ocr", help="没有文字层的原件交 MinerU 出逐页文字（存进资料包 ocr/、text/），之后 text/search 都读得到")
+    p.add_argument("--bundle", required=True)
+    p.add_argument("--files", nargs="+", help="只 OCR 这些（资料包相对路径，或 standard:rules/standards/…）；默认全部没有文字层的原件")
+    p.add_argument("--force", action="store_true", help="已有 OCR 也重做")
+    p.add_argument("--timeout", type=int, default=240, help="最多等几秒，默认 240；没等完再跑一次接着等，不重传")
+    p.add_argument("--allow-egress", action="store_true", help="本地资料包：用户已同意把原件发给 MinerU、视觉模型（每个资料包一次）")
+    p.set_defaults(func=cmd_ocr)
+
+    p = sub.add_parser("vlm", help="OCR 里没有或读不清（印章、签名、手写、勾选）时，把一页或局部发给视觉模型问一个具体问题")
+    p.add_argument("--file", required=True, help="资料包相对路径（如 files/13-焊工证.pdf），或仓库里的标准原件")
+    p.add_argument("--page", type=int, help="物理页；图片和单页 PDF 可省略")
+    p.add_argument("--question", required=True, help="具体问题，如“右下角印章上写的单位名称是什么”")
+    p.add_argument("--clip", help="只发页面局部 x0,y0,x1,y1（0–1 比例），小字、印章压字时用")
+    p.add_argument("--rotate", type=int, choices=(0, 90, 180, 270), help="顺时针转正横放的页；--clip 按转正后的样子给")
+    p.add_argument("--dpi", type=int, help="默认 200，给了 --clip 默认 300")
+    p.add_argument("--max-tokens", type=int, default=1500)
+    p.add_argument("--allow-egress", action="store_true", help="本地资料包：用户已同意把页图发给视觉模型（每个资料包一次）")
+    p.set_defaults(func=cmd_vlm, saves=True)
+
+    p = sub.add_parser("search", help="在资料包全部文件的文字层和 OCR 文字里检索规则关键词与常见事实（需 PyMuPDF 读 PDF）")
     p.add_argument("--bundle", required=True)
     p.add_argument("--terms", nargs="+", help="追加的检索词")
     p.add_argument("--only", action="store_true", help="只用 --terms，不带默认词")
