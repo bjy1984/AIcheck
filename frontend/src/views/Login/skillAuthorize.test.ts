@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
+import { NO_RESET_WHITE_LIST } from '../../constants'
 import { isPathAllowedForRole, resolveRoleEntryPath } from '../../utils/roleAccess'
 import {
   decodeSkillAuthorizeRequest,
@@ -68,3 +71,15 @@ for (const role of ['inspection', 'admin', 'contractor']) {
   assert.equal(resolveRoleEntryPath(role, path), path, role)
 }
 assert.equal(isPathAllowedForRole('/skill-authorize', 'inspection'), false) // 没有授权请求的空地址不放行
+
+// 回归（2026-10-28 生产实测）：未登录 → 登录页 → 登录时 resetRouter() 删掉不在 NO_RESET_WHITE_LIST
+// 里的路由 → 回跳授权页落到 404。授权页的路由名必须在保留名单里，而且和路由定义里写的名字一致。
+const routerSource = readFileSync(
+  fileURLToPath(new URL('../../router/index.ts', import.meta.url)),
+  'utf8'
+)
+assert.match(
+  routerSource,
+  /path: '\/skill-authorize\/:payload',\s*component: [^\n]+\n\s*name: 'SkillAuthorize'/
+)
+assert.ok(NO_RESET_WHITE_LIST.includes('SkillAuthorize'))
