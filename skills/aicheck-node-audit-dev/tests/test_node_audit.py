@@ -1335,5 +1335,50 @@ class NodeAuditTest(unittest.TestCase):
         self.assertEqual(list(bundle.glob("audit*.png")), [])
 
 
+    # ------------------------------------------------------------ report 直接给出完整结果
+
+    def test_report_returns_the_complete_result_not_just_the_path(self):
+        bundle = self.audited_bundle()
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        data = out["data"]
+        self.assertEqual(data["fullReport"], (bundle / "audit.md").read_text(encoding="utf-8"))  # 和文件一字不差
+        self.assertEqual(Path(data["markdown"]).resolve(), (bundle / "audit.md").resolve())
+        for number in range(1, 6):
+            self.assertIn(f"### AC-R24-0{number}", data["fullReport"])  # 每一项都在，不只是有问题的
+        for needle in ("证书有效期早于施焊日期", "有效期至", "2025-12", "files/01-证书.pdf 第1页", "缺施焊记录",
+                       "请施工方更换在有效期内的焊工", "## 逐项明细", "## 已阅读文件"):
+            self.assertIn(needle, data["fullReport"])
+        self.assertIn("fullReport", data["next"])  # 提示助手把它贴给用户
+
+    def test_audit_md_prints_the_coverage_line_only_when_something_was_counted(self):
+        bundle = self.local_bundle()
+        blank = {"items": None, "checked": None, "source": ""}  # skeleton 留下的空统计，不是统计结果
+        self.write_report(bundle, [
+            {"atomicCheckId": "AC-R24-01", "verdict": "evidence_insufficient", "reason": "缺施焊记录。", "coverage": blank},
+            {"atomicCheckId": "AC-R24-02", "verdict": "evidence_insufficient", "reason": "只知道总数。", "coverage": {"items": 5, "checked": None, "source": ""}},
+            {"atomicCheckId": "AC-R24-03", "verdict": "evidence_insufficient", "reason": "只核了三道。", "coverage": {"items": 5, "checked": 3, "source": "施焊记录"}},
+            {"atomicCheckId": "AC-R24-04", "verdict": "evidence_insufficient", "reason": "没统计。"},
+            {"atomicCheckId": "AC-R24-05", "verdict": "evidence_insufficient", "reason": "没统计。", "coverage": None},
+        ])
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        text = out["data"]["fullReport"]
+        self.assertNotIn("None", text)  # 回归：曾打印「逐件覆盖：None/None（）」
+        self.assertEqual(text.count("逐件覆盖"), 2)
+        self.assertIn("逐件覆盖：未知/5\n", text)  # 只知道一半就写未知，不打印 None，也没有空括号
+        self.assertIn("逐件覆盖：3/5（施焊记录）", text)
+
+
+    def test_every_bundle_command_reports_a_wrong_path_as_json_not_a_traceback(self):
+        """回归：report／render 对不存在的资料包目录直接抛 FileNotFoundError，助手看到的是一屏 Traceback。"""
+        missing = str(Path(self.tmp.name) / "no-such-bundle")
+        for command in (["report"], ["render"], ["skeleton"], ["sync"], ["ocr"], ["search"]):
+            code, out = run(*command, "--bundle", missing)
+            self.assertEqual((code, out["ok"], out["error"]["code"]), (1, False, "bundleMissing"), command)
+            self.assertIn("fetch", out["error"]["message"])
+        self.assertEqual(self.server.requests, [])  # 路径不对就什么都不发
+
+
 if __name__ == "__main__":
     unittest.main()

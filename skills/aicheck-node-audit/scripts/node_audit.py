@@ -2332,9 +2332,12 @@ def render_markdown(manifest: dict[str, Any], report: dict[str, Any], warnings: 
                 where = " ".join(str(x) for x in (src.get("file"), f"第{src['page']}页" if src.get("page") else "", src.get("locator")) if x)
                 excerpt = f"「{src['excerpt']}」" if src.get("excerpt") else ""
                 lines.append(f"| {cell(fact.get('name'))} | {cell(fact.get('value'))} | {cell(f'{where} {excerpt}')} |")
-        if check.get("coverage"):
-            cov = check["coverage"]
-            lines += ["", f"逐件覆盖：{cov.get('checked')}/{cov.get('items')}（{cov.get('source')}）"]
+        cov = check.get("coverage") or {}
+        if cov.get("items") is not None or cov.get("checked") is not None:  # 骨架里的 null 不是统计结果，不打印
+            def count(value: Any) -> str:
+                return "未知" if value is None else str(value)
+            origin = f"（{cov['source']}）" if cov.get("source") else ""
+            lines += ["", f"逐件覆盖：{count(cov.get('checked'))}/{count(cov.get('items'))}{origin}"]
         for label, key in (("判断", "reasoning"), ("原因", "reason"), ("与服务器差异", "differenceNote")):
             if check.get(key):
                 lines += ["", f"{label}：{check[key]}"]
@@ -2396,14 +2399,18 @@ def cmd_report(args: argparse.Namespace) -> Any:
     if updated:
         write_private(bundle / "audit.json", dump(report))
     rule = (json.loads((bundle / "rules.json").read_text(encoding="utf-8")).get("rule") or {}) if (bundle / "rules.json").exists() else {}
-    write_private(bundle / "audit.md", render_markdown(manifest, report, warnings, rule.get("name") or ""))
+    full_report = render_markdown(manifest, report, warnings, rule.get("name") or "")
+    write_private(bundle / "audit.md", full_report)
     outcome = node_outcome(report["checks"])
     counts = {VERDICTS[v]: n for v, n in outcome["counts"].items()}
+    # fullReport 和 audit.md 一字不差：完整结果随输出给出，回复用户不必再去读文件。
     return {"markdown": str(bundle / "audit.md"), "outcome": outcome["label"], "outcomeExplain": outcome["explain"],
             "counts": counts, "warnings": warnings, "auditJsonUpdated": updated,
-            "syncAvailable": manifest.get("source") == "server",
-            "next": ("向用户报告结论后运行 sync --bundle 预览；用户确认该次内容后加 --confirm --preview-hash <摘要>"
-                     if manifest.get("source") == "server" else "本地资料包没有对应的服务器节点，不能同步")}
+            "syncAvailable": manifest.get("source") == "server", "fullReport": full_report,
+            "next": ("把 fullReport 里的完整逐项结果贴给用户（SKILL.md 第 10 步）；用户看过后运行 sync --bundle 预览，"
+                     "用户确认该次内容后加 --confirm --preview-hash <摘要>"
+                     if manifest.get("source") == "server" else
+                     "把 fullReport 里的完整逐项结果贴给用户（SKILL.md 第 10 步）；本地资料包没有对应的服务器节点，不能同步")}
 
 
 # ---------------------------------------------------------------- result image (rendered by the server)
@@ -2809,8 +2816,9 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        if getattr(args, "saves", False) and args.bundle and not (Path(args.bundle).expanduser() / "bundle.json").exists():
-            raise ClientError("bundleMissing", f"{args.bundle} 不是资料包（没有 bundle.json），未执行查询。")
+        # 所有带 --bundle 的命令都先确认它是资料包：路径写错时给出错误 JSON，而不是读 bundle.json 时抛 Traceback。
+        if getattr(args, "bundle", None) and not (Path(args.bundle).expanduser() / "bundle.json").exists():
+            raise ClientError("bundleMissing", f"{args.bundle} 不是资料包（没有 bundle.json），未执行：检查路径，或先 fetch / local-init。")
         data = args.func(args)
         saved = save_tool_result(args, data) if getattr(args, "saves", False) and args.bundle else None
         print(dump_masked({"ok": True, "data": data, **({"savedTo": saved} if saved else {})}))
