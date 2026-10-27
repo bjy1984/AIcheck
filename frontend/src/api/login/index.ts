@@ -64,6 +64,17 @@ export const changePasswordApi = async (
   return { ...res, data: normalizeLoginResult(res.data) }
 }
 
+/** skill 网页授权：用当前登录身份签一个一次性授权码，页面再把它回调给本机的 skill。 */
+export const authorizeSkillApi = (data: { redirectUri: string; codeChallenge: string }) =>
+  request.post<{ code: string; expiresIn: number; client: string }>({
+    url: '/api/auth/skill/authorize',
+    data: { ...data, codeChallengeMethod: 'S256' },
+    headers: {
+      'X-Silent-Business-Error': 'true',
+      'X-Silent-Http-Error': 'true'
+    }
+  })
+
 export const getUserListApi = ({ params }: AxiosConfig) => {
   return request.get<{
     code: string

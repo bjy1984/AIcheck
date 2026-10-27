@@ -76,6 +76,9 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/mock/user/login"),
     ("POST", "/auth/login"),
     ("POST", "/api/auth/login"),
+    # skill 网页授权换令牌：凭一次性授权码 + PKCE 校验码，和登录一样不带令牌。
+    ("POST", "/auth/skill/token"),
+    ("POST", "/api/auth/skill/token"),
     ("POST", "/auth/logout"),
     ("POST", "/api/auth/logout"),
     ("POST", "/auth/change-password"),
@@ -99,6 +102,11 @@ READ_ONLY_POST_ROUTES = {
     # 只查询、不写状态。
     ("POST", "/inspection-services/standard-status"),
     ("POST", "/api/inspection-services/standard-status"),
+    # skill 网页授权：不写 repo.state，只在 Redis 放一个 120 秒、只能用一次的授权码（重复提交只是
+    # 多一个很快作废的码）。角色限制（只有监检、管理员）在接口里判断——管理员没有 ai:recheck，
+    # 动作规则表达不了「监检或管理员」。
+    ("POST", "/auth/skill/authorize"),
+    ("POST", "/api/auth/skill/authorize"),
     # Node recommendations inspect selected versions without creating review state.
     ("POST", "/projects/{project_id}/inspection/important-review/analyze"),
     ("POST", "/api/projects/{project_id}/inspection/important-review/analyze"),

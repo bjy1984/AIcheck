@@ -47,6 +47,7 @@ from apps.api.routes import (
     router,
     scope_error_for_record,
 )
+from apps.api.skill_auth_routes import skill_auth_router
 from apps.api.std_samr_routes import router as std_samr_router
 from libs.audit_context import (
     current_request_audit_context,
@@ -572,6 +573,9 @@ def auth_required_for_path(request: Request) -> bool:
         "/api/readyz",
         "/auth/login",
         "/api/auth/login",
+        # skill 网页授权的换令牌一步：凭一次性授权码 + PKCE 校验码换，不带令牌（同 /auth/login）。
+        "/auth/skill/token",
+        "/api/auth/skill/token",
         "/runtime/ui-context",
         "/api/runtime/ui-context",
     )
@@ -1491,6 +1495,8 @@ app.include_router(inspection_service_router)
 app.include_router(inspection_service_router, prefix="/api")
 app.include_router(audit_result_image_router)
 app.include_router(audit_result_image_router, prefix="/api")
+app.include_router(skill_auth_router)
+app.include_router(skill_auth_router, prefix="/api")
 app.include_router(review_plugin_router)
 app.include_router(review_plugin_router, prefix="/api")
 app.include_router(batch_review_router)

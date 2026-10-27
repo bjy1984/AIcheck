@@ -62,6 +62,19 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
     }
   },
   {
+    /* skill 网页授权：本机运行的 skill 打开这个页面，已登录的监检或管理员确认后，
+       把一次性授权码回调给它。授权请求整体编码在路径里，不放查询串——未登录时守卫只把
+       to.path 带进 /login?redirect=，查询串会在登录这一步丢掉。 */
+    path: '/skill-authorize/:payload',
+    component: () => import('@/views/Login/SkillAuthorize.vue'),
+    name: 'SkillAuthorize',
+    meta: {
+      hidden: true,
+      title: '授权 skill',
+      noTagsView: true
+    }
+  },
+  {
     path: '/change-password',
     component: () => import('@/views/Login/ChangePassword.vue'),
     name: 'ChangePassword',
