@@ -89,6 +89,7 @@ NODE_STATUS_FORBIDDEN_REOPEN_TARGETS = {"待提交", "部分提交", "需补正"
 
 
 STATE_COLLECTIONS = {
+    "inspection_requests": "inspection_requests",
     "projects": "projects",
     "tree_nodes": "project_nodes",
     "requirements": "node_requirements",
@@ -2898,6 +2899,8 @@ class InMemoryRepository:
             "profileId": result.get("profileId") or job.get("profileId"),
             "documentType": result.get("documentType") or job.get("documentType"),
             "parserVersion": result.get("parserVersion"),
+            "profilePostprocessVersion": result.get("profilePostprocessVersion"),
+            "formalEvidenceReady": result.get("formalEvidenceReady"),
             "engineVersion": result.get("engineVersion"),
             "modelManifest": result.get("modelManifest") or {},
             "engineRuns": result.get("engineRuns") or [],

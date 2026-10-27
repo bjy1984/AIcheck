@@ -1,6 +1,6 @@
 # 本地报告生成约定
 
-默认交付 `report.html`、`report.md`、`report.json`。HTML 是主阅读版，Markdown 便于平台阅读，JSON 是唯一结果来源；不把完整工程资料传给生成服务。生成脚本仅使用 Python 标准库，无网络调用、无第三方依赖。
+默认交付 `report.html`、`report.md`、`report.json`。三种格式均显示 Skill 名称“压力管道监检材料审查”和作者“珠海安粤科技”；HTML 是主阅读版，Markdown 便于平台阅读，JSON 是唯一结果来源；不把完整工程资料传给生成服务。生成脚本仅使用 Python 标准库，无网络调用、无第三方依赖。
 
 ## 工作顺序
 

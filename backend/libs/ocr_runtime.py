@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -52,6 +53,15 @@ def ocr_runtime_config(
     api_key_env = str(aliyun.get("apiKeyEnv") or "AICHECK_ALIYUN_OCR_API_KEY")
     base_url = str(source.get(base_url_env) or aliyun.get("defaultBaseUrl") or "").rstrip("/")
     api_key = str(source.get(api_key_env) or "")
+    # Reuse only the existing key for the same official DashScope region.
+    # Token Plan / other providers use different credentials and must not be mixed.
+    vision_host = urlsplit(str(source.get("AICHECK_LLM_VISION_API_BASE") or "")).hostname
+    ocr_host = urlsplit(base_url).hostname
+    if not api_key and vision_host == ocr_host and ocr_host in {
+        "dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com", "dashscope-us.aliyuncs.com",
+    }:
+        api_key_env = "AICHECK_LLM_VISION_API_KEY"
+        api_key = str(source.get(api_key_env) or "")
 
     requested_max = source.get("AICHECK_OCR_MAX_LONG_SIDE") or render.get("maxLongSide") or DEFAULT_MAX_LONG_SIDE
     try:

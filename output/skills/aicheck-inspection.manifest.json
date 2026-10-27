@@ -1,6 +1,6 @@
 {
   "archive": "aicheck-inspection.zip",
-  "sha256": "9c49ed37aa4ce2a33771a3f32befe5982820529e4b21bb1cc01d5232fb1fbcaf",
+  "sha256": "3926d684150f56d8ad043ddce18dfef4a4ad8072c870133dd0eb247452421e80",
   "ruleSha256": "66cdd219525b67d82606d9101b501f705718f1ba948c6a45921eac3b70baa5fe",
   "files": [
     "SKILL.md",

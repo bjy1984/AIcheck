@@ -1,5 +1,7 @@
 {
   "schemaVersion": "inspection-report@1",
+  "skillName": "压力管道监检材料审查",
+  "skillAuthor": "珠海安粤科技",
   "project": "示例工程（虚构数据，不是工程审查结果）",
   "reportDate": "2026-09-25",
   "scopeNote": "仅演示 R24 输出格式；多数方法尚未执行。",

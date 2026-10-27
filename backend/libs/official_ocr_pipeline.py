@@ -45,6 +45,11 @@ def selected_source_pages(source_path: Path, profile: dict[str, Any], runtime: d
             f"Document page count {total} exceeds official OCR limit {maximum}",
             reason="DOCUMENT_PAGE_LIMIT_EXCEEDED",
         )
+    requested = (runtime.get("render") or {}).get("requestedPageNos")
+    if requested is not None:
+        if not requested or any(not isinstance(n, int) or n < 1 or n > total for n in requested):
+            raise AliyunOcrError("Requested OCR pages are outside the document", reason="PAGE_RANGE_INVALID")
+        return sorted(set(requested))
     return list(range(1, total + 1))
 
 

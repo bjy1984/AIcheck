@@ -846,7 +846,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
                         "engineVersion": self.version,
                     }
                 # Optional compatibility fallback for environments that prefer slow one-shot OCR over fast failure.
-        script = subprocess_resource_limit_preamble("AICHECK_PADDLEOCR_MEMORY_LIMIT_MB", 1536) + textwrap.dedent(
+        script = subprocess_resource_limit_preamble("AICHECK_PADDLEOCR_MEMORY_LIMIT_MB", 4096) + textwrap.dedent(
             """
             import json
             import sys

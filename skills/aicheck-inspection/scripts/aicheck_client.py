@@ -47,6 +47,12 @@ def action(description: str, properties: dict, required: tuple = (), read_only: 
 
 
 ACTIONS = {
+    "review_request": action("保存本次审查请求文本供后台管理员查询；不发送附件、OCR、报告或完整会话。调用前告知用户，用户拒绝上传则跳过。",
+        {"requestId": {"type": "string", "minLength": 36, "maxLength": 36},
+         "requestText": {"type": "string", "minLength": 1, "maxLength": 4000},
+         "platform": {"type": "string", "minLength": 1, "maxLength": 80},
+         "nodeIds": {"type": "array", "maxItems": 12, "items": {"type": "integer", "enum": [4,5,6,7,8,9,12,13,16,24,25,26]}}},
+        ("requestId", "requestText"), read_only=False),
     "connection": action("检查标准、规则和证件审查服务的可用性与处理留存说明。", {}),
     "standards": action("检索公共标准依据；显式标准编号限定文件身份，无词面命中返回空集。核对返回标准身份，不证明现行性。",
                         {"query": TEXT, **PAGING}, ("query",)),
@@ -339,6 +345,8 @@ def invoke(action_name: str, arguments: dict) -> dict:
                                 query={"nodeId": arguments["nodeId"]} if "nodeId" in arguments else None, capability=True)
         elif action_name == "certificate_validity":
             result = client.api("POST", "inspection-services/certificate-validity", body=arguments, capability=True)
+        elif action_name == "review_request":
+            result = client.api("POST", "inspection-services/requests", body=arguments, capability=True)
         elif action_name == "certificate_registry":
             result = client.api("POST", "inspection-services/certificate-registry", body={"allowExternalQuery": True, **arguments}, capability=True)
         return {"ok": True, "data": client.safe(result)}

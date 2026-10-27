@@ -30,6 +30,7 @@ from apps.api.important_review_routes import important_review_router
 from apps.api.inspection_service_routes import inspection_service_router, public_review_request
 from apps.api.knowledge_admin_routes import knowledge_admin_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
+from apps.api.data_service_mcp_routes import router as data_service_mcp_router
 from apps.api.org_delegation_routes import org_delegation_router
 from apps.api.project_analysis_routes import project_analysis_router
 from apps.api.project_registration_routes import project_registration_router
@@ -241,7 +242,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def attach_operation_id(request: Request, call_next):
-    authorization = "" if public_review_request(request.method, canonical_path(request.url.path)) else request.headers.get("Authorization", "")
+    from libs.security.data_service_test_mode import allows as test_data_access
+    anonymous_service = test_data_access(request.method, request.url.path) or public_review_request(
+        request.method, canonical_path(request.url.path)
+    )
+    authorization = "" if anonymous_service else request.headers.get("Authorization", "")
     predecoded_claims = decode_token(authorization) if authorization else None
     claimed_tenant_id = str((predecoded_claims or {}).get("tid") or configured_tenant_id())
     if predecoded_claims is None and request.method == "POST" and canonical_path(request.url.path) == "/auth/login":
@@ -312,7 +317,8 @@ async def handle_request(
     # 实测整套单测因此从 100 秒涨到 350 秒。
     if postgres_persistence_configured():
         await asyncio.to_thread(refresh_state_if_stale, tenant_id)
-    if not public_review_request(request.method, canonical_path(request.url.path)) and (auth_required_for_path(request) or request.headers.get("Authorization")):
+    from libs.security.data_service_test_mode import allows as test_data_access
+    if not test_data_access(request.method, request.url.path) and not public_review_request(request.method, canonical_path(request.url.path)) and (auth_required_for_path(request) or request.headers.get("Authorization")):
         claims = predecoded_claims
         if claims is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), errors.AUTH_REQUIRED.reason)
@@ -560,6 +566,9 @@ def is_public_registration_request(request: Request) -> bool:
 
 
 def auth_required_for_path(request: Request) -> bool:
+    from libs.security.data_service_test_mode import allows as test_data_access
+    if test_data_access(request.method, request.url.path):
+        return False
     if public_review_request(request.method, canonical_path(request.url.path)):
         return False
     if not authentication_enforced():
@@ -585,6 +594,10 @@ def auth_required_for_path(request: Request) -> bool:
 
 
 def is_ephemeral_inspection_request(request: Request) -> bool:
+    # The MCP facade delegates writes to existing APIs, which own their locks.
+    path = canonical_path(request.url.path)
+    if path == "/mcp/data-services" or re.fullmatch(r"/mcp/data-services/uploads/[A-Za-z0-9_.-]{1,2048}", path):
+        return True
     if public_review_request(request.method, canonical_path(request.url.path)):
         return True
     return canonical_path(request.url.path) in {
@@ -1519,6 +1532,7 @@ app.include_router(cnse_router)
 app.include_router(cnse_router, prefix="/api")
 app.include_router(std_samr_router)
 app.include_router(std_samr_router, prefix="/api")
+app.include_router(data_service_mcp_router, prefix="/api")
 app.include_router(mineru_ocr_router)
 app.include_router(mineru_ocr_router, prefix="/api")
 

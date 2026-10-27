@@ -68,6 +68,8 @@ const attempts = new Map<string, string>()
 let generation = 0
 let listGeneration = 0
 let pollTimer: ReturnType<typeof setTimeout> | undefined
+let pollEpoch = 0
+let polling = false
 const selectedFiles = computed(() => Object.values(selected.value))
 const chosenVersions = computed(() => selectedFiles.value.map((file) => file.currentVersionId))
 const shownFiles = computed(() =>
@@ -110,6 +112,12 @@ const filteredRuns = computed(() =>
 const running = computed(() =>
   runs.value.some((run) => ['排队中', '审查中'].includes(executionStatus(run.status)))
 )
+const parsing = computed(
+  () =>
+    !collapsed.value &&
+    !onlySelected.value &&
+    files.value.some((file) => ['排队中', '解析中'].includes(parseStatus(file)))
+)
 const canStart = computed(
   () =>
     enabled.value &&
@@ -124,14 +132,14 @@ function searchFiles() {
   page.value = 1
   void loadFiles()
 }
-async function loadFiles() {
+async function loadFiles(silent = false) {
   const context = generation,
     search = ++listGeneration
   if (!props.projectId || onlySelected.value) {
     loading.value = false
     return
   }
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const response = await listReviewDocuments(props.projectId, {
       keyword: keyword.value.trim(),
@@ -148,7 +156,10 @@ async function loadFiles() {
     if (context === generation && search === listGeneration)
       error.value = getAicheckErrorMessage(cause, '资料加载失败，请重试。')
   } finally {
-    if (context === generation && search === listGeneration) loading.value = false
+    if (context === generation && search === listGeneration) {
+      loading.value = false
+      schedulePoll()
+    }
   }
 }
 async function loadRuns() {
@@ -165,16 +176,36 @@ async function loadRuns() {
   } catch (cause) {
     if (context === generation)
       pollingError.value = getAicheckErrorMessage(cause, '审查状态刷新失败，保留上次结果。')
+  } finally {
+    if (context === generation) schedulePoll()
   }
 }
-async function poll() {
+function stopPolling() {
   clearTimeout(pollTimer)
-  if (!props.active || !props.projectId) return
-  const context = generation
-  await loadRuns()
-  if (context !== generation || !props.active) return
-  if (!collapsed.value && !onlySelected.value) await loadFiles()
-  if (context === generation && props.active) pollTimer = setTimeout(poll, 8000)
+  pollEpoch++
+  polling = false
+}
+function schedulePoll() {
+  clearTimeout(pollTimer)
+  if (!polling && props.active && props.projectId && (running.value || parsing.value))
+    pollTimer = setTimeout(() => void poll(), 8000)
+}
+async function poll(refresh = false) {
+  clearTimeout(pollTimer)
+  if (polling || !props.active || !props.projectId) return
+  const context = generation,
+    epoch = pollEpoch
+  polling = true
+  try {
+    if (refresh || running.value) await loadRuns()
+    if (context !== generation || epoch !== pollEpoch || !props.active) return
+    if (parsing.value || (refresh && !collapsed.value && !onlySelected.value)) await loadFiles(true)
+  } finally {
+    if (context === generation && epoch === pollEpoch) {
+      polling = false
+      schedulePoll()
+    }
+  }
 }
 function toggleFile(file: ReviewDocument, checked: boolean) {
   if (busy.value || file.bodyUploaded === false) return
@@ -316,15 +347,16 @@ function setNodeFile(version: string, checked: boolean) {
     ? [...new Set([...versionsFor(id), version])]
     : versionsFor(id).filter((value) => value !== version)
 }
+watch([collapsed, onlySelected], schedulePoll)
 watch([page, onlySelected], () => {
   void loadFiles()
 })
 watch(
   () => props.active,
   () => {
-    if (props.active) void poll()
+    if (props.active) void poll(true)
     else {
-      clearTimeout(pollTimer)
+      stopPolling()
       rule.value = undefined
       fileNode.value = undefined
       evidenceVisible.value = false
@@ -336,7 +368,7 @@ watch(
   async (id) => {
     const context = ++generation
     ++listGeneration
-    clearTimeout(pollTimer)
+    stopPolling()
     files.value = []
     selected.value = {}
     runs.value = []
@@ -370,7 +402,7 @@ watch(
       enabled.value = response.data.enabled
       disabledReason.value = response.data.disabledReason
       await loadFiles()
-      if (context === generation) await poll()
+      if (context === generation) await loadRuns()
     } catch (cause) {
       if (context === generation) error.value = getAicheckErrorMessage(cause, '专项审查加载失败。')
     }
@@ -379,7 +411,7 @@ watch(
 )
 onBeforeUnmount(() => {
   generation++
-  clearTimeout(pollTimer)
+  stopPolling()
 })
 </script>
 
@@ -480,7 +512,7 @@ onBeforeUnmount(() => {
               :page-size="10"
               :total="shownTotal"
               layout="prev, pager, next"
-            /><ElButton @click="loadFiles">刷新资料</ElButton
+            /><ElButton @click="loadFiles()">刷新资料</ElButton
             ><ElButton
               type="primary"
               :disabled="!selectedFiles.length || !enabled || busy"

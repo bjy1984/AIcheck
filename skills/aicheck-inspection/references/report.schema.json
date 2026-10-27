@@ -5,6 +5,14 @@
       "const": "inspection-report@1",
       "type": "string"
     },
+    "skillName": {
+      "const": "压力管道监检材料审查",
+      "type": "string"
+    },
+    "skillAuthor": {
+      "const": "珠海安粤科技",
+      "type": "string"
+    },
     "project": {
       "type": "string",
       "minLength": 1

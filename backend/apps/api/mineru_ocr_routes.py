@@ -157,6 +157,9 @@ def get_mineru_task(request: Request, job_id: str):
 
 
 def request_actor(request: Request) -> tuple[str | None, str | None]:
+    from libs.security.data_service_test_mode import allows, ACTOR
+    if allows(request.method, request.url.path):
+        return ACTOR, "internal_test"
     claims = getattr(request.state, "auth", None) or {}
     actor_id = str(
         claims.get("sub")
@@ -200,6 +203,9 @@ def mineru_job_access_error(
     request: Request,
     job: dict[str, Any],
 ):
+    from libs.security.data_service_test_mode import allows, ACTOR
+    if allows(request.method, request.url.path) and (job.get("requestedBy") != ACTOR or job.get("documentId")):
+        return fail(errors.FORBIDDEN, request, message="免登录测试仅可读取共享测试身份的独立任务。")
     document_id = str(job.get("documentId") or "")
     if document_id:
         return mineru_document_scope_error(request, job)
@@ -351,17 +357,21 @@ def public_mineru_job(
         "status": job.get("status"),
         "stage": job.get("stage"),
         "progress": int(job.get("progress") or 0),
-        "provider": "mineru",
-        "model": "vlm",
+        "provider": job.get("activeProvider") or "mineru",
+        "requestedProvider": "mineru",
+        "fallback": job.get("fallback"),
+        "pageProgress": job.get("pageProgress") or {},
+        "model": job.get("activeModel") or "vlm",
         "sourceType": job.get("sourceType"),
         "fileName": job.get("fileName"),
         "profileId": job.get("profileId"),
         "documentType": job.get("documentType"),
         "documentId": job.get("documentId") or None,
         "documentVersionId": job.get("documentVersionId") or None,
-        "providerTaskId": job.get("providerTaskId"),
-        "providerTaskType": job.get("providerTaskType"),
-        "providerProgress": job.get("providerProgress") or {},
+        "providerTaskId": job.get("providerTaskId") if job.get("activeProvider") != "qwen" else None,
+        "providerRequestIds": job.get("providerRequestIds") or [],
+        "providerTaskType": job.get("providerTaskType") if job.get("activeProvider") != "qwen" else None,
+        "providerProgress": ({"state": job.get("stage"), **(job.get("pageProgress") or {})} if job.get("activeProvider") == "qwen" else job.get("providerProgress") or {}),
         "parseResultId": job.get("parseResultId"),
         "resultSummary": job.get("resultSummary") or {},
         "artifactReferences": job.get("artifactReferences") or {},
@@ -373,6 +383,25 @@ def public_mineru_job(
     }
     if safe_dispatch is not None:
         result["dispatch"] = safe_dispatch
+    # Give remote AI clients a truthful next action instead of a stalled 20%.
+    state = (job.get("providerProgress") or {}).get("state")
+    active = job.get("status") in {"queued", "running"}
+    if active and job.get("activeProvider") == "qwen":
+        result["statusMessage"] = "MinerU 排队超时，已切换千问识别。"
+        result["recommendedPollSeconds"] = 10
+        result["nextAction"] = "poll_existing_job"
+    elif active and state == "pending":
+        result["statusMessage"] = "MinerU 供应商排队中，服务器将继续查询原批次；请勿重复上传。"
+        result["recommendedPollSeconds"] = 60
+        result["nextAction"] = "poll_existing_job"
+    elif active and job.get("stage") == "waiting_provider":
+        result["statusMessage"] = "本轮等待超时，已安排接续原批次，尚未取得识别结果。"
+        result["recommendedPollSeconds"] = 60
+        result["nextAction"] = "poll_existing_job"
+    elif active and state in {"running", "converting"}:
+        result["statusMessage"] = "MinerU 正在处理文件。"
+        result["recommendedPollSeconds"] = 15
+        result["nextAction"] = "poll_existing_job"
     return result
 
 
@@ -569,3 +598,28 @@ def _validate_options(options: dict[str, Any]) -> None:
         or float(tolerance) < 0
     ):
         raise MinerUApiError("cacheTolerance 必须是非负数。")
+
+
+@router.get("/internal/ocr/mineru/tasks/{job_id}/result")
+def get_mineru_task_result(request: Request, job_id: str, pageNo: int | None = None):
+    """Owned, projectless normalized OCR data; no business conclusion or storage secrets."""
+    load_state({"ocr_jobs", "ocr_parse_results"})
+    job = repo.find_one("ocr_jobs", job_id)
+    if not job or job.get("provider") != "mineru":
+        return fail(errors.NOT_FOUND, request, message="MinerU OCR Job 不存在。")
+    if access_error := mineru_job_access_error(request, job):
+        return access_error
+    if not request_actor(request)[0]:
+        return fail(errors.AUTH_REQUIRED, request, http_status=401)
+    parsed = next((row for row in repo.state.get("ocr_parse_results", [])
+                   if job.get("parseResultId") and (row.get("id") or row.get("parseResultId")) == job["parseResultId"]), None)
+    if not parsed:
+        return ok({"jobId": job_id, "status": job.get("status"), "resultAvailable": False}, request)
+    pages = parsed.get("pages") or []
+    page_count = max([int(p.get("pageNo") or 0) for p in pages] or [0])
+    if pageNo is not None and (pageNo < 1 or pageNo > page_count):
+        return fail(errors.VALIDATION_ERROR, request, message="pageNo 超出可定位的原件页码范围。", http_status=400)
+    from libs.data_service_ocr_result import project_ocr_result
+    content = project_ocr_result(parsed, page_no=pageNo)
+    return ok({"jobId": job_id, "status": job.get("status"), "resultAvailable": True,
+               "pageCount": page_count, **content}, request)

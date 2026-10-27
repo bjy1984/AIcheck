@@ -6,12 +6,22 @@ import os
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import wraps
 from typing import Any
 
 
 class PipelineLockUnavailable(RuntimeError):
     pass
+
+
+_ACTIVE_LOCK_LOST: ContextVar[threading.Event | None] = ContextVar("pipeline_lock_lost", default=None)
+
+
+def assert_pipeline_lock_owned() -> None:
+    lost = _ACTIVE_LOCK_LOST.get()
+    if lost is not None and lost.is_set():
+        raise PipelineLockUnavailable("OCR execution lock was lost")
 
 
 _LOCAL_GUARD = threading.Lock()
@@ -33,7 +43,7 @@ def _strict_production() -> bool:
 
 
 @contextmanager
-def pipeline_lock(key: str, *, idle_timeout_seconds: int = 60) -> Iterator[bool]:
+def pipeline_lock(key: str, *, idle_timeout_seconds: int = 60, keepalive: bool = False) -> Iterator[bool]:
     database_url = str(os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
     if database_url.startswith(("postgresql://", "postgres://")):
         try:
@@ -53,14 +63,35 @@ def pipeline_lock(key: str, *, idle_timeout_seconds: int = 60) -> Iterator[bool]
                 logging.getLogger(__name__).warning("idle timeout unavailable: %s", type(exc).__name__)
             acquired = bool(connection.execute("SELECT pg_try_advisory_lock(%s)", (advisory_lock_id(key),)).fetchone()[0])
         except Exception as exc:
-            if _strict_production():
+            if keepalive or _strict_production():
                 raise PipelineLockUnavailable("PostgreSQL pipeline lock is unavailable") from exc
             with _local_pipeline_lock(key) as local_acquired:
                 yield local_acquired
             return
+        stopped = threading.Event()
+        lost = threading.Event()
+        token = _ACTIVE_LOCK_LOST.set(lost) if keepalive else None
+        def heartbeat() -> None:
+            while not stopped.wait(15):
+                try:
+                    connection.execute("SELECT 1")
+                except Exception:
+                    lost.set()
+                    logging.getLogger(__name__).error("pipeline lock heartbeat lost")
+                    return
+        keeper = threading.Thread(target=heartbeat, daemon=True) if acquired and keepalive else None
+        if keeper:
+            keeper.start()
         try:
             yield acquired
+            assert_pipeline_lock_owned()
         finally:
+            if token is not None:
+                _ACTIVE_LOCK_LOST.reset(token)
+            stopped.set()
+            if keeper:
+                keeper.join(timeout=5)
+
             try:
                 if acquired:
                     connection.execute("SELECT pg_advisory_unlock(%s)", (advisory_lock_id(key),))
@@ -92,14 +123,14 @@ def _local_pipeline_lock(key: str) -> Iterator[bool]:
 
 
 def pipeline_task_lock(
-    scope: str, key_builder: Callable[..., str], *, idle_timeout_seconds: int = 60,
+    scope: str, key_builder: Callable[..., str], *, idle_timeout_seconds: int = 60, keepalive: bool = False,
 ):
     def decorator(function: Callable[..., dict[str, Any]]):
         @wraps(function)
         def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
             key = f"aicheck:{scope}:{key_builder(*args, **kwargs)}"
             try:
-                with pipeline_lock(key, idle_timeout_seconds=idle_timeout_seconds) as acquired:
+                with pipeline_lock(key, idle_timeout_seconds=idle_timeout_seconds, **({"keepalive": True} if keepalive else {})) as acquired:
                     if not acquired:
                         return {
                             "status": "duplicate_inflight",

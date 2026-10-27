@@ -774,3 +774,19 @@ def test_raw_upload_validates_metadata_before_storing_bytes(
 
     assert response.json()["code"] != 0
     assert stored == []
+
+@pytest.mark.parametrize('status,state,stage,poll', [
+    ('running', 'pending', 'poll', 60),
+    ('queued', None, 'waiting_provider', 60),
+    ('running', 'running', 'poll', 15),
+    ('success', 'pending', 'completed', None),
+    ('failed', 'pending', 'failed', None),
+])
+def test_public_status_guides_waiting_without_resubmission(status, state, stage, poll):
+    from apps.api.mineru_ocr_routes import public_mineru_job
+    d=public_mineru_job({'id':'TEST','status':status,'stage':stage,'providerProgress':{'state':state}})
+    assert d.get('recommendedPollSeconds')==poll
+    if poll:
+        assert d['nextAction']=='poll_existing_job' and d['statusMessage']
+    else:
+        assert 'nextAction' not in d

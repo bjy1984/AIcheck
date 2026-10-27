@@ -32,7 +32,7 @@ def public_review_request(method: str, path: str) -> bool:
             and path.endswith("/canonical"))
     return method == "POST" and path in {
         "/inspection-services/certificate-validity", "/inspection-services/certificate-registry",
-        "/inspection-services/standard-status"}
+        "/inspection-services/standard-status", "/inspection-services/requests"}
 
 
 def _public_standard(request: Request, file: dict, state: dict | None = None) -> bool:
@@ -181,3 +181,72 @@ async def validity(request: Request):
 @inspection_service_router.post("/certificate-registry")
 async def registry(request: Request):
     return await _body_invoke(request, certificate_registry, limit=4096)
+
+
+@inspection_service_router.post("/requests")
+async def register_review_request(request: Request):
+    """Explicitly retained request text; never an engineering file upload."""
+    from datetime import datetime, timezone
+    from uuid import UUID
+    from libs.db.repository import ensure_collections_loaded, flush_state_records, postgres_persistence_configured
+
+    def save(payload):
+        allowed = {"requestId", "requestText", "platform", "nodeIds"}
+        if set(payload) - allowed:
+            raise InspectionServiceError("请求包含不支持的字段。")
+        try:
+            request_id = str(UUID(payload.get("requestId", "")))
+        except (ValueError, TypeError, AttributeError):
+            raise InspectionServiceError("requestId 必须是 UUID；重试使用同一个 ID。")
+        text = payload.get("requestText")
+        platform = payload.get("platform", "unknown")
+        nodes = payload.get("nodeIds", [])
+        if not isinstance(text, str) or not text.strip() or len(text) > 4000:
+            raise InspectionServiceError("requestText 须为1–4000字符的本次审查指令。")
+        if not isinstance(platform, str) or not platform.strip() or len(platform) > 80:
+            raise InspectionServiceError("platform 须为1–80字符。")
+        if not isinstance(nodes, list) or len(nodes) > 12 or any(type(n) is not int or n not in NODE_IDS for n in nodes):
+            raise InspectionServiceError("nodeIds 只能包含受支持的审查节点。")
+        if not (postgres_persistence_configured() or api.repo.sqlite_enabled):
+            raise InspectionServiceError("请求登记需要启用数据库持久化；当前服务仅为内存模式。", status=503)
+        tenant = api.request_tenant_id(request)
+        ensure_collections_loaded("inspection_requests")
+        rows = api.repo.state.setdefault("inspection_requests", [])
+        old = next((row for row in rows if row["id"] == request_id and row.get("tenantId") == tenant), None)
+        values = dict(requestText=text, platform=platform, nodeIds=sorted(set(nodes)))
+        if old:
+            if any(old.get(k) != v for k, v in values.items()):
+                raise InspectionServiceError("同一requestId不能保存不同内容。", status=409)
+            return {"requestId": request_id, "saved": True, "duplicate": True}
+        record = dict(id=request_id, tenantId=tenant, createdAt=datetime.now(timezone.utc).isoformat(),
+                      identityVerified=False, **values)
+        # Persist before making the row visible; failures must not report success.
+        try:
+            flush_state_records({"inspection_requests": [record]})
+        except Exception:
+            raise InspectionServiceError("请求登记暂不可用，请保留requestId稍后重试。", status=503) from None
+        rows.insert(0, record)
+        return {"requestId": request_id, "saved": True, "duplicate": False}
+
+    return await _body_invoke(request, save, limit=24576)
+
+
+@inspection_service_router.get("/requests")
+def list_review_requests(request: Request, keyword: str = Query("", max_length=200),
+                         page_no: int = Query(1, alias="page", ge=1),
+                         page_size: int = Query(20, alias="pageSize", ge=1, le=100)):
+    from libs.db.repository import ensure_collections_loaded
+    role, identity_error = api.effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if role != "admin":
+        return fail(errors.FORBIDDEN, request, message="仅管理员可查询Skill请求记录。", http_status=403)
+    ensure_collections_loaded("inspection_requests")
+    rows = [row for row in api.repo.state.get("inspection_requests", [])
+            if row.get("tenantId") == api.request_tenant_id(request)]
+    if keyword.strip():
+        term = keyword.strip().casefold()
+        rows = [row for row in rows if term in row["requestText"].casefold() or term in row["platform"].casefold()]
+    rows.sort(key=lambda row: (row["createdAt"], row["id"]), reverse=True)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(ok(api.page(rows, page_no, page_size), request), headers={"Cache-Control": "no-store"})
