@@ -1490,6 +1490,56 @@ def ocr_targets(bundle: Path, manifest: dict[str, Any], files: list[str] | None)
     return targets, skipped
 
 
+# 服务器暂时不可用：API 每约半小时被内存守卫重启一次（502/503/504 或连不上，约一分钟），不能因此中止整个 OCR。
+OCR_TRANSIENT = GATEWAY_ERRORS | {"unreachable"}
+OCR_RETRY_PAUSES = (10, 20, 30)  # 上传遇到上面的错误时的等待；轮询不重试，下一轮再查就是退避
+
+
+def is_transient(exc: ClientError) -> bool:
+    return exc.code in OCR_TRANSIENT
+
+
+def with_server_retry(call: Any) -> Any:
+    """服务器暂时不可用时按 OCR_RETRY_PAUSES 重试几次；仍不行就把最后一次的错误抛出去，由调用方决定怎么办。"""
+    for pause in (*OCR_RETRY_PAUSES, None):
+        try:
+            return call()
+        except ClientError as exc:
+            if not is_transient(exc) or pause is None:
+                raise
+            time.sleep(pause)
+
+
+def ocr_attempts_path(bundle: Path) -> Path:
+    return bundle / "ocr" / "attempts.json"
+
+
+def load_attempts(bundle: Path) -> dict[str, int]:
+    """{原件哈希: 已经用掉的重试次数}。服务器的幂等记录不过期：同一个键永远拿回第一次建的任务，
+    任务失败了也一样，所以重试必须换键。"""
+    try:
+        data = json.loads(ocr_attempts_path(bundle).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): v for k, v in data.items() if isinstance(v, int) and v > 0} if isinstance(data, dict) else {}
+
+
+def save_attempts(bundle: Path, attempts: dict[str, int]) -> None:
+    write_private(ocr_attempts_path(bundle), dump(attempts))
+
+
+def idempotency_key(sha: str, attempt: int) -> str:
+    base = f"aicheck-node-audit-{sha[:48]}"
+    return base if attempt <= 0 else f"{base}-r{attempt}"
+
+
+def record_failed_attempt(bundle: Path, attempts: dict[str, int], item: dict[str, Any]) -> None:
+    """任务失败、取消或完成了却没有结果：下次上传换新键，才会建新任务，而不是拿回这个失败的。"""
+    sha = item["sha256"]
+    attempts[sha] = max(attempts.get(sha, 0), int(item.get("attempt") or 0) + 1)
+    save_attempts(bundle, attempts)
+
+
 def cmd_ocr(args: argparse.Namespace) -> Any:
     bundle = Path(args.bundle).expanduser().resolve()
     if not (bundle / "bundle.json").exists():
@@ -1507,14 +1557,20 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
     except (OSError, ValueError):
         pending = []
     waiting = {item["sha256"] for item in pending}
-    cached = []
+    attempts = load_attempts(bundle)
+    cached, failed = [], []
+    server_down = ""  # 上传时服务器一直不可用：后面的文件不再试，别一份份耗时间
     for relative, path in targets:
-        if not args.force and load_ocr(bundle, relative, path):
+        finished = load_ocr(bundle, relative, path)
+        if finished and not args.force:
             cached.append(relative)
             continue
         sha = cached_sha(path)
         if sha in waiting:
             continue  # 上次交了还没出结果：接着等，不重传
+        if server_down:
+            failed.append({"file": relative, "reason": server_down, "retryable": True})
+            continue
         if path.stat().st_size > OCR_MAX_BYTES:
             skipped.append({"file": relative, "reason": "超过 100MB，服务器 OCR 不收"})
             continue
@@ -1523,33 +1579,55 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
         except ClientError as exc:
             skipped.append({"file": relative, "reason": exc.message})
             continue
+        # 同一份原件同一个键：网关重试、重跑都拿回原来的任务，不会重复识别。要重做已完成的文件（--force）
+        # 或上次失败了，就换键（r1、r2…）：服务器的幂等记录不过期，同键永远是第一次的那个任务。
+        attempt = attempts.get(sha, 0) + (1 if finished else 0)
         metadata = base64.urlsafe_b64encode(json.dumps({"fileName": name, "options": {"language": "ch"}}).encode()).decode()
-        # 同一份原件用同一个幂等键：网关 502 重试、重跑都拿回原来的任务，不会重复识别。
-        data = api.upload("/internal/ocr/mineru/tasks/upload", content, headers={
-            "Content-Type": "application/octet-stream", "Idempotency-Key": f"aicheck-node-audit-{sha[:48]}",
-            "X-AICheck-Ocr-Metadata-B64": metadata})
+        headers = {"Content-Type": "application/octet-stream", "Idempotency-Key": idempotency_key(sha, attempt),
+                   "X-AICheck-Ocr-Metadata-B64": metadata}
+        try:
+            data = with_server_retry(lambda body=content, hdrs=headers: api.upload("/internal/ocr/mineru/tasks/upload", body, headers=hdrs))
+        except ClientError as exc:
+            if not is_transient(exc):
+                raise
+            # 请求可能已经在服务器上建了任务：键没变，稍后重跑会拿回它，不会重复建，所以这里不动重试计数。
+            server_down = f"服务器暂时不可用（{exc.code}），没有上传：稍后重跑同一条 ocr 命令，键不变，不会重复建任务。"
+            failed.append({"file": relative, "reason": server_down, "retryable": True})
+            continue
         job_id = str((data or {}).get("jobId") or "")
         if not job_id:
             raise ClientError("badResponse", "服务器没有返回 OCR 任务号。")
-        pending.append({"file": relative, "sha256": sha, "jobId": job_id, "submittedAt": now()})
+        if attempt != attempts.get(sha, 0):
+            attempts[sha] = attempt
+            save_attempts(bundle, attempts)
+        pending.append({"file": relative, "sha256": sha, "jobId": job_id, "attempt": attempt, "submittedAt": now()})
         write_private(state_path, dump(pending))
-    done, failed = [], []
-    deadline = time.monotonic() + max(args.timeout, 0)
+    done = []
+    deadline = time.monotonic() + (0 if server_down else max(args.timeout, 0))
     while pending:
         left, waits = [], []
         for item in pending:
             path = f"/internal/ocr/mineru/tasks/{parse.quote(item['jobId'], safe='')}"
-            status = api.call("GET", path, auth=True) or {}
-            state = str(status.get("status") or "")
+            try:
+                status = api.call("GET", path, auth=True) or {}
+                state = str(status.get("status") or "")
+                result = api.call("GET", f"{path}/result", auth=True) or {} if state == "success" else {}
+            except ClientError as exc:
+                if not is_transient(exc):
+                    raise
+                # 服务器重启中：不是识别失败。任务还在，记着，下一轮（或下次重跑）再查。
+                left.append({**item, "state": "unreachable", "message": f"服务器暂时不可用（{exc.code}），稍后接着等"})
+                continue
             if state == "success":
-                result = api.call("GET", f"{path}/result", auth=True) or {}
                 if result.get("resultAvailable") is False:
                     failed.append({"file": item["file"], "reason": "服务器说识别完成，但没有结果"})
+                    record_failed_attempt(bundle, attempts, item)
                 else:
                     done.append(store_ocr(bundle, item, status, result))
             elif state in OCR_FAILED:
                 codes = "、".join(str(d.get("code")) for d in status.get("diagnostics") or [] if isinstance(d, dict) and d.get("code"))
                 failed.append({"file": item["file"], "reason": f"服务器 OCR {state}" + (f"：{codes}" if codes else "")})
+                record_failed_attempt(bundle, attempts, item)
             else:
                 left.append({**item, "state": state or "unknown", "provider": status.get("provider"),
                              "message": status.get("statusMessage")})
@@ -1565,11 +1643,21 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
             break
         time.sleep(pause)
     result: dict[str, Any] = {"bundle": str(bundle), "done": done, "cached": cached, "skipped": skipped, "failed": failed}
+    steps = []
     if pending:
         result["pending"] = [{k: i.get(k) for k in ("file", "state", "provider", "message")} for i in pending]
-        result["nextStep"] = "服务器还在识别：过一两分钟再跑同一条 ocr 命令接着等，不会重新上传。"
-    elif done or cached:
-        result["nextStep"] = "重跑 search，检索就带上 OCR 文字；读某份文件用 text --file（扫描页给的是 OCR 文字）。"
+        if any(i.get("state") == "unreachable" for i in pending):
+            steps.append("服务器暂时不可用（API 每约半小时重启一次，约一分钟）：等一两分钟再跑同一条 ocr 命令接着等，任务还在，不会重新上传。")
+        else:
+            steps.append("服务器还在识别：过一两分钟再跑同一条 ocr 命令接着等，不会重新上传。")
+    if any(not f.get("retryable") for f in failed):
+        steps.append("失败的文件：再跑一次同一条 ocr 命令会换新任务重试一次（已记下重试次数）；仍失败就写进 limitations，相关事实交人工确认。")
+    if any(f.get("retryable") for f in failed):
+        steps.append(server_down or "服务器暂时不可用，没有上传的文件稍后重跑同一条 ocr 命令，不会重复建任务。")
+    if not steps and (done or cached):
+        steps.append("重跑 search，检索就带上 OCR 文字；读某份文件用 text --file（扫描页给的是 OCR 文字）。")
+    if steps:
+        result["nextStep"] = "；".join(steps)
     if not targets:
         result["note"] = "没有需要 OCR 的文件：包里的原件都有文字层。"
     return result

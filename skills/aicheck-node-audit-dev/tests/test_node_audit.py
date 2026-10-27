@@ -56,6 +56,8 @@ class FakeServer:
         self.ocr_running_polls = 0  # 状态查询先回几次 running
         self.ocr_final = {"status": "success", "provider": "mineru"}
         self.ocr_result: dict = {}
+        self.ocr_status_failures = 0  # 查状态、取结果先回几次 502（API 重启中）
+        self.ocr_upload_failures = 0  # 上传先回几次 502
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -96,6 +98,10 @@ class FakeServer:
                     return
                 if not self.authed():
                     return
+                if path.startswith("/api/internal/ocr/mineru/tasks/") and outer.ocr_status_failures > 0:
+                    outer.ocr_status_failures -= 1
+                    self.send_json(None, status=502, code="BAD_GATEWAY", message="Bad Gateway")
+                    return
                 if path.startswith("/api/internal/ocr/mineru/tasks/") and path.endswith("/result"):
                     self.send_json(outer.ocr_result)
                     return
@@ -131,6 +137,10 @@ class FakeServer:
                     raw = self.rfile.read(length)
                     outer.requests.append(("POST", self.path, dict(self.headers)))
                     if not self.authed():
+                        return
+                    if outer.ocr_upload_failures > 0:
+                        outer.ocr_upload_failures -= 1
+                        self.send_json(None, status=502, code="BAD_GATEWAY", message="Bad Gateway")
                         return
                     key = self.headers.get("Idempotency-Key")
                     outer.ocr_uploads.append((dict(self.headers), raw))
@@ -1066,6 +1076,100 @@ class NodeAuditTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(out["data"]["failed"], [{"file": png, "reason": "服务器 OCR failed：QWEN_OCR_FAILED"}])
         self.assertFalse((bundle / "ocr" / f"{na.ocr_key(png)}.json").exists())
+
+    # ---- 重试换键：服务器的幂等记录不过期，同一个键永远拿回第一次建的任务（失败的也是）
+
+    def upload_keys(self) -> list[str]:
+        return [{k.lower(): v for k, v in headers.items()}["idempotency-key"] for headers, _ in self.server.ocr_uploads]
+
+    def test_ocr_retry_after_a_failed_job_creates_a_new_job_with_a_new_key(self):
+        bundle, png = self.scan_bundle("retry")
+        self.login()
+        self.server.ocr_final = {"status": "failed", "diagnostics": [{"code": "MINERU_FAILED"}]}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+            self.assertEqual(code, 0, out)
+            self.assertEqual([f["file"] for f in out["data"]["failed"]], [png])
+            self.assertIn("换新任务重试", out["data"]["nextStep"])
+            sha = next(f["sha256"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"] == png)
+            self.assertEqual(json.loads((bundle / "ocr" / "attempts.json").read_text(encoding="utf-8")), {sha: 1})
+            # 重跑（不加 --force）：同一个键服务器会拿回失败的老任务；换了键才建新任务，这次成功
+            self.server.ocr_final = {"status": "success", "provider": "mineru"}
+            self.server.ocr_result = self.certificate_result()
+            code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertEqual([d["file"] for d in out["data"]["done"]], [png])
+        keys = self.upload_keys()
+        self.assertEqual(keys, [f"aicheck-node-audit-{sha[:48]}", f"aicheck-node-audit-{sha[:48]}-r1"])
+        self.assertEqual(len(self.server.ocr_jobs), 2)  # 两个任务：失败的和重试的
+        self.assertNotIn(sha, json.dumps(out["data"]["failed"]))  # 输出里不带哈希
+
+    def test_ocr_force_redoes_a_finished_file_with_a_new_job_and_plain_reruns_stay_cached(self):
+        bundle, png = self.scan_bundle("force")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            run("ocr", "--bundle", str(bundle), "--allow-egress")
+            run("ocr", "--bundle", str(bundle))  # 没变：不重做
+            self.assertEqual(len(self.server.ocr_uploads), 1)
+            code, out = run("ocr", "--bundle", str(bundle), "--force")
+            self.assertEqual((code, [d["file"] for d in out["data"]["done"]]), (0, [png]))
+            run("ocr", "--bundle", str(bundle), "--force")
+        keys = self.upload_keys()
+        self.assertEqual([k.rsplit("-r", 1)[-1] if "-r" in k.split("aicheck-node-audit-")[1] else "0" for k in keys], ["0", "1", "2"])
+        self.assertEqual(len(set(keys)), 3)
+
+    # ---- 服务器暂时不可用（API 每约半小时重启一次）：不中止，任务还在，下次接着等
+
+    def test_ocr_polling_treats_gateway_errors_as_still_waiting(self):
+        bundle, png = self.scan_bundle("gw")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        self.server.ocr_running_polls = 1  # 第一次查还在识别，任务留在待处理里
+        with patch.object(na, "OCR_POLL_SECONDS", 0), patch.object(na, "GATEWAY_RETRY_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress", "--timeout", "0")  # 先把任务交上去
+            self.assertEqual([p["state"] for p in out["data"]["pending"]], ["running"])
+            self.server.ocr_status_failures = 10 ** 6  # 服务器一直 502
+            code, out = run("ocr", "--bundle", str(bundle), "--timeout", "0")
+            self.assertEqual(code, 0, out)  # 没有中止
+            self.assertEqual([(p["file"], p["state"]) for p in out["data"]["pending"]], [(png, "unreachable")])
+            self.assertEqual(out["data"]["failed"], [])  # 不是识别失败
+            self.assertIn("任务还在", out["data"]["nextStep"])
+            self.assertTrue((bundle / "ocr" / "pending.json").exists())
+            self.assertFalse((bundle / "ocr" / "attempts.json").exists())  # 不动重试计数
+            self.server.ocr_status_failures = 3  # 恢复：中间还夹着几次 502，同一次命令里等过去
+            code, out = run("ocr", "--bundle", str(bundle), "--timeout", "60")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([d["file"] for d in out["data"]["done"]], [png])
+        self.assertEqual(len(self.server.ocr_uploads), 1)  # 全程没有重传
+        self.assertFalse((bundle / "ocr" / "pending.json").exists())
+
+    def test_ocr_upload_retries_gateway_errors_and_stops_when_the_server_stays_down(self):
+        bundle, png = self.scan_bundle("up")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        sleeps = []
+        with patch.object(na, "OCR_POLL_SECONDS", 0), patch.object(na, "GATEWAY_RETRY_SECONDS", 0), \
+                patch.object(na.time, "sleep", side_effect=sleeps.append):
+            self.server.ocr_upload_failures = 2  # API 重启中：Api.call 自己重试一次后抛出，再由 with_server_retry 等一等
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+            self.assertEqual((code, [d["file"] for d in out["data"]["done"]]), (0, [png]))
+            self.assertIn(10, sleeps)  # 等了第一档 10 秒再试
+            self.assertEqual(len(self.server.ocr_uploads), 1)
+            # 服务器一直不可用：不抛错、不动重试计数，文件标成可重试
+            bundle2, png2 = self.scan_bundle("up2")
+            self.server.ocr_jobs.clear()
+            self.server.ocr_uploads.clear()
+            self.server.ocr_upload_failures = 10 ** 6
+            code, out = run("ocr", "--bundle", str(bundle2), "--allow-egress")
+            self.assertEqual(code, 0, out)
+            self.assertEqual([(f["file"], f["retryable"]) for f in out["data"]["failed"]], [(png2, True)])
+            self.assertIn("键不变，不会重复建任务", out["data"]["failed"][0]["reason"])
+            self.assertFalse((bundle2 / "ocr" / "attempts.json").exists())
+            self.server.ocr_upload_failures = 0  # 恢复后重跑：还是第一个键（可能已经建过任务，会被拿回，不会重复）
+            code, out = run("ocr", "--bundle", str(bundle2))
+        self.assertEqual((code, [d["file"] for d in out["data"]["done"]]), (0, [png2]))
+        self.assertTrue(self.upload_keys()[0].startswith("aicheck-node-audit-") and "-r" not in self.upload_keys()[0].split("audit-")[1])
 
     def test_report_needs_ocr_for_a_scanned_page_it_rests_on(self):
         bundle, png = self.scan_bundle("gate")

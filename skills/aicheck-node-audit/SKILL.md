@@ -50,7 +50,7 @@ argument-hint: <projectId> <nodeId>  或  local <nodeId> <项目目录>
    - 看 `filesWithHits`（每份文件按词列命中页，如 `焊口 p4-6`）、`zeroHitTerms`（全包都没出现的词）、`idNumbersInText`（文字层里找得到的身份证号）。输出只是摘要，逐条命中和片段在 `saved` 给的 JSON 里，要看就读它，不要自己重定向输出。
    - `needsOcr`（图片、扫描件、读不了的 Office 文件）和 `needsOcrPages`（文字 PDF 里夹的扫描页）检索不到内容，下一步先 OCR。
    - `zeroHitTerms` 只对有文字（文字层或 OCR）的文件成立。输出里带 `zeroHitNote` 时，说明还有扫描件没 OCR、没被检索到；要写“全包没有某某”，先跑第 5 步再检索。
-5. **OCR 扫描件**：`$PY $S ocr --bundle $B`（要登录；本地资料包第一次要先问用户，同意后加 `--allow-egress`）。它把 `needsOcr`、`needsOcrPages` 里的原件上传到服务器识别，逐页文字存进资料包，返回 `done`（每份的 `saved` 是可直接读的文字，`provider` 写着是 MinerU 还是千问识别的）、`cached`、`skipped`、`failed`。返回 `pending` 是服务器还没识别完：隔一两分钟再跑同一条命令接着等，不会重新上传。跑完**重跑第 4 步的 `search`**：扫描件的文字进了检索，`ocrPages` 标出哪些页的文字来自 OCR。`failed`、`skipped` 的文件写进 `limitations`。
+5. **OCR 扫描件**：`$PY $S ocr --bundle $B`（要登录；本地资料包第一次要先问用户，同意后加 `--allow-egress`）。它把 `needsOcr`、`needsOcrPages` 里的原件上传到服务器识别，逐页文字存进资料包，返回 `done`（每份的 `saved` 是可直接读的文字，`provider` 写着是 MinerU 还是千问识别的）、`cached`、`skipped`、`failed`。返回 `pending` 是服务器还没识别完（`state: unreachable` 是服务器正在重启、暂时连不上：它每约半小时重启一次，约一分钟，任务还在）：隔一两分钟再跑同一条命令接着等，不会重新上传，也不用管 502。`failed` 里没有 `retryable` 的是识别失败：再跑一次同一条命令会自动换新任务重试一次，仍失败的写进 `limitations`、相关事实交人工确认，不要反复重跑；有 `retryable` 的是服务器不可用时没传上去，稍后重跑即可。`skipped` 的文件写进 `limitations`。跑完**重跑第 4 步的 `search`**：扫描件的文字进了检索，`ocrPages` 标出哪些页的文字来自 OCR。
    - **全包几乎都是扫描件或照片**：OCR 后按这个顺序用 `text` 读：本节点要核的证书或记录 → 设计（材料表、平面图、轴测图、设计说明）→ 交工、施工记录（元件检查、到货验收、施焊记录）→ 施工方案等全项目资料 → 其余。在资料包里建 `notes.md`，边读边把事实（文件、物理页、读到的值、来自文字层还是 OCR）记下来，最后从这里抄进 `audit.json`。`notes.md` 里的身份证号也要脱敏。
 6. **逐个原子检查取证**（每一项都要做，不能只做有工具的几项）：
    1. 适用性：按规则和设计、记录上逐字写明的条件判断；判不了就是证据不足，不要推成不适用。
