@@ -717,6 +717,11 @@ def knowledge_file_enabled(file: dict[str, Any], source: dict[str, Any]) -> bool
     )
 
 
+def is_project_file_source(source: dict[str, Any]) -> bool:
+    """项目资料是**被审查的对象**，不是审查依据（见 knowledge_clause_candidates）。"""
+    return str(source.get("sourceType") or "") in {"project-file", "project_file"}
+
+
 def is_standard_knowledge_file(file: dict[str, Any]) -> bool:
     if not file:
         return False
@@ -917,8 +922,14 @@ def knowledge_clause_candidates(
             if str(clause.get("fileId") or "") in canonical_file_ids:
                 continue
             file = files_by_id.get(clause.get("fileId")) or {}
-            source = sources_by_id.get(file.get("sourceId")) or {}
+            source = sources_by_id.get(file.get("sourceId") or clause.get("kbDocId")) or {}
             if not knowledge_file_enabled(file, source):
+                continue
+            # 与下面 knowledge_chunks 同一道排除：切片时 clause_from_chunk 给项目资料
+            # 也生成了条款，只拦分块等于没拦。2026-10-28 生产审计：库里 9016 条
+            # 项目资料条款都标成 standard_reference，09-03 至 09-25 的检索轨迹里
+            # 选中的审查依据有 16%（104/636）来自施工方上传的资料。
+            if is_project_file_source(source):
                 continue
             context_type = clause.get("contextType") or file.get("contextType")
             if quarantine_interference_reasons(
@@ -959,6 +970,10 @@ def knowledge_clause_candidates(
             continue
         source = sources_by_id.get(file.get("sourceId")) or {}
         if file and not knowledge_file_enabled(file, source):
+            continue
+        if is_project_file_source(
+            source or sources_by_id.get(target_clause.get("kbDocId") or link.get("kbDocId")) or {}
+        ):
             continue
         context_type = (
             link.get("contextType") or target_clause.get("contextType") or file.get("contextType")
@@ -1026,7 +1041,7 @@ def knowledge_clause_candidates(
         # 混入施工方自己上传的资料，等于用被审对象当审查依据。
         # 且这些分块 contextType 为空时会被默认成 standard_reference 加权，
         # 污染更重（2026-08-29 审计：向量库 53% 是项目文件，消费者为零）。
-        if source.get("sourceType") == "project-file":
+        if is_project_file_source(source):
             continue
         source_id = file.get("sourceId") or "KS-PROJECT-FILE"
         source_method = chunk.get("sourceMethod") or file.get("sourceMethod")

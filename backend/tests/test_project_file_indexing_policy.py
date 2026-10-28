@@ -61,9 +61,68 @@ def test_override_switch_restores_indexing(monkeypatch) -> None:
     assert task_dispatcher.project_file_indexing_blocker("KF-ANY") is None
 
 
+def _retrieval_state_with_project_files() -> dict:
+    """标准库一条条款 + 项目资料从三条路进候选：条款、分块、证据链接。
+
+    项目资料那几条故意写得比标准条款更贴查询词——排除失效时它们一定排在前面。
+    """
+    pf_text = "无损检测方案 审查依据：无损检测方案、X射线机一套、触电急救措施。"
+    return {
+        "knowledge_sources": [
+            {"id": "KS-STANDARD-RULES", "sourceType": "standard", "status": "启用"},
+            {"id": "KS-PROJECT-FILE", "sourceType": "project-file", "status": "启用"},
+        ],
+        "knowledge_files": [
+            {"id": "KF-STD", "sourceId": "KS-STANDARD-RULES", "fileName": "TSG D7006-2020.pdf",
+             "contextType": "standard_reference"},
+            {"id": "KF-PF", "sourceId": "KS-PROJECT-FILE", "fileName": "施工方案.pdf"},
+        ],
+        "knowledge_clauses": [
+            {"id": "KC-CHK-KF-STD-1", "clauseId": "CHK-KF-STD-1", "kbDocId": "KS-STANDARD-RULES",
+             "fileId": "KF-STD", "text": "D2.8.3 无损检测工艺文件(C类) 审查无损检测方案是否符合安全技术规范。",
+             "pageNo": 30, "bbox": [0, 0, 1, 1], "contextType": "standard_reference"},
+            # 切片时 clause_from_chunk 给项目资料生成的条款，contextType 也是 standard_reference
+            {"id": "KC-CHK-KF-PF-1", "clauseId": "CHK-KF-PF-1", "kbDocId": "KS-PROJECT-FILE",
+             "fileId": "KF-PF", "text": pf_text, "pageNo": 1, "bbox": [0, 0, 1, 1],
+             "contextType": "standard_reference"},
+            # 文件记录已经没了、只剩 kbDocId 的孤儿条款
+            {"id": "KC-CHK-KF-GONE-1", "clauseId": "CHK-KF-GONE-1", "kbDocId": "KS-PROJECT-FILE",
+             "fileId": "KF-GONE", "text": pf_text, "pageNo": 1, "bbox": [0, 0, 1, 1],
+             "contextType": "standard_reference"},
+        ],
+        "knowledge_chunks": [
+            {"id": "CHK-KF-PF-2", "fileId": "KF-PF", "text": pf_text, "pageNo": 2,
+             "bbox": [0, 0, 1, 1], "contextType": "standard_reference"},
+        ],
+        "evidence_links": [
+            {"id": "EL-PF-1", "objectType": "knowledgeClause", "objectId": "CHK-KF-PF-3",
+             "fileId": "KF-PF", "quotedText": pf_text, "pageNo": 3, "bbox": [0, 0, 1, 1]},
+        ],
+        "knowledge_page_index_nodes": [],
+    }
+
+
 def test_retrieval_candidates_exclude_project_files() -> None:
-    source = (BACKEND_ROOT / "libs" / "knowledge_retrieval.py").read_text(encoding="utf-8")
-    assert 'sourceType") == "project-file"' in source, "检索候选必须排除项目资料"
+    """不能只拦 knowledge_chunks：条款和证据链接是另外两条进候选的路。
+
+    原先这里只 grep 源码里有没有排除语句，分块那一路有，就过了；条款那一路
+    漏掉，2026-09 生产检索轨迹里 16% 的审查依据是施工方上传的资料。
+    """
+    from libs.knowledge_retrieval import knowledge_clause_candidates
+
+    candidates = knowledge_clause_candidates(_retrieval_state_with_project_files())
+    assert [item["clauseId"] for item in candidates] == ["CHK-KF-STD-1"]
+
+
+def test_review_basis_search_never_returns_project_files() -> None:
+    from libs.knowledge_retrieval import retrieve_knowledge_clauses
+
+    result = retrieve_knowledge_clauses(
+        _retrieval_state_with_project_files(), query="无损检测方案 审查依据", top_k=5
+    )
+    selected = result["trace"]["selectedClauses"]
+    assert [item["clauseId"] for item in selected] == ["CHK-KF-STD-1"]
+    assert all(item.get("kbDocId") != "KS-PROJECT-FILE" for item in selected)
 
 
 def test_submission_gate_is_ocr_only() -> None:
