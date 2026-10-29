@@ -973,7 +973,7 @@ atomicChecks:
   nodeId: 30
   name: 焊接接头外观质量·外观记录和必要照片
   checkType: evidence_and_deterministic_rule
-  instruction: 核验外观检查记录对应焊口、检验等级、接头类型和壁厚；设计或监检方案要求照片时核验照片与焊口可追溯。
+  instruction: 核验外观检查记录对应焊口、检验等级、接头类型和壁厚；设计或监检方案要求照片时核验照片与焊口可追溯。有监检外观抽查记录时，按TSG D7006-2020 D2.6.5(2)核验抽查数量：GC1级不少于每个施工机组焊接接头总数的5%，其他管道不少于2%；没有抽查记录时抽查数量交监检人员现场确认。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R30-02
@@ -1196,16 +1196,16 @@ atomicChecks:
   sourceRuleId: R41
   ruleId: RULE-ENG-INSP-R41
   nodeId: 41
-  name: 射线检测底片抽查·原子项1
+  name: 射线检测底片抽查·底片抽查比例与质量
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证：需提供相关所有射线检测底片
+  instruction: 工作见证：需提供相关所有射线检测底片（数字射线为数字图像）。按TSG D7006-2020 D2.8.5核验抽查数量不少于底片总数的5%，并包括每个施工单位施焊的焊接接头，其中包括固定焊焊接接头和返修部位；按NB/T 47013.2或47013.11核验底片标识、像质计灵敏度、黑度、几何不清晰度和缺陷评定与报告一致；评片质量不符合标准或设计时应增加抽查比例。底片数量或抽查记录缺失时结论为证据不足，底片实物质量交监检人员确认。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R41-02
   sourceRuleId: R41
   ruleId: RULE-ENG-INSP-R41
   nodeId: 41
-  name: 射线检测底片抽查·原子项2
+  name: 射线检测底片抽查·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -1214,16 +1214,16 @@ atomicChecks:
   sourceRuleId: R42
   ruleId: RULE-ENG-INSP-R42
   nodeId: 42
-  name: 射线检测现场抽查·原子项1
+  name: 射线检测现场抽查·现场射线抽查比例与结果
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证：需提供射线检测现场抽查的底片、记录和报告
+  instruction: 工作见证：需提供射线检测现场抽查的底片、记录和报告。按TSG D7006-2020 D2.8.6核验抽查数量不少于焊接接头总数的1‰且不少于2个焊接接头，并包括每个施工单位施焊和每个检测机构检测的焊接接头；抽查结果不合格时，核验已对同一施工单位及无损检测机构负责范围内的焊接接头加倍抽查。焊接接头总数或抽查记录缺失时结论为证据不足。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R42-02
   sourceRuleId: R42
   ruleId: RULE-ENG-INSP-R42
   nodeId: 42
-  name: 射线检测现场抽查·原子项2
+  name: 射线检测现场抽查·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -1502,16 +1502,16 @@ atomicChecks:
   sourceRuleId: R57
   ruleId: RULE-ENG-INSP-R57
   nodeId: 57
-  name: 安全阀校验报告·原子项1
+  name: 安全阀校验报告·安全阀校验参数
   checkType: evidence_and_deterministic_rule
-  instruction: 审查安全阀校验报告中的开启压力、密封压力等是否符合安全技术规范等的要求
+  instruction: 按TSG D7006-2020 D2.12(2)逐台核验安全阀校验报告的整定压力（开启压力）、回座压力和密封试验压力符合安全技术规范及设计文件要求，并核验校验报告与安装位号、规格型号、校验日期和有效期对应；报告缺回座压力或密封试验压力时结论为证据不足。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R57-02
   sourceRuleId: R57
   ruleId: RULE-ENG-INSP-R57
   nodeId: 57
-  name: 安全阀校验报告·原子项2
+  name: 安全阀校验报告·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -1556,16 +1556,16 @@ atomicChecks:
   sourceRuleId: R60
   ruleId: RULE-ENG-INSP-R60
   nodeId: 60
-  name: 试验用压力表、试验介质、介质温度、环境温度·原子项1
+  name: 试验用压力表、试验介质、介质温度、环境温度·试验用压力表与介质
   checkType: evidence_and_deterministic_rule
-  instruction: 现场检查试验用压力表、试验介质、介质温度、环境温度（如压力表不得少于2块，并在检定有效期内，精度不得低于1.6级，量程为最大试验压力的1.5~2倍等）
+  instruction: 按TSG D7006-2020 D2.13.1(2)检查压力表的直径、量程、精度、检定有效期，试验介质、介质温度和试验环境温度：GB/T 20801.1-2025第8.6.1.2.5条要求压力表经校验并在有效期内、精度不低于1.6级、满刻度为最大试验压力的1.5～2.0倍、不少于2块且至少1块装在液位最高点；表盘直径按试验方案或设计文件核验，没有规定时只核记录与方案一致。液压试验用洁净水，奥氏体不锈钢管道或组件的水中氯离子不超过50mg/L，试验流体温度不低于5℃；设计文件采用其他标准时按其规定。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R60-02
   sourceRuleId: R60
   ruleId: RULE-ENG-INSP-R60
   nodeId: 60
-  name: 试验用压力表、试验介质、介质温度、环境温度·原子项2
+  name: 试验用压力表、试验介质、介质温度、环境温度·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -1574,25 +1574,26 @@ atomicChecks:
   sourceRuleId: R61
   ruleId: RULE-ENG-INSP-R61
   nodeId: 61
-  name: 耐压试验压力、保压时间及结果·原子项1
+  name: 耐压试验压力、保压时间及结果·液压试验压力与保压
   checkType: evidence_and_deterministic_rule
-  instruction: 现场检查耐压试验压力、保压时间及结果（如液压试验时，试验压力为设计压力的1.5倍（不考虑温度系数），保压时间不应少于10min
+  instruction: 按设计文件规定的标准核验液压试验：GB/T 20801.1-2025第8.6.1.3条试验压力不低于设计压力的1.5倍，设计温度高于试验温度时按公式(54) pT=1.5p·S1/S2（S1试验温度下、S2设计温度下许用应力）补偿，原检查方法中的“不考虑温度系数”只适用于设计温度不高于试验温度的情形；许用应力取不到时“满足1.5倍”不得判为符合。保压不少于10min后降至设计压力检查；设计文件采用GB
+    50235-2010时按其8.6.4条，试验压力下稳压10min后降至设计压力稳压30min，无压降、无渗漏。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R61-02
   sourceRuleId: R61
   ruleId: RULE-ENG-INSP-R61
   nodeId: 61
-  name: 耐压试验压力、保压时间及结果·原子项2
+  name: 耐压试验压力、保压时间及结果·气压试验压力与上限
   checkType: evidence_and_deterministic_rule
-  instruction: 气压试验时，试验压力不低于设计压力的1.1倍等）
+  instruction: 气压试验按GB/T 20801.1-2025第8.6.1.4条核验试验压力不低于设计压力的1.1倍，且不超过1.33倍设计压力与屈服强度极限对应试验压力的90%中的较小者，并核验逐级升压和稳压过程；设计文件采用GB 50235-2010时按其8.6.5条，试验压力为设计压力的1.15倍。屈服强度极限对应压力取不到时不得因满足1.33倍上限判为符合。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R61-03
   sourceRuleId: R61
   ruleId: RULE-ENG-INSP-R61
   nodeId: 61
-  name: 耐压试验压力、保压时间及结果·原子项3
+  name: 耐压试验压力、保压时间及结果·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true

@@ -2460,7 +2460,10 @@ atomicCheckToolBindings:
   tools:
   - get_document_ocr_result
   - extract_document_fields
+  - extract_table_records
   - check_required
+  - check_cross_document_match
+  - check_sampling_requirement
   - evaluate_rt_film
   - validate_evidence_grounding
   parameters:
@@ -2500,6 +2503,7 @@ atomicCheckToolBindings:
   - extract_document_fields
   - extract_table_records
   - check_required
+  - check_scope_coverage
   - check_sampling_requirement
   - evaluate_rt_film
   - validate_evidence_grounding
