@@ -8170,6 +8170,44 @@
         "summary": "Fde Blind Review Decision"
       }
     },
+    "/api/fde/blind-review/tasks/{task_id}/materials": {
+      "get": {
+        "description": "Only source-file metadata from the sampled run; never return review conclusions.",
+        "operationId": "fde_blind_review_materials_api_fde_blind_review_tasks__task_id__materials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fde Blind Review Materials"
+      }
+    },
     "/api/fde/blockers": {
       "get": {
         "operationId": "fde_blockers_api_fde_blockers_get",
@@ -16878,7 +16916,7 @@
     },
     "/api/mcp/data-services": {
       "delete": {
-        "operationId": "mcp_api_mcp_data_services_post",
+        "operationId": "mcp_api_mcp_data_services_get",
         "responses": {
           "200": {
             "content": {
@@ -16892,7 +16930,7 @@
         "summary": "Mcp"
       },
       "get": {
-        "operationId": "mcp_api_mcp_data_services_post",
+        "operationId": "mcp_api_mcp_data_services_get",
         "responses": {
           "200": {
             "content": {
@@ -16906,7 +16944,7 @@
         "summary": "Mcp"
       },
       "post": {
-        "operationId": "mcp_api_mcp_data_services_post",
+        "operationId": "mcp_api_mcp_data_services_get",
         "responses": {
           "200": {
             "content": {
@@ -32939,6 +32977,44 @@
           }
         },
         "summary": "Fde Blind Review Decision"
+      }
+    },
+    "/fde/blind-review/tasks/{task_id}/materials": {
+      "get": {
+        "description": "Only source-file metadata from the sampled run; never return review conclusions.",
+        "operationId": "fde_blind_review_materials_fde_blind_review_tasks__task_id__materials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fde Blind Review Materials"
       }
     },
     "/fde/blockers": {
