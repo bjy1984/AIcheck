@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import stat
 import tempfile
 import threading
@@ -52,11 +53,13 @@ class FakeServer:
         self.gateway_failures = 0  # 下一次登记查询先回几次 502
         self.registry_unavailable = 0  # 下一次登记查询先回几次 503（公示平台暂不可查询）
         self.workspace = WORKSPACE
+        self.workspace_mode = "ok"  # auth200 | forbidden200 | missing200：生产的业务错误是 HTTP 200 + 数字 code
         # 服务器 OCR 接口的测试桩：上传、查状态、取结果（同 apps/api/mineru_ocr_routes）
         self.ocr_uploads: list[tuple[dict, bytes]] = []  # (请求头, 正文)
         self.ocr_jobs: dict[str, str] = {}  # Idempotency-Key → jobId
         self.ocr_running_polls = 0  # 状态查询先回几次 running
         self.ocr_final = {"status": "success", "provider": "mineru"}
+        self.ocr_job_status: dict[str, dict] = {}  # 个别任务的状态（如上次留下的失败任务），盖过 ocr_final
         self.ocr_result: dict = {}
         self.image_mode = "png"  # png | missing（服务器没部署）| auth200（HTTP 200 里藏着没登录的 JSON）| garbled（页内容不是 PNG）
         self.image_pages = 1  # 服务器这次渲染出几页
@@ -65,6 +68,9 @@ class FakeServer:
         self.image_gateway_failures = 0
         self.ocr_status_failures = 0  # 查状态、取结果先回几次 502（API 重启中）
         self.ocr_upload_failures = 0  # 上传先回几次 502
+        self.ocr_status_mode = "ok"  # missing：任务被服务器清理（HTTP 200 + 40404）；auth：令牌过期（HTTP 200 + 401）
+        self.download_failures = 0  # 下载原件先回几次 502
+        self.calls: list[tuple[str, dict]] = []  # 下面这些只读接口收到的 (路径, 查询或正文)
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -87,7 +93,7 @@ class FakeServer:
 
             def authed(self):
                 if self.headers.get("Authorization") != f"Bearer {TOKEN}":
-                    self.send_json(None, status=401, code="UNAUTHORIZED", message="未登录")
+                    self.send_json({"reason": "AUTH_REQUIRED"}, status=200, code=401, message="请先登录。")
                     return False
                 return True
 
@@ -103,7 +109,20 @@ class FakeServer:
                 if path == "/api/inspection-services/standards":
                     self.send_json({"items": [{"fileId": "KF-1", "text": "表" * 5000, "standardContentArguments": {"fileId": "KF-1"}}]})
                     return
+                if path in {"/api/readyz", "/api/inspection-services/capabilities"} or path.startswith("/api/inspection-services/standards/"):
+                    outer.calls.append((path, parse_qs(urlsplit(self.path).query)))
+                    self.send_json({"ready": True} if path == "/api/readyz" else
+                                   {"tools": ["certificate-registry"]} if path.endswith("capabilities") else
+                                   {"fileId": path.split("/")[-2], "text": "D2.6.1 焊工（B 类）"})
+                    return
                 if not self.authed():
+                    return
+                if path == "/api/auth/me":
+                    self.send_json({"user": {"username": "zhang", "role": "inspection", "displayName": "张", "token": "x"}})
+                    return
+                if path.startswith("/api/internal/ocr/mineru/tasks/") and outer.ocr_status_mode != "ok":
+                    code = {"missing": 40404, "auth": 401}[outer.ocr_status_mode]
+                    self.send_json({"reason": "X"}, status=200, code=code, message="对象不存在或无权访问。" if code == 40404 else "请先登录。")
                     return
                 if path.startswith("/api/internal/ocr/mineru/tasks/") and outer.ocr_status_failures > 0:
                     outer.ocr_status_failures -= 1
@@ -113,24 +132,35 @@ class FakeServer:
                     self.send_json(outer.ocr_result)
                     return
                 if path.startswith("/api/internal/ocr/mineru/tasks/"):
+                    job = path.rsplit("/", 1)[-1]
+                    outer.calls.append((path, {}))
+                    if job in outer.ocr_job_status:
+                        self.send_json({"jobId": job, "recommendedPollSeconds": 0, **outer.ocr_job_status[job]})
+                        return
                     running = outer.ocr_running_polls > 0
                     outer.ocr_running_polls -= 1 if running else 0
-                    self.send_json({"jobId": path.rsplit("/", 1)[-1], "recommendedPollSeconds": 0,
+                    self.send_json({"jobId": job, "recommendedPollSeconds": 0,
                                     **({"status": "running", "provider": "mineru", "statusMessage": "MinerU 正在处理文件。"}
                                        if running else outer.ocr_final)})
                     return
-                if path == f"{node}/audit-workspace":
+                if path == f"{node}/audit-workspace" and outer.workspace_mode != "ok":
+                    business = {"auth200": 401, "forbidden200": 403, "missing200": 40404}[outer.workspace_mode]
+                    self.send_json({"reason": "X"}, status=200, code=business, message="服务器拒绝。")
+                elif path == f"{node}/audit-workspace":
                     self.send_json(outer.workspace)
                 elif path == f"{node}/rules/current-version":
                     self.send_json({"rule": outer.server_rule})
                 elif path == f"{node}/standards":
                     self.send_json([{"standardName": "TSG D7006", "clauseNo": "D2.6.1"}])
                 elif path == f"{node}/evidence-chain":
-                    self.send_json(None, status=403, code="FORBIDDEN", message="无权")
+                    self.send_json({"reason": "FORBIDDEN"}, status=200, code=403, message="当前角色无权执行该操作。")
                 elif path == "/api/review-runs/RRUN-NEW":
                     self.send_json({"run": {"reviewRunId": "RRUN-NEW", "atomicCheckOutcomes": [
                         {"atomicCheckId": "AC-R24-01", "result": "evidence_insufficient", "decisionSource": "rule_engine"},
                         {"atomicCheckId": "AC-R24-05", "result": "passed", "decisionSource": "rule_engine"}]}})
+                elif path == "/api/projects/P-T/documents/DOC-1/original" and outer.download_failures > 0:
+                    outer.download_failures -= 1
+                    self.send_json(None, status=502, code="BAD_GATEWAY", message="Bad Gateway")
                 elif path == "/api/projects/P-T/documents/DOC-1/original":
                     self.send_response(302)
                     self.send_header("Location", "/storage/blob")
@@ -173,6 +203,15 @@ class FakeServer:
                     self.send_json({"jobId": job, "status": "queued", "recommendedPollSeconds": 0})
                     return
                 path, body = self.record("POST")
+                if path == "/api/inspection-services/certificate-validity":
+                    outer.calls.append((path, body))
+                    self.send_json({"conclusion": "valid", "certificates": body["certificates"]})
+                    return
+                if path in {"/api/auth/logout", "/api/cnse/organizations/search"}:
+                    if self.authed():
+                        outer.calls.append((path, body))
+                        self.send_json({"loggedOut": True} if path.endswith("logout") else {"items": [{"name": body["keyword"], "licenseNo": "TS1234567-2030"}]})
+                    return
                 if path == "/api/auth/skill/token":
                     import hashlib as _h
 
@@ -298,6 +337,40 @@ class NodeAuditTest(unittest.TestCase):
         manifest = json.loads((out_dir / "bundle.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["files"], [])
         self.assertTrue(any("接口结构可能变了" in w for w in manifest["warnings"]), manifest["warnings"])
+
+    def test_server_json_is_masked_in_the_bundle_and_the_raw_copy_still_serves_the_registry(self):
+        full, masked = "110101199001011237", "1101**********1237"
+        self.login()
+        fields = [{"documentVersionId": "V-1", "fieldName": "身份证号", "fieldValue": full, "pageNo": 1, "confidence": 0.9}]
+        self.server.workspace = {**WORKSPACE, "content": {**WORKSPACE["content"], "ocr": {"extractedFields": fields}}}
+        out_dir = Path(self.tmp.name) / "masked"
+        code, out = run("fetch", "--project", "P-T", "--node", "24", "--out", str(out_dir))
+        self.assertEqual(code, 0, out)
+        # 助手会读的那几份（根目录 JSON、摘要）只有脱敏号；原文在 ocr/server/ 下，只给脚本回查
+        for name in ("workspace.json", "review-run.json", "digest.md"):
+            text = (out_dir / name).read_text(encoding="utf-8")
+            self.assertNotIn(full, text, name)
+            self.assertFalse(na.contains_id_number(text), name)
+        self.assertIn(masked, (out_dir / "workspace.json").read_text(encoding="utf-8"))
+        raw = out_dir / "ocr" / "server" / "workspace.json"
+        self.assertIn(full, raw.read_text(encoding="utf-8"))
+        self.assertEqual(stat.S_IMODE(raw.stat().st_mode), 0o600)
+        # 原件是打不开的假 PDF、没跑 OCR：完整号码只在服务器 JSON 原文里，脱敏号照样查得了登记
+        code, out = run("cert-registry", "--kind", "person", "--identifier", masked, "--bundle", str(out_dir))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.server.requests[-1][2]["_body"]["identifier"], full)
+        self.assertEqual(out["data"]["records"]["person"]["sfzh"], masked)
+
+    def test_business_errors_inside_http_200_are_translated_like_http_errors(self):
+        self.login()
+        for mode, expected, server_code in (("auth200", "loginRequired", "401"), ("forbidden200", "forbidden", "403"),
+                                            ("missing200", "notFound", "40404")):
+            self.server.workspace_mode = mode
+            code, out = run("fetch", "--project", "P-T", "--node", "24", "--out", str(Path(self.tmp.name) / mode))
+            self.assertEqual((code, out["error"]["code"], out["error"]["serverCode"]), (1, expected, server_code), out)
+            self.assertFalse((Path(self.tmp.name) / mode).exists())  # 拿不到工作区就不建包
+            if expected == "loginRequired":
+                self.assertIn("login --web", out["error"]["message"])
 
     def test_token_not_sent_to_other_server(self):
         na.write_private(self.session, json.dumps({"baseUrl": "http://127.0.0.1:1", "token": TOKEN}))
@@ -437,6 +510,28 @@ class NodeAuditTest(unittest.TestCase):
             doc.save(mixed)
         code, out = run("text", "--file", str(mixed))
         self.assertEqual((code, out["data"]["pagesWithoutText"]), (0, "2"))
+        # --pages 只转指定页，存成带页码的文件，不覆盖整份转出的那份
+        code, out = run("text", "--file", str(mixed), "--pages", "1")
+        self.assertEqual((code, out["data"]["readPages"], out["data"]["pages"]), (0, "1", 2), out)
+        self.assertNotIn("pagesWithoutText", out["data"])
+        part = Path(out["data"]["saved"])
+        self.assertEqual(part.name, "10-方案.p1.txt")
+        self.assertIn("--- 第 1 页 ---", part.read_text(encoding="utf-8"))
+        self.assertNotIn("第 2 页", part.read_text(encoding="utf-8"))
+        self.assertIn("第 2 页", (bundle / "text" / "10-方案.txt").read_text(encoding="utf-8"))
+        self.assertEqual(run("text", "--file", str(mixed), "--pages", "2")[1]["data"]["pagesWithoutText"], "2")
+        self.assertEqual(run("text", "--file", str(mixed), "--pages", "3")[1]["error"]["code"], "pageOutOfRange")
+        long_pdf = bundle / "files" / "11-长文件.pdf"
+        with fitz.open() as doc:
+            for n in range(1, 22):
+                doc.new_page().insert_text((72, 72), f"第{n}页 焊接记录 焊口编号 W{n:03d} 焊工钢印 足够多的文字", fontname="china-s")
+            doc.save(long_pdf)
+        whole = run("text", "--file", str(long_pdf))[1]["data"]
+        self.assertIn("--pages", whole["readHint"])  # 整份超过 20 页就提示按命中页读
+        code, out = run("text", "--file", str(long_pdf), "--pages", "2-3,21")
+        self.assertEqual((code, out["data"]["readPages"], Path(out["data"]["saved"]).name), (0, "2-3,21", "11-长文件.p2-3_21.txt"))
+        self.assertNotIn("readHint", out["data"])
+        self.assertEqual(re.findall(r"--- 第 (\d+) 页", Path(out["data"]["saved"]).read_text(encoding="utf-8")), ["2", "3", "21"])
         outside = tmp / "repo" / "rules" / "standards" / "std.pdf"
         outside.parent.mkdir(parents=True)
         outside.write_bytes(mixed.read_bytes())
@@ -716,6 +811,29 @@ class NodeAuditTest(unittest.TestCase):
         self.assertIn(masked, json.loads(raw))
         self.assertEqual(na.mask_value({"n": 3, "ok": True, "none": None}), {"n": 3, "ok": True, "none": None})
         self.assertEqual(na.mask_ids("统一社会信用代码 91110000600000001X 不是身份证"), "统一社会信用代码 91110000600000001X 不是身份证")
+
+    def test_masking_also_hides_misread_and_spaced_numbers_but_leaves_other_codes_alone(self):
+        # OCR 读错一位（校验位对不上）、号码被拆成 6+8+4 段：都要遮；以 9 开头的信用代码、嵌着日期的 18 位单号不遮
+        self.assertEqual(na.mask_ids("号码 110101199001011238（校验位错）"), "号码 1101**********1238（校验位错）")
+        self.assertEqual(na.mask_ids("号码 110101 19900101 1237 末"), "号码 1101**********1237 末")
+        untouched = "单号 202610271234567890 信用代码 91110000600000001X 哈希 ab110101199001011237cd"
+        self.assertEqual(na.mask_ids(untouched), untouched)
+        self.assertTrue(na.contains_id_number("110101199001011238"))
+        self.assertFalse(na.is_id_number("110101199001011238"))
+        self.assertTrue(na.is_id_number("110101 19900101 1237"))
+        # 读错一位的号码：search 列出脱敏号，查登记时脚本找回它、校验不过就交人工，不去平台、不让助手看图重读
+        misread, masked = "110101199001011238", "1101**********1238"
+        root = self.project_dir()
+        (root / "焊工名单.txt").write_text(f"焊工 李四 身份证号 {misread}", encoding="utf-8")
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "misread"))[1]["data"]["bundle"])
+        code, out = run("search", "--bundle", str(bundle), "--terms", "身份证号")
+        self.assertEqual(code, 0, out)
+        self.assertIn(masked, out["data"]["idNumbersInText"])
+        before = len(self.server.requests)
+        code, out = run("cert-registry", "--kind", "person", "--identifier", masked, "--bundle", str(bundle))
+        self.assertEqual((code, out["error"]["code"], len(self.server.requests)), (1, "idChecksumFailed", before), out)
+        self.assertIn("交人工", out["error"]["message"])
+        self.assertNotIn("--clip", out["error"]["message"])
 
     @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
     def test_pages_text_masks_id_on_its_own_line(self):
@@ -1002,8 +1120,13 @@ class NodeAuditTest(unittest.TestCase):
             self.assertEqual(na.plain_latex(raw), plain, raw)
         html = ('<table><tr><td rowspan="2">板</td><td>手工焊</td><td rowspan="2">自定</td></tr>'
                 '<tr><td>机动焊</td></tr><tr><td>管</td><td colspan="2">&lt;25</td></tr></table>')
-        # 合并单元格在所跨的每一行都重复：逐行读就知道“机动焊”这一行的厚度也是“自定”
-        self.assertEqual(na.table_text(html).splitlines(), ["板 | 手工焊 | 自定", "板 | 机动焊 | 自定", "管 | <25 | <25"])
+        # 合并单元格在所跨的每一行都重复：逐行读就知道“机动焊”这一行的厚度也是“自定”；横跨的只写一次、标跨几列
+        self.assertEqual(na.table_text(html).splitlines(), ["板 | 手工焊 | 自定", "板 | 机动焊 | 自定", "管 | <25（跨2列）"])
+        spans = ('<table><tr><td colspan="3">化学成分%</td></tr><tr><td>C</td><td>Mn</td><td>Si</td></tr>'
+                 '<tr><td rowspan="2" colspan="2">合格</td><td>a</td></tr><tr><td>b</td></tr>'
+                 '<tr><td colspan="2"></td><td>c</td></tr></table>')
+        self.assertEqual(na.table_text(spans).splitlines(),
+                         ["化学成分%（跨3列）", "C | Mn | Si", "合格（跨2列） | a", "合格（跨2列） | b", " | c"])
         pages = na.server_ocr_pages({"pageCount": 3, "fragments": [
             {"pageNo": 1, "readingOrder": 2, "text": "第二段"}, {"pageNo": 1, "readingOrder": 1, "text": "第一段"},
             {"pageNo": 2, "readingOrder": 1, "text": "板 手工焊 自定 板 机动焊", "tableHtml": html}],
@@ -1109,7 +1232,10 @@ class NodeAuditTest(unittest.TestCase):
         with patch.object(na, "OCR_POLL_SECONDS", 0):
             code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
         self.assertEqual(code, 0, out)
-        self.assertEqual(out["data"]["failed"], [{"file": png, "reason": "服务器 OCR failed：QWEN_OCR_FAILED"}])
+        # 失败了当场换新任务重传一次；第二次还失败才报，并说明已经重试过
+        self.assertEqual(out["data"]["failed"], [{"file": png, "reason": "服务器 OCR failed：QWEN_OCR_FAILED", "autoRetried": True}])
+        self.assertEqual((out["data"]["retried"], len(self.server.ocr_uploads)), ([png], 2))
+        self.assertIn("不要反复重跑", out["data"]["nextStep"])
         self.assertFalse((bundle / "ocr" / f"{na.ocr_key(png)}.json").exists())
 
     # ---- 重试换键：服务器的幂等记录不过期，同一个键永远拿回第一次建的任务（失败的也是）
@@ -1127,7 +1253,8 @@ class NodeAuditTest(unittest.TestCase):
             self.assertEqual([f["file"] for f in out["data"]["failed"]], [png])
             self.assertIn("换新任务重试", out["data"]["nextStep"])
             sha = next(f["sha256"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"] == png)
-            self.assertEqual(json.loads((bundle / "ocr" / "attempts.json").read_text(encoding="utf-8")), {sha: 1})
+            # 这一次命令里：第一个任务失败 → 当场换键 r1 重传 → 又失败；两次都记下
+            self.assertEqual(json.loads((bundle / "ocr" / "attempts.json").read_text(encoding="utf-8")), {sha: 2})
             # 重跑（不加 --force）：同一个键服务器会拿回失败的老任务；换了键才建新任务，这次成功
             self.server.ocr_final = {"status": "success", "provider": "mineru"}
             self.server.ocr_result = self.certificate_result()
@@ -1135,8 +1262,8 @@ class NodeAuditTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual([d["file"] for d in out["data"]["done"]], [png])
         keys = self.upload_keys()
-        self.assertEqual(keys, [f"aicheck-node-audit-{sha[:48]}", f"aicheck-node-audit-{sha[:48]}-r1"])
-        self.assertEqual(len(self.server.ocr_jobs), 2)  # 两个任务：失败的和重试的
+        self.assertEqual(keys, [f"aicheck-node-audit-{sha[:48]}", f"aicheck-node-audit-{sha[:48]}-r1", f"aicheck-node-audit-{sha[:48]}-r2"])
+        self.assertEqual(len(self.server.ocr_jobs), 3)  # 三个任务：失败的、当场重试又失败的、这次成功的
         self.assertNotIn(sha, json.dumps(out["data"]["failed"]))  # 输出里不带哈希
 
     def test_ocr_force_redoes_a_finished_file_with_a_new_job_and_plain_reruns_stay_cached(self):
@@ -1198,8 +1325,9 @@ class NodeAuditTest(unittest.TestCase):
             self.server.ocr_upload_failures = 10 ** 6
             code, out = run("ocr", "--bundle", str(bundle2), "--allow-egress")
             self.assertEqual(code, 0, out)
-            self.assertEqual([(f["file"], f["retryable"]) for f in out["data"]["failed"]], [(png2, True)])
-            self.assertIn("键不变，不会重复建任务", out["data"]["failed"][0]["reason"])
+            # 没传上去不是识别失败：单列 notUploaded，failed 里只放真失败
+            self.assertEqual((out["data"]["notUploaded"], out["data"]["failed"]), ([png2], []))
+            self.assertIn("键不变，不会重复建任务", out["data"]["nextStep"])
             self.assertFalse((bundle2 / "ocr" / "attempts.json").exists())
             self.server.ocr_upload_failures = 0  # 恢复后重跑：还是第一个键（可能已经建过任务，会被拿回，不会重复）
             code, out = run("ocr", "--bundle", str(bundle2))
@@ -1221,6 +1349,36 @@ class NodeAuditTest(unittest.TestCase):
             self.assertEqual(run("ocr", "--bundle", str(bundle), "--allow-egress")[0], 0)
         code, out = run("report", "--bundle", str(bundle))
         self.assertEqual(code, 0, out)
+    def test_report_checks_the_excerpt_against_the_cited_page(self):
+        bundle, png = self.scan_bundle("excerpt")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            self.assertEqual(run("ocr", "--bundle", str(bundle), "--allow-egress")[0], 0)
+        run("search", "--bundle", str(bundle))
+        files = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]
+        reviewed = [{"file": f["path"], "method": "ocr" if f["path"] == png else "text"} for f in files]
+
+        def report(excerpt: str, verdict: str = "passed") -> tuple[int, dict]:
+            fact = {"name": "证书", "value": "在", "source": {"file": png, "page": 1, "excerpt": excerpt}}
+            head = {"atomicCheckId": "AC-R24-01", "verdict": verdict, "facts": [fact], "reasoning": "理由。", "reason": "理由。"}
+            checks = [head, *({"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(2, 6))]
+            self.write_report(bundle, checks, reviewed)
+            return run("report", "--bundle", str(bundle))
+
+        # 照抄的摘录都过：脱敏号对得上 OCR 原文里的完整号，表格竖线、空白、省略号隔开的几段、印章行都容得下
+        for excerpt in (f"证书编号 {self.MASKED_ID} 有效期至 2027 年 3 月", "项目代号 GTAW-FeⅡ-6G-3/60-FefS-02/10/12",
+                        "特种设备作业人员证…有效期至 2027 年", "[印章：某某市市场监督管理局]"):
+            code, out = report(excerpt)
+            self.assertEqual(code, 0, (excerpt, out))
+        # 改写或编造的摘录：符合／不符合项算错误，其他结论只警告
+        code, out = report("有效期至 2030 年 3 月")
+        self.assertEqual(code, 1, out)
+        self.assertTrue(any("摘录「有效期至 2030 年 3 月」不在" in e for e in out["error"]["errors"]), out)
+        code, out = report("有效期至 2030 年 3 月", verdict="human_review_required")
+        self.assertEqual(code, 0, out)
+        self.assertTrue(any("摘录「有效期至 2030 年 3 月」不在" in w for w in out["data"]["warnings"]), out)
+
     # ------------------------------------------------------------ 结果图（服务器用 HTML 模板渲染成 PNG）
 
     def audited_bundle(self, bundle: Path | None = None) -> Path:
@@ -1476,6 +1634,558 @@ class NodeAuditTest(unittest.TestCase):
             _, out = run("login", "--username", "inspector")
         self.assertEqual(out["error"]["code"], "ttyRequired")
         self.assertIn("login --web", out["error"]["message"])
+
+    # ------------------------------------------------------------ 中危修复（2026-10-28）
+
+    def test_out_into_an_existing_shared_directory_leaves_its_permissions_alone(self):
+        shared = Path(self.tmp.name) / "shared"
+        shared.mkdir(mode=0o755)
+        os.chmod(shared, 0o755)
+        code, out = run("local-init", "--node", "24", "--files", str(self.sample_file()), "--out", str(shared / "a" / "b"))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(stat.S_IMODE(shared.stat().st_mode), 0o755)  # 本来就有、在审计目录外：不动
+        for created in (shared / "a", shared / "a" / "b"):
+            self.assertEqual(stat.S_IMODE(created.stat().st_mode), 0o700, created)  # 这次新建的：只有自己能进
+
+    def test_a_download_hit_by_a_restart_is_retried_and_a_lost_one_must_be_named_in_the_report(self):
+        self.login()
+        self.server.download_failures = 1
+        with patch.object(na, "GATEWAY_RETRY_SECONDS", 0):
+            code, out = run("fetch", "--project", "P-T", "--node", "24", "--out", str(Path(self.tmp.name) / "retry"))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["files"], 1)  # 502 一次之后重试拿到了
+        self.server.download_failures = 2
+        bundle = Path(self.tmp.name) / "lost"
+        with patch.object(na, "GATEWAY_RETRY_SECONDS", 0):
+            code, out = run("fetch", "--project", "P-T", "--node", "24", "--out", str(bundle))
+        self.assertEqual(code, 0, out)
+        [lost] = out["data"]["skippedFiles"]
+        self.assertTrue(lost["downloadFailed"])
+        self.assertTrue(any("没下载到" in w for w in out["data"]["warnings"]))
+        checks = [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(1, 6)]
+        self.write_report(bundle, checks, [])
+        self.assertIn("资料包缺原件 焊工证/张三.pdf", self.report_errors(bundle))
+        report = json.loads((bundle / "audit.json").read_text(encoding="utf-8"))
+        report["limitations"] = ["焊工资格证（张三.pdf）没下载到，AC-R24-01 无法核对"]
+        (bundle / "audit.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+
+    def test_two_lookups_in_the_same_second_keep_separate_archives(self):
+        bundle = self.local_bundle()
+        ticks = iter(range(1, 1000))  # 时钟永远停在同一秒，只有微秒在走
+        with patch.object(na, "datetime", wraps=na.datetime) as clock:
+            clock.now.side_effect = lambda *_: na.datetime(2026, 10, 28, 9, 0, 0, next(ticks))
+            saved = {run("search", "--bundle", str(bundle))[1]["data"]["saved"] for _ in range(2)}
+        self.assertEqual(len(saved), 2)
+        self.assertEqual(len(list((bundle / "search").glob("*.json"))), 2)
+
+    def test_ocr_polling_gives_up_on_a_vanished_job_and_keeps_waiting_through_an_expired_login(self):
+        bundle, _ = self.scan_bundle("vanish")
+        self.login()
+        self.server.ocr_running_polls = 99
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress", "--timeout", "0")
+        self.assertEqual((code, len(out["data"]["pending"])), (0, 1), out)
+        self.server.ocr_status_mode = "auth"  # 令牌过期：中断，但待办留着，重新授权后接着等
+        code, out = run("ocr", "--bundle", str(bundle), "--timeout", "0")
+        self.assertEqual((code, out["error"]["code"]), (1, "loginRequired"))
+        self.assertEqual(len(json.loads((bundle / "ocr" / "pending.json").read_text(encoding="utf-8"))), 1)
+        self.server.ocr_status_mode = "missing"  # 任务被服务器清理：这一份算失败，不再每次卡在这里
+        code, out = run("ocr", "--bundle", str(bundle), "--timeout", "0")
+        self.assertEqual(code, 0, out)
+        self.assertIn("notFound", out["data"]["failed"][0]["reason"])
+        self.assertFalse((bundle / "ocr" / "pending.json").exists())
+        self.server.ocr_status_mode, self.server.ocr_running_polls = "ok", 0
+        self.server.ocr_result = self.certificate_result()
+        uploads = len(self.server.ocr_uploads)
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual((code, len(out["data"]["done"])), (0, 1), out)
+        self.assertEqual(len(self.server.ocr_uploads), uploads + 1)
+        self.assertTrue(self.server.ocr_uploads[-1][0]["Idempotency-Key"].endswith("-r1"))  # 换新键，建新任务
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_a_scan_with_a_few_lines_of_text_layer_still_counts_as_a_scanned_page(self):
+        import fitz
+        source = Path(self.tmp.name) / "扫描带页眉.pdf"
+        lines = "\n".join(["Header line of scanner software 2026-10-28"] * 3)  # 约 130 字的垃圾文字层
+        with fitz.open() as doc:
+            doc.new_page().insert_text((72, 72), "\n".join(["Plain text page with enough words to read."] * 8))
+            page = doc.new_page()
+            page.insert_image(page.rect, stream=PNG)  # 一张图铺满整页
+            page.insert_text((72, 72), lines)
+            small = doc.new_page()
+            small.insert_image(fitz.Rect(0, 0, 60, 60), stream=PNG)  # 小 logo 不算
+            small.insert_text((72, 72), lines)
+            doc.save(source)
+        layer = na.file_text(source)[1]
+        self.assertTrue(all(len(t.strip()) >= 50 for t in layer), layer)
+        self.assertEqual(na.scan_pages(source, layer), {2})
+        self.assertEqual(na.ocr_reason(source), "第 2 页是扫描页")
+
+    def test_ocr_reformats_an_old_record_from_the_finished_job_without_uploading_again(self):
+        bundle, png = self.scan_bundle("rerender")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            self.assertEqual(run("ocr", "--bundle", str(bundle), "--allow-egress")[0], 0)
+        record_path = na.ocr_record_path(bundle, png)
+        old = json.loads(record_path.read_text(encoding="utf-8"))
+        old.pop("renderVersion")  # 改排版之前存的记录
+        record_path.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+        text = run("text", "--file", str(bundle / png), "--bundle", str(bundle))[1]["data"]
+        self.assertIn("ocrOutdated", text)
+        uploads = len(self.server.ocr_uploads)
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["data"]["rerendered"], len(self.server.ocr_uploads)), ([png], uploads))
+        self.assertEqual(json.loads(record_path.read_text(encoding="utf-8"))["renderVersion"], na.OCR_RENDER_VERSION)
+        # 服务器上那个任务没了：只记一次，旧文字照用，下次不再重试
+        old["renderVersion"] = 1
+        record_path.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+        self.server.ocr_status_mode = "missing"
+        code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out["data"]["failed"][0]["rerender"])
+        self.assertNotIn("换新任务", out["data"].get("nextStep", ""))
+        code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual((out["data"]["cached"], out["data"]["failed"]), ([png], []))
+        self.assertEqual(len(self.server.ocr_uploads), uploads)
+
+    def test_reading_records_must_match_the_bundle(self):
+        bundle, png = self.scan_bundle("methods")
+        run("search", "--bundle", str(bundle))
+        files = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]
+        other = next(f["path"] for f in files if f["path"] != png)
+        checks = [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(1, 6)]
+        self.write_report(bundle, checks, [{"file": png, "method": "ocr"}, {"file": other, "method": "text"}])
+        self.assertIn(f"reviewedFiles {png}: 标了 ocr，但资料包里没有这份原件的 OCR 文字", self.report_errors(bundle))
+        self.write_report(bundle, checks, [{"file": png, "method": "text"}, {"file": other, "method": "text"}])
+        self.assertIn(f"reviewedFiles {png}: 是扫描件、没有文字层，text 读不到字", self.report_errors(bundle))
+        self.write_report(bundle, checks, [{"file": png, "method": "pages"}, {"file": other, "method": "text"}])
+        code, out = run("report", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)  # 旧报告（看图写法）仍能复核，只警告
+        self.assertTrue(any("看图的旧写法 pages" in w for w in out["data"]["warnings"]))
+
+    def test_sync_matches_an_excerpt_copied_from_skill_text_against_the_server_quote(self):
+        full, masked = "110101199001011237", "1101**********1237"
+        link = {"id": "EL-1", "documentVersionId": "V-1", "manualStatus": "confirmed", "pageNo": 2, "bbox": [0, 0, 10, 10]}
+        chain = {"links": [{**link, "quotedText": "化学成分 合格 合格 C 0.12"}]}
+        fact = {"name": "C", "value": "0.12", "source": {"file": "files/01.pdf", "page": 2, "excerpt": "化学成分 | 合格（跨2列） | C 0.12"}}
+        self.assertEqual(na.matching_evidence_links(fact, "V-1", chain), [])  # 横跨格在 skill 里写一次，服务器重复写：不硬配
+        chain = {"links": [{**link, "quotedText": "化学成分 合格 C 0.12"}]}
+        self.assertEqual(na.matching_evidence_links(fact, "V-1", chain), ["EL-1"])
+        seal = {"name": "印章", "value": "某某局", "source": {"file": "files/01.pdf", "page": 2, "excerpt": "[印章：某某市市场监督管理局]"}}
+        chain = {"links": [{**link, "quotedText": "某某市市场监督管理局"}]}
+        self.assertEqual(na.matching_evidence_links(seal, "V-1", chain), ["EL-1"])
+        holder = {"name": "身份证号", "value": masked, "source": {"file": "files/01.pdf", "page": 2, "excerpt": f"身份证号 {masked}"}}
+        chain = {"links": [{**link, "fieldName": "身份证号", "quotedText": f"身份证号：{full}"}]}
+        self.assertEqual(na.matching_evidence_links(holder, "V-1", chain), ["EL-1"])  # 服务器引文里是完整号码，按脱敏后比
+
+    # ------------------------------------------------------------ 低危修复（2026-10-28）
+
+    def test_table_text_survives_html_with_missing_end_tags_and_overlong_rowspans(self):
+        self.assertEqual(na.table_text('<table><tr><td rowspan="5">A</td><td>1</td></tr><tr><td>2</td></tr></table>').splitlines(),
+                         ["A | 1", "A | 2"])  # rowspan 写多了不凭空多出几行
+        self.assertEqual(na.table_text("<table><tr><td>a<td>b<tr><td>c<td>d</table>").splitlines(), ["a | b", "c | d"])
+        self.assertEqual(na.table_text("<table><tr><td>x</td><td>y</td></tr><tr><td>last</td><td>row").splitlines(),
+                         ["x | y", "last | row"])  # 末行没有 </tr> 也不丢
+
+    def test_a_page_list_that_is_not_numbers_is_reported_as_json(self):
+        bundle = self.local_bundle()
+        code, out = run("text", "--file", str(bundle / "files/01-证书.pdf"), "--pages", "abc")
+        self.assertEqual(code, 1)
+        self.assertIn(out["error"]["code"], {"invalidArguments", "noTextLayer"})  # 坏 PDF 先报没文字；不再抛堆栈
+        with self.assertRaises(na.ClientError) as caught:
+            na.parse_pages("4-x", 10)
+        self.assertEqual(caught.exception.code, "invalidArguments")
+
+    def test_report_finds_an_id_number_right_after_a_newline_in_audit_json(self):
+        bundle = self.local_bundle()
+        checks = [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(1, 6)]
+        checks[0]["reason"] = "焊工名单写着：\n110101199001011237"  # 存成 JSON 是 "\\n110101…"，号码前一个字符是字母 n
+        self.write_report(bundle, checks)
+        self.assertIn("audit.json 里有完整的 18 位身份证号", self.report_errors(bundle))
+
+    def test_digest_lists_a_bounded_number_of_server_fields_and_spells_out_conditional_clauses(self):
+        self.login()
+        fields = [{"documentVersionId": "V-1", "fieldName": f"字段{i}", "fieldValue": str(i), "pageNo": 1} for i in range(200)]
+        self.server.workspace = {**WORKSPACE, "content": {**WORKSPACE["content"], "ocr": {"extractedFields": fields}}}
+        out_dir = Path(self.tmp.name) / "digest-cap"
+        self.assertEqual(run("fetch", "--project", "P-T", "--node", "24", "--out", str(out_dir))[0], 0)
+        digest = (out_dir / "digest.md").read_text(encoding="utf-8")
+        self.assertIn(f"| 字段{na.DIGEST_FIELD_ROWS - 1} |", digest)
+        self.assertNotIn(f"| 字段{na.DIGEST_FIELD_ROWS} |", digest)
+        self.assertIn("共 200 条", digest)
+        clause = {"standardRef": "STD-X", "clauseNo": "D2.4.1(8)", "sourcePage": 28, "verificationStatus": "source_verified",
+                  "applicability": "foreign_grade_material_used"}
+        self.assertIn("适用：foreign_grade_material_used", na.clause_line(clause))
+        self.assertNotIn("适用", na.clause_line({**clause, "applicability": "always"}))
+
+    def test_connection_logout_and_the_read_only_lookups_reach_the_server(self):
+        code, out = run("connection")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["data"]["tokenPresent"], out["data"]["ready"]), (False, {"ready": True}))
+        self.assertNotIn("user", out["data"])
+        # 没登录：要令牌的查询直接说要登录，不发请求
+        self.assertEqual(run("cnse-org-search", "--keyword", "某某阀门")[1]["error"]["code"], "loginRequired")
+        self.login()
+        code, out = run("connection")
+        self.assertEqual(out["data"]["user"], {"username": "zhang", "role": "inspection", "displayName": "张"})  # 不回显别的字段
+        code, out = run("cnse-org-search", "--keyword", "某某阀门")
+        self.assertEqual((code, out["data"]["items"][0]["licenseNo"]), (0, "TS1234567-2030"), out)
+        code, out = run("node-standards", "--project", "P-T", "--node", "24")
+        self.assertEqual((code, out["data"][0]["clauseNo"]), (0, "D2.6.1"), out)
+        code, out = run("standard-content", "--file-id", "KF-1", "--page-no", "3", "--section", "D2.6.1")
+        self.assertEqual((code, out["data"]["fileId"]), (0, "KF-1"), out)
+        self.assertIn(("/api/inspection-services/standards/KF-1/canonical", {"pageNo": ["3"], "section": ["D2.6.1"]}), self.server.calls)
+        payload = {"certificates": [{"certificateNo": "1101**********1237", "holder": "张三", "validUntil": "2027-03-01"}],
+                   "periodStart": "2026-01-01", "periodEnd": "2026-06-30"}
+        code, out = run("cert-validity", "--json", json.dumps(payload, ensure_ascii=False))
+        self.assertEqual((code, out["data"]["conclusion"]), (0, "valid"), out)
+        self.assertIn(("/api/inspection-services/certificate-validity", payload), self.server.calls)
+        code, out = run("logout")
+        self.assertEqual((code, out["data"]), (0, {"loggedOut": True}))
+        self.assertFalse(self.session.exists())
+        self.assertEqual(self.server.calls[-1][0], "/api/auth/logout")  # 服务器那边的令牌也作废
+
+
+    # ---- 2026-10-28 评测暴露的 OCR 路径问题：失败任务、时长、读得不全、文字层靠不住
+
+    def stale_failed_job(self, bundle: Path, png: str, created: str) -> None:
+        """服务器上已经有一个用第一个键建的、失败了的任务（上次留下的，或别的资料包传过同一份原件）。"""
+        sha = next(f["sha256"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"] == png)
+        self.server.ocr_jobs[f"aicheck-node-audit-{sha[:48]}"] = "OCRJ-OLD"
+        self.server.ocr_job_status["OCRJ-OLD"] = {"status": "failed", "createdAt": created,
+                                                  "diagnostics": [{"code": "HTTP_401", "level": "error", "retryable": False}]}
+
+    def test_ocr_retries_a_failed_job_left_from_before_in_the_same_run(self):
+        bundle, png = self.scan_bundle("stale")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        self.stale_failed_job(bundle, png, "2026-01-01 08:00:00")  # 北京时间，远早于本次命令
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        # 同一个键拿回的是那个老的失败任务：当场换键重传，这一次命令里就出结果，不用再跑一遍
+        self.assertEqual(([d["file"] for d in out["data"]["done"]], out["data"]["failed"], out["data"]["retried"]), ([png], [], [png]))
+        self.assertEqual([key.endswith("-r1") for key in self.upload_keys()], [False, True])
+
+    def test_ocr_says_a_server_side_mineru_token_failure_is_not_the_users_login(self):
+        bundle, png = self.scan_bundle("engine")
+        self.login()
+        fresh = na.datetime.now(na.OCR_SERVER_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        self.server.ocr_final = {"status": "failed", "createdAt": fresh, "diagnostics": [{"code": "HTTP_401", "level": "error"}]}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        [failed] = out["data"]["failed"]
+        self.assertEqual((failed["file"], failed["kind"]), (png, "engineAuth"))
+        self.assertIn("不是你的登录令牌", failed["reason"])
+        self.assertEqual(len(self.server.ocr_uploads), 1)  # 这次刚建的任务就被拒：当场重传也一样，不浪费
+        self.assertNotIn("retried", out["data"])
+        self.assertIn("管理员", out["data"]["nextStep"])
+        self.assertNotIn("login --web", out["data"]["nextStep"])
+
+    def test_ocr_leaves_a_stale_failed_job_for_next_time_instead_of_blaming_the_mineru_token(self):
+        # c 轮评测：上次留下的 401 任务轮询到时预算已用完，被报成“服务器 MinerU 令牌坏了、重跑没用”，其实重跑就好
+        bundle, png = self.scan_bundle("stale-late")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        self.stale_failed_job(bundle, png, "2026-01-01 08:00:00")
+        with patch.object(na, "OCR_POLL_SECONDS", 0), patch.object(na, "OCR_BUDGET_CAP", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["data"]["failed"], out["data"]["notSubmitted"]), ([], [png]))
+        self.assertNotIn("管理员", out["data"]["nextStep"])
+        sha = next(f["sha256"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"] if f["path"] == png)
+        self.assertEqual(json.loads((bundle / "ocr" / "attempts.json").read_text(encoding="utf-8")), {sha: 1})
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual(([d["file"] for d in out["data"]["done"]], out["data"]["failed"]), ([png], []))
+        self.assertEqual([key.endswith("-r1") for key in self.upload_keys()], [False, True])  # 下次直接换新键
+
+    def test_ocr_lists_a_resubmitted_file_once_and_reports_progress(self):
+        bundle, png = self.scan_bundle("resubmit")
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        self.server.ocr_running_polls = 10 ** 6  # 换键后的新任务一直在识别
+        self.stale_failed_job(bundle, png, "2026-01-01 08:00:00")
+        with patch.object(na, "OCR_POLL_SECONDS", 0), patch.object(na, "OCR_MIN_REQUEST", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress", "--timeout", "1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["retried"], [png])
+        self.assertEqual([(p["file"], p.get("retried")) for p in out["data"]["pending"]], [(png, True)])
+        self.assertEqual(out["data"]["progress"], "0/1 份已有 OCR 文字")
+
+    def test_ocr_request_timeouts_stay_inside_the_budget(self):
+        # c 轮评测：--timeout 480 的一条跑了 10.2 分钟，被 Bash 的 10 分钟上限转后台
+        root = Path(self.tmp.name) / "deadline-project"
+        root.mkdir()
+        for name in ("a-焊工证.png", "b-焊工证.png"):
+            (root / name).write_bytes(b"\x89PNG fake scan " + name.encode())
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "deadline"))[1]["data"]["bundle"])
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        uploads, calls = [], []
+        upload, call = na.Api.upload, na.Api.call
+
+        def spy_upload(api, path, content, *, headers, timeout=300):
+            uploads.append(timeout)
+            return upload(api, path, content, headers=headers, timeout=timeout)
+
+        def spy_call(api, method, path, **kwargs):
+            if "/internal/ocr/" in path:
+                calls.append(kwargs.get("timeout"))
+            return call(api, method, path, **kwargs)
+
+        with patch.object(na, "OCR_POLL_SECONDS", 0), patch.object(na.Api, "upload", spy_upload), patch.object(na.Api, "call", spy_call):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress", "--timeout", "30")
+        self.assertEqual((code, len(out["data"]["done"])), (0, 2), out)
+        self.assertEqual(uploads[0], na.OCR_FIRST_REQUEST)  # 保证进展的第一份
+        self.assertTrue(all(t <= 30 for t in uploads[1:]), uploads)  # 之后的都不超过剩余时间
+        self.assertTrue(calls and all(t <= na.OCR_FIRST_REQUEST for t in calls), calls)
+
+    def test_ocr_counts_blank_pages_only_where_the_file_needs_ocr(self):
+        fitz = na.quiet_fitz()
+        root = Path(self.tmp.name) / "blank-project"
+        root.mkdir()
+        doc = fitz.open()
+        doc.new_page().insert_text((40, 60), "\n".join(f"Pipe line {i} material 20# GB/T 8163 DN50" for i in range(6)))
+        doc.new_page()  # 扫描页：没有文字层
+        doc.save(root / "07-施工记录.pdf")
+        doc.close()
+        (root / "09-焊工证.png").write_bytes(b"\x89PNG fake scan")
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "blank"))[1]["data"]["bundle"])
+        self.login()
+        self.server.ocr_result = {"resultAvailable": True, "pageCount": 2, "processing": {"provider": "mineru"}, "fragments": []}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        done = {d["file"].split("-", 1)[1]: d for d in out["data"]["done"]}  # local-init 在文件名前加了序号
+        self.assertEqual(done["07-施工记录.pdf"]["blankPages"], "2")  # 有文字层的第 1 页 OCR 空着不要紧
+        # 整份没有文字层、OCR 也一个字没读出：明说重跑没用，reviewedFiles 怎么写
+        step = next(s for s in out["data"]["nextStep"].split("；") if "整份 OCR 都没读出字" in s)
+        self.assertIn("09-焊工证.png", step)
+        self.assertNotIn("07-施工记录.pdf", step)
+        self.assertIn("skipped", out["data"]["nextStep"])
+        # 报告里把这份标 ocr：说清楚是 OCR 读不出字，该标 skipped
+        files = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]
+        run("search", "--bundle", str(bundle))
+        self.write_report(bundle, [{"atomicCheckId": f"AC-R24-0{i}", "verdict": "evidence_insufficient", "reason": "缺记录"} for i in range(1, 6)],
+                          [{"file": f["path"], "method": "ocr"} for f in files])
+        png = next(f["path"] for f in files if f["path"].endswith(".png"))
+        self.assertIn(f"reviewedFiles {png}: 服务器 OCR 一个字也没读出", self.report_errors(bundle))
+
+    def test_ocr_flags_a_long_line_repeated_on_a_page_and_drops_model_replies(self):
+        # c 轮评测：贵州强度计算书同一行 405 字重复 10 次没被标；二维码处混进识别模型的英文说明
+        bundle, png = self.scan_bundle("lines")
+        self.login()
+        line = "压力管道GC2 ø108×4 强度计算：广东省建设工程勘察设计院计算书第一部分内容说明与计算结果"
+        reply = ("The image provided is a QR code. It does not contain any text, mathematical formulas, tables, "
+                 "or figures that can be processed according to the OCR instructions.")
+        self.server.ocr_result = {"resultAvailable": True, "pageCount": 1, "processing": {"provider": "mineru"},
+                                  "fragments": [*({"pageNo": 1, "readingOrder": i, "text": line} for i in range(6)),
+                                                {"pageNo": 1, "readingOrder": 9, "text": reply}]}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        self.assertIn("识别跑飞", out["data"]["qualityWarnings"][png])
+        saved = Path(out["data"]["done"][0]["saved"]).read_text(encoding="utf-8")
+        self.assertNotIn("The image provided", saved)
+        self.assertIn(na.MODEL_REPLY_MARK, saved)
+        # 正文里以 The image 开头的英文不是模型说明，不动
+        self.assertEqual(na.strip_model_replies("The image quality indicator shall be placed on the source side."),
+                         "The image quality indicator shall be placed on the source side.")
+
+    def test_standard_table_pages_read_from_ocr_but_project_files_keep_their_text_layer(self):
+        # c 轮评测：NB/T 47014-2023 第 41 页表 6 文字层缺了最大值一列，text 给的却是文字层
+        fitz = na.quiet_fitz()
+        repo = Path(self.tmp.name) / "repo"
+        (repo / "rules" / "standards").mkdir(parents=True)
+        bundle, _ = self.scan_bundle("std-table")
+        layer = "\n".join(f"Table 6 row {i}: welding position range thickness" for i in range(6))
+        paths = {"standard:rules/standards/表.pdf": repo / "rules" / "standards" / "表.pdf", "files/99-表.pdf": bundle / "files" / "99-表.pdf"}
+        table = "参数 | 最小值 | 最大值\n厚度 | 1.5 | 8\n直径 | 25 | 不限"
+        with patch.object(na, "repo_root", return_value=repo):
+            for relative, path in paths.items():
+                doc = fitz.open()
+                doc.new_page().insert_text((40, 60), layer)
+                doc.save(path)
+                doc.close()
+                na.write_private(na.ocr_record_path(bundle, relative), na.dump(
+                    {"file": relative, "sha256": na.cached_sha(path), "renderVersion": na.OCR_RENDER_VERSION,
+                     "pages": [{"page": 1, "text": table}]}))
+            _, _, merged, used = na.page_texts(bundle, "standard:rules/standards/表.pdf", paths["standard:rules/standards/表.pdf"])
+            self.assertEqual((used, merged[0]), ({1}, table))
+            _, _, merged, used = na.page_texts(bundle, "files/99-表.pdf", paths["files/99-表.pdf"])
+            self.assertEqual(used, set())  # 工程资料的数字文字层比 OCR 准
+
+    def test_a_docx_with_embedded_pictures_goes_to_ocr_and_reads_both_parts(self):
+        # c 轮评测：储罐焊工清单 docx 文末嵌着焊工证照片，没被标成要 OCR
+        import zipfile
+        root = Path(self.tmp.name) / "docx-project"
+        root.mkdir()
+        with zipfile.ZipFile(root / "焊工清单.docx", "w") as docx:
+            docx.writestr("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>焊工清单：张三 GTAW 管道焊接，证件照片附后。</w:t></w:r></w:p>"
+                                               "</w:body></w:document>")
+            docx.writestr("word/media/image1.png", b"\x89PNG fake photo")
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "docx"))[1]["data"]["bundle"])
+        docx_path = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"][0]["path"]
+        code, out = run("search", "--bundle", str(bundle))
+        self.assertIn(docx_path, out["data"]["embeddedImages"])
+        code, out = run("text", "--file", str(bundle / docx_path))
+        self.assertIn("嵌了 1 张图片", out["data"]["embeddedImages"])
+        self.login()
+        self.server.ocr_result = {"resultAvailable": True, "pageCount": 1, "processing": {"provider": "mineru"},
+                                  "fragments": [{"pageNo": 1, "readingOrder": 1, "text": "特种设备作业人员证 张三"}]}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(([d["file"] for d in out["data"]["done"]], code), ([docx_path], 0), out)
+        code, out = run("text", "--file", str(bundle / docx_path))
+        body = Path(out["data"]["saved"]).read_text(encoding="utf-8")
+        self.assertIn("焊工清单：张三 GTAW 管道焊接", body)
+        self.assertIn("特种设备作业人员证 张三", body)
+        self.assertNotIn("embeddedImages", out["data"])
+
+    def test_ocr_timeout_covers_the_whole_command_and_resumes_where_it_stopped(self):
+        root = Path(self.tmp.name) / "budget-project"
+        root.mkdir()
+        for name in ("a-焊工证.png", "b-焊工证.png"):
+            (root / name).write_bytes(b"\x89PNG fake scan " + name.encode())
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "budget"))[1]["data"]["bundle"])
+        files = [f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]]
+        self.assertEqual(len(files), 2)
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        self.server.ocr_running_polls = 99
+        with patch.object(na, "OCR_POLL_SECONDS", 0), patch.object(na, "OCR_BUDGET_CAP", 0):
+            # 上限压到 0：--timeout 给多大都按上限算，只传一份、查一份就收手
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress", "--timeout", "9999")
+            self.assertEqual(code, 0, out)
+            self.assertEqual((len(self.server.ocr_uploads), out["data"]["notSubmitted"]), (1, [files[1]]))
+            self.assertIn("到点", out["data"]["nextStep"])
+            code, out = run("ocr", "--bundle", str(bundle), "--timeout", "0")
+            self.assertEqual(code, 0, out)
+            # 第二次：先把上次没传的那份传上去；状态只查了一份，没查到的排在前面，下次先查
+            self.assertEqual(len(self.server.ocr_uploads), 2)
+            self.assertNotIn("notSubmitted", out["data"])
+            self.assertEqual([(p["file"], p["state"]) for p in out["data"]["pending"]], [(files[1], "submitted"), (files[0], "running")])
+            self.assertIn("没来得及查", out["data"]["nextStep"])
+        self.server.ocr_running_polls = 0
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual((code, sorted(d["file"] for d in out["data"]["done"])), (0, sorted(files)))
+        self.assertEqual(len(self.server.ocr_uploads), 2)  # 全程没有重传
+        self.assertFalse((bundle / "ocr" / "pending.json").exists())
+
+    def test_ocr_flags_pages_it_read_poorly_and_text_and_search_say_so(self):
+        bundle, png = self.scan_bundle("quality")
+        self.login()
+        # MinerU 识别跑飞：同一句话反复出现、后面一长串“零”（评测里的配管平面图）
+        self.server.ocr_result = {"resultAvailable": True, "pageCount": 1, "processing": {"provider": "mineru"},
+                                  "fragments": [{"pageNo": 1, "readingOrder": 1, "text": "某某区人民法院" * 3 + "零" * 60}]}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        self.assertIn("识别跑飞", out["data"]["qualityWarnings"][png])
+        self.assertIn("不能写“原件没有”", out["data"]["nextStep"])
+        saved = Path(out["data"]["done"][0]["saved"]).read_text(encoding="utf-8")
+        self.assertIn("--- 第 1 页（OCR 读得不全：识别跑飞", saved)
+        self.assertIn("czxm", saved)  # 焊工证代号字母会认错：以登记为准
+        code, out = run("ocr", "--bundle", str(bundle))  # 已识别过（cached）也照样提醒
+        self.assertEqual((code, out["data"]["cached"]), (0, [png]))
+        self.assertIn(png, out["data"]["qualityWarnings"])
+        code, out = run("text", "--file", png, "--bundle", str(bundle))
+        self.assertIn("不能写“原件没有”", out["data"]["ocrQuality"])
+        self.assertIn("CTAF", out["data"]["ocrNote"])
+        code, out = run("search", "--bundle", str(bundle), "--terms", "异种钢接头", "--only")
+        self.assertIn("读得不全", out["data"]["zeroHitNote"])
+        self.assertIn(png, out["data"]["ocrQuality"])
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_a_large_drawing_page_is_flagged_even_when_ocr_reads_its_title_block(self):
+        import fitz
+        root = Path(self.tmp.name) / "drawing-project"
+        root.mkdir()
+        with fitz.open() as doc:
+            page = doc.new_page(width=1684, height=1191)  # A2 横放的施工图扫描件
+            page.insert_image(page.rect, stream=PNG)
+            doc.new_page().insert_image(fitz.Rect(0, 0, 595, 842), stream=PNG)  # A4 的扫描页不算图纸
+            # CAD 出的矢量图：没有图片，标注转成了线条，文字层只剩图框编号（评测里储罐施工图第 23–30 页）
+            doc.new_page(width=1684, height=1191).insert_text((72, 72), "123BA123456DC45B6A CLASSA grid")
+            doc.save(root / "施工图.pdf")
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "drawing"))[1]["data"]["bundle"])
+        [pdf] = [f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]]
+        layer = na.file_text(bundle / pdf)[1]
+        self.assertEqual((na.scan_pages(bundle / pdf, layer), na.ocr_reason(bundle / pdf)), ({1, 2, 3}, "扫描件"))
+        self.login()
+        title = "广东某某设计院 工程名称 储罐区工艺管道 图号 GS-01 比例 1:100 设计 校对 审核 日期 2026.04 材料表见第 2 页"
+        self.server.ocr_result = {"resultAvailable": True, "pageCount": 3, "fragments": [
+            {"pageNo": 1, "readingOrder": 1, "text": title}, {"pageNo": 2, "readingOrder": 1, "text": title}]}
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["qualityWarnings"][pdf],
+                         "第 1 页是大幅面图纸（图签、表格读得出，图上分散的标注常读不全）；第 3 页没读出字")
+
+    @unittest.skipUnless(importlib.util.find_spec("fitz"), "PyMuPDF 未安装")
+    def test_an_unreliable_text_layer_gives_way_to_server_ocr(self):
+        import fitz
+        root = Path(self.tmp.name) / "layer-project"
+        root.mkdir()
+        rare = "\n".join(["罾邳氍瞀劓泺罾邳氍瞀"] * 8)  # 80 个罕用字：扫描件自带的识别文字认错了
+        matrix = "\n".join(["○", "—"] * 60)  # 120 行一格一行：符号矩阵被文字层拆散
+        hidden = "\n".join(["钢管外径允许偏差为正负百分之一，壁厚允许偏差为正负百分之十二点五。"] * 8)
+        with fitz.open() as doc:
+            doc.new_page().insert_text((72, 72), rare, fontname="china-s")
+            doc.new_page().insert_text((72, 30), matrix, fontname="china-s", fontsize=5)
+            page = doc.new_page()
+            page.insert_image(page.rect, stream=PNG)
+            page.insert_text((40, 72), hidden, fontname="china-s", render_mode=3)  # 隐形文字层
+            doc.new_page().insert_text((72, 72), "\n".join(["Plain text page with enough words to read."] * 8))
+            doc.save(root / "标准表格.pdf")
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "layer"))[1]["data"]["bundle"])
+        [relative] = [f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]]
+        source = bundle / relative
+        layer = na.file_text(source)[1]
+        self.assertEqual(na.layer_problems(source, layer), {1: "garbled", 2: "table", 3: "embedded"})
+        self.assertEqual(na.scan_pages(source, layer), {1})  # 认错的识别文字按扫描页算：要 OCR，报告引用要有 OCR 文字
+        self.assertEqual(na.ocr_reason(source), "第 1 页是扫描页")
+        code, out = run("text", "--file", relative, "--bundle", str(bundle))  # 还没 OCR：照给文字层，但说清哪几页靠不住
+        self.assertEqual(code, 0, out)
+        warning = out["data"]["layerWarnings"]
+        for part in ("第 1 页文字层是认错了的识别文字", "第 2 页表格被文字层拆成一格一行", "第 3 页是扫描件自带的识别文字", "先跑 ocr"):
+            self.assertIn(part, warning)
+        ocr_pages = [{"page": 1, "text": "表 5 钢管的力学性能"}, {"page": 2, "text": "焊接方法 | 重要因素\n气焊 | ○"},
+                     {"page": 3, "text": "钢管外径允许偏差为±1%"}, {"page": 4, "text": ""}]
+        na.write_private(na.ocr_record_path(bundle, relative), json.dumps(
+            {"file": relative, "sha256": na.cached_sha(source), "renderVersion": na.OCR_RENDER_VERSION, "pages": ocr_pages}, ensure_ascii=False))
+        status, _, merged, used = na.page_texts(bundle, relative, source)
+        self.assertEqual((status, used), ("text", {1, 2, 3}))
+        self.assertEqual(merged[:3], [p["text"] for p in ocr_pages[:3]])  # 只给 OCR，不和靠不住的文字层并排
+        self.assertTrue(merged[3].startswith("Plain text page"))
+        code, out = run("text", "--file", relative, "--bundle", str(bundle))
+        self.assertEqual((out["data"]["ocrPages"], "layerWarnings" in out["data"]), ("1-3", False))
+        # 摘录核对：照 OCR 抄的、之前照文字层抄的都算数；两份都没有的不算
+        for excerpt, ok in (("钢管外径允许偏差为±1%", True), ("钢管外径允许偏差为正负百分之一", True), ("钢管外径允许偏差为±2%", False)):
+            problem = na.excerpt_problem(bundle, {"file": relative, "page": 3, "excerpt": excerpt}, {relative}, {})
+            self.assertEqual(problem is None, ok, (excerpt, problem))
+
+    def test_italic_latin_letters_in_gb_standard_text_layers_are_restored(self):
+        self.assertEqual("犠＝０．０２４９１犛（犇－犛）".translate(na.ITALIC_LATIN), "W＝０．０２４９１S（D－S）")
+        self.assertEqual("犌犅／犜８１６３".translate(na.ITALIC_LATIN), "GB／T８１６３")
+        self.assertEqual("焊接工艺评定".translate(na.ITALIC_LATIN), "焊接工艺评定")
+        self.assertEqual(na.match_text("外径犇≤159mm"), na.match_text("外径D≤159mm"))  # 旧摘录照抄了没还原的字也对得上
+        if importlib.util.find_spec("fitz"):
+            import fitz
+            source = Path(self.tmp.name) / "斜体.pdf"
+            with fitz.open() as doc:
+                doc.new_page().insert_text((72, 72), "外径犇≤159mm", fontname="china-s")
+                doc.save(source)
+            self.assertIn("外径D≤159mm", na.file_text(source)[1][0])
 
 
 if __name__ == "__main__":

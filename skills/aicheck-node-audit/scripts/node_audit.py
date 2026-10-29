@@ -21,7 +21,8 @@ import shutil
 import sys
 import time
 import unicodedata
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -42,8 +43,13 @@ NEEDS_SOURCE = {"passed", "failed"}
 MAX_DOWNLOAD_BYTES = 300 * 1024 * 1024
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 每页
 MAX_IMAGE_PAGES = 16
+TEXT_WHOLE_FILE_PAGES = 20  # text 整份转出超过这么多页就提示改用 --pages 按命中页读
 GATEWAY_ERRORS = {"http502", "http503", "http504"}
 GATEWAY_RETRY_SECONDS = 5
+# 这个服务器的业务错误是 HTTP 200 加 JSON，code 是数字（contracts/errors.py）：翻成和 HTTP 错误一样的错误码，助手才认得。
+BUSINESS_CODES = {"401": "loginRequired", "403": "forbidden", "40404": "notFound"}
+LOGIN_HINT = "（令牌缺失或过期：重新 login --web 让用户在浏览器里授权，或让用户在自己的终端口令登录）"
+SERVER_RAW_DIR = "ocr/server"  # 服务器返回的 JSON 原文（含完整证号），只给脚本回查；包根目录那份已脱敏
 RULE_FIELDS = ("id", "sourceRuleId", "name", "nodeIds", "version", "status", "inspectionClass",
                "businessModule", "inspectionItem", "criteria", "checkMethod", "referencedStandards",
                "agentThinking", "toolchainThinking", "materialTypeCodes")
@@ -59,6 +65,11 @@ def now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def archive_stamp() -> str:
+    """存档文件名：精确到微秒。按秒命名时同一秒查两次，后一次会盖掉前一次，报告里的出处就指错了。"""
+    return datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+
+
 def audit_home() -> Path:
     return Path(os.getenv("AICHECK_AUDIT_HOME") or Path.home() / ".aicheck-node-audit").expanduser()
 
@@ -72,11 +83,14 @@ def repo_root() -> Path:
 
 
 def private_dir(path: Path) -> Path:
-    """mkdir -p, then 0700 on the leaf and on every ancestor inside the audit home."""
+    """mkdir -p；这次新建的各级目录和审计目录里的各级目录设 0700。
+    审计目录外本来就有的目录（--out 指到的 /tmp、共享目录）不动：改不了会报错，改了会把别人锁在外面。"""
+    resolved = path.resolve()
+    created = {p for p in (resolved, *resolved.parents) if not p.exists()}
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     home = audit_home().resolve()
-    for current in (path.resolve(), *path.resolve().parents):
-        if current != path.resolve() and home not in (current, *current.parents):
+    for current in (resolved, *resolved.parents):
+        if current not in created and home not in (current, *current.parents):
             break
         os.chmod(current, 0o700)
     return path
@@ -144,7 +158,7 @@ class Api:
             req.add_header(name, value)
         if auth:
             if not self.token:
-                raise ClientError("loginRequired", "该接口需要监检账号令牌：请用户在自己的终端执行 login。")
+                raise ClientError("loginRequired", f"该接口需要监检账号令牌{LOGIN_HINT}。")
             # unredirected：跳转到对象存储时不带令牌。
             req.add_unredirected_header("Authorization", f"Bearer {self.token}")
         return req
@@ -161,9 +175,9 @@ class Api:
             time.sleep(GATEWAY_RETRY_SECONDS)
             return self._call(method, path, body=body, auth=auth, query=query, timeout=timeout, headers=headers, content=content)
 
-    def upload(self, path: str, content: bytes, *, headers: dict[str, str]) -> Any:
+    def upload(self, path: str, content: bytes, *, headers: dict[str, str], timeout: float = 300) -> Any:
         """原始字节上传（服务器 OCR）。网关重试靠调用方给的 Idempotency-Key 去重。"""
-        return self.call("POST", path, auth=True, headers=headers, content=content, timeout=300)
+        return self.call("POST", path, auth=True, headers=headers, content=content, timeout=timeout)
 
     def _call(self, method: str, path: str, *, body: Any, auth: bool, query: dict[str, Any] | None, timeout: float,
               headers: dict[str, str] | None = None, content: bytes | None = None) -> Any:
@@ -179,11 +193,21 @@ class Api:
             raise ClientError("badResponse", "服务器返回的不是 JSON。", path=path) from None
         if isinstance(payload, dict) and "code" in payload:
             if payload.get("code") not in (0, "0", "OK"):
-                raise ClientError(str(payload.get("code")), str(payload.get("message") or "服务器拒绝请求。"), path=path)
+                raise business_error(payload, path)
             return payload.get("data")
         return payload
 
     def download(self, path: str, target: Path, *, query: dict[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            return self._download(path, target, query=query)
+        except ClientError as exc:
+            # 同 call：服务器重启时的 502/503/504 隔几秒重试一次，不然这份原件就被记成没下载到。
+            if exc.code not in GATEWAY_ERRORS:
+                raise
+            time.sleep(GATEWAY_RETRY_SECONDS)
+            return self._download(path, target, query=query)
+
+    def _download(self, path: str, target: Path, *, query: dict[str, Any] | None = None) -> dict[str, Any]:
         req = self._request("GET", path, auth=True, query=query)
         digest, size = hashlib.sha256(), 0
         private_dir(target.parent)
@@ -223,8 +247,18 @@ def http_error(exc: error.HTTPError, path: str) -> ClientError:
     if isinstance(payload.get("data"), dict) and "retryAfter" in payload["data"]:
         details["retryAfter"] = payload["data"]["retryAfter"]
     if exc.code == 401:
-        message += "（令牌缺失或过期：请用户在自己的终端重新 login）"
+        message += LOGIN_HINT
     return ClientError(code, message, **details)
+
+
+def business_error(payload: dict[str, Any], path: str) -> ClientError:
+    """HTTP 200 里的业务错误：401 没登录、403 无权、40404 对象不存在，其余保留服务器的数字码。"""
+    raw = str(payload.get("code"))
+    code = BUSINESS_CODES.get(raw, raw)
+    message = str(payload.get("message") or "服务器拒绝请求。")
+    if code == "loginRequired":
+        message += LOGIN_HINT
+    return ClientError(code, message, path=path, serverCode=raw)
 
 
 # ---------------------------------------------------------------- auth
@@ -509,6 +543,18 @@ def flatten_workspace(payload: Any) -> dict[str, Any]:
     return {**{k: v for k, v in payload.items() if k != "content"}, **content}
 
 
+DIGEST_FIELD_ROWS = 60  # 摘要里服务器抽取字段只列这么多行：它只是 OCR 线索，全表在 workspace.json
+
+
+def clause_line(clause: dict[str, Any]) -> str:
+    """固定主条款：总适用的只写页码和核验状态；有条件的把条件也写出来，免得为一句适用条件去读 rules.json。"""
+    extra = [f"第{clause.get('sourcePage')}页", str(clause.get("verificationStatus"))]
+    if clause.get("applicability") not in (None, "always"):
+        note = clause.get("condition") or clause.get("applicabilityNote")
+        extra.append(f"适用：{clause.get('applicability')}" + (f"——{note}" if note else ""))
+    return f"{clause.get('standardRef')} {clause.get('clauseNo')}（{'，'.join(extra)}）"
+
+
 def write_digest(root: Path, manifest: dict[str, Any], rules: dict[str, Any], workspace: dict[str, Any]) -> None:
     """A compact first read for the assistant; full JSON stays alongside."""
     rule = rules["rule"]
@@ -519,8 +565,7 @@ def write_digest(root: Path, manifest: dict[str, Any], rules: dict[str, Any], wo
     lines += ["", "## 规则", "", f"**依据（criteria）**：{rule.get('criteria')}", "",
               f"**审查方法（checkMethod）**：{rule.get('checkMethod')}", "",
               "**参考标准**：" + "、".join(str(s.get("reference") or s) for s in rule.get("referencedStandards") or []), "",
-              "**固定主条款**：" + "；".join(f"{c.get('standardRef')} {c.get('clauseNo')}（第{c.get('sourcePage')}页，{c.get('verificationStatus')}）"
-                                     for c in rules.get("standardClauses") or []) or "—", "",
+              "**固定主条款**：" + ("；".join(clause_line(c) for c in rules.get("standardClauses") or []) or "—"), "",
               "## 原子检查（每项都要出结论；audit.json 骨架已按这个顺序列好）", ""]
     for check in rules["atomicChecks"]:
         server = outcomes.get(check["id"], {})
@@ -546,19 +591,26 @@ def write_digest(root: Path, manifest: dict[str, Any], rules: dict[str, Any], wo
         by_version = {f.get("documentVersionId"): f.get("path") for f in manifest["files"]}
         lines += ["", "## 服务器抽取字段（OCR 线索，关键值须对照原页）", "",
                   "| 文件 | 页 | 字段 | 值 | 置信度 | 状态 |", "|---|---|---|---|---|---|"]
-        for field in fields[:400]:
+        for field in fields[:DIGEST_FIELD_ROWS]:
             value = cell(field_value(field)[:120])
             lines.append(f"| {by_version.get(field.get('documentVersionId')) or field.get('documentVersionId')} | "
                          f"{field.get('pageNo') or '—'} | {field.get('fieldName')} | {value} | "
                          f"{field.get('confidence') if field.get('confidence') is not None else '—'} | {field.get('reviewStatus') or '—'} |")
-        if len(fields) > 400:
-            lines.append(f"\n（共 {len(fields)} 条，只列前 400 条；全部见 workspace.json → ocr.extractedFields）")
+        if len(fields) > DIGEST_FIELD_ROWS:
+            lines.append(f"\n（共 {len(fields)} 条，只列前 {DIGEST_FIELD_ROWS} 条；全部在 workspace.json（已脱敏）→ ocr.extractedFields，"
+                         "按字段名 grep，别整份读）")
     readiness = (workspace.get("evidence") or {}).get("readiness") or {}
     if readiness:
         lines += ["", "## 服务器证据就绪度", "",
                   f"readyForAiFormal={readiness.get('readyForAiFormal')}，missing={readiness.get('missingCount')}，pending={readiness.get('pendingCount')}"]
         lines += [f"- {r.get('code')}: {r.get('message')}" for r in readiness.get("blockingReasons") or []]
     write_private(root / "digest.md", mask_ids("\n".join(lines) + "\n"))
+
+
+def write_server_json(root: Path, filename: str, value: Any) -> None:
+    """服务器返回的 JSON 落两份：包根目录的脱敏版给助手读；ocr/server/ 下的原文只给脚本回查完整证号（resolve_masked_id）。"""
+    write_private(root / filename, dump_masked(value))
+    write_private(root / SERVER_RAW_DIR / filename, dump(value))
 
 
 def finish_bundle(root: Path, manifest: dict[str, Any], rules: dict[str, Any], workspace: dict[str, Any]) -> dict[str, Any]:
@@ -580,7 +632,7 @@ def cmd_fetch(args: argparse.Namespace) -> Any:
     workspace = flatten_workspace(api.call("GET", f"{node_path}/audit-workspace", auth=True))
     root = bundle_dir(project, node, args.out)
     private_dir(root)
-    write_private(root / "workspace.json", dump(workspace))
+    write_server_json(root, "workspace.json", workspace)
     warnings: list[str] = []
     if not any(key in workspace for key in ("submission", "ocr", "aiReview")):
         warnings.append("服务器 audit-workspace 的返回里没有 submission / ocr / aiReview（也不在 content 下），"
@@ -594,7 +646,7 @@ def cmd_fetch(args: argparse.Namespace) -> Any:
         try:
             fetched[key] = api.call("GET", f"{node_path}/{path}", auth=True)
             parts[key] = filename
-            write_private(root / filename, dump(fetched[key]))
+            write_server_json(root, filename, fetched[key])
         except ClientError as exc:
             warnings.append(f"{key} 未取到：{exc.code} {exc.message}")
 
@@ -611,7 +663,7 @@ def cmd_fetch(args: argparse.Namespace) -> Any:
         try:
             review_run = api.call("GET", f"/review-runs/{parse.quote(str(run_id), safe='')}", auth=True)
             parts["reviewRun"] = "review-run.json"
-            write_private(root / "review-run.json", dump(review_run))
+            write_server_json(root, "review-run.json", review_run)
         except ClientError as exc:
             warnings.append(f"最近一次审查运行 {run_id} 未取到：{exc.code} {exc.message}")
     else:
@@ -636,9 +688,15 @@ def cmd_fetch(args: argparse.Namespace) -> Any:
                                 root / relative, query={"disposition": "attachment", "versionId": version_id})
             files.append({**entry, "path": relative, **meta})
         except ClientError as exc:
-            skipped.append({**entry, "reason": f"{exc.code} {exc.message}"})
+            if exc.code == "loginRequired":
+                raise  # 令牌中途过期：别建一个缺原件的包，重新授权后重跑 fetch
+            skipped.append({**entry, "reason": f"{exc.code} {exc.message}", "downloadFailed": True})
     if not documents:
         warnings.append("该节点没有已提交的挂载资料（工作区只给已提交的挂载）。")
+    failed_downloads = [s for s in skipped if s.get("downloadFailed")]
+    if failed_downloads:
+        warnings.append(f"{len(failed_downloads)} 份挂载资料没下载到（见 skippedFiles）：资料包不完整。先隔一两分钟重跑 fetch；"
+                        "仍拿不到就在报告 limitations 写明缺哪份、影响哪些检查，report 会核对。")
 
     manifest = {"schemaVersion": BUNDLE_SCHEMA, "source": "server", "baseUrl": api.base, "projectId": project,
                 "nodeId": node, "ruleId": rules["ruleId"], "fetchedAt": now(), "parts": parts,
@@ -687,7 +745,7 @@ def cmd_local_init(args: argparse.Namespace) -> Any:
         workspace = json.loads(Path(args.workspace).expanduser().read_text(encoding="utf-8"))
         workspace = flatten_workspace(workspace.get("data", workspace))
     private_dir(root)
-    write_private(root / "workspace.json", dump(workspace))
+    write_server_json(root, "workspace.json", workspace)
     files = []
     for index, source in enumerate(sources, start=1):
         relative = f"files/{index:02d}-{safe_name(source.name)}"
@@ -721,7 +779,10 @@ def parse_pages(spec: str | None, count: int, limit: int = 20) -> list[int]:
         pages = []
         for part in spec.split(","):
             start, _, end = part.strip().partition("-")
-            first, last = int(start), int(end or start)
+            try:
+                first, last = int(start), int(end or start)
+            except ValueError:
+                raise ClientError("invalidArguments", f"页码 {part!r} 看不懂：写成 4-6,9 这样的数字和范围。") from None
             if not 1 <= first <= last <= count:
                 raise ClientError("pageOutOfRange", f"页码 {part} 超出 1–{count}。")
             pages.extend(range(first, last + 1))
@@ -959,6 +1020,31 @@ def looks_like_text(text: str) -> bool:
     return bool(sample.strip()) and sample.count("\x00") < len(sample) * 0.005 and readable_ratio(sample) >= 0.85
 
 
+# GB 标准 PDF 的斜体拉丁字母（公式、符号里的 D、S、W、Rm）字体映射错：文字层里成了 GBK 0xA0A1–0xA0FE 这段罕用字，
+# 正好是 ASCII 码加 0x80（犇=D、犛=S、犠=W、犪=a）。逐字换回；这段字在正常文本里几乎不出现。仓库标准里有 71 页这样。
+ITALIC_LATIN = str.maketrans({bytes([0xA0, t]).decode("gbk"): chr(t - 0x80) for t in range(0xA1, 0xFF)})
+# GB2312 一级字（3755 个常用字）。扫描件自带的识别文字认错时满页是罕用字（鸥、罾、邳），常用字占比掉到 0.7 以下；
+# 正常页在 0.9 以上（2026-10-28 量过仓库 59 份标准 1350 页、评测工程 38 份资料 158 页：正常页最低 0.94）。
+COMMON_HANZI = frozenset(bytes([hi, lo]).decode("gb2312") for hi in range(0xB0, 0xD8) for lo in range(0xA1, 0xFF)
+                         if not (hi == 0xD7 and lo > 0xF9))
+GARBLED_COMMON_BELOW = 0.8
+GARBLED_MIN_HANZI = 50
+TABLE_MIN_LINES = 80  # 一页至少这么多行、六成以上是一两个字的短行：表格被文字层拆成了一格一行
+TABLE_SHORT_SHARE = 0.6
+
+
+def garbled_layer(text: str) -> bool:
+    """文字层是认错了的识别文字（满页罕用字，常见于倒放、旋转的扫描页），不能当原文读。"""
+    hanzi = [ch for ch in text if "一" <= ch <= "鿿"]
+    return len(hanzi) >= GARBLED_MIN_HANZI and sum(ch in COMMON_HANZI for ch in hanzi) < GARBLED_COMMON_BELOW * len(hanzi)
+
+
+def table_layout_lost(text: str) -> bool:
+    """表格被文字层拆成一格一行（评定因素矩阵、尺寸表）：字都对，但哪个值属于哪一行哪一列读不出来。"""
+    lines = [line for line in text.splitlines() if line.strip()]
+    return len(lines) >= TABLE_MIN_LINES and sum(len(line.strip()) <= 2 for line in lines) >= TABLE_SHORT_SHARE * len(lines)
+
+
 def word97_text(path: Path) -> str:
     """Word 97-2003 .doc text: OLE compound file → WordDocument/Table streams → piece table. Data only, nothing executed."""
     data = path.read_bytes()
@@ -1046,7 +1132,7 @@ def office_xml_text(path: Path) -> str:
 
 
 def file_text(path: Path) -> tuple[str, list[str]]:
-    """(status, page texts). status: text | image | office_unreadable | unsupported | pymupdf_missing."""
+    """(status, page texts). status: text | image | pdf_unreadable | office_unreadable | unsupported | pymupdf_missing."""
     suffix = path.suffix.lower()
     if suffix in IMAGE_SUFFIXES:
         return "image", []
@@ -1055,8 +1141,11 @@ def file_text(path: Path) -> tuple[str, list[str]]:
             fitz = quiet_fitz()
         except ImportError:
             return "pymupdf_missing", []
-        with fitz.open(path) as doc:
-            return "text", [page.get_text() for page in doc]
+        try:
+            with fitz.open(path) as doc:
+                return "text", [page.get_text().translate(ITALIC_LATIN) for page in doc]
+        except Exception:  # noqa: BLE001 -- 一份坏 PDF 不能让整包检索崩掉：记成打不开，报告里标 skipped 写原因
+            return "pdf_unreadable", []
     if suffix in {".txt", ".md", ".csv", ".json"}:
         return "text", [path.read_text(encoding="utf-8", errors="replace")]
     if suffix in {".docx", ".xlsx"}:
@@ -1101,9 +1190,10 @@ GROUP_TERMS = {
 }
 
 
-def text_out_path(args: argparse.Namespace, path: Path) -> Path:
-    """转出的文字只进资料包：仓库里的标准原件不带 --bundle/--out 会写进 rules/ 旁边。"""
-    name = f"{safe_name(path.stem)}.txt"
+def text_out_path(args: argparse.Namespace, path: Path, part: str | None = None) -> Path:
+    """转出的文字只进资料包：仓库里的标准原件不带 --bundle/--out 会写进 rules/ 旁边。
+    只转部分页时文件名带页码（如 x.p4-6_9.txt），不覆盖整份转出的那一份。"""
+    name = f"{safe_name(path.stem)}{'.p' + part.replace(',', '_') if part else ''}.txt"
     if args.out:
         out = Path(args.out).expanduser().resolve()
         return out / name if out.is_dir() or args.out.endswith(("/", os.sep)) else out
@@ -1124,34 +1214,128 @@ def cmd_text(args: argparse.Namespace) -> Any:
         raise ClientError("fileNotFound", f"找不到文件：{path}")
     bundle = Path(args.bundle).expanduser().resolve() if args.bundle else find_bundle(path)
     relative = bundle_relative(bundle, path) if bundle else None
-    status, _, pages, used = page_texts(bundle, relative, path)
+    status, layer, pages, used = page_texts(bundle, relative, path)
     ocr_hint = f"先跑 ocr --bundle <资料包>{'' if not relative or relative.startswith('files/') else ' --files ' + relative}（服务器 OCR），再用 text 读 OCR 文字。"
     if status not in {"text", "ocr"}:
         raise ClientError("noTextLayer", f"{path.name}：{status}，没有可取的文字——{ocr_hint}")
     empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < 20]
     if pages and len(empty) == len(pages):
         raise ClientError("noTextLayer", f"{path.name} 没有文字层（扫描件）——{ocr_hint}")
-    out = text_out_path(args, path)
+    # --pages 只转这几页：大文件、标准原文按 search 命中页读，不用整份读进对话
+    selected = parse_pages(args.pages, len(pages), limit=max(len(pages), 1)) if args.pages else list(range(1, len(pages) + 1))
+    out = text_out_path(args, path, page_ranges(selected) if args.pages else None)
     label = lambda n: f"--- 第 {n} 页{'（OCR）' if status == 'ocr' or n in used else ''} ---"
-    body = "\n\n".join(f"{label(n)}\n{t}" if len(pages) > 1 or status == "ocr" else t for n, t in enumerate(pages, start=1))
+    body = "\n\n".join(f"{label(n)}\n{pages[n - 1]}" if len(pages) > 1 or status == "ocr" else pages[n - 1] for n in selected)
     write_private(out, mask_ids(body))
-    result = {"file": str(path), "status": status, "pages": len(pages), "chars": sum(len(t) for t in pages), "saved": str(out)}
+    result = {"file": str(path), "status": status, "pages": len(pages), "chars": sum(len(pages[n - 1]) for n in selected), "saved": str(out)}
+    if args.pages:
+        result["readPages"] = page_ranges(selected)
+    elif len(pages) > TEXT_WHOLE_FILE_PAGES:
+        result["readHint"] = (f"共 {len(pages)} 页：不要整份读进对话。按 search 的 termPages 用 --pages 只转要看的页；"
+                              "逐件核对要看全部页时分段转、边读边记 notes.md。")
+    record = load_ocr(bundle, relative, path)
     if status == "ocr" or used:
-        result["ocrPages"] = page_ranges(range(1, len(pages) + 1)) if status == "ocr" else page_ranges(used)
-        result["ocrNote"] = "标（OCR）的页是服务器识别的文字；[印章：…]、[签名：…] 是服务器识别的印章、签名，“服务器未读出章上的字”表示有章但没读出字，该事实交人工确认。"
-    if empty and len(pages) > 1:
-        result["pagesWithoutText"] = page_ranges(empty)  # 这些页文字层和 OCR 里都没有字：跑 ocr；跑过仍是空白的页，相关事实交人工确认
+        ocr_selected = selected if status == "ocr" else sorted(used & set(selected))
+        if ocr_selected:
+            result["ocrPages"] = page_ranges(ocr_selected)
+        result["ocrNote"] = ("标（OCR）的页是服务器识别的文字；[印章：…]、[签名：…] 是服务器识别的印章、签名，“服务器未读出章上的字”表示有章但没读出字，该事实交人工确认。"
+                             f"{CODE_MISREAD_NOTE}。")
+        if (record or {}).get("renderVersion") != OCR_RENDER_VERSION:
+            result["ocrOutdated"] = "这份 OCR 是旧排版（横跨多列的格子逐格重复）：再跑一次 ocr 会按新排版重排，不重新上传、不重新识别；重排后摘录照新转出的文字抄。"
+    quality = ocr_quality(bundle, relative, path, selected) if record else {}
+    if quality:
+        result["ocrQuality"] = (problem_summary(quality, OCR_QUALITY_LABELS) + "。这些页上找不到的事实不能写“原件没有”：先到材料表、"
+                                "管道特性表、设计说明等别的资料里找，仍找不到就判证据不足或需人工确认，limitations 写明哪页 OCR 读不全")
+    # 文字层靠不住、又还没用上 OCR 的页：text 给的是文字层原样，读数会错。
+    shaky = layer_problems(path, layer, [n for n in selected if n not in used]) if status == "text" else {}
+    if shaky:
+        result["layerWarnings"] = problem_summary(shaky, LAYER_PROBLEMS) + "。" + (
+            "这些页服务器 OCR 也没读出字：相关事实交人工确认" if record else
+            f"要用这些页的数值、表格：{ocr_hint}有 OCR 后 text 对这些页只给 OCR 文字")
+    if status == "text" and not used and (images := office_image_count(path)):
+        result["embeddedImages"] = f"文档里嵌了 {images} 张图片，图片里的字这里读不到（如证件照片）：{ocr_hint}"
+    empty_selected = [n for n in empty if n in selected]
+    if empty_selected and len(pages) > 1:
+        result["pagesWithoutText"] = page_ranges(empty_selected)  # 这些页文字层和 OCR 里都没有字：跑 ocr；跑过仍是空白的页，相关事实交人工确认
     return result
 
 
-def captioned_image_pages(path: Path, pages: list[str]) -> list[int]:
-    """字很少（<50）又嵌着图片的页：多半是整页证书扫描配一行说明，检索看不到图里的内容。"""
-    short = [n for n, text in enumerate(pages, start=1) if 20 <= len(text.strip()) < 50]
-    if not short:
-        return []
+def scan_pages(path: Path, layer: list[str]) -> set[int]:
+    """要靠 OCR 才读得到内容的页（按原件文字层算）：几乎没字（<20）；文字层是认错了的识别文字（满页罕用字）；
+    字很少（<50）又嵌着图片（整页证书配一行说明）；字不多（<200）而一张图片占了大半页（扫描仪自带的页眉页脚、
+    垃圾文字层盖不住图里的内容）；字不多（<200）的大幅面页（CAD 出的图纸把标注转成了线条，文字层只剩图框编号，
+    评测里储罐施工图第 23–30 页就是这样）。"""
+    pages = {n for n, text in enumerate(layer, start=1) if len(text.strip()) < 20 or garbled_layer(text)}
+    candidates = [n for n, text in enumerate(layer, start=1) if 20 <= len(text.strip()) < SCAN_TEXT_BELOW and n not in pages]
+    if not candidates or path.suffix.lower() != ".pdf":
+        return pages
     fitz = quiet_fitz()
     with fitz.open(path) as doc:
-        return [n for n in short if doc[n - 1].get_images()]
+        for n in candidates:
+            page = doc[n - 1]
+            if max(page.rect.width, page.rect.height) >= DRAWING_LONG_SIDE:
+                pages.add(n)
+            elif len(layer[n - 1].strip()) < OCR_FILL_BELOW:
+                if page.get_images():
+                    pages.add(n)
+                continue
+            if image_covers_page(fitz, page):
+                pages.add(n)
+    return pages
+
+
+def image_covers_page(fitz: Any, page: Any) -> bool:
+    area = abs(page.rect) or 1.0
+    return any(abs(fitz.Rect(info["bbox"]) & page.rect) / area >= SCAN_IMAGE_SHARE for info in page.get_image_info())
+
+
+def embedded_ocr_page(fitz: Any, page: Any) -> bool:
+    """整页是图片，文字是扫描时自带的隐形识别文字（渲染模式 3）：字多半对，数值、牌号常有认错的（GB/T 8163
+    表 7 的 Q420 成了“Q衽20”、-40 成了“一返0”）。"""
+    if not image_covers_page(fitz, page):
+        return False
+    shown = hidden = 0
+    for span in page.get_texttrace():
+        count = len(span.get("chars") or ())
+        hidden, shown = (hidden + count, shown) if span.get("type") == 3 else (hidden, shown + count)
+    return hidden > 0 and hidden >= 0.8 * (hidden + shown)
+
+
+LAYER_PROBLEMS = {"garbled": "文字层是认错了的识别文字（满页罕用字）",
+                  "embedded": "是扫描件自带的识别文字（数值、牌号可能认错）",
+                  "table": "表格被文字层拆成一格一行（行列对不上）"}
+
+
+def layer_problems(path: Path, layer: list[str], numbers: Any = None) -> dict[int, str]:
+    """有文字层、但文字层靠不住的页 → LAYER_PROBLEMS 的键。几乎没字的页不算（那是扫描页，见 scan_pages）。
+    有这一页的服务器 OCR 时，text、检索和摘录核对都改用 OCR 文字（摘录核对仍认文字层）。"""
+    wanted = sorted({n for n in (numbers if numbers is not None else range(1, len(layer) + 1))
+                     if 1 <= n <= len(layer) and len(layer[n - 1].strip()) >= 20})
+    problems: dict[int, str] = {}
+    image_pages = []
+    for n in wanted:
+        if garbled_layer(layer[n - 1]):
+            problems[n] = "garbled"
+        elif table_layout_lost(layer[n - 1]):
+            problems[n] = "table"
+        elif len(layer[n - 1].strip()) >= SCAN_TEXT_BELOW:
+            image_pages.append(n)  # 字更少又有大图的页已按扫描页算
+    if image_pages and path.suffix.lower() == ".pdf":
+        try:
+            fitz = quiet_fitz()
+            with fitz.open(path) as doc:
+                problems.update({n: "embedded" for n in image_pages if embedded_ocr_page(fitz, doc[n - 1])})
+        except Exception:  # noqa: BLE001 -- 打不开就当文字层可用：只是少一条提示
+            return problems
+    return problems
+
+
+def problem_summary(problems: dict[int, str], labels: dict[str, str] | None = None) -> str:
+    """{页: 原因} → “第 2-3,5 页文字层是…；第 12 页…”。"""
+    groups: dict[str, list[int]] = {}
+    for page, reason in sorted(problems.items()):
+        groups.setdefault(labels.get(reason, reason) if labels else reason, []).append(page)
+    return "；".join(f"第 {page_ranges(pages)} 页{reason}" for reason, pages in groups.items())
 
 
 def default_terms(bundle: Path) -> list[str]:
@@ -1178,29 +1362,33 @@ def cmd_search(args: argparse.Namespace) -> Any:
     terms = list(args.terms or []) if args.only else [*default_terms(bundle), *(args.terms or [])]
     terms = list(dict.fromkeys(t for t in terms if t.strip()))
     files, visual, visual_pages, id_files = [], [], {}, {}
-    scanned_files, scanned_pages = [], {}
+    scanned_files, scanned_pages, weak, embedded = [], {}, {}, {}
     for item in manifest.get("files") or []:
         path = bundle / item["path"]
         status, layer, pages, used = page_texts(bundle, item["path"], path)
         for text in pages:
             for match in ID_CANDIDATE.finditer(text):
-                if is_id_number(match.group(1)):
+                if looks_like_id(match.group(1)):
                     id_files.setdefault(mask_ids(match.group(1)), set()).add(item["path"])
         record: dict[str, Any] = {"path": item["path"], "status": status, "pages": len(pages),
                                   "textChars": sum(len(t.strip()) for t in pages), "hits": []}
         # 扫描页按原件文字层算（报告据此要求这一页有 OCR 文字）；还缺字的页按补过 OCR 的文字算（要先跑 ocr）。
-        raw_empty = [n for n, text in enumerate(layer, start=1) if len(text.strip()) < 20]
-        if status == "text" and item["path"].lower().endswith(".pdf"):
-            raw_empty = sorted(set(raw_empty) | set(captioned_image_pages(path, layer)))
+        raw_empty = sorted(scan_pages(path, layer)) if status == "text" else []
         if status not in {"text"} or (layer and len(raw_empty) == len(layer)):
             scanned_files.append(item["path"])
         elif raw_empty:
             scanned_pages[item["path"]] = raw_empty
         empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < 20 and n not in used]
-        if status == "text" and item["path"].lower().endswith(".pdf"):
-            empty = sorted(set(empty) | (set(captioned_image_pages(path, layer)) - used))
+        if status == "text":
+            empty = sorted(set(empty) | (set(raw_empty) - used))
         if used:
             record["ocrPages"] = page_ranges(used)
+        elif status == "text" and (images := office_image_count(path)):
+            embedded[item["path"]] = images  # 嵌着的图片里的字检索不到
+        quality = ocr_quality(bundle, item["path"], path) if status in {"text", "ocr"} and (used or status == "ocr") else {}
+        if quality:
+            weak[item["path"]] = problem_summary(quality, OCR_QUALITY_LABELS)
+            record["ocrQuality"] = weak[item["path"]]
         if empty and len(pages) > 1:
             record["pagesWithoutText"] = empty if len(empty) <= 30 else f"{len(empty)} 页"
         if status not in {"text", "ocr"} or (pages and len(empty) == len(pages)):
@@ -1220,11 +1408,11 @@ def cmd_search(args: argparse.Namespace) -> Any:
         files.append(record)
     # 文字层里有的身份证号可直接用脱敏号查 cert-registry；不在这里的只在图片上，要照原件读。
     id_numbers = {masked: sorted(paths) for masked, paths in sorted(id_files.items())}
-    target = bundle / "search" / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    target = bundle / "search" / f"{archive_stamp()}.json"
     write_private(target, dump_masked({"at": now(), "bundle": str(bundle), "terms": terms, "files": files,
                                         "needsOcr": visual, "needsOcrPages": visual_pages,
                                         "scannedFiles": scanned_files, "scannedPages": scanned_pages,
-                                        "idNumbersInText": id_numbers}))
+                                        "ocrQuality": weak, "idNumbersInText": id_numbers}))
     files.sort(key=lambda f: -len(f["hits"]))
     term_files = {t: sorted({f["path"] for f in files for h in f["hits"] if h["term"] == t}) for t in terms}
     zero_hit = [t for t, paths in term_files.items() if not paths]
@@ -1234,7 +1422,7 @@ def cmd_search(args: argparse.Namespace) -> Any:
         "saved": str(target),
         "termHitFiles": "、".join(f"{t} {len(paths)}" for t, paths in term_files.items() if paths),
         "zeroHitTerms": "、".join(zero_hit),
-        **({"zeroHitNote": zero_hit_note(len(visual), len(visual_pages))} if zero_hit and (visual or visual_pages) else {}),
+        **({"zeroHitNote": zero_hit_note(len(visual), len(visual_pages), len(weak))} if zero_hit and (visual or visual_pages or weak) else {}),
         "filesWithHits": [{"path": f["path"], "hitCount": len(f["hits"]),
                            "termPages": "、".join(f"{t} p{page_ranges(p)}" for t, p in term_pages(f["hits"]).items()),
                            **({"ocrPages": f["ocrPages"]} if f.get("ocrPages") else {}),
@@ -1243,16 +1431,25 @@ def cmd_search(args: argparse.Namespace) -> Any:
         "filesWithoutHits": [f["path"] for f in files if not f["hits"] and f["path"] not in visual],
         "needsOcr": visual,
         "needsOcrPages": {path: page_ranges(pages) for path, pages in visual_pages.items()},
+        **({"ocrQuality": dict(list(weak.items())[:20])} if weak else {}),
+        **({"embeddedImages": {path: f"嵌了 {n} 张图片，图片里的字检索不到：跑 ocr 会把这份交服务器识别" for path, n in embedded.items()}}
+           if embedded else {}),
         "idNumbersInText": {masked: "、".join(paths) for masked, paths in list(id_numbers.items())[:30]},
     }
 
 
-def zero_hit_note(scanned_files: int, partly_scanned: int) -> str:
-    """零命中只对有文字（文字层或 OCR）的文件成立；还没 OCR 的扫描件没被检索到，不能凭零命中说“没有”。"""
+def zero_hit_note(scanned_files: int, partly_scanned: int, weak_ocr: int = 0) -> str:
+    """零命中只对有文字（文字层或 OCR）的文件成立；还没 OCR 的扫描件没被检索到，OCR 读不全的页也可能漏了，
+    不能凭零命中说“没有”。"""
     parts = [f"{scanned_files} 份图片或扫描件（needsOcr）" if scanned_files else "",
              f"{partly_scanned} 份文件的部分扫描页（needsOcrPages）" if partly_scanned else ""]
-    return ("零命中只对有文字的文件有效；" + "、".join(p for p in parts if p)
-            + "还没 OCR，没有被检索到，这些词可能在那里。要说“没有”，先跑 ocr 再检索。")
+    note = "零命中只对有文字的文件有效；"
+    if scanned_files or partly_scanned:
+        note += "、".join(p for p in parts if p) + "还没 OCR，没有被检索到，这些词可能在那里。要说“没有”，先跑 ocr 再检索。"
+    if weak_ocr:
+        note += (f"另有 {weak_ocr} 份文件的部分页 OCR 读得不全（ocrQuality：图纸、空白页、识别跑飞），那几页上的词可能没读出来，"
+                 "零命中不能当原件没有。")
+    return note
 
 
 def term_pages(hits: list[dict[str, Any]]) -> dict[str, set[int]]:
@@ -1286,6 +1483,11 @@ OCR_ACTIVE = {"queued", "running"}
 OCR_FAILED = {"failed", "canceled"}
 OCR_POLL_SECONDS = 30  # 服务器查状态、取结果每次都整表加载 OCR 记录，别查太勤；它建议更久就听它的
 OCR_FILL_BELOW = 50  # 文字层不到这么多字的页（扫描页、整页证书配一行说明）用 OCR 文字补
+SCAN_TEXT_BELOW = 200  # 文字层不到这么多字、又有一张图占了大半页的，也按扫描页算（见 scan_pages）
+SCAN_IMAGE_SHARE = 0.5
+# OCR 记录里存的是排好版的逐页文字（表格怎么展开）；改了排版就加一，旧记录在下次 ocr 时按新排版重排。
+# 2：横跨多列的格子每行只写一次、标（跨N列）。
+OCR_RENDER_VERSION = 2
 LATEX_SYMBOLS = {r"\geqslant": "≥", r"\leqslant": "≤", r"\geq": "≥", r"\leq": "≤", r"\ge": "≥", r"\le": "≤",
                  r"\sim": "~", r"\times": "×", r"\pm": "±", r"\varphi": "φ", r"\phi": "φ", r"\Phi": "Φ",
                  r"\circ": "°", r"\%": "%", r"\mu": "μ", r"\alpha": "α", r"\beta": "β", r"\delta": "δ",
@@ -1326,8 +1528,10 @@ class TableGrid(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "tr":
+            self.flush_row()  # 上一行没写 </tr>：先收下，不丢
             self.row = []
         elif tag in ("td", "th"):
+            self.flush_cell()  # 上一格没写 </td>
             values = dict(attrs)
             span = []
             for name in ("rowspan", "colspan"):
@@ -1344,37 +1548,54 @@ class TableGrid(HTMLParser):
             self.cell.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in ("td", "th") and self.cell is not None:
-            if self.row is None:
-                self.row = []
-            self.row.append((re.sub(r"\s+", " ", "".join(self.cell)).strip(), *self.span))
-            self.cell = None
-        elif tag == "tr" and self.row is not None:
+        if tag in ("td", "th"):
+            self.flush_cell()
+        elif tag in ("tr", "table"):
+            self.flush_row()
+
+    def close(self) -> None:
+        super().close()
+        self.flush_row()  # MinerU 偶尔给的 HTML 末行没有 </tr>
+
+    def flush_cell(self) -> None:
+        if self.cell is None:
+            return
+        if self.row is None:
+            self.row = []
+        self.row.append((re.sub(r"\s+", " ", "".join(self.cell)).strip(), *self.span))
+        self.cell = None
+
+    def flush_row(self) -> None:
+        self.flush_cell()
+        if self.row is not None:
             self.rows.append(self.row)
             self.row = None
 
 
 def table_text(html: str) -> str:
-    """合并单元格按格展开：值在所跨的每一行、每一列都重复一次，逐行读就知道每一行的完整取值。"""
+    """合并单元格按格展开：值在所跨的每一行都重复，逐行读就知道每一行的完整取值。
+    横跨多列的格子每行只写一次、标「（跨N列）」：原先每列都重复一遍，节点 16 的 OCR 文字里
+    这类重复占了 68%（一行里同一个标准号连写 15 遍），白白占掉上下文。"""
     grid = TableGrid()
     grid.feed(html)
     grid.close()
-    cells: dict[tuple[int, int], str] = {}
+    cells: dict[tuple[int, int], str | None] = {}  # None：被左边横跨的格子占住，输出时跳过
     for r, row in enumerate(grid.rows):
         c = 0
         for text, rowspan, colspan in row:
             while (r, c) in cells:
                 c += 1
-            for dr in range(rowspan):
+            shown = f"{text}（跨{colspan}列）" if colspan > 1 and text else text
+            for dr in range(min(rowspan, len(grid.rows) - r)):  # rowspan 写多了不凭空多出几行
                 for dc in range(colspan):
-                    cells[(r + dr, c + dc)] = text
+                    cells[(r + dr, c + dc)] = shown if dc == 0 else None
             c += colspan
     if not cells:
         return plain_latex(re.sub(r"<[^>]+>", " ", html))
     width = max(c for _, c in cells) + 1
     lines = []
     for r in range(max(r for r, _ in cells) + 1):
-        values = [plain_latex(cells.get((r, c), "")) for c in range(width)]
+        values = [plain_latex(value) for c in range(width) if (value := cells.get((r, c), "")) is not None]
         while values and not values[-1]:
             values.pop()
         lines.append(" | ".join(values))
@@ -1395,6 +1616,21 @@ def page_of(row: dict[str, Any]) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number >= 1 else None
+
+
+# 二维码、国徽这类没有字的图块，服务器偶尔把识别模型的英文说明当成文字返回（c 轮评测：“The image provided is a
+# QR code. It does not contain any text…”，储罐、华润的证书页都有）。整行换成一个标记，别当成原件文字。
+# 要同时像说明文字：英文标准里也有以 The image 开头的正文（The image quality indicator…），不能误伤。
+MODEL_REPLY_LINE = re.compile(
+    r"^[ \t]*(?:The (?:provided |given |uploaded )?(?:image|picture|figure)|This (?:image|picture|figure)|"
+    r"I(?:'m| am) (?:sorry|unable)|Sorry,)\b"
+    r"(?=[^\n]*(?:\bOCR\b|no (?:visible |readable )?text|not contain any text|empty string|guidelines|instructions|"
+    r"cannot be extracted|no textual))[^\n]*$", re.MULTILINE)
+MODEL_REPLY_MARK = "[图块：识别模型没读出字（二维码、国徽、图案等）]"
+
+
+def strip_model_replies(text: str) -> str:
+    return MODEL_REPLY_LINE.sub(MODEL_REPLY_MARK, text)
 
 
 def server_ocr_pages(result: dict[str, Any]) -> dict[int, str]:
@@ -1419,7 +1655,8 @@ def server_ocr_pages(result: dict[str, Any]) -> dict[int, str]:
             pages.setdefault(page_of(signature), []).append((tail + 1, f"[签名：{text or '有手写签名'}]"))
     count = result.get("pageCount") if isinstance(result.get("pageCount"), int) else 0
     count = max([count, *pages]) if pages else count
-    return {n: "\n".join(text for _, text in sorted(pages.get(n, []), key=lambda item: item[0])) for n in range(1, count + 1)}
+    return {n: strip_model_replies("\n".join(text for _, text in sorted(pages.get(n, []), key=lambda item: item[0])))
+            for n in range(1, count + 1)}
 
 
 def server_ocr_fields(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1473,10 +1710,31 @@ def ocr_page_map(record: dict[str, Any]) -> dict[int, str]:
     pages = {}
     for item in record.get("pages") or []:
         try:
-            pages[int(item["page"])] = str(item.get("text") or "")
+            pages[int(item["page"])] = strip_model_replies(str(item.get("text") or ""))  # 旧记录里还留着模型的说明文字
         except (KeyError, TypeError, ValueError):
             continue
     return pages
+
+
+OFFICE_MEDIA_DIRS = ("word/media/", "ppt/media/", "xl/media/")
+
+
+def office_image_count(path: Path) -> int:
+    """docx、pptx 里嵌的图片张数（c 轮评测：储罐焊工清单 docx 文末嵌着焊工证照片，文字层里看不到）。"""
+    if path.suffix.lower() not in {".docx", ".pptx"}:  # 服务器 OCR 收这两种（xlsx 不收）
+        return 0
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as archive:
+            return sum(1 for name in archive.namelist() if name.startswith(OFFICE_MEDIA_DIRS)
+                       and Path(name).suffix.lower() in IMAGE_SUFFIXES | {".emf", ".wmf"})
+    except (OSError, zipfile.BadZipFile):
+        return 0
+
+
+def ocr_has_table(text: str) -> bool:
+    """OCR 文字里有一张展开了的表格（table_text 用“ | ”分格）：至少三行、每行至少三格。"""
+    return sum(1 for line in text.splitlines() if line.count(" | ") >= 2) >= 3
 
 
 def page_texts(bundle: Path | None, relative: str | None, path: Path) -> tuple[str, list[str], list[str], set[int]]:
@@ -1490,12 +1748,92 @@ def page_texts(bundle: Path | None, relative: str | None, path: Path) -> tuple[s
     if status != "text" or not layer or all(len(t.strip()) < 20 for t in layer):
         count = max([*ocr, len(layer)]) if ocr else len(layer)
         return "ocr", layer, [ocr.get(n, "") for n in range(1, count + 1)], {n for n, t in ocr.items() if t.strip()}
+    if path.suffix.lower() != ".pdf":
+        # Office 文件（嵌了图片）：文字层只有一“页”，服务器转成 PDF 后按页识别。OCR 文字整份接在文字层后面。
+        extra = "\n\n".join(text for _, text in sorted(ocr.items()) if text.strip())
+        if not extra:
+            return status, layer, layer, set()
+        return status, layer, [f"{layer[0].strip()}\n\n（以下是服务器 OCR 文字，含文档里嵌的图片）\n{extra}"], {1}
     merged, used = list(layer), set()
+    # 字不少但被大图占满的页也要 OCR 文字；只有 OCR 补到了这种页才去开 PDF 数图片。
+    wide = any(1 <= n <= len(layer) and OCR_FILL_BELOW <= len(layer[n - 1].strip()) < SCAN_TEXT_BELOW for n in ocr)
+    scanned = scan_pages(path, layer) if wide else set()
+    # 文字层靠不住的页（认错的识别文字、扫描件自带的隐形识别文字、拆散的表格）只给 OCR 文字：两份并排只会读乱。
+    shaky = layer_problems(path, layer, [n for n, text in ocr.items() if text.strip()])
+    if relative and relative.startswith("standard:"):
+        # 标准的表格页以 OCR 版为准：文字层常丢列（c 轮评测：NB/T 47014-2023 第 41 页表 6 文字层缺了最大值一列），
+        # 又看不出来。只对标准这么做：工程资料的数字文字层比 OCR 准。
+        shaky.update({n: "table" for n, text in ocr.items() if n not in shaky and ocr_has_table(text)})
     for number, text in ocr.items():
-        if 1 <= number <= len(layer) and text.strip() and len(layer[number - 1].strip()) < OCR_FILL_BELOW:
+        if not (1 <= number <= len(layer)) or not text.strip():
+            continue
+        if number in shaky:
+            merged[number - 1] = text
+            used.add(number)
+        elif len(layer[number - 1].strip()) < OCR_FILL_BELOW or number in scanned:
             merged[number - 1] = f"{layer[number - 1].strip()}\n{text}".strip()
             used.add(number)
     return status, layer, merged, used
+
+
+OCR_SPARSE_BELOW = 40  # OCR 只读出这么几个字的页
+DRAWING_LONG_SIDE = 1150  # PDF 页长边（点）：A4 是 842、A3 是 1191；比 A4 大得多的多是图纸
+OCR_REPEAT_RUN = re.compile(r"([一-鿿A-Za-z0-9])\1{29,}")
+OCR_REPEAT_RATIO = 0.07  # 压缩后不到原长的 7%：同一段字反复出现（评测里一张配管平面图把一句法院名重复了 200 次）
+OCR_QUALITY_LABELS = {"blank": "没读出字", "repeat": "识别跑飞（同一段字反复出现，内容不可信）", "sparse": "只读出几个字",
+                      "drawing": "是大幅面图纸（图签、表格读得出，图上分散的标注常读不全）"}
+
+
+OCR_REPEAT_LINE_CHARS = 40  # 这么长的一整行
+OCR_REPEAT_LINE_TIMES = 5  # 在同一页出现这么多次：c 轮评测里贵州强度计算书一行 405 字重复 10 次、储罐图纸图签重复 8 次；
+# 68 份 OCR 记录里正常的表格行（“检查结果 合格”之类）最多是 14 字重复 13 次，长行最多重复 3 次
+
+
+def ocr_degenerate(flat: str, text: str = "") -> bool:
+    import zlib
+    if OCR_REPEAT_RUN.search(flat):
+        return True
+    lines = Counter("".join(line.split()) for line in text.splitlines())
+    if any(len(line) >= OCR_REPEAT_LINE_CHARS and times >= OCR_REPEAT_LINE_TIMES for line, times in lines.items()):
+        return True
+    raw = flat.encode("utf-8")
+    return len(raw) >= 3000 and len(zlib.compress(raw, 9)) < OCR_REPEAT_RATIO * len(raw)
+
+
+def ocr_quality(bundle: Path | None, relative: str | None, path: Path, numbers: Any = None) -> dict[int, str]:
+    """要靠 OCR 才有字的页里，OCR 读得不全或读坏的页 → OCR_QUALITY_LABELS 的键。有文字层的正常页 OCR 是空的不算。
+    “没读出字”“只读出几个字”“图纸”的页上找不到某个事实，不等于原件上没有。"""
+    record = load_ocr(bundle, relative, path)
+    if not record:
+        return {}
+    ocr = ocr_page_map(record)
+    status, layer = file_text(path)
+    if status != "text" or not layer or all(len(t.strip()) < 20 for t in layer):
+        needed = set(ocr) | set(range(1, len(layer) + 1))
+    else:
+        thin = {n for n, text in enumerate(layer, start=1) if len(text.strip()) < OCR_FILL_BELOW}  # 合并时也用 OCR 补的页
+        needed = scan_pages(path, layer) | set(layer_problems(path, layer)) | thin
+    if numbers is not None:
+        needed &= set(numbers)
+    sides: dict[int, float] = {}
+    if path.suffix.lower() == ".pdf" and needed:
+        try:
+            with quiet_fitz().open(path) as doc:
+                sides = {n: max(doc[n - 1].rect.width, doc[n - 1].rect.height) for n in needed if 1 <= n <= doc.page_count}
+        except Exception:  # noqa: BLE001 -- 打不开就不判图纸
+            sides = {}
+    problems: dict[int, str] = {}
+    for n in sorted(needed):
+        flat = "".join(ocr.get(n, "").split())
+        if not flat:
+            problems[n] = "blank"
+        elif ocr_degenerate(flat, ocr.get(n, "")):
+            problems[n] = "repeat"
+        elif len(flat) < OCR_SPARSE_BELOW:
+            problems[n] = "sparse"
+        elif sides.get(n, 0) >= DRAWING_LONG_SIDE:
+            problems[n] = "drawing"
+    return problems
 
 
 def bundle_relative(bundle: Path, path: Path) -> str | None:
@@ -1518,8 +1856,10 @@ def ocr_reason(path: Path) -> str | None:
         return "图片"
     if status == "office_unreadable" and path.suffix.lower() in OCR_UPLOAD_SUFFIXES:
         return "转不出文字的 Office 文件"
+    if status == "text" and path.suffix.lower() in OCR_UPLOAD_SUFFIXES and (images := office_image_count(path)):
+        return f"Office 文件里嵌了 {images} 张图片（图片里的字文字层读不到）"
     if status == "text" and path.suffix.lower() == ".pdf":
-        empty = sorted({n for n, t in enumerate(layer, start=1) if len(t.strip()) < 20} | set(captioned_image_pages(path, layer)))
+        empty = sorted(scan_pages(path, layer))
         if empty:
             return "扫描件" if len(empty) == len(layer) else f"第 {page_ranges(empty)} 页是扫描页"
     return None
@@ -1553,11 +1893,19 @@ def check_egress(bundle: Path, manifest: dict[str, Any], allowed: bool) -> None:
     write_private(marker, dump({"approvedAt": now(), "note": "用户同意把本资料包的原件上传到 AIcheck 服务器做 OCR"}))
 
 
-def ocr_text(record: dict[str, Any]) -> str:
+CODE_MISREAD_NOTE = ("焊工证上的项目代号 OCR 常认错字母（实测 MinerU 把 GTAW 读成 CTAF、Fe 读成 Pe、6G 读成 60，"
+                     "千问会改大小写），代号以 cert-registry 查到的登记项目（czxm）为准")
+
+
+def ocr_text(record: dict[str, Any], problems: dict[int, str] | None = None) -> str:
     provider = "千问（MinerU 排队超时后服务器改用）" if record.get("provider") == "qwen" else "MinerU"
-    head = (f"（服务器 OCR 文字，识别：{provider}；不是原件文字层。表格已按格展开：合并单元格的值在所跨的每一行重复；"
-            "[印章：…]、[签名：…] 是服务器识别的印章、签名。）")
-    body = "\n\n".join(f"--- 第 {p['page']} 页 ---\n{p['text']}" for p in record.get("pages") or [])
+    head = (f"（服务器 OCR 文字，识别：{provider}；不是原件文字层。表格已按格展开：合并单元格的值在所跨的每一行重复，"
+            "横跨多列的每行只写一次并标（跨N列）；"
+            f"[印章：…]、[签名：…] 是服务器识别的印章、签名。{CODE_MISREAD_NOTE}。"
+            "页头标了“OCR 读得不全”的页，找不到某个事实不等于原件上没有。）")
+    marks = {n: f"（OCR 读得不全：{OCR_QUALITY_LABELS[kind]}）" for n, kind in (problems or {}).items()}
+    body = "\n\n".join(f"--- 第 {p['page']} 页{marks.get(p['page'], '')} ---\n{strip_model_replies(str(p.get('text') or ''))}"
+                       for p in record.get("pages") or [])
     fields = record.get("fields") or []
     if fields:
         body += "\n\n--- 服务器抽取的字段（只作线索，以上面的页文字为准） ---\n" + "\n".join(
@@ -1570,15 +1918,33 @@ def store_ocr(bundle: Path, item: dict[str, Any], status: dict[str, Any], result
     processing = result.get("processing") if isinstance(result.get("processing"), dict) else {}
     provider = str(processing.get("provider") or status.get("provider") or "mineru")
     record = {"file": item["file"], "sha256": item["sha256"], "engine": "aicheck-server", "provider": provider,
+              "renderVersion": OCR_RENDER_VERSION,
               "fallback": processing.get("fallback") or status.get("fallback"), "jobId": item["jobId"],
               "quality": result.get("quality"), "documentType": result.get("documentType"), "at": now(),
               "pages": [{"page": n, "text": t} for n, t in sorted(pages.items())], "fields": server_ocr_fields(result)}
     write_private(ocr_record_path(bundle, item["file"]), dump(record))  # 原文（含完整证号），只给脚本回查用
     target = ocr_text_path(bundle, item["file"])
-    write_private(target, mask_ids(ocr_text(record)))
-    blank = [n for n, t in pages.items() if not t.strip()]
+    source = target_path(bundle, item["file"])
+    problems = ocr_quality(bundle, item["file"], source) if source.is_file() else {}
+    write_private(target, mask_ids(ocr_text(record, problems)))
+    # 只算要靠 OCR 的页里没读出字的：有文字层的页 OCR 是空的不要紧（c 轮评测里把有文字层的页也算进来，agent 读成整份没字）
+    blank = sorted(n for n, kind in problems.items() if kind == "blank")
     return {"file": item["file"], "pages": len(pages), "chars": sum(len(t) for t in pages.values()), "provider": provider,
             "saved": str(target), **({"blankPages": page_ranges(blank)} if blank else {})}
+
+
+def target_path(bundle: Path, relative: str) -> Path:
+    """OCR 记录里的 file → 原件：资料包里的写 files/…，仓库里的标准原件写 standard:rules/…。"""
+    return repo_root() / relative.removeprefix("standard:") if relative.startswith("standard:") else bundle / relative
+
+
+def mark_rerender_failed(bundle: Path, relative: str) -> None:
+    target = ocr_record_path(bundle, relative)
+    try:
+        record = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    write_private(target, dump({**record, "rerenderFailed": now()}))
 
 
 def ocr_targets(bundle: Path, manifest: dict[str, Any], files: list[str] | None) -> tuple[list[tuple[str, Path]], list[dict[str, Any]]]:
@@ -1608,13 +1974,14 @@ def is_transient(exc: ClientError) -> bool:
     return exc.code in OCR_TRANSIENT
 
 
-def with_server_retry(call: Any) -> Any:
-    """服务器暂时不可用时按 OCR_RETRY_PAUSES 重试几次；仍不行就把最后一次的错误抛出去，由调用方决定怎么办。"""
+def with_server_retry(call: Any, deadline: float | None = None) -> Any:
+    """服务器暂时不可用时按 OCR_RETRY_PAUSES 重试几次；仍不行（或等下去就过了 deadline）就把最后一次的错误抛出去，
+    由调用方决定怎么办。"""
     for pause in (*OCR_RETRY_PAUSES, None):
         try:
             return call()
         except ClientError as exc:
-            if not is_transient(exc) or pause is None:
+            if not is_transient(exc) or pause is None or (deadline is not None and time.monotonic() + pause > deadline):
                 raise
             time.sleep(pause)
 
@@ -1649,14 +2016,66 @@ def record_failed_attempt(bundle: Path, attempts: dict[str, int], item: dict[str
     save_attempts(bundle, attempts)
 
 
+# 整条 ocr 命令（上传＋查状态）的时长上限：agent 跑一条命令最长 10 分钟，超了被杀掉就白等了（评测里整包 ocr
+# 一次要 10–24 分钟）。到点就停，没传完、没查完的下次接着来：pending.json 记着任务号，不重传。
+# 每个请求的超时都按剩余时间截断（c 轮评测里 --timeout 480 的一条实际跑了 10.2 分钟：大文件上传一次最多等 5 分钟，
+# 服务器重启时还要退避重试）；只有保证进展的第一份上传、第一次查状态给到 OCR_FIRST_REQUEST 秒。
+OCR_BUDGET_CAP = 420
+OCR_FIRST_REQUEST = 60
+OCR_MIN_REQUEST = 20  # 剩这么点时间就不再开始新的上传
+OCR_STALE_SKEW = 120  # 秒：任务建立时间早于本次命令开始这么久以上，才算上次留下的（容忍本机和服务器的钟差）
+OCR_SERVER_TZ = timezone(timedelta(hours=8))  # 服务器的 createdAt 是北京时间、不带时区（libs/contracts/responses.server_time）
+# 服务器调 MinerU 被拒或没配好：是服务器那边的令牌、配置问题，不是本机的登录令牌。2026-10-28 服务器的 MinerU 令牌过期，
+# 31 个任务全是 HTTP_401，子代理当成自己的令牌失效。
+ENGINE_AUTH_CODES = {"HTTP_401", "HTTP_403", "MINERU_NOT_CONFIGURED", "MINERU_CONFIG_INVALID", "MINERU_MODEL_INVALID"}
+ENGINE_BUSY_CODES = {"HTTP_429"}
+
+
+def failure_reason(state: str, status: dict[str, Any]) -> tuple[str, str | None]:
+    """(给助手看的原因, 类别)。类别 engineAuth：服务器的 MinerU 令牌或配置坏了；engineBusy：MinerU 限流或额度用完。"""
+    codes = [str(d.get("code")) for d in status.get("diagnostics") or [] if isinstance(d, dict) and d.get("code")]
+    reason = f"服务器 OCR {state}" + (f"：{'、'.join(codes)}" if codes else "")
+    if ENGINE_AUTH_CODES & set(codes):
+        return (reason + "（这次新建的任务服务器调 MinerU 也被拒或没配好：是服务器那边 MinerU 的令牌或配置问题，不是你的登录令牌，"
+                         "重新 login 没用）", "engineAuth")
+    if ENGINE_BUSY_CODES & set(codes):
+        return reason + "（MinerU 限流或额度用完）", "engineBusy"
+    return reason, None
+
+
+def job_created_before(status: dict[str, Any], moment: float) -> bool | None:
+    """服务器上这个任务是不是在 moment（本机时间戳）之前就建好的（上次留下的）；看不出来返回 None。"""
+    raw = status.get("createdAt")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        created = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=OCR_SERVER_TZ)
+    return created.timestamp() < moment - OCR_STALE_SKEW
+
+
 def cmd_ocr(args: argparse.Namespace) -> Any:
+    started_at = time.time()
+    # --timeout 是整条命令的时长（上传＋查状态）。每次至少传一份、查一份，保证重跑总有进展。
+    clock = {"end": time.monotonic() + min(max(args.timeout, 0), OCR_BUDGET_CAP)}
+
+    def time_left() -> float:
+        return clock["end"] - time.monotonic()
+
+    def request_timeout(normal: float, first: bool = False) -> float:
+        """这个请求最多等多久：不超过剩余时间；保证进展的第一个请求至少给 OCR_FIRST_REQUEST 秒。"""
+        return min(normal, max(time_left(), OCR_FIRST_REQUEST if first else 5.0))
+
     bundle = Path(args.bundle).expanduser().resolve()
     if not (bundle / "bundle.json").exists():
         raise ClientError("bundleMissing", f"{bundle} 不是资料包（没有 bundle.json）。")
     manifest = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))
     api = Api(args.base_url)
     if not api.token:
-        raise ClientError("loginRequired", "OCR 由服务器做，要监检账号令牌：请用户在自己的终端执行 login。")
+        raise ClientError("loginRequired", f"OCR 由服务器做，要监检账号令牌{LOGIN_HINT}。")
     targets, skipped = ocr_targets(bundle, manifest, args.files)
     if any(not relative.startswith("standard:") for relative, _ in targets):
         check_egress(bundle, manifest, args.allow_egress)
@@ -1667,106 +2086,244 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
         pending = []
     waiting = {item["sha256"] for item in pending}
     attempts = load_attempts(bundle)
-    cached, failed = [], []
+    cached, failed, rerendered, deferred, retried = [], [], [], [], []
+    not_uploaded: list[str] = []  # 服务器暂时不可用、没传上去的：不是识别失败，稍后重跑接着传
     server_down = ""  # 上传时服务器一直不可用：后面的文件不再试，别一份份耗时间
-    for relative, path in targets:
-        finished = load_ocr(bundle, relative, path)
-        if finished and not args.force:
-            cached.append(relative)
-            continue
-        sha = cached_sha(path)
-        if sha in waiting:
-            continue  # 上次交了还没出结果：接着等，不重传
-        if server_down:
-            failed.append({"file": relative, "reason": server_down, "retryable": True})
-            continue
-        if path.stat().st_size > OCR_MAX_BYTES:
-            skipped.append({"file": relative, "reason": "超过 100MB，服务器 OCR 不收"})
-            continue
-        try:
-            name, content = upload_payload(path, sha)
-        except ClientError as exc:
-            skipped.append({"file": relative, "reason": exc.message})
-            continue
+
+    def submit(relative: str, sha: str, attempt: int, payload: tuple[str, bytes], first: bool = False,
+               **extra: Any) -> dict[str, Any] | None:
+        """上传一份，返回待查的任务；服务器一直不可用或到点没传完返回 None（已记进 not_uploaded 或 deferred）。"""
+        nonlocal server_down
+        name, content = payload
         # 同一份原件同一个键：网关重试、重跑都拿回原来的任务，不会重复识别。要重做已完成的文件（--force）
         # 或上次失败了，就换键（r1、r2…）：服务器的幂等记录不过期，同键永远是第一次的那个任务。
-        attempt = attempts.get(sha, 0) + (1 if finished else 0)
         metadata = base64.urlsafe_b64encode(json.dumps({"fileName": name, "options": {"language": "ch"}}).encode()).decode()
         headers = {"Content-Type": "application/octet-stream", "Idempotency-Key": idempotency_key(sha, attempt),
                    "X-AICheck-Ocr-Metadata-B64": metadata}
         try:
-            data = with_server_retry(lambda body=content, hdrs=headers: api.upload("/internal/ocr/mineru/tasks/upload", body, headers=hdrs))
+            data = with_server_retry(lambda: api.upload("/internal/ocr/mineru/tasks/upload", content, headers=headers,
+                                                        timeout=request_timeout(300.0, first)), clock["end"])
         except ClientError as exc:
             if not is_transient(exc):
                 raise
             # 请求可能已经在服务器上建了任务：键没变，稍后重跑会拿回它，不会重复建，所以这里不动重试计数。
-            server_down = f"服务器暂时不可用（{exc.code}），没有上传：稍后重跑同一条 ocr 命令，键不变，不会重复建任务。"
-            failed.append({"file": relative, "reason": server_down, "retryable": True})
-            continue
+            if time_left() <= 1 and not first:
+                deferred.append(relative)  # 是到点了、请求被截断，不是服务器坏了
+                return None
+            server_down = f"服务器暂时不可用（{exc.code}），没有上传：等一两分钟重跑同一条 ocr 命令，键不变，不会重复建任务。"
+            not_uploaded.append(relative)
+            return None
         job_id = str((data or {}).get("jobId") or "")
         if not job_id:
             raise ClientError("badResponse", "服务器没有返回 OCR 任务号。")
         if attempt != attempts.get(sha, 0):
             attempts[sha] = attempt
             save_attempts(bundle, attempts)
-        pending.append({"file": relative, "sha256": sha, "jobId": job_id, "attempt": attempt, "submittedAt": now()})
-        write_private(state_path, dump(pending))
-    done = []
-    deadline = time.monotonic() + (0 if server_down else max(args.timeout, 0))
+        return {"file": relative, "sha256": sha, "jobId": job_id, "attempt": attempt, "submittedAt": now(), **extra}
+
+    uploaded = 0
+    for relative, path in targets:
+        finished = load_ocr(bundle, relative, path)
+        if finished and not args.force:
+            if (finished.get("renderVersion") != OCR_RENDER_VERSION and finished.get("jobId")
+                    and not finished.get("rerenderFailed") and finished["sha256"] not in waiting):
+                # 旧排版：服务器上那个任务已经识别完，只取一次结果重排，不重新上传、不重新识别。
+                pending.append({"file": relative, "sha256": finished["sha256"], "jobId": finished["jobId"],
+                                "attempt": attempts.get(finished["sha256"], 0), "submittedAt": now(), "rerender": True})
+                rerendered.append(relative)
+            else:
+                cached.append(relative)
+            continue
+        sha = cached_sha(path)
+        if sha in waiting:
+            continue  # 上次交了还没出结果：接着等，不重传
+        if server_down:
+            not_uploaded.append(relative)
+            continue
+        if path.stat().st_size > OCR_MAX_BYTES:
+            skipped.append({"file": relative, "reason": "超过 100MB，服务器 OCR 不收"})
+            continue
+        if (uploaded or deferred) and time_left() < OCR_MIN_REQUEST:
+            deferred.append(relative)  # 到点了：下次再传
+            continue
+        try:
+            payload = upload_payload(path, sha)
+        except ClientError as exc:
+            skipped.append({"file": relative, "reason": exc.message})
+            continue
+        item = submit(relative, sha, attempts.get(sha, 0) + (1 if finished else 0), payload, first=not (uploaded or deferred))
+        if item:
+            pending.append(item)
+            uploaded += 1
+            write_private(state_path, dump(pending))
+    if server_down:
+        clock["end"] = min(clock["end"], time.monotonic())  # 服务器不可用：查一下就走，不干等
+    done, kinds = [], set()
+
+    def give_up(item: dict[str, Any], reason: str, kind: str | None = None) -> None:
+        if item.get("rerender"):
+            # 只是重排没成：旧排版的文字照样能用，记下别每次重试；不动重试计数。
+            mark_rerender_failed(bundle, item["file"])
+            failed.append({"file": item["file"], "reason": f"{reason}；旧排版没能重排，旧的 OCR 文字照样能用，要新排版就加 --force 重新识别",
+                           "rerender": True})
+            return
+        entry: dict[str, Any] = {"file": item["file"], "reason": reason}
+        if item.get("retried"):
+            entry["autoRetried"] = True  # 这次已当场换新任务重试过一次
+        if kind:
+            entry["kind"] = kind
+            kinds.add(kind)
+        failed.append(entry)
+        record_failed_attempt(bundle, attempts, item)
+
+    def retry_now(item: dict[str, Any]) -> dict[str, Any] | str | None:
+        """失败的任务当场换新键重传一次（常见的是上次留下的失败任务：同一个键永远拿回它）。
+        返回新任务；这次来不及重传（到点了、服务器暂时不可用）返回 "later"：重试计数已加，下次重跑用新键传，
+        不算失败；不该或不能重试返回 None。"""
+        path = target_path(bundle, item["file"])
+        if (item.get("rerender") or item.get("retried")
+                or not path.is_file() or cached_sha(path) != item["sha256"]):
+            return None
+        try:
+            payload = upload_payload(path, item["sha256"])
+        except ClientError:
+            return None
+        record_failed_attempt(bundle, attempts, item)
+        if server_down:
+            not_uploaded.append(item["file"])
+            return "later"
+        if time_left() < OCR_MIN_REQUEST:
+            deferred.append(item["file"])
+            return "later"
+        return submit(item["file"], item["sha256"], attempts[item["sha256"]], payload, retried=True) or "later"
+
+    first_round, unpolled = True, []
     while pending:
-        left, waits = [], []
-        for item in pending:
+        left, waits, unpolled = [], [], []
+        for index, item in enumerate(pending):
+            if time_left() <= 0 and not (first_round and index == 0):
+                unpolled = pending[index:]  # 到点了：这些这次没查，排到前面，下次先查
+                break
             path = f"/internal/ocr/mineru/tasks/{parse.quote(item['jobId'], safe='')}"
+            first_poll = first_round and index == 0
             try:
-                status = api.call("GET", path, auth=True) or {}
+                status = api.call("GET", path, auth=True, timeout=request_timeout(90.0, first_poll)) or {}
                 state = str(status.get("status") or "")
-                result = api.call("GET", f"{path}/result", auth=True) or {} if state == "success" else {}
+                result = (api.call("GET", f"{path}/result", auth=True, timeout=request_timeout(120.0, first_poll)) or {}
+                          if state == "success" else {})
             except ClientError as exc:
-                if not is_transient(exc):
+                if exc.code in {"loginRequired", "forbidden"}:
+                    # 令牌过期或无权：任务都还在服务器上，先记下没查完的，重新授权后重跑同一条 ocr 接着等。
+                    write_private(state_path, dump([*left, *pending[index:]]))
                     raise
+                if not is_transient(exc):
+                    # 任务被服务器清理（notFound）或别的错误：这一份算失败，下次重跑换新键重新上传，不再卡在这个任务上。
+                    give_up(item, f"查 OCR 任务出错（{exc.code} {exc.message}）")
+                    continue
+                if time_left() <= 1 and not first_poll:
+                    unpolled = [item, *pending[index + 1:]]  # 是到点了、请求被截断：这些这次没查完，下次先查
+                    break
                 # 服务器重启中：不是识别失败。任务还在，记着，下一轮（或下次重跑）再查。
                 left.append({**item, "state": "unreachable", "message": f"服务器暂时不可用（{exc.code}），稍后接着等"})
                 continue
             if state == "success":
                 if result.get("resultAvailable") is False:
-                    failed.append({"file": item["file"], "reason": "服务器说识别完成，但没有结果"})
-                    record_failed_attempt(bundle, attempts, item)
+                    give_up(item, "服务器说识别完成，但没有结果")
                 else:
                     done.append(store_ocr(bundle, item, status, result))
             elif state in OCR_FAILED:
-                codes = "、".join(str(d.get("code")) for d in status.get("diagnostics") or [] if isinstance(d, dict) and d.get("code"))
-                failed.append({"file": item["file"], "reason": f"服务器 OCR {state}" + (f"：{codes}" if codes else "")})
-                record_failed_attempt(bundle, attempts, item)
+                reason, kind = failure_reason(state, status)
+                # 服务器的 MinerU 令牌坏了、任务又是这次刚建的：当场重传还是一样失败，不浪费上传。
+                # 上次留下的失败任务（c 轮评测 3 个 agent 碰到 10-28 事故遗留的 401 任务）不算：换新键重传，
+                # 这次来不及就留到下次，不报成令牌坏了。
+                again = None if kind == "engineAuth" and job_created_before(status, started_at) is False else retry_now(item)
+                if isinstance(again, dict):
+                    retried.append(item["file"])
+                    left.append(again)
+                elif again is None:
+                    give_up(item, reason, kind)
             else:
                 left.append({**item, "state": state or "unknown", "provider": status.get("provider"),
                              "message": status.get("statusMessage")})
                 if isinstance(status.get("recommendedPollSeconds"), int):
                     waits.append(status["recommendedPollSeconds"])
-        pending = left
+        pending = unpolled + left
         if pending:
             write_private(state_path, dump(pending))
         else:
             state_path.unlink(missing_ok=True)
+        first_round = False
         pause = max([OCR_POLL_SECONDS, *waits])
-        if not pending or time.monotonic() + pause > deadline:
+        if not pending or unpolled or time_left() < pause:
             break
         time.sleep(pause)
     result: dict[str, Any] = {"bundle": str(bundle), "done": done, "cached": cached, "skipped": skipped, "failed": failed}
+    if rerendered:
+        result["rerendered"] = rerendered  # 旧排版的 OCR 记录，按新排版重排（没有重新识别）
+    if retried:
+        result["retried"] = retried  # 任务失败，这次已当场换新任务重传（新任务在 pending 里，标 retried）；不是失败
+    deferred = list(dict.fromkeys(f for f in deferred if f not in not_uploaded))
+    if deferred:
+        result["notSubmitted"] = deferred
+    if not_uploaded:
+        result["notUploaded"] = list(dict.fromkeys(not_uploaded))
+    quality, unreadable = {}, []
+    for relative in [*(d["file"] for d in done), *cached]:
+        source = target_path(bundle, relative)
+        problems = ocr_quality(bundle, relative, source) if source.is_file() else {}
+        if problems:
+            quality[relative] = problem_summary(problems, OCR_QUALITY_LABELS)
+            record = load_ocr(bundle, relative, source)
+            status, layer = file_text(source)
+            no_layer = status != "text" or all(len(t.strip()) < 20 for t in layer)
+            if record and no_layer and not any(str(p.get("text") or "").strip() for p in record.get("pages") or []):
+                unreadable.append(relative)  # 原件没有文字层、OCR 也一个字没读出
+    if quality:
+        result["qualityWarnings"] = quality
+    total = len(targets) - len([s for s in skipped if s.get("file") in {r for r, _ in targets}])
+    result["progress"] = f"{len(cached) + len(done)}/{total} 份已有 OCR 文字"
     steps = []
+    if deferred:
+        steps.append(f"到点了（--timeout 是整条命令的时长，最多 {OCR_BUDGET_CAP} 秒），还有 {len(deferred)} 份没上传（notSubmitted）："
+                     "再跑同一条 ocr 命令接着传、接着等，已传的不重传。")
     if pending:
-        result["pending"] = [{k: i.get(k) for k in ("file", "state", "provider", "message")} for i in pending]
+        # 同一份文件只列一次：换新任务重传的那份标 retried（只有一个任务在等）。
+        rows: dict[str, dict[str, Any]] = {}
+        for i in pending:
+            rows[str(i.get("file"))] = {"file": i.get("file"), "state": i.get("state") or "submitted", "provider": i.get("provider"),
+                                        "message": i.get("message"), **({"retried": True} if i.get("retried") else {})}
+        result["pending"] = list(rows.values())
         if any(i.get("state") == "unreachable" for i in pending):
             steps.append("服务器暂时不可用（API 每约半小时重启一次，约一分钟）：等一两分钟再跑同一条 ocr 命令接着等，任务还在，不会重新上传。")
         else:
-            steps.append("服务器还在识别：过一两分钟再跑同一条 ocr 命令接着等，不会重新上传。")
-    if any(not f.get("retryable") for f in failed):
+            steps.append("服务器还在识别" + (f"（{len(unpolled)} 份这次没来得及查状态）" if unpolled else "")
+                         + "：不用另外等，直接再跑同一条 ocr 命令接着等（命令里会按服务器建议的间隔查），不会重新上传。")
+    hard = [f for f in failed if not f.get("rerender")]
+    if "engineAuth" in kinds:
+        steps.append("这次新建的 OCR 任务服务器调 MinerU 也被拒（HTTP_401 等）：可以再原样跑一次同一条 ocr 确认；仍是 engineAuth，"
+                     "就是服务器那边 MinerU 的令牌失效或没配好，不是你的登录过期，重新 login 没用。"
+                     "告诉用户请管理员检查服务器的 MinerU 令牌，修好后再跑同一条 ocr（会换新任务）；在此之前这些文件相关的事实交人工确认，写进 limitations。")
+    if "engineBusy" in kinds:
+        steps.append("MinerU 限流或额度用完：过半小时再跑同一条 ocr（会换新任务）；仍不行就写进 limitations，相关事实交人工确认。")
+    others = [f for f in hard if not f.get("kind")]
+    if others and all(f.get("autoRetried") for f in others):
+        steps.append("失败的文件这次已当场换新任务重试过一次，仍失败：写进 limitations，相关事实交人工确认，不要反复重跑。")
+    elif others:
         steps.append("失败的文件：再跑一次同一条 ocr 命令会换新任务重试一次（已记下重试次数）；仍失败就写进 limitations，相关事实交人工确认。")
-    if any(f.get("retryable") for f in failed):
-        steps.append(server_down or "服务器暂时不可用，没有上传的文件稍后重跑同一条 ocr 命令，不会重复建任务。")
+    if not_uploaded:
+        steps.append((server_down or "服务器暂时不可用，没有上传：等一两分钟重跑同一条 ocr 命令，不会重复建任务。")
+                     + f"（notUploaded 里 {len(result['notUploaded'])} 份，不是识别失败）")
     if not steps and (done or cached):
         steps.append("重跑 search，检索就带上 OCR 文字；读某份文件用 text --file（扫描页给的是 OCR 文字）。")
+    if quality:
+        steps.append("qualityWarnings 里的页 OCR 读得不全（图纸、空白页、识别跑飞）：那几页上找不到的事实不能写“原件没有”，"
+                     "先到材料表、管道特性表、设计说明等别的资料里找，仍找不到就判证据不足或需人工确认，limitations 写明哪份哪页。")
+    if unreadable:
+        steps.append(f"{len(unreadable)} 份整份 OCR 都没读出字（{'、'.join(unreadable[:5])}{'等' if len(unreadable) > 5 else ''}）："
+                     "--force 重做也一样（多是大幅面图纸，OCR 的限制），不要重跑；reviewedFiles 标 skipped，note 写“服务器 OCR 读不出字”，"
+                     "相关事实交人工确认")
     if steps:
-        result["nextStep"] = "；".join(steps)
+        result["nextStep"] = "；".join(step.rstrip("。") for step in steps)
     if not targets:
         result["note"] = "没有需要 OCR 的文件：包里的原件都有文字层。"
     return result
@@ -1798,8 +2355,9 @@ def cmd_cert_registry(args: argparse.Namespace) -> Any:
     if not re.fullmatch(pattern, identifier):
         raise ClientError("invalidArguments", "person 需 18 位身份证号；organization_license 需 TS+7 位-4 位的许可证编号。")
     if args.kind == "person" and not is_id_number(identifier):
-        # 从图片上照抄的号码最容易错一位：出生日期或校验位对不上就不去平台查。
-        raise ClientError("idChecksumFailed", "身份证号的出生日期或校验位对不上，多半有一位读错了：放大原件（--clip、--dpi 400）重读再查。")
+        # OCR 读出的号码最容易错一位：出生日期或校验位对不上就不去平台查，也不自己看图重读。
+        raise ClientError("idChecksumFailed", "身份证号的出生日期或校验位对不上，多半是 OCR 读错了一位：不要自己看图重读；"
+                                              "search 的 idNumbersInText 里没有另一个号时，这张证的登记查询交人工，写进 limitations。")
     return Api(args.base_url).call("POST", "/inspection-services/certificate-registry", timeout=120,
                                    body={"kind": args.kind, "identifier": identifier, "allowExternalQuery": True})
 
@@ -1957,6 +2515,46 @@ def source_problem(bundle: Path, source: dict[str, Any], known_files: set[str], 
     return None
 
 
+def match_text(text: str) -> str:
+    """摘录比对用：按助手看到的脱敏文本比，去空白、表格竖线和“（跨N列）”标记，全角转半角。"""
+    text = re.sub(r"（跨\d+列）", "", mask_ids(text)).translate(ITALIC_LATIN)  # 旧摘录可能照抄了没还原的斜体字母
+    return re.sub(r"[\s|]+", "", unicodedata.normalize("NFKC", text))
+
+
+def excerpt_problem(bundle: Path, source: dict[str, Any], known_files: set[str],
+                    texts: dict[str, list[str] | None]) -> str | None:
+    """写了 excerpt 就要真的出现在所引那一页的文字里（text 给的文字，或原件文字层：文字层靠不住的页 text 改给 OCR，
+    之前照文字层抄的摘录照样算数）；省略号隔开的几段各自要在。
+    页文字取不到（原件打不开、扫描页没 OCR）这里不报：前者 source_problem 已警告，后者 check_reading_coverage 报错。"""
+    excerpt, file, page = source.get("excerpt"), source.get("file"), source.get("page")
+    if not isinstance(excerpt, str) or not excerpt.strip() or not isinstance(file, str) or type(page) is not int:
+        return None
+    if file in known_files:
+        path = bundle / file
+    elif file.startswith("standard:"):
+        path = lexical_path(Path(os.path.abspath(repo_root())), file.removeprefix("standard:"))
+    else:
+        return None
+    key = str(path)
+    if key not in texts:
+        try:
+            _, layer, merged, _ = page_texts(bundle, file, path)
+            # 每页：text 给的文字 + 原件文字层（两份不同时），用 \0 隔开，摘录不会跨两份拼出来
+            texts[key] = [m if n > len(layer) or layer[n - 1] == m else f"{m}\0{layer[n - 1]}"
+                          for n, m in enumerate(merged, start=1)]
+        except Exception:  # noqa: BLE001 -- 原件打不开或没装 PyMuPDF：source_problem 已给过警告
+            texts[key] = None
+    pages = texts[key]
+    if not pages or not 1 <= page <= len(pages) or not match_text(pages[page - 1]):
+        return None
+    haystack = match_text(pages[page - 1])
+    pieces = [p for p in re.split(r"…+|\.{3,}|⋯+", match_text(excerpt)) if p]
+    if pieces and all(p in haystack for p in pieces):
+        return None
+    shown = excerpt if len(excerpt) <= 40 else excerpt[:40] + "…"
+    return f"摘录「{shown}」不在 {file} 第 {page} 页的文字里：excerpt 要照抄 text 转出的那一句，不能改写；文字里没有就别写 excerpt，按证据不足或需人工确认处理"
+
+
 def check_report(bundle: Path) -> tuple[dict[str, Any], dict[str, Any], list[str], list[str]]:
     manifest = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))
     report_path = bundle / "audit.json"
@@ -1971,6 +2569,7 @@ def check_report(bundle: Path) -> tuple[dict[str, Any], dict[str, Any], list[str
     known_files = {f["path"] for f in manifest.get("files") or []}
     outcomes = manifest.get("serverOutcomes") or {}
     page_counts: dict[str, int] = {}
+    page_text_cache: dict[str, list[str] | None] = {}
     for check in report.get("checks") or []:
         cid = check.get("atomicCheckId")
         seen[cid] = seen.get(cid, 0) + 1
@@ -1987,6 +2586,13 @@ def check_report(bundle: Path) -> tuple[dict[str, Any], dict[str, Any], list[str
             problem = source_problem(bundle, source, known_files, page_counts) if isinstance(source, dict) else "事实缺 source"
             if problem:
                 errors_.append(f"{cid}: {problem}")
+                continue
+            # 摘录对不上所引页：符合／不符合靠它下结论，算错误；其他结论只提醒。
+            mismatch = excerpt_problem(bundle, source, known_files, page_text_cache)
+            if mismatch and verdict in NEEDS_SOURCE:
+                errors_.append(f"{cid}: {mismatch}")
+            elif mismatch:
+                warnings.append(f"{cid}: {mismatch}")
             else:
                 sourced.append(fact)
         if verdict in NEEDS_SOURCE and not sourced:
@@ -2025,11 +2631,21 @@ def check_report(bundle: Path) -> tuple[dict[str, Any], dict[str, Any], list[str
     if unreadable:
         warnings.append("这些 PDF 打不开（原件损坏，或没用装了 PyMuPDF 的 backend/.venv/bin/python 跑），没核对引用页是否超出页数："
                         + "、".join(unreadable))
-    if contains_id_number(report_path.read_text(encoding="utf-8")):
+    if mask_value(report) != report:  # 按解析后的字符串查：JSON 里换行写成 \n，紧跟的号码在原文上扫会漏
         errors_.append("audit.json 里有完整的 18 位身份证号：一律写成前 4 位 + **** + 后 4 位")
     for flag in report.get("riskFlags") or []:
         if not isinstance(flag, dict) or flag.get("level") not in RISK_LEVELS or not str(flag.get("flag") or "").strip():
             errors_.append(f"riskFlags 每条须有 level（{'/'.join(RISK_LEVELS)}）和 flag：{flag}")
+    # 没下载到的挂载资料：包不完整，报告必须说出来，不能当它不存在。
+    limitations = clause_text(report.get("limitations") or [])
+    for item in manifest.get("skippedFiles") or []:
+        if not item.get("downloadFailed"):
+            continue
+        file_name = str(item.get("fileName") or "")
+        names = {file_name, Path(file_name).name, Path(file_name).stem, str(item.get("requirementName") or "")}
+        if not any(name and clause_text(name) in limitations for name in names):
+            errors_.append(f"资料包缺原件 {file_name or item.get('documentId')}（没下载到：{item.get('reason')}）："
+                           "先重跑 fetch 补齐；仍拿不到就在 limitations 写明缺这份（写出文件名或资料名）、影响哪些检查")
     rules = json.loads((bundle / "rules.json").read_text(encoding="utf-8"))
     roles = {c["id"]: c for c in rules["atomicChecks"]}
     check_strict_rules(report.get("checks") or [], roles, errors_)
@@ -2081,31 +2697,51 @@ def check_strict_rules(checks: list[dict[str, Any]], roles: dict[str, dict[str, 
                                + f"。应判{expected}")
 
 
-# ocr：读了服务器 OCR 的文字。read/pages/thumbs 是助手自己看图的旧写法，仍收，
-# 但扫描页上的确定结论只认 OCR 文字（见 check_reading_coverage）。
-REVIEW_METHODS = {"ocr", "read", "pages", "thumbs", "search", "text", "textutil", "skipped"}
-ID_CANDIDATE = re.compile(r"(?<![0-9A-Za-z])(\d{17}[\dXx])(?![0-9A-Za-z])")
+# ocr：读了服务器 OCR 的文字。read/pages/thumbs 是助手自己看图的旧写法：旧报告（评测包）还要能复核，所以仍收、只警告；
+# 扫描页上的确定结论只认 OCR 文字（见 check_reading_coverage）。
+LEGACY_METHODS = {"read", "pages", "thumbs"}
+REVIEW_METHODS = {"ocr", "search", "text", "textutil", "skipped", *LEGACY_METHODS}
+# 6+8+4 位之间容一个空格：OCR 常把证件上的号码拆开。前后不能紧挨字母数字，免得把哈希、更长的编号切一段出来。
+ID_CANDIDATE = re.compile(r"(?<![0-9A-Za-z])(\d{6}[ 　]?\d{8}[ 　]?\d{3}[\dXx])(?![0-9A-Za-z])")
 ID_WEIGHTS = (7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2)
 
 
-def is_id_number(value: str) -> bool:
-    """居民身份证号：出生日期合法且校验位正确（GB 11643）。全数字的统一社会信用代码过不了这两关。"""
+def id_digits(value: str) -> str:
+    return re.sub(r"[ 　]", "", value)
+
+
+def plausible_birth_date(value: str) -> bool:
     try:
-        born = datetime.strptime(value[6:14], "%Y%m%d")
+        return 1900 <= datetime.strptime(value[6:14], "%Y%m%d").year <= 2099
     except ValueError:
         return False
-    if not 1900 <= born.year <= 2099:
+
+
+def is_id_number(value: str) -> bool:
+    """居民身份证号：出生日期合法且校验位正确（GB 11643）。查登记前用它把关。"""
+    value = id_digits(value)
+    if len(value) != 18 or not plausible_birth_date(value):
         return False
     return value[17].upper() == "10X98765432"[sum(int(d) * w for d, w in zip(value[:17], ID_WEIGHTS)) % 11]
 
 
+def looks_like_id(value: str) -> bool:
+    """脱敏用的宽口径：出生日期合法、首位是省级代码（1–8）就遮，不要求校验位对——OCR 读错一位的号码也不能带进对话。
+    以 9 开头的全数字统一社会信用代码不遮；偶有编号被误遮，前 4 位 + 后 4 位仍在。"""
+    value = id_digits(value)
+    return len(value) == 18 and value[0] in "12345678" and plausible_birth_date(value)
+
+
 def contains_id_number(text: str) -> bool:
-    return any(is_id_number(match.group(1)) for match in ID_CANDIDATE.finditer(text))
+    return any(looks_like_id(match.group(1)) for match in ID_CANDIDATE.finditer(text))
 
 
 def mask_ids(text: str) -> str:
     """命令输出、检索结果、转出的文字、工具存档里的身份证号一律写成前 4 位 + ********** + 后 4 位。"""
-    return ID_CANDIDATE.sub(lambda m: f"{m.group(1)[:4]}**********{m.group(1)[-4:]}" if is_id_number(m.group(1)) else m.group(0), text)
+    def mask(m: re.Match[str]) -> str:
+        digits = id_digits(m.group(1))
+        return f"{digits[:4]}**********{digits[-4:]}" if looks_like_id(digits) else m.group(0)
+    return ID_CANDIDATE.sub(mask, text)
 
 
 def mask_value(value: Any) -> Any:
@@ -2132,12 +2768,21 @@ def resolve_masked_id(masked: str, bundle_arg: str | None) -> str:
         raise ClientError("invalidArguments", "脱敏号码要配 --bundle <资料包>，从包里原件找回完整号码再查。")
     bundle = Path(bundle_arg).expanduser().resolve()
     manifest = json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))
-    texts = [text for item in manifest.get("files") or [] for text in page_texts(bundle, item["path"], bundle / item["path"])[2]]
-    if (bundle / "workspace.json").exists():
-        texts.append((bundle / "workspace.json").read_text(encoding="utf-8"))
+    texts: list[str] = []
+    for item in manifest.get("files") or []:
+        try:
+            texts += page_texts(bundle, item["path"], bundle / item["path"])[2]
+        except Exception:  # noqa: BLE001 -- 原件打不开就跳过这份，号码可能在别处（OCR 原文、服务器 JSON）
+            texts.append("")
+    # 服务器 JSON 的原文在 ocr/server/ 下（包根目录那份已脱敏）；旧资料包只有根目录那份未脱敏的。
+    for filename in ("workspace.json", "evidence-chain.json"):
+        for candidate in (bundle / SERVER_RAW_DIR / filename, bundle / filename):
+            if candidate.exists():
+                texts.append(candidate.read_text(encoding="utf-8"))
+                break
     head, tail = masked[:4], masked[-4:]
-    found = {m.group(1).upper() for text in texts for m in ID_CANDIDATE.finditer(text)
-             if is_id_number(m.group(1)) and m.group(1).startswith(head) and m.group(1).upper().endswith(tail)}
+    found = {id_digits(m.group(1)).upper() for text in texts for m in ID_CANDIDATE.finditer(text)
+             if looks_like_id(m.group(1)) and id_digits(m.group(1)).startswith(head) and id_digits(m.group(1)).upper().endswith(tail)}
     if len(found) == 1:
         return found.pop()
     if not found:
@@ -2182,12 +2827,26 @@ def check_reading_coverage(bundle: Path, manifest: dict[str, Any], report: dict[
     partial = {**unread_pages, **(search.get("scannedPages") or {})}
     ocr_pages = ocr_coverage(bundle, known)
     image_only: dict[tuple[str, int], bool] = {}
+    scans: dict[str, set[int]] = {}  # 每份 PDF 只开一次
     for path, entry in listed.items():
         if path in unread and entry.get("method") == "search" and not ocr_pages.get(path):
             errors_.append(f"reviewedFiles {path}: 没有文字层也没 OCR，只检索等于没看——先跑 ocr 再读 OCR 文字（method 写 ocr），或标 skipped 写原因")
         elif path in unread_pages and entry.get("method") == "search" and not str(entry.get("note") or "").strip() \
                 and not ocr_pages.get(path):
             errors_.append(f"reviewedFiles {path}: 第 {unread_pages[path]} 页没有文字层，检索看不到——跑 ocr 后在 pages 写明，或在 note 说明为何不看")
+        # 阅读记录要和资料包对得上：写了 ocr 就要有 OCR 存档，扫描件写 text 等于没读到字。
+        method = entry.get("method")
+        if method == "ocr" and not ocr_pages.get(path):
+            if (bundle / path).is_file() and load_ocr(bundle, path, bundle / path):
+                errors_.append(f"reviewedFiles {path}: 服务器 OCR 一个字也没读出（--force 重做也一样，多是大幅面图纸）——"
+                               "method 写 skipped，note 写“服务器 OCR 读不出字”，相关事实交人工确认")
+            else:
+                errors_.append(f"reviewedFiles {path}: 标了 ocr，但资料包里没有这份原件的 OCR 文字（没跑 ocr，或原件改过）"
+                               "——先跑 ocr，或按实际读法改 method")
+        elif method in {"text", "textutil"} and path in visual and not ocr_pages.get(path):
+            errors_.append(f"reviewedFiles {path}: 是扫描件、没有文字层，text 读不到字——先跑 ocr 再读 OCR 文字（method 写 ocr），或标 skipped 写原因")
+        elif method in LEGACY_METHODS:
+            warnings.append(f"reviewedFiles {path}: method 写的是看图的旧写法 {method}；现在不自己看图：有文字层写 text，扫描件跑 ocr 后写 ocr")
     for check in report.get("checks") or []:
         if check.get("verdict") not in NEEDS_SOURCE:
             continue
@@ -2205,8 +2864,9 @@ def check_reading_coverage(bundle: Path, manifest: dict[str, Any], report: dict[
                 key = (path, page)
                 if key not in image_only:
                     try:
-                        with quiet_fitz().open(target) as document:
-                            image_only[key] = not bool(document[page - 1].get_text().strip())
+                        if path not in scans:
+                            scans[path] = scan_pages(target, file_text(target)[1])
+                        image_only[key] = page in scans[path]
                     except Exception:  # noqa: BLE001 -- 打不开就核不了文字层：只警告，不让整份报告交不出去
                         image_only[key] = False
                         warnings.append(f"{check['atomicCheckId']}: {path} 第 {page} 页打不开，没核对它是不是扫描页、阅读记录够不够")
@@ -2580,18 +3240,14 @@ def cmd_render(args: argparse.Namespace) -> Any:
         raise ClientError("reportInvalid", "audit.json 未通过校验：先修正并跑 report，再生成结果图。", errors=errors_, warnings=warnings)
     api = Api(args.base_url)
     if not api.token:
-        raise ClientError("loginRequired", "结果图由服务器渲染，要监检账号令牌：请用户在自己的终端执行 login。")
+        raise ClientError("loginRequired", f"结果图由服务器渲染，要监检账号令牌{LOGIN_HINT}。")
     rule = (json.loads((bundle / "rules.json").read_text(encoding="utf-8")).get("rule") or {}) if (bundle / "rules.json").exists() else {}
     try:
         data = api.call("POST", IMAGE_PATH, body=audit_image_body(manifest, report, rule.get("name") or ""), auth=True)
     except ClientError as exc:
-        # 这个服务器的业务错误常是 HTTP 200 加 JSON，错误码是数字：401 没登录、403 无权。
+        # 没登录、无权的业务错误（HTTP 200 + 数字 code）Api 已翻成 loginRequired / forbidden。
         if exc.code == "notFound":
             raise ClientError("renderNotDeployed", "服务器还没有结果图片接口（要部署新版后端）：先用 audit.md，部署后再生成图片。") from None
-        if exc.code == "401":
-            raise ClientError("loginRequired", f"{exc.message}（令牌缺失或过期：请用户在自己的终端重新 login）", **exc.details) from None
-        if exc.code == "403":
-            raise ClientError("forbidden", exc.message, **exc.details) from None
         raise
     pages = decode_image_pages(data)
     base = Path(args.out).expanduser().resolve() if args.out else bundle / "audit.png"
@@ -2625,8 +3281,14 @@ def matching_evidence_links(fact: dict[str, Any], version: str, evidence_chain: 
     """Require a locatable fact match, not just a confirmed document version."""
     source = fact.get("source") or {}
     def literal(value: Any) -> str:
-        return re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(value if value is not None else "")))
-    excerpt, name, value = literal(source.get("excerpt")), literal(fact.get("name")), literal(fact.get("value"))
+        # 摘录是照 text 转出的文字抄的：表格竖线、（跨N列）、[印章：…] 的外壳是 skill 自己加的，服务器的引文里没有；
+        # 身份证号助手手里只有脱敏号，两边都按脱敏后比。
+        text = re.sub(r"\[(?:印章|签名)：([^\]]*)\]", r"\1", str(value if value is not None else ""))
+        return match_text(text)
+    def masked(value: Any) -> str:
+        return unicodedata.normalize("NFKC", mask_ids(str(value if value is not None else "")))
+    excerpt, name = literal(source.get("excerpt")), literal(fact.get("name"))
+    value = re.sub(r"\s+", "", masked(fact.get("value")))
     matches = set()
     for link in (evidence_chain or {}).get("links") or []:
         if (not version or link.get("documentVersionId") != version or not link.get("id")
@@ -2646,7 +3308,7 @@ def matching_evidence_links(fact: dict[str, Any], version: str, evidence_chain: 
         same_excerpt = bool(excerpt and quote and excerpt == quote)
         same_field_value = bool(name and field == name and value and quote
                                 and re.search(r"(?<![A-Za-z0-9.])" + re.escape(value) + r"(?![A-Za-z0-9.])",
-                                              unicodedata.normalize("NFKC", str(link.get("quotedText") or ""))))
+                                              masked(link.get("quotedText"))))
         if same_excerpt or same_field_value:
             matches.add(str(link["id"]))
     # Same text in several regions is ambiguous without a finer source locator.
@@ -2729,6 +3391,31 @@ def sync_plan(bundle: Path, evidence_chain: dict[str, Any]) -> dict[str, Any]:
     return {"manifest": manifest, "outcome": outcome, "create": create, "skipped": skipped, "auditSha256": digest}
 
 
+def earlier_syncs(bundle: Path, manifest: dict[str, Any], audit_sha: str) -> list[dict[str, Any]]:
+    """同一节点以前（别的资料包，或本包改报告之前）已经写到这台服务器上的 AI 发现。
+    内容不同幂等键就不同，服务器不会合并：再同步会多出一套草稿，要先让用户知道。"""
+    node_dir = audit_home() / safe_name(str(manifest["projectId"])) / f"node-{int(manifest['nodeId']):02d}"
+    records = {*node_dir.glob("*/sync/*.json"), *(bundle / "sync").glob("*.json")}
+    by_bundle: dict[str, dict[str, Any]] = {}
+    for path in sorted(records):
+        if path.name.startswith("preview-"):
+            continue
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        written = [r for r in record.get("results") or [] if r.get("ok") and r.get("findingId")]
+        if (written and record.get("server") == manifest.get("baseUrl") and record.get("projectId") == manifest["projectId"]
+                and record.get("nodeId") == manifest["nodeId"] and record.get("auditSha256") != audit_sha):
+            # 同一份内容重复确认拿回的是同一批发现（同幂等键）：按发现号去重，不重复计数
+            entry = by_bundle.setdefault(str(path.parents[1]), {"ids": set(), "checks": set(), "at": ""})
+            entry["ids"] |= {str(r["findingId"]) for r in written}
+            entry["checks"] |= {str(r.get("check")) for r in written}
+            entry["at"] = max(entry["at"], str(record.get("at") or ""))
+    return [{"bundle": bundle_path, "lastSyncedAt": e["at"], "findings": len(e["ids"]), "checks": sorted(e["checks"])}
+            for bundle_path, e in by_bundle.items()]
+
+
 def cmd_sync(args: argparse.Namespace) -> Any:
     """Preview, then (only with --confirm) write the audit's open items to the server as AI findings pending human review.
     Never changes the node's status and never writes a human review opinion."""
@@ -2752,10 +3439,16 @@ def cmd_sync(args: argparse.Namespace) -> Any:
         target = bundle / "sync" / f"preview-{snapshot_hash}.json"
         if not target.exists():
             write_private(target, dump(snapshot))
+        earlier = earlier_syncs(bundle, manifest, plan["auditSha256"])
+        next_step = "给用户看 willCreate、skipped 及快照完整内容；明确同意后加 --confirm --preview-hash " + snapshot_hash if preview else "没有可同步的项"
+        if earlier and preview:
+            next_step = (f"这个节点以前已经同步过 {sum(e['findings'] for e in earlier)} 条 AI 发现（earlierSyncs），服务器不会合并："
+                         "再同步会多出一套草稿。先把这一点和 willCreate 一起告诉用户，用户仍同意才确认；") + next_step
         return {"preview": True, "previewHash": snapshot_hash, "savedTo": str(target.relative_to(bundle)),
                 "server": api.base, "outcome": outcome["label"], "willCreate": preview, "skipped": plan["skipped"],
+                **({"earlierSyncs": earlier} if earlier else {}),
                 "note": "同步内容：未判符合的检查项各写一条 AI 审查发现（草稿，待人工复核），不改节点状态，不写人工审查意见；符合项不同步。",
-                "next": "给用户看 willCreate、skipped 及快照完整内容；明确同意后加 --confirm --preview-hash " + snapshot_hash if preview else "没有可同步的项"}
+                "next": next_step}
     approved_hash = getattr(args, "preview_hash", None)
     if not approved_hash or not re.fullmatch(r"[a-f0-9]{64}", approved_hash):
         raise ClientError("previewRequired", "须先预览并获用户同意，再用 --confirm --preview-hash <该次摘要>。")
@@ -2791,7 +3484,7 @@ def save_tool_result(args: argparse.Namespace, data: Any, error: dict[str, Any] 
     """失败的查询也存档：报告引用 tool: 时要有文件可指，“平台不可用”本身就是事实。"""
     bundle = Path(args.bundle).expanduser().resolve()
     arguments = {k: v for k, v in vars(args).items() if k not in {"func", "saves", "bundle", "base_url", "command"}}
-    target = bundle / "tool-results" / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{args.command}.json"
+    target = bundle / "tool-results" / f"{archive_stamp()}-{args.command}.json"
     record = {"tool": args.command, "at": now(), "ok": error is None, "arguments": arguments}
     record.update({"error": error} if error else {"result": data})
     write_private(target, dump_masked(record))
@@ -2847,8 +3540,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--cols", type=int, default=5, help="拼图列数，默认 5")
     p.set_defaults(func=cmd_pages)
 
-    p = sub.add_parser("text", help="把 .doc/.docx/.xlsx/文字 PDF 转成文本存到资料包 text/，再读全文")
+    p = sub.add_parser("text", help="把 .doc/.docx/.xlsx/文字 PDF 转成文本存到资料包 text/（扫描件给 OCR 文字）；--pages 只转指定页")
     p.add_argument("--file", required=True)
+    p.add_argument("--pages", help="只转这些物理页，如 4-6,9；不给则整份转出")
     p.add_argument("--bundle", help="存进这个资料包的 text/（文件不在资料包里时必须给，或给 --out）")
     p.add_argument("--out", help="输出文件或目录")
     p.set_defaults(func=cmd_text)
@@ -2857,7 +3551,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--bundle", required=True)
     p.add_argument("--files", nargs="+", help="只 OCR 这些（资料包相对路径，或 standard:rules/standards/…）；默认全部没有文字层的原件")
     p.add_argument("--force", action="store_true", help="已有 OCR 也重做")
-    p.add_argument("--timeout", type=int, default=300, help="最多等几秒，默认 300；没等完再跑一次接着等，不重传")
+    p.add_argument("--timeout", type=int, default=300, help=f"整条命令最多跑几秒（上传＋查状态），默认 300、最多 {OCR_BUDGET_CAP}；每个请求按剩余时间截断，"
+                        "到点没传完、没查完的，再跑同一条命令接着来，不重传")
     p.add_argument("--allow-egress", action="store_true", help="本地资料包：用户已同意把原件上传到服务器做 OCR（每个资料包一次）")
     p.set_defaults(func=cmd_ocr)
 

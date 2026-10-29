@@ -158,7 +158,7 @@ def prompt(args: argparse.Namespace) -> dict[str, Any]:
     return {"outDir": str(out_dir), "prompt": text}
 
 
-def stash_run(where: dict[str, Path], tag: str, move_stray: bool) -> dict[str, Any]:
+def stash_run(where: dict[str, Path], tag: str, move_stray: bool, move_repo: list[str] | None = None) -> dict[str, Any]:
     """Move the runner's bundles into the archive and see what else it left in the repo or watched folders."""
     archive = archive_of(where, tag)
     if not (archive / "baseline.json").is_file():
@@ -175,17 +175,23 @@ def stash_run(where: dict[str, Path], tag: str, move_stray: bool) -> dict[str, A
     new_watch = {w: sorted(walk_files(Path(w)) - set(old)) for w, old in baseline["watch"].items()}
     moved = []
     if move_stray:
-        for rel in [p for p, code in new_repo.items() if code == "??"]:
-            target = archive / "stray" / "repo" / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(repo / rel), target)
-            moved.append(f"repo:{rel}")
+        # 仓库里新冒出的文件只报告（newInRepo），不移动：同一个仓库里常有别的会话在写，分不出是谁建的。
+        # c 轮评测这里把别的会话刚建的 138 个文件（测试、页面截图）移进了归档，约 4 分钟后才移回。
+        # 只移 --watch 目录（每个跑评测的 agent 自己的工作目录）里新出现的；仓库里确认是执行者留下的（比如带着结论的
+        # 脚本，下一个节点会读到），看过 newInRepo 后用 --move-repo 点名移走。
         for w, rels in new_watch.items():
             for rel in rels:
                 target = archive / "stray" / "watch" / Path(w).name / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(Path(w) / rel), target)
                 moved.append(f"{w}:{rel}")
+    for rel in move_repo or []:
+        if new_repo.get(rel) != "??":
+            raise IsolateError("notStray", f"{rel} 不是这次新冒出的未跟踪文件（看 newInRepo），不移动。")
+        target = archive / "stray" / "repo" / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(repo / rel), target)
+        moved.append(f"repo:{rel}")
     return {"stashed": stashed, "newInRepo": new_repo, "newInWatched": {w: r for w, r in new_watch.items() if r},
             "movedStray": moved}
 
@@ -194,7 +200,7 @@ def stash(args: argparse.Namespace) -> dict[str, Any]:
     where = locations(args)
     if not where["hold"].is_dir():
         raise IsolateError("notPrepared", f"{where['hold']} 不存在：没有 prepare 过，或已经还原。")
-    result = stash_run(where, args.tag, args.move_stray)
+    result = stash_run(where, args.tag, args.move_stray, args.move_repo)
     node_audit = load_node_audit()
     result["fullIdNumbersFound"] = scan_tree(node_audit, archive_of(where, args.tag) / "runs", only=result["stashed"])
     return result
@@ -208,7 +214,7 @@ def finish(args: argparse.Namespace) -> dict[str, Any]:
         raise IsolateError("auditHomeExists", f"{where['audit']} 已存在，不能还原；先手工处理。")
     if not where["runHome"].is_dir():
         raise IsolateError("runHomeMissing", f"{where['runHome']} 不存在。")
-    result = stash_run(where, args.tag, args.move_stray)
+    result = stash_run(where, args.tag, args.move_stray, args.move_repo)
     archive = archive_of(where, args.tag)
     stray = [c for c in where["runHome"].iterdir() if c.name not in {"projects", "runs"}]
     if stray:
@@ -325,11 +331,13 @@ def parser() -> argparse.ArgumentParser:
     p.set_defaults(func=prompt)
     p = sub.add_parser("stash", help="每个节点跑完后：结果移出试跑者够得着的地方，列出它在仓库里留下的新文件")
     p.add_argument("--tag", required=True)
-    p.add_argument("--move-stray", action="store_true", help="把新冒出的未跟踪文件也移进归档")
+    p.add_argument("--move-stray", action="store_true", help="把 --watch 目录里新冒出的文件也移进归档（仓库里新冒出的只报告，不移动）")
+    p.add_argument("--move-repo", nargs="+", metavar="REL", help="把仓库里点名的这几个新冒出的未跟踪文件移进归档（先看 newInRepo，确认是执行者留下的）")
     p.set_defaults(func=stash)
     p = sub.add_parser("finish", help="归档剩余结果、查完整身份证号、还原目录")
     p.add_argument("--tag", required=True)
-    p.add_argument("--move-stray", action="store_true", help="把新冒出的未跟踪文件也移进归档")
+    p.add_argument("--move-stray", action="store_true", help="把 --watch 目录里新冒出的文件也移进归档（仓库里新冒出的只报告，不移动）")
+    p.add_argument("--move-repo", nargs="+", metavar="REL", help="把仓库里点名的这几个新冒出的未跟踪文件移进归档（先看 newInRepo，确认是执行者留下的）")
     p.set_defaults(func=finish)
     p = sub.add_parser("scan", help="扫试跑者的过程记录")
     p.add_argument("files", nargs="+", help="过程记录文件（任何文本格式）")

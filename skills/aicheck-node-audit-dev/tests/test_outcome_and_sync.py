@@ -41,6 +41,7 @@ EVIDENCE_CHAIN = {"links": [
 class FakeServer:
     def __init__(self):
         self.posts: list[tuple[str, dict, dict]] = []
+        self.findings: dict[str, str] = {}  # 幂等键 → 发现号：同键拿回原来那条，和真后端一样
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -58,7 +59,7 @@ class FakeServer:
             def do_GET(self):
                 path = urlsplit(self.path).path
                 if self.headers.get("Authorization") != f"Bearer {TOKEN}":
-                    return self.send_json(None, 401, "UNAUTHORIZED")
+                    return self.send_json({"reason": "AUTH_REQUIRED"}, 200, 401, "请先登录。")  # 真后端：HTTP 200 + 数字 code
                 if path == f"{NODE}/audit-workspace":
                     return self.send_json(WORKSPACE)
                 if path == f"{NODE}/evidence-chain":
@@ -74,7 +75,8 @@ class FakeServer:
                 body = json.loads(self.rfile.read(length)) if length else None
                 outer.posts.append((urlsplit(self.path).path, dict(self.headers), body))
                 if urlsplit(self.path).path == "/api/review/findings":
-                    return self.send_json({"finding": {"id": f"FND-{len(outer.posts)}", "status": "draft", "humanStatus": "pending_human_review"}})
+                    finding = outer.findings.setdefault(str(self.headers.get("Idempotency-Key")), f"FND-{len(outer.findings) + 1}")
+                    return self.send_json({"finding": {"id": finding, "status": "draft", "humanStatus": "pending_human_review"}})
                 return self.send_json(None, 404, "NOT_FOUND")
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -273,6 +275,13 @@ class SyncTest(unittest.TestCase):
         posted = len(self.server.posts)
         code, out = run("sync", "--bundle", str(self.bundle), "--confirm", "--preview-hash", data["previewHash"])
         self.assertEqual((out["error"]["code"], len(self.server.posts)), ("previewChanged", posted))
+        # 报告改过再预览：内容不同、幂等键不同，服务器不合并——预览要说出这个节点以前已经写过几条
+        self.assertNotIn("earlierSyncs", data)  # 第一次预览时还没同步过
+        code, out = run("sync", "--bundle", str(self.bundle))
+        self.assertEqual(code, 0, out)
+        [earlier] = out["data"]["earlierSyncs"]  # 确认了两次，但第二次拿回的是同一批发现：按发现号去重，算 2 条
+        self.assertEqual((earlier["findings"], earlier["checks"]), (2, ["AC-R24-01", "AC-R24-04"]))
+        self.assertIn("以前已经同步过", out["data"]["next"])
 
     def test_sync_refuses_local_bundle_and_invalid_report(self):
         source = Path(self.tmp.name) / "x.pdf"

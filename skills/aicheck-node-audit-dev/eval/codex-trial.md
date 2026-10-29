@@ -44,7 +44,7 @@ python3 skills/aicheck-node-audit-dev/eval/isolate.py stash --tag r11-codex --mo
 ```
 
 - `scan` 看三项：`peeks`（碰过答案目录、旧结果、记忆、评估文档、别的试跑目录没有）、`directPdfReads`（自己写脚本读 PDF）、`fullIdNumberLines`（工具输出里出现完整身份证号）。命中只说明字符串出现过，要看上下文。
-- `stash` 把这个节点的资料包移出执行者够得着的地方，下一个节点看不到；执行者在仓库或 `/tmp/codex-trial-tmp` 里新留下的文件会列出来，加 `--move-stray` 就移进归档。以前吃过亏：上一个节点的脚本里带着结论，下一个节点读到了。
+- `stash` 把这个节点的资料包移出执行者够得着的地方，下一个节点看不到；执行者在仓库或 `/tmp/codex-trial-tmp` 里新留下的文件会列出来（`newInRepo`、`newInWatched`）。加 `--move-stray` 只把 `--watch` 目录里的移进归档；仓库里新冒出的要看过 `newInRepo`、确认是执行者留下的，再用 `--move-repo <路径…>` 点名移走（仓库里常有别的会话在写，2026-10-28 一次误移过别的会话 138 个文件）。以前吃过亏：上一个节点的脚本里带着结论，下一个节点读到了。
 
 **4. 全部跑完：还原并打分**
 

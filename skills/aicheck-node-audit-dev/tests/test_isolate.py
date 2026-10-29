@@ -128,10 +128,17 @@ class IsolateTest(unittest.TestCase):
         self.assertEqual((code, out["error"]["code"]), (1, "archiveExists"))
         shutil.rmtree(runs / "codex-node-24")
         (runs / "codex-node-25").mkdir()
+        (self.repo / "other_session.py").write_text("别的会话刚建的", encoding="utf-8")
         code, out = self.run_cli("stash", "--tag", "t1", "--move-stray")
         self.assertEqual(code, 0, out)
-        self.assertCountEqual(out["data"]["movedStray"], ["repo:fill_audit.py", f"{watched.resolve()}:tmp1.json"])
+        # --move-stray 只移 --watch 目录里的：仓库里新冒出的分不出是谁建的（c 轮评测误移过别的会话 138 个文件）
+        self.assertEqual(out["data"]["movedStray"], [f"{watched.resolve()}:tmp1.json"])
+        self.assertTrue((self.repo / "fill_audit.py").is_file())
+        self.assertEqual(self.run_cli("stash", "--tag", "t1", "--move-repo", "existing.txt")[1]["error"]["code"], "notStray")
+        code, out = self.run_cli("stash", "--tag", "t1", "--move-repo", "fill_audit.py")  # 看过 newInRepo，点名移走执行者留下的
+        self.assertEqual((code, out["data"]["movedStray"]), (0, ["repo:fill_audit.py"]), out)
         self.assertFalse((self.repo / "fill_audit.py").exists())
+        self.assertTrue((self.repo / "other_session.py").is_file())
         self.assertTrue((self.repo / "existing.txt").is_file())
         self.assertTrue((watched / "old.txt").is_file())
         archive = self.home / ".aicheck-node-audit.hold/eval/runs/t1"

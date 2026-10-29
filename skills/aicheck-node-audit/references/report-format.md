@@ -55,7 +55,7 @@
 
 判不了但风险高的事项（设计材质超出全部已交证书、计划人数多于交证人数等）加报告级 `"riskFlags": [{"level": "high", "check": "AC-R24-02", "flag": "一句话说明", "basis": "依据或出处"}]`，`level` 为 high 或 medium，会显示在 `audit.md` 开头。
 
-`report` 另外强制：报告里不得出现完整 18 位身份证号；`reviewedFiles` 覆盖包里每一份文件（`method` 为 text/ocr/search/skipped，skipped 要写 `note`，没有文字层又没 OCR 的文件不能只标 search；旧写法 read/pages/thumbs 仍收）；证据追溯项与逐件核对项按 [audit-method.md](audit-method.md) 的严格口径。
+`report` 另外强制：报告里不得出现完整 18 位身份证号；`reviewedFiles` 覆盖包里每一份文件（`method` 为 text/ocr/search/skipped，skipped 要写 `note`；阅读记录要和资料包对得上：写 `ocr` 就要有这份原件的 OCR 文字，扫描件写 `text` 等于没读到字，没有文字层又没 OCR 的文件不能只标 search；看图的旧写法 read/pages/thumbs 只为复核旧报告仍收，会警告）；`fetch` 没下载到的挂载资料（`skippedFiles` 里 `downloadFailed`）必须在 `limitations` 写出文件名或资料名、说明影响哪些检查；证据追溯项与逐件核对项按 [audit-method.md](audit-method.md) 的严格口径。
 
 转成文字的 Office 文件：`file` 写原件 `files/…`，`locator` 写 `"text/<文件名>.txt 第 N 行"`。`reviewedFiles.method` 还接受旧写法 `textutil`（同 `text`）。
 
@@ -65,5 +65,6 @@
 
 出处写法：
 
-- 文字层或 OCR 文字：`file` 写 `files/` 下的原件，`page` 写物理页，`excerpt` 抄 `text` 转出的那一句（OCR 的页 `text` 标了“（OCR）”）。不要把 `text/…` 或 `ocr/…` 写进 `file`。
+- 文字层或 OCR 文字：`file` 写 `files/` 下的原件，`page` 写物理页，`excerpt` 抄 `text` 转出的那一句（OCR 的页 `text` 标了“（OCR）”）。不要把 `text/…` 或 `ocr/…` 写进 `file`。`report` 会核对 `excerpt` 是否真在所引那一页的文字里（忽略空白、表格竖线和“（跨N列）”标记；几段用 `…` 连起来时各段都要在）：符合／不符合项对不上算错误，其他结论只警告。所以 `excerpt` 照抄、不改写；那一页文字里没有的，别写 `excerpt`，按证据不足或需人工确认处理。`excerpt` 必须是所引那一页上**连续**的一段；同一页上不挨着的几处用 `…` 连起来，不要把两处拼成一句。Office 文件转出的表格行里常混着序号、空格（如 `3 张三 GTAW`），照 `text` 转出的原样抄，别自己删序号。
+- 标准的固定主条款（`rules.json.standardClauses`）：引用它的那条事实要在 `excerpt` 或 `locator` 里写出条款号，`report` 据此认这条主条款核对过了。例：`{"name": "质量证明文件复印件要求", "value": "复印件应加盖经营单位公章和经办负责人章", "source": {"file": "standard:rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf", "page": 28, "excerpt": "复印件应当加盖经营单位公章和经办负责人章", "locator": "D2.4.1(5)"}}`。
 - 印章、签名：`file` 写原件、`page` 写页码，`excerpt` 抄 OCR 文字里 `[印章：…]`、`[签名：…]` 那一行。文件是服务器用千问兜底识别的（`.ocr.txt` 开头写着），只靠它的编号、代号在 `limitations` 注明。
