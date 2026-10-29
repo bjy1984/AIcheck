@@ -89,6 +89,7 @@ from apps.api.routes import (
     versioned_record,
 )
 from libs.db.repository import ensure_collections_loaded, requires_collections
+from libs.knowledge_retrieval import is_project_file_source
 from libs.ocr_structured_view import build_ocr_structured_view
 
 knowledge_admin_router = APIRouter()
@@ -2390,11 +2391,38 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+def dense_hit_summary(hit: dict[str, Any]) -> dict[str, Any]:
+    """检索测试的向量命中只回定位信息，不回正文。
+
+    向量 metadata 里原样存着分块正文，原先整个回给前端。项目资料的分块带过未脱敏的
+    身份证号（2026-10-29 审计：pgvector 41 行），等于从这个接口原样外发。要看正文看
+    hits，那里是检索候选，已排除项目资料。
+    """
+    metadata = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+    return {
+        "id": hit.get("id"),
+        "fileId": hit.get("fileId"),
+        "chunkId": hit.get("chunkId"),
+        "sourceId": hit.get("sourceId"),
+        "sourceRelativePath": hit.get("sourceRelativePath") or metadata.get("sourceRelativePath"),
+        "pageNo": metadata.get("pageNo"),
+        "sectionPath": metadata.get("sectionPath") or [],
+        "embeddingModel": hit.get("embeddingModel"),
+        "indexVersion": hit.get("indexVersion"),
+        "distance": hit.get("distance"),
+        "score": hit.get("score"),
+    }
+
+
 @router.post("/knowledge/retrieval-test")
 def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
     question = compact_plain_text(body.get("question"), 1000)
     if not question:
         return fail(errors.VALIDATION_ERROR, request, message="检索问题不能为空。")
+    # 检索测试查的是审查依据，缺省只查标准库；项目资料是被审对象，不许查。
+    source_id = str(body.get("sourceId") or STANDARD_RULES_SOURCE_ID)
+    if source_id == "KS-PROJECT-FILE" or is_project_file_source(repo.find_one("knowledge_sources", source_id) or {}):
+        return fail(errors.VALIDATION_ERROR, request, message="检索测试只查审查依据（标准库），不查项目资料。")
     dense_hits: list[dict[str, Any]] = []
     embedding_model = OFFLINE_EMBEDDING_MODEL
     index_version = body.get("indexVersion") or STANDARD_INDEX_VERSION
@@ -2416,7 +2444,7 @@ def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory
             index_version = body.get("indexVersion") or STANDARD_INDEX_VERSION
         search_args = {
             "top_k": int(body.get("topK") or 5),
-            "source_id": body.get("sourceId"),
+            "source_id": source_id,
             "index_version": index_version,
         }
         if repo.postgres_enabled and repo.sync_postgres is not None:
@@ -2432,6 +2460,8 @@ def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory
         top_k=int(body.get("topK") or 5),
         query_type="interactive_retrieval_test",
         dense_chunk_ids=[str(item.get("chunkId")) for item in dense_hits if item.get("chunkId")],
+        # PageIndex 路由默认关闭，检索测试里要看它得显式打开
+        enable_pageindex=body.get("enablePageIndex") is True,
     )
     return ok(
         {
@@ -2439,7 +2469,7 @@ def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory
             "hits": retrieval["trace"]["selectedClauses"],
             "retrievalTrace": retrieval["trace"],
             "latencyMs": 12,
-            "denseHits": dense_hits,
+            "denseHits": [dense_hit_summary(item) for item in dense_hits],
             "embeddingModel": embedding_model,
             "indexVersion": index_version,
             "activeEmbeddingModel": active_embedding_target()["embeddingModel"],

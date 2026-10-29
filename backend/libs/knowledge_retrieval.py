@@ -125,6 +125,10 @@ PAGEINDEX_QUERY_TERMS = (
     "条文之间",
 )
 DISABLED_KNOWLEDGE_STATUSES = {"disabled", "inactive", "deprecated", "retired", "停用"}
+# 检索模式标签要如实：没有向量参与就不能写 dense。2026-10-29 审计：生产检索轨迹里
+# 180 个选中结果全标 hybrid_bm25_dense_local，没有一个用到向量（审查调用方从不传
+# dense_chunk_ids），看板和审计记录据此以为在用向量检索。
+LEXICAL_RETRIEVAL_MODE = "lexical_clause_index"
 
 
 def query_tokens(query: str) -> list[str]:
@@ -487,11 +491,18 @@ def build_router_signals(query: str, tokens: list[str]) -> dict[str, Any]:
     }
 
 
-def classify_retrieval_route(query: str, tokens: list[str]) -> str:
+def classify_retrieval_route(query: str, tokens: list[str], *, enable_pageindex: bool = False) -> str:
+    """PageIndex 路由默认关闭，只有调用方显式 enable_pageindex=True 才走。
+
+    2026-10-29 生产审计：审查问句（「{节点名} 审查依据」，8–37 字）从未触发它；
+    唯一一次真触发是 R35 的规则依据检索（149 字），选中的是射线检测标准的前言和
+    像质计表，与规则无关。用真实问句重放，强制走树前 5 命中 24/33，不如关键词
+    检索的 28/33——默认开着只有误用，没有收益。
+    """
     signals = build_router_signals(query, tokens)
     if signals["exactClauseRefs"]:
         return "exact_clause_lookup"
-    if signals["needsPageIndex"]:
+    if enable_pageindex and signals["needsPageIndex"]:
         return "pageindex_tree_search"
     return "hybrid_review_basis_search"
 
@@ -1379,7 +1390,7 @@ def page_index_tree_search(
 
 
 def _ensure_retrieval_collections(state: dict[str, Any]) -> None:
-    """检索前确保延迟集合已加载。
+    """走 PageIndex 前确保延迟集合已加载。
 
     只对进程共享的 repo.state 生效——测试常传入字面量 state（自带数据、
     也不该触发数据库访问），拿 is 判断区分二者。
@@ -1421,35 +1432,40 @@ def retrieve_knowledge_clauses(
     query_type: str = "review_basis_search",
     dense_chunk_ids: list[str] | None = None,
     require_query_match: bool = False,
+    enable_pageindex: bool = False,
 ) -> dict[str, Any]:
-    # knowledge_page_index_nodes 是延迟加载集合（占冷启动 293MB 的 25%）。
-    # 检索是核心路径且调用点分散，在入口兜底比逐个调用方注入更可靠：
-    # 漏加载的后果是**静默少召回**，不会报错——那种缺陷最难发现。
-    _ensure_retrieval_collections(state)
     tokens = query_tokens(query)
-    router_signals = build_router_signals(query, tokens)
-    selected_route = classify_retrieval_route(query, tokens)
+    router_signals = {**build_router_signals(query, tokens), "pageIndexEnabled": enable_pageindex}
+    selected_route = classify_retrieval_route(query, tokens, enable_pageindex=enable_pageindex)
     exact_refs = list(router_signals.get("exactClauseRefs") or [])
     query_alias_matches = list(router_signals.get("standardAliases") or [])
     dense_ids = {str(item) for item in dense_chunk_ids or [] if item}
     candidates = knowledge_clause_candidates(state, kb_version=kb_version)
-    page_index_result = (
-        page_index_tree_search(
-            state,
-            tokens,
-            business_pack_id=business_pack_id,
-            node_id=node_id,
-            kb_version=kb_version,
-            top_k=top_k,
-        )
-        if selected_route == "pageindex_tree_search"
-        else {
-            "candidateNodeCount": len(page_index_node_candidates(state, kb_version=kb_version)),
+    if selected_route == "pageindex_tree_search":
+        # knowledge_page_index_nodes 是延迟加载集合（每个进程约 73MB）。只在真走
+        # PageIndex 时才加载；漏加载的后果是**静默少召回**，所以这里必须兜底。
+        _ensure_retrieval_collections(state)
+        page_index_result = {
+            "enabled": True,
+            **page_index_tree_search(
+                state,
+                tokens,
+                business_pack_id=business_pack_id,
+                node_id=node_id,
+                kb_version=kb_version,
+                top_k=top_k,
+            ),
+        }
+    else:
+        # 不走 PageIndex 就不碰节点：原先每次检索都把 5469 个节点归一化一遍，
+        # 只为填这里的 candidateNodeCount，还顺带把整张延迟集合拉进内存。
+        page_index_result = {
+            "enabled": False,
+            "candidateNodeCount": None,
             "selectedNodes": [],
             "linkedClauseIds": [],
             "treeSearchPath": [],
         }
-    )
     page_index_clause_ids = {str(item) for item in page_index_result.get("linkedClauseIds") or []}
     page_index_node_ids_by_identity: dict[str, list[str]] = {}
     for node in page_index_result.get("selectedNodes") or []:
@@ -1469,7 +1485,7 @@ def retrieve_knowledge_clauses(
             clause, tokens, node_id=node_id, business_pack_id=business_pack_id
         )
         route_score = 0.0
-        retrieval_mode = "hybrid_bm25_dense_local"
+        retrieval_mode = LEXICAL_RETRIEVAL_MODE
         if selected_route == "exact_clause_lookup":
             route_score = exact_clause_score(clause, exact_refs)
             if route_score > 0:
@@ -1477,10 +1493,10 @@ def retrieve_knowledge_clauses(
                 base_score = (base_score * 0.1) + route_score + 100.0
         elif selected_route == "pageindex_tree_search":
             route_score = pageindex_clause_score(clause, tokens)
+            # 只有被选中节点真正关联上的条款才算 PageIndex 命中。pageindex_clause_score
+            # 对任何带页码和 bbox 的条款都给分，按它打标签会把整库都标成 PageIndex。
             if identity_ids.intersection(page_index_clause_ids):
                 route_score += 50.0
-                retrieval_mode = "pageindex_tree_local"
-            if route_score > 0:
                 retrieval_mode = "pageindex_tree_local"
         score = base_score + route_score
         if identity_ids.intersection(dense_ids):
@@ -1564,6 +1580,7 @@ def retrieve_knowledge_clauses(
             {"type": "clause_index", "topK": min(top_k, 5), "candidateCount": len(candidates)},
             {
                 "type": "hybrid_bm25_dense",
+                "enabled": bool(dense_ids),
                 "topK": top_k,
                 "implementation": "offline_hash_pgvector_or_json",
                 "denseHitCount": len(dense_ids),

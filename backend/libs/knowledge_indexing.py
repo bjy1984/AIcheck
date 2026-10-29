@@ -31,6 +31,11 @@ SYMBOL_ASCII_ONLY_RE = re.compile(r"[\W\dA-Za-z\s\./:;_\-—+|`$]+")
 STRUCTURED_BLOCK_TYPES = frozenset({"equation", "interline_equation", "inline_equation", "table"})
 EQUATION_BLOCK_TYPES = frozenset({"equation", "interline_equation", "inline_equation"})
 
+# 18 位身份证号（前后不再接数字）。只有校验位算得对才脱敏，标准里的长编号不受影响。
+ID_CARD_NUMBER_RE = re.compile(r"(?<!\d)(\d{17}[\dXx])(?!\d)")
+_ID_CARD_WEIGHTS = (7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2)
+_ID_CARD_CHECK_CODES = "10X98765432"
+
 TEXT_FILE_SUFFIXES = {".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".csv"}
 DOCX_SUFFIXES = {".docx"}
 PDF_SUFFIXES = {".pdf"}
@@ -53,6 +58,34 @@ def compact_text(value: Any, limit: int = 240) -> str:
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def id_card_check_code_valid(number: str) -> bool:
+    total = sum(int(digit) * weight for digit, weight in zip(number[:17], _ID_CARD_WEIGHTS))
+    return _ID_CARD_CHECK_CODES[total % 11] == number[17].upper()
+
+
+def mask_id_card_numbers(value: Any) -> Any:
+    """入库前给身份证号脱敏：保留前 4 位和后 4 位，中间换成 10 个 *。
+
+    分块正文、表格 HTML、OCR 框里的文字都会进检索和向量 metadata，又会被接口原样
+    返回（2026-10-29 审计：项目资料向量里 41 行未脱敏身份证号）。递归处理并返回新
+    对象，不改调用方手里的原数据——OCR 解析结果还要拿去核证件。
+    """
+    if isinstance(value, str):
+        return ID_CARD_NUMBER_RE.sub(
+            lambda match: (
+                match.group(1)[:4] + "*" * 10 + match.group(1)[-4:]
+                if id_card_check_code_valid(match.group(1))
+                else match.group(0)
+            ),
+            value,
+        )
+    if isinstance(value, list):
+        return [mask_id_card_numbers(item) for item in value]
+    if isinstance(value, dict):
+        return {key: mask_id_card_numbers(item) for key, item in value.items()}
+    return value
 
 
 def noise_like_text(value: Any) -> bool:
@@ -551,9 +584,9 @@ def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, 
     context_type = str(file.get("contextType") or "standard_reference")
     for unit in units:
         section_path = [str(item) for item in unit.get("sectionPath") or [] if str(item or "").strip()]
-        structure = structure_fields_for_unit(unit)
+        structure = mask_id_card_numbers(structure_fields_for_unit(unit))
         block_type = structure.get("blockType")
-        unit_text = str(unit.get("text") or "")
+        unit_text = mask_id_card_numbers(str(unit.get("text") or ""))
         # 公式/表格必须整条留着：LaTeX 从中间切开再也渲染不回来；表格被句读
         # 规则拆开后行与列也对不齐了。
         pieces = [unit_text.strip()] if block_type in STRUCTURED_BLOCK_TYPES else chunk_text(unit_text)

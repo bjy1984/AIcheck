@@ -8,7 +8,11 @@ from libs.knowledge_retrieval import retrieve_knowledge_clauses
 REQUIRED_KNOWLEDGE_ROUTES = {
     "exact_clause_lookup": "TSG-D7006-D2.4.1 条",
     "hybrid_review_basis_search": "焊工资格证有效期如何校验？",
-    "pageindex_tree_search": "请结合正文和附录跨章节说明无损检测报告签章要求",
+}
+# PageIndex 路由默认关闭（见 classify_retrieval_route），它的探针和选中节点检查
+# 不再计分：拿一个默认不走的路由去加分，只会让健康分虚高。
+NOT_APPLICABLE_KNOWLEDGE_ROUTES = {
+    "pageindex_tree_search": "PageIndex 路由默认关闭，不适用",
 }
 
 
@@ -122,11 +126,6 @@ def retrieval_router_section(probes: list[dict[str, Any]]) -> dict[str, Any]:
         points += 4
     else:
         blockers.append("Hybrid BM25+dense retriever is not exposed")
-    page_probe = probes_by_route.get("pageindex_tree_search") or {}
-    if safe_int(page_probe.get("pageIndexNodeCount")) > 0:
-        points += 4
-    else:
-        blockers.append("PageIndex probe did not return selected nodes")
     if probes and all(safe_int(item.get("selectedClauseCount")) > 0 for item in probes):
         points += 4
     else:
@@ -135,7 +134,13 @@ def retrieval_router_section(probes: list[dict[str, Any]]) -> dict[str, Any]:
         points += 4
     else:
         blockers.append("one or more retrieval probes lack page/bbox evidence")
-    return section("retrieval-router", points, 30, blockers)
+    # 不适用的检查不加分也不扣分：按仍适用的检查折算到本节满分。
+    applicable_points = 6 * len(REQUIRED_KNOWLEDGE_ROUTES) + 12
+    result = section("retrieval-router", points * 30 / applicable_points, 30, blockers)
+    result["notApplicable"] = [
+        {"route": route, "reason": reason} for route, reason in NOT_APPLICABLE_KNOWLEDGE_ROUTES.items()
+    ]
+    return result
 
 
 def evaluation_governance_section(state: dict[str, Any]) -> dict[str, Any]:

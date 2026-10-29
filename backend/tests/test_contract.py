@@ -9188,10 +9188,31 @@ def test_knowledge_retrieval_query_router_supports_exact_clause_and_pageindex_ro
     assert exact_trace["selectedClauses"][0]["retrievalMode"] == "exact_clause_lookup"
     assert any(item["type"] == "exact_clause_lookup" and item["enabled"] for item in exact_trace["retrievers"])
 
-    pageindex = assert_ok(
+    # PageIndex 路由默认关闭：同一个问句不带开关就走关键词检索，也不加载节点
+    default = assert_ok(
         client.post(
             "/knowledge/retrieval-test",
             json={"question": "请结合正文和附录跨章节说明无损检测报告签章要求", "topK": 3},
+        )
+    )
+    default_trace = default["retrievalTrace"]
+    assert default_trace["selectedRoute"] == "hybrid_review_basis_search"
+    assert default_trace["routerSignals"]["needsPageIndex"] is True
+    assert default_trace["routerSignals"]["pageIndexEnabled"] is False
+    assert default_trace["pageIndexTree"]["enabled"] is False
+    assert default_trace["pageIndexTree"]["candidateNodeCount"] is None
+    assert not any(item["type"] == "pageindex_tree" and item["enabled"] for item in default_trace["retrievers"])
+    assert all(item["retrievalMode"] != "pageindex_tree_local" for item in default_trace["selectedClauses"])
+
+    assert_error(
+        client.post("/knowledge/retrieval-test", json={"question": "焊工资格证", "sourceId": "KS-PROJECT-FILE"}),
+        "VALIDATION_ERROR",
+    )
+
+    pageindex = assert_ok(
+        client.post(
+            "/knowledge/retrieval-test",
+            json={"question": "请结合正文和附录跨章节说明无损检测报告签章要求", "topK": 3, "enablePageIndex": True},
         )
     )
     pageindex_trace = pageindex["retrievalTrace"]
@@ -9216,15 +9237,9 @@ def test_knowledge_retrieval_query_router_supports_exact_clause_and_pageindex_ro
         item["name"] for item in scorecard["sections"]
     }
     probes = scorecard["retrievalProbes"]
-    assert {"exact_clause_lookup", "hybrid_review_basis_search", "pageindex_tree_search"} <= {
-        item["expectedRoute"] for item in probes
-    }
-    assert any(
-        item["expectedRoute"] == "pageindex_tree_search"
-        and item["selectedRoute"] == "pageindex_tree_search"
-        and item["pageIndexNodeCount"] >= 1
-        for item in probes
-    )
+    assert {item["expectedRoute"] for item in probes} == {"exact_clause_lookup", "hybrid_review_basis_search"}
+    router_section = next(item for item in scorecard["sections"] if item["name"] == "retrieval-router")
+    assert router_section["notApplicable"][0]["route"] == "pageindex_tree_search"
     assert all(item["selectedClauseCount"] >= 1 for item in probes)
     assert all(item["evidenceBacked"] is True for item in probes)
     assert scorecard["score"] == 100

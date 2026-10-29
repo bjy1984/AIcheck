@@ -46,7 +46,7 @@ def _public_standard(request: Request, file: dict, state: dict | None = None) ->
 def standards(request: Request, keyword: str = "", page_no: int = Query(1, alias="page", ge=1, le=1000),
               page_size: int = Query(20, alias="pageSize", ge=1, le=200)):
     from libs.db.repository import ensure_collections_loaded
-    ensure_collections_loaded("knowledge_page_index_nodes", "standard_knowledge_records")
+    ensure_collections_loaded("standard_knowledge_records")
     source_state = standard_state(api.repo.state)
     files = [file for file in source_state.get("knowledge_files", []) if _public_standard(request, file, source_state)]
     from libs.knowledge_retrieval import standard_refs_from_text
@@ -58,9 +58,10 @@ def standards(request: Request, keyword: str = "", page_no: int = Query(1, alias
         files = [file for file in files if matches_requested_identity(requested, checks[file["id"]])]
     ids = {file["id"] for file in files}
     state = {"knowledge_files": files, "knowledge_sources": source_state.get("knowledge_sources", [])}
+    # 不再带 knowledge_page_index_nodes：节点上没有 fileId，按 fileId 过滤永远是空，
+    # 而 PageIndex 路由默认也不走（knowledge_retrieval.classify_retrieval_route）。
     for collection, field in (("standard_knowledge_records", "knowledgeFileId"),
-                              ("knowledge_clauses", "fileId"), ("knowledge_chunks", "fileId"),
-                              ("knowledge_page_index_nodes", "fileId")):
+                              ("knowledge_clauses", "fileId"), ("knowledge_chunks", "fileId")):
         state[collection] = [item for item in source_state.get(collection, [])
                              if item.get(field) in ids and not item.get("projectId")]
     retrieval = api.retrieve_knowledge_clauses(state, query=keyword or "审查依据",

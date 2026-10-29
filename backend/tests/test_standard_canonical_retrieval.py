@@ -649,7 +649,7 @@ def test_pageindex_and_dense_matches_use_all_canonical_candidate_identities() ->
     ]
 
     page_result = retrieve_knowledge_clauses(
-        state, query="请结合正文和附录跨章节说明发布日期", top_k=1
+        state, query="请结合正文和附录跨章节说明发布日期", top_k=1, enable_pageindex=True
     )
     dense_result = retrieve_knowledge_clauses(
         state,

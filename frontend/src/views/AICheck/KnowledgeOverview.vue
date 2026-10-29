@@ -1158,6 +1158,7 @@ const routeLabel = (route?: string) => {
   const map: Record<string, string> = {
     exact_clause_lookup: '精确条款',
     hybrid_rag: 'Hybrid RAG',
+    hybrid_review_basis_search: '关键词检索',
     pageindex_tree_search: 'PageIndex 树检索',
     project_requirement_lookup: '项目特殊要求'
   }
@@ -4120,7 +4121,7 @@ onMounted(() => {
                       {{ retrievalTrace.routerVersion || '--' }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem label="PageIndex 候选">
-                      {{ retrievalPageIndexTree?.candidateNodeCount || 0 }}
+                      {{ retrievalPageIndexTree?.candidateNodeCount ?? '未启用' }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem label="关联条款" :span="3">
                       {{ formatTextList(retrievalPageIndexTree?.linkedClauseIds) }}

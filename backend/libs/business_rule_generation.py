@@ -773,7 +773,7 @@ def build_retrieval_traces(clauses: list[dict[str, Any]]) -> list[dict[str, Any]
                 {"type": "pageindex_tree", "enabled": False, "implementation": "local_page_index_nodes", "candidateNodeCount": 4, "selectedNodeCount": 0},
             ],
             "pageIndexTree": {"candidateNodeCount": 4, "selectedNodes": [], "linkedClauseIds": [], "treeSearchPath": []},
-            "selectedClauses": [{**primary, "score": 2.0, "retrievalMode": "hybrid_bm25_dense_local"}] if primary else [],
+            "selectedClauses": [{**primary, "score": 2.0, "retrievalMode": "lexical_clause_index"}] if primary else [],
             "kbVersion": STANDARD_VERSION,
             "createdAt": GENERATED_AT,
         }

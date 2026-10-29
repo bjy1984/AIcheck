@@ -1994,13 +1994,12 @@ def knowledge_rule_contract_check(
         )
     elif missing_trace_fields:
         field_failures.append("RetrievalTrace missing fields in run_step: " + ", ".join(missing_trace_fields))
+    # PageIndex 路由默认关闭（knowledge_retrieval.classify_retrieval_route），
+    # 它的源码契约项不再要求，记入 notApplicable。
     for term in [
         "clause_index",
         "hybrid_bm25_dense",
         "exact_clause_lookup",
-        "pageindex_tree",
-        "pageIndexTree",
-        "local_page_index_nodes",
         "queryRouter",
         "selectedRoute",
         "search_knowledge_base",
@@ -2027,7 +2026,6 @@ def knowledge_rule_contract_check(
         "REQUIRED_KNOWLEDGE_ROUTES",
         "exact_clause_lookup",
         "hybrid_review_basis_search",
-        "pageindex_tree_search",
         "retrievalProbes",
         "retrievalRecall",
         "wrongReferenceRate",
@@ -2108,6 +2106,12 @@ def knowledge_rule_contract_check(
             "requiredRuleCheckFields": sorted(REQUIRED_RULE_CHECK_RESULT_FIELDS),
             "requiredRetrievalTraceFields": sorted(REQUIRED_RETRIEVAL_TRACE_FIELDS),
             "readinessScorecard": "build_knowledge_rule_scorecard" in readiness_source,
+            "notApplicable": [
+                {
+                    "check": "pageindex_tree_search",
+                    "reason": "PageIndex 路由默认关闭，路由、探针与源码契约检查不适用",
+                }
+            ],
         },
     }
 

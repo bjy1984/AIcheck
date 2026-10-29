@@ -83,6 +83,7 @@ from libs.knowledge_indexing import (
     active_embedding_target,
     embedding_text_for_chunk,
     local_path_from_storage_key,
+    mask_id_card_numbers,
     noise_like_text,
     offline_hash_embeddings,
     structure_fields_for_unit,
@@ -909,7 +910,7 @@ def split_text_fragments(
     max_chars: int = 1600,
     metadata: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    normalized = " ".join(str(text or "").split())
+    normalized = mask_id_card_numbers(" ".join(str(text or "").split()))
     if not normalized:
         return []
     chunks = []
@@ -953,7 +954,11 @@ def parse_result_visible(file_id: str, parse_result_id: str) -> bool:
 
 def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, Any]]:
     result = latest_successful_ocr_parse_result(file.get("documentVersionId"))
-    raw_fragments = [item for item in (result or {}).get("fragments") or [] if isinstance(item, dict)]
+    # 片段的正文、表格 HTML 都会抄进分块和 OCR 框，进库前先脱敏（返回新对象，
+    # 解析结果本身不动——核证件还要用原文）。
+    raw_fragments = [
+        mask_id_card_numbers(item) for item in (result or {}).get("fragments") or [] if isinstance(item, dict)
+    ]
     if not raw_fragments:
         return []
     engine_runs = [item for item in (result or {}).get("engineRuns") or [] if isinstance(item, dict)]

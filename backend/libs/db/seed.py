@@ -1746,7 +1746,7 @@ RETRIEVAL_TRACES = [
                 "pageNo": 32,
                 "bbox": [120, 260, 980, 420],
                 "score": 2.0,
-                "retrievalMode": "hybrid_bm25_dense_local",
+                "retrievalMode": "lexical_clause_index",
                 "pageIndexNodeIds": [],
                 "sourceEvidenceLinkId": None,
             }
