@@ -227,27 +227,35 @@ export const useWorkbenchReviewActions = (ctx: WorkbenchReviewActionsContext) =>
       ElMessage.warning('当前节点没有可退回的已提交资料')
       return
     }
+    const projectId = ctx.activeProjectId.value
+    const nodeId = ctx.activeNodeId.value
+    const reason = ctx.correctionReason.value.trim()
+    const evidenceLinkIds = [...ctx.evidenceLinkIds()]
+    const pending = ctx.pendingCorrectionFinding.value
+    const etag = ctx.etag()
+    const isCurrent = () =>
+      ctx.activeProjectId.value === projectId && ctx.activeNodeId.value === nodeId
     const confirmed = await ctx.confirmIrreversibleAction({
       title: '退回补正',
       message: `将退回 ${submittedBindingIds.length} 份已提交资料并通知施工方整改，节点状态转为「需补正」。确认退回？`,
       confirmText: '确认退回'
     })
-    if (!confirmed) return
+    if (!confirmed || !isCurrent()) return
     ctx.actionLoading.value = true
     try {
-      const pending = ctx.pendingCorrectionFinding.value
       const res = await returnCorrectionApi(
-        ctx.activeProjectId.value,
-        ctx.activeNodeId.value,
+        projectId,
+        nodeId,
         {
-          reason: ctx.correctionReason.value.trim(),
+          reason,
           bindingIds: submittedBindingIds,
-          evidenceLinkIds: ctx.evidenceLinkIds(),
+          evidenceLinkIds,
           sourceFindingIds: pending ? [pending.id] : undefined,
           suggestedAction: pending?.suggestedAction || undefined
         },
-        { etag: ctx.etag() }
+        { etag }
       )
+      if (!isCurrent()) return
       if (!res) {
         ctx.showActionError('退回补正失败，请检查补正原因和节点权限。')
         return

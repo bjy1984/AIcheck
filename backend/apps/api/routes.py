@@ -27212,6 +27212,7 @@ def update_knowledge_config(request: Request, body: dict[str, Any] = Body(defaul
 
 
 PROMPT_TEMPLATE_STATUSES = {"draft", "production", "retired", "草稿", "已发布", "已停用"}
+PROMPT_TEMPLATE_PRODUCTION_STATUSES = {"production", "已发布"}
 
 
 def normalize_prompt_template_record(raw: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -27276,6 +27277,8 @@ def create_prompt_template(
 ):
     def produce():
         record = normalize_prompt_template_record(body)
+        if record["status"] in PROMPT_TEMPLATE_PRODUCTION_STATUSES:
+            return fail(errors.VALIDATION_ERROR, request, message="请先保存草稿，再通过发布操作启用生产版本。")
         if not record["systemPrompt"]:
             return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
         repo.state.setdefault("prompt_templates", []).insert(0, record)
@@ -27308,6 +27311,10 @@ def update_prompt_template(
             return fail(errors.NOT_FOUND, request)
         if not record_if_match_valid("prompt-template", template, if_match):
             return fail(errors.ETAG_CONFLICT, request)
+        if template.get("status") in PROMPT_TEMPLATE_PRODUCTION_STATUSES:
+            return fail(errors.VALIDATION_ERROR, request, message="生产中的 Prompt 模板只读，请复制为新草稿并发布替代版本。")
+        if body.get("status") in PROMPT_TEMPLATE_PRODUCTION_STATUSES:
+            return fail(errors.VALIDATION_ERROR, request, message="请通过发布操作启用生产版本。")
         normalized = normalize_prompt_template_record({**template, **body, "id": template_id}, existing=template)
         if not normalized["systemPrompt"]:
             return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
@@ -27341,7 +27348,7 @@ def publish_prompt_template(
         for item in repo.state.get("prompt_templates", []):
             if item.get("id") == template_id:
                 continue
-            if item.get("businessPackId") == template.get("businessPackId") and item.get("promptKey") == template.get("promptKey") and item.get("status") == "production":
+            if item.get("businessPackId") == template.get("businessPackId") and item.get("promptKey") == template.get("promptKey") and item.get("status") in PROMPT_TEMPLATE_PRODUCTION_STATUSES:
                 item["status"] = "retired"
                 bump_record_revision(item)
         bump_record_revision(template)
@@ -27364,7 +27371,7 @@ def delete_prompt_template(
             return fail(errors.NOT_FOUND, request)
         if not record_if_match_valid("prompt-template", template, if_match):
             return fail(errors.ETAG_CONFLICT, request)
-        if template.get("status") == "production":
+        if template.get("status") in PROMPT_TEMPLATE_PRODUCTION_STATUSES:
             return fail(errors.VALIDATION_ERROR, request, message="生产中的 Prompt 模板不能删除，请先发布替代版本。")
         repo.state["prompt_templates"] = [item for item in repo.state.get("prompt_templates", []) if item.get("id") != template_id]
         audit_id = repo.add_audit("删除 Prompt 模板", "PromptTemplate", template_id)
@@ -28529,7 +28536,7 @@ def admin_publish_impact(payload: dict[str, Any]) -> dict[str, Any]:
     if not any(int(item["affectedCount"]) > 0 for item in impacts):
         warnings.append("当前发布范围没有配置项，请确认范围是否正确。")
     if active_projects:
-        warnings.append(f"发布后将影响 {active_projects} 个未归档项目的后续操作。")
+        warnings.append(f"当前关联 {active_projects} 个未归档项目。此操作仅登记配置版本，不自动切换规则、Prompt 或报告模板的生产版本。")
     return {
         "scope": scope,
         "totalAffected": sum(int(item["affectedCount"]) for item in impacts),

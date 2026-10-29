@@ -1,0 +1,110 @@
+{
+  "build": "dist-score-followup",
+  "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+  "environment": "production build + real API + isolated in-memory demo data",
+  "captureCount": 6,
+  "captures": [
+    {
+      "route": "/workbench/owner",
+      "title": "建設方總覽 · 位置與單列頁首",
+      "file": "01-owner-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "總覽麵包屑明確顯示項目總覽，沒有選中節點或節點類別干擾；1280px 頁首收為 68px 單列，項目與使用者控制均可見。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方總覽 · 900px 斷點",
+      "file": "02-owner-900.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 900,
+        "height": 900
+      },
+      "reviewNote": "中窄版切為單欄與審核節點入口，控制完整可見；頂部仍較高，屬後續密度改善空間。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢總覽 · 完整長節點名稱",
+      "file": "03-inspection-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "需處理節點的長名稱換成兩行完整顯示，未被省略；名稱按鈕實測273×48px，文字scrollWidth等於clientWidth。總覽麵包屑正確。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢手機頁 · 控制區完整可見",
+      "file": "04-inspection-390.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "待辦、三個工作台切換、自動審查、一鍵分析與使用者選單均在390px內，document scrollWidth390。頁首仍偏高；此截圖驗證控制可見性，不代表全流程手機驗收。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工桌面 · 上傳與監檢意見",
+      "file": "05-contractor-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "1280px 保留上傳/意見雙欄，頂部68px單列；3份文件、1待提交與1審核中按既有資料顯示，補正文件與補正意見數量有分開說明。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "檢測桌面 · 提交摘要與登記量",
+      "file": "06-ndt-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "頂部改為3項緊湊摘要，下方登記量改行內統計。已上傳0份、已登記底片2、記錄1、報告2屬不同口徑，分開保留；待提交0時沒有製造待處理按鈕。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    }
+  ]
+}

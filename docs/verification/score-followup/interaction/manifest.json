@@ -1,0 +1,141 @@
+{
+  "build": "dist-score-followup",
+  "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+  "captures": [
+    {
+      "route": "/workbench/contractor",
+      "title": "施工手機頁 · 修前上傳欄被擠壓",
+      "file": "00-before-contractor-390.jpg",
+      "status": "before-verified",
+      "reviewed": true,
+      "build": "dist-role-content-focus",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "固定雙欄令上傳區實測寬度為0px，修前截圖保留作對照。"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工手機頁 · 上傳入口恢復",
+      "file": "01-contractor-390.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "上傳與意見區均為366px寬，整頁無水平溢出；三項摘要保持可讀，上傳按鈕在首屏可見。"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "手機快捷搜尋 · 長結果完整閱讀",
+      "file": "02-keyboard-search-390.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "Enter 開啟後焦點進入搜尋框；長節點名稱完整換行，類型顯示「审核环节」，說明與定位入口無需橫滑。"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工360px · 鍵盤焦點返回",
+      "file": "03-contractor-360-focus.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "reviewNote": "Escape 關閉後焦點返回搜尋按鈕且可見；336px寬上傳區完整，頁面無水平溢出。"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "桌面快捷搜尋 · 表格回歸",
+      "file": "04-search-desktop-1280.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "桌面保留表格與定位操作，類型使用業務名稱；少量結果不再撐高表格。長結果仍沿用桌面提示查看。"
+    }
+  ],
+  "checks": [
+    {
+      "documentWidth": 390,
+      "kind": "contractor390",
+      "panels": [
+        {
+          "width": 366,
+          "x": 12
+        },
+        {
+          "width": 366,
+          "x": 12
+        }
+      ],
+      "viewport": 390
+    },
+    {
+      "desktopTableDisplay": "none",
+      "focusTag": "INPUT",
+      "insideDialog": true,
+      "kind": "keyboard-search-final",
+      "resultList": [
+        {
+          "scrollWidth": 335,
+          "text": "审核环节节点 16 压力管道元件以及安全附件产品质量证明文件需补正 命中：材料 / C 定位 ",
+          "width": 335
+        }
+      ]
+    },
+    {
+      "focusLabel": "打开全局搜索",
+      "focusTag": "BUTTON",
+      "focusVisible": true,
+      "kind": "keyboard-dialog-close"
+    },
+    {
+      "documentWidth": 360,
+      "kind": "contractor360",
+      "panels": [
+        {
+          "width": 336,
+          "x": 12
+        },
+        {
+          "width": 336,
+          "x": 12
+        }
+      ],
+      "searchFocusVisible": true,
+      "viewport": 360
+    },
+    {
+      "kind": "mobile-result-location",
+      "dialogClosed": true,
+      "scopeText": "当前只显示「节点 16」关联的资料（共 1 份）。 ",
+      "expectedFileVisible": true
+    },
+    {
+      "kind": "summary-filter-keyboard",
+      "checked": true,
+      "visibleFileRows": 1,
+      "expectedFile": "焊工名册.xlsx"
+    },
+    {
+      "kind": "desktop-search",
+      "mobileDisplay": "none",
+      "tableDisplay": "block",
+      "tableHeight": 80
+    }
+  ],
+  "limitations": [
+    "僅驗證隔離資料的呈現與唯讀互動，未上傳或提交文件。",
+    "鍵盤抽查不代表完整無障礙驗收。"
+  ]
+}

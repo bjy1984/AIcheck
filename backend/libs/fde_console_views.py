@@ -79,6 +79,7 @@ def fde_expiry_is_active(raw_value: Any) -> bool:
         return False
 
 FDE_STATUS_CATALOG = [
+    {"code": "unknown", "label": "状态未知", "tone": "info", "terminal": False},
     {"code": "not_started", "label": "未开始", "tone": "info", "terminal": False},
     {"code": "in_progress", "label": "处理中", "tone": "primary", "terminal": False},
     {"code": "needs_attention", "label": "需关注", "tone": "warning", "terminal": False},
@@ -127,6 +128,7 @@ def fde_status_code(value: Any) -> str:
         "succeeded",
         "passed",
         "done",
+        "完成",
         "已完成",
         "已识别",
         "识别完成",
@@ -136,14 +138,13 @@ def fde_status_code(value: Any) -> str:
         return "completed"
     if normalized in {
         "queued",
+        "in_progress",
         "running",
         "processing",
         "submitted",
         "canary_requested",
         "canary_running",
         "shadow_running",
-        "pending",
-        "pending_approval",
         "排队中",
         "运行中",
         "识别中",
@@ -153,12 +154,23 @@ def fde_status_code(value: Any) -> str:
         "blocked",
         "blocked_by_gate",
         "waiting_human_review",
+        "pending_human_review",
+        "needs_human_confirmation",
         "needs_human_review",
+        "pending",
+        "pending_approval",
+        "needs_attention",
+        "待人工确认",
+        "待人工复核",
+        "待审批",
         "attention",
         "warning",
     }:
         return "needs_attention"
-    return "not_started"
+    if normalized in {"not_started", "created", "new", "idle", "draft", "未开始", "未启动", "待启动"}:
+        return "not_started"
+    # Missing or unfamiliar contract states are not evidence that a run never started.
+    return "unknown"
 
 def fde_status_summary(items: list[dict[str, Any]], *, field: str = "status") -> dict[str, int]:
     summary = {item["code"]: 0 for item in FDE_STATUS_CATALOG}

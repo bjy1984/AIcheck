@@ -1,0 +1,715 @@
+{
+  "environment": "production build + isolated in-memory demo API",
+  "routeCount": 16,
+  "captureCount": 38,
+  "captures": [
+    {
+      "route": "/fde/dashboard",
+      "title": "治理總覽：內容補圖",
+      "file": "01-dashboard-content.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/dashboard",
+      "title": "治理總覽",
+      "file": "01-dashboard.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects",
+      "title": "項目審計：內容補圖",
+      "file": "02-project-overview-content.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "項目總覽的窄卡片中，能力數值與說明被省略；需進入各能力子頁讀取完整內容。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects",
+      "title": "項目審計",
+      "file": "02-projects.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "項目總覽的窄卡片中，能力數值與說明被省略；需進入各能力子頁讀取完整內容。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/ocr-quality",
+      "title": "OCR 品質",
+      "file": "03-ocr-quality.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "服務狀態直接顯示 attention，錯誤文案重複括號內的服務名稱。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "未配置外部 OCR 服務；只確認入口、診斷文案及測試表單。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/ocr-quality",
+      "title": "OCR 品質：對話框",
+      "file": "03-ocr-test-dialog.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "服務狀態直接顯示 attention，錯誤文案重複括號內的服務名稱。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "未配置外部 OCR 服務；只確認入口、診斷文案及測試表單。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-page-capture（路由修復後）"
+    },
+    {
+      "route": "/fde/ai-runs",
+      "title": "AI Run 追蹤：內容補圖",
+      "file": "04-ai-run-provenance.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "示例 Run 的部分溯源欄位未提供，以橫線呈現。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/ai-runs",
+      "title": "AI Run 追蹤",
+      "file": "04-ai-runs.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "示例 Run 的部分溯源欄位未提供，以橫線呈現。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/review-runs",
+      "title": "審查編排",
+      "file": "05-review-runs.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "未啟用工作流執行，審查任務為空，未驗證真實任務結果。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/feedback",
+      "title": "回饋樣本",
+      "file": "06-feedback.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "治理狀態 ready_for_eval 與推薦文字 needs_triage 未轉為中文。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/evaluation",
+      "title": "評估實驗室：內容補圖",
+      "file": "07-evaluation-report.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "示例歷史報告缺少 caseSummary.cases，介面補成「樣本 0」，同時顯示通過率100%；已確認來源欄位缺少，應顯示未知而非零。",
+        "評估類型和狀態 golden/risk/active 直接呈現代碼。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/evaluation",
+      "title": "評估實驗室",
+      "file": "07-evaluation.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "示例歷史報告缺少 caseSummary.cases，介面補成「樣本 0」，同時顯示通過率100%；已確認來源欄位缺少，應顯示未知而非零。",
+        "評估類型和狀態 golden/risk/active 直接呈現代碼。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/business-packs",
+      "title": "業務包",
+      "file": "08-business-packs.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/capability-bundles",
+      "title": "能力組合：內容補圖",
+      "file": "09-bundle-diff.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "差異表使用原始欄位鍵，基線未提供時留白；對非工程使用者較難判讀。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/capability-bundles",
+      "title": "能力組合",
+      "file": "09-capability-bundles.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "差異表使用原始欄位鍵，基線未提供時留白；對非工程使用者較難判讀。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/releases",
+      "title": "發布治理：內容補圖",
+      "file": "10-release-impact.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "發布狀態 production_approved 換行拆字，且 high 未翻譯。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/releases",
+      "title": "發布治理",
+      "file": "10-releases.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "發布狀態 production_approved 換行拆字，且 high 未翻譯。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/security",
+      "title": "資料安全",
+      "file": "11-security.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "沒有導出申請，驗證的是清楚的空狀態。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/incidents",
+      "title": "事故復盤",
+      "file": "12-incidents.jpg",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "事故級別 medium、狀態 monitoring 直接顯示代碼。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/costs",
+      "title": "成本預算：對話框",
+      "file": "13-budget-dialog.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-page-capture（路由修復後）"
+    },
+    {
+      "route": "/fde/costs",
+      "title": "成本預算",
+      "file": "13-costs.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/acceptance",
+      "title": "客戶驗收",
+      "file": "14-acceptance.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde-feedback-triage",
+      "title": "回饋歸因：修復前404",
+      "file": "15-feedback-triage-before-404.jpg",
+      "status": "before_fix",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "登入重置移除常駐路由，進頁404；現已修復。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "近7天沒有示例回饋，驗證空狀態與篩選入口。"
+      ],
+      "reviewNote": "保留修復前證據，不算當前頁面通過。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde-feedback-triage",
+      "title": "回饋歸因",
+      "file": "15-feedback-triage.jpg",
+      "status": "fixed",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "頁首標題被省略，使用者名稱重複呈現角色；本頁沒有明顯的返回總覽按鈕。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "近7天沒有示例回饋，驗證空狀態與篩選入口。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-page-capture（路由修復後）"
+    },
+    {
+      "route": "/fde-blind-review",
+      "title": "盲審：修復前404",
+      "file": "16-blind-review-before-404.jpg",
+      "status": "before_fix",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "登入重置移除常駐路由，進頁404；現已修復。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "沒有待判任務；本次未抽樣或判定，原始版本抽屜另見上一批回歸證據。"
+      ],
+      "reviewNote": "保留修復前證據，不算當前頁面通過。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde-blind-review",
+      "title": "盲審",
+      "file": "16-blind-review.jpg",
+      "status": "fixed",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "1280px 寬度的抽樣工具列換成兩列，仍可操作，沒有重疊。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "沒有待判任務；本次未抽樣或判定，原始版本抽屜另見上一批回歸證據。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-page-capture（路由修復後）"
+    },
+    {
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範庫向量化：內容補圖",
+      "file": "17-standards-files.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "規範清單很長；整體顯示治理缺口，但部分零切片行仍標正常，狀態口徑需另查。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "隔離環境沒有正式向量儲存，不能作為正式庫健康度。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範庫向量化",
+      "file": "17-standards-vectorization.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "規範清單很長；整體顯示治理缺口，但部分零切片行仍標正常，狀態口徑需另查。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "隔離環境沒有正式向量儲存，不能作為正式庫健康度。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=vectorization&nodeId=24",
+      "title": "項目資料向量化：內容補圖",
+      "file": "18-project-vectorization-content.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=vectorization&nodeId=24",
+      "title": "項目資料向量化",
+      "file": "18-project-vectorization.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=pageindex&nodeId=24",
+      "title": "項目章節溯源：內容補圖",
+      "file": "19-project-pageindex-content.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "示例沒有檢索溯源，但有資料章節樹。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=pageindex&nodeId=24",
+      "title": "項目章節溯源",
+      "file": "19-project-pageindex.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "示例沒有檢索溯源，但有資料章節樹。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=langgraph&nodeId=24",
+      "title": "項目 Agent 鏈路：內容補圖",
+      "file": "20-project-langgraph-content.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "沒有真實 Agent / Temporal 任務，鏈路與證據區為空狀態。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=langgraph&nodeId=24",
+      "title": "項目 Agent 鏈路",
+      "file": "20-project-langgraph.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "沒有真實 Agent / Temporal 任務，鏈路與證據區為空狀態。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=ocr-labeling&nodeId=24",
+      "title": "項目 OCR 標註：內容補圖",
+      "file": "21-project-ocr-labeling-content.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "目前選定項目沒有 OCR 標註樣本。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=ocr-labeling&nodeId=24",
+      "title": "項目 OCR 標註",
+      "file": "21-project-ocr-labeling.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "目前選定項目沒有 OCR 標註樣本。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=evaluation&nodeId=24",
+      "title": "項目準確率評估：內容補圖",
+      "file": "22-project-evaluation-content.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "雙欄門禁表超過卡片可見寬度，右側狀態欄須橫向捲動。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "OCR/Agent 評分尚未生成，未執行評估。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=evaluation&nodeId=24",
+      "title": "項目準確率評估",
+      "file": "22-project-evaluation.jpg",
+      "status": "limited",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [
+        "雙欄門禁表超過卡片可見寬度，右側狀態欄須橫向捲動。"
+      ],
+      "limitations": [
+        "目前工作區 production build＋真實 API 的隔離記憶體示例資料；未提交業務寫入。",
+        "OCR/Agent 評分尚未生成，未執行評估。"
+      ],
+      "reviewNote": "已查看原始截圖；主要內容/合理空狀態可見。",
+      "build": "dist-pro（路由修復前，畫面元件未變更）"
+    }
+  ]
+}

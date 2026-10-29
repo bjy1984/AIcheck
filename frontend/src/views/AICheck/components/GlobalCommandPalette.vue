@@ -46,8 +46,8 @@ const resultTypeLabels: Record<SearchResult['type'], string> = {
   audit_event: '审计事件',
   knowledge_file: '知识文件',
   knowledge_task: '知识任务',
-  review_run: 'ReviewRun',
-  ocr_run: 'OCR Run',
+  review_run: '审查任务',
+  ocr_run: '文字识别任务',
   incident: '事故'
 }
 
@@ -203,7 +203,7 @@ defineExpose({ open, close })
           <span class="command-result-main">
             <span class="command-result-title">{{ result.title }}</span>
             <span class="command-result-description">{{ result.description || '--' }}</span>
-            <small>{{ result.breadcrumb || result.route }}</small>
+            <small v-if="result.breadcrumb">{{ result.breadcrumb }}</small>
           </span>
           <span class="command-result-meta">
             <ElTag size="small" effect="plain">{{ resultTypeLabels[result.type] }}</ElTag>

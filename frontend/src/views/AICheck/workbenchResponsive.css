@@ -34,6 +34,18 @@
   }
 }
 
+@media (900px < width <= 1360px) {
+  .topbar.is-business-topbar {
+    grid-template-columns: minmax(260px, 360px) minmax(44px, max-content) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .topbar.is-business-topbar .top-actions {
+    grid-column: auto;
+    justify-content: flex-end;
+  }
+}
+
 @media (width <= 900px) {
   .aicheck-static-viewport {
     height: 100vh;
@@ -108,6 +120,13 @@
     padding: 10px 12px;
   }
 
+  .top-actions {
+    overflow-x: visible;
+    white-space: normal;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
   .brand {
     grid-template-columns: 34px minmax(0, 1fr);
   }
@@ -153,6 +172,23 @@
 }
 
 @media (width <= 560px) {
+  .ndt-submission-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .ndt-submission-summary > div {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+  }
+
+  .ndt-submission-summary dt {
+    margin: 0;
+  }
+
   .basis-meta-grid {
     grid-template-columns: minmax(0, 1fr);
   }

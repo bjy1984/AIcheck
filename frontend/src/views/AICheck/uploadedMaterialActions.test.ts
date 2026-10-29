@@ -32,6 +32,10 @@ const sections = readFileSync(
   'utf8'
 )
 const workbench = readFileSync(fileURLToPath(new URL('./Workbench.vue', import.meta.url)), 'utf8')
+const uploadHandler = readFileSync(
+  new URL('./useWorkbenchUploadSession.ts', import.meta.url),
+  'utf8'
+)
 
 // ① 替换：按钮、权限、提示
 assert.ok(/const canReplaceContractorFile/.test(sections), '要判断这份能不能替换')
@@ -41,12 +45,13 @@ assert.ok(/>\s*替换\s*</.test(sections), '台账要有替换按钮')
 assert.ok(/width="290" fixed="right"/.test(sections), '多一个按钮就要放宽列宽——挤掉的按钮等于没有')
 
 // ② 替换走的是「加版本」，不是新建
-assert.ok(/replaceDocumentId/.test(workbench), '上传时要带上替换目标')
+assert.ok(/useWorkbenchUploadSession\(/.test(workbench), '工作台必须使用保留上传目标的处理器')
+assert.ok(/replaceDocumentId/.test(uploadHandler), '上传时要带上替换目标')
 assert.ok(
   /uploadDrawerReplaceTarget\.value = null/.test(workbench),
   '普通上传要清掉替换目标——不清会让新文件悄悄覆盖旧资料'
 )
-assert.ok(/替换资料时只能选择一个文件/.test(workbench), '替换是一对一的，多选会被静默丢弃')
+assert.ok(/替换资料时只能选择一个文件/.test(uploadHandler), '替换是一对一的，多选会被静默丢弃')
 assert.ok(
   /替换资料：\$\{uploadDrawerReplaceTarget\.fileName\}/.test(workbench),
   '抽屉标题要写明在替换哪一份，否则和普通上传长得一样'

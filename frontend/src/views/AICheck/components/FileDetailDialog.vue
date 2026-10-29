@@ -24,6 +24,7 @@ import type {
   StandardCanonicalEvidence
 } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { useUserStore } from '@/store/modules/user'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
 import {
@@ -33,6 +34,7 @@ import {
 import StandardCanonicalDetail from './StandardCanonicalDetail.vue'
 import OcrDocumentPages from './OcrDocumentPages.vue'
 import { documentPageRows } from './documentPagePresentation'
+import { previewContentError } from './previewContentValidation'
 import {
   canonicalDetailIdentity,
   canonicalLocateKey,
@@ -50,6 +52,12 @@ const emit = defineEmits<{
   preview: [url: string]
   download: [url: string]
 }>()
+
+const userStore = useUserStore()
+const showStructuredReview = computed(() =>
+  ['inspection', 'admin', 'fde'].includes(userStore.getUserInfo?.role || '')
+)
+const defaultSideTab = computed(() => (showStructuredReview.value ? 'fields' : 'meta'))
 
 const visible = computed({
   get: () => props.modelValue,
@@ -80,6 +88,16 @@ const download = computed(() => props.detail?.download)
 const previewObjectUrl = ref('')
 const previewLoadingOriginal = ref(false)
 const previewOriginalError = ref('')
+const browserPdfPreviewSupported =
+  typeof navigator === 'undefined' || navigator.pdfViewerEnabled !== false
+const previewExternalUrl = computed(() => {
+  if (previewIsOffice.value) return officePreviewError.value ? '' : officeObjectUrl.value
+  return previewEmbeddable.value && !previewOriginalError.value ? previewFrameUrl.value : ''
+})
+const openPreviewInNewPage = () => {
+  if (previewExternalUrl.value)
+    window.open(previewExternalUrl.value, '_blank', 'noopener,noreferrer')
+}
 
 const fileSizeText = computed(() => {
   const size = currentVersion.value?.fileSize || download.value?.fileSize || 0
@@ -144,7 +162,15 @@ const revokeOfficeObjectUrl = () => {
   }
 }
 
+const officePreviewRequest = { current: 0 }
+
 const mountOfficePreview = async () => {
+  const token = ++officePreviewRequest.current
+  const isCurrent = () =>
+    token === officePreviewRequest.current &&
+    props.modelValue &&
+    props.detail?.document?.id === documentId &&
+    props.detail?.document?.projectId === projectId
   if (!officePreviewSupported.value) return
   const projectId = props.detail?.document?.projectId
   const documentId = props.detail?.document?.id
@@ -155,6 +181,7 @@ const mountOfficePreview = async () => {
   try {
     const res = await getDocumentOfficePreviewApi(String(projectId), String(documentId))
     const url = String(res?.data?.url || '')
+    if (!isCurrent()) return
     if (!url) {
       officePreviewError.value = getAicheckErrorMessage(res, 'Office 预览服务暂不可用。')
       return
@@ -164,19 +191,26 @@ const mountOfficePreview = async () => {
     // 地址合法，浏览器一取就失败，界面显示「服务不可用」而服务好好的。
     // 这里沿用 PDF/图片预览已验证可用的那条路：经 API 取字节 → createObjectURL。
     const blob = await getDocumentOriginalBlobApi(url)
+    if (!isCurrent()) return
+    const contentError = await previewContentError(blob.data, 'pdf')
+    if (!isCurrent()) return
+    if (contentError) {
+      officePreviewError.value = contentError
+      return
+    }
     officeObjectUrl.value = URL.createObjectURL(blob.data)
   } catch (error) {
+    if (!isCurrent()) return
     officePreviewError.value = getAicheckErrorMessage(error, 'Office 预览加载失败，请下载后查看。')
   } finally {
-    officePreviewLoading.value = false
+    if (isCurrent()) officePreviewLoading.value = false
   }
 }
 
 const previewUnavailableText = computed(() => {
   const url = String(preview.value?.url || '')
   if (!url) return '当前文件详情没有返回原文地址。'
-  if (url.startsWith('mock://'))
-    return '当前接口返回的是 mock 占位地址，还没有拿到可预览的真实原文。'
+  if (url.startsWith('mock://')) return '当前记录仅提供示例占位地址，没有真实原文，无法预览或下载。'
   if (preview.value?.previewType === 'office')
     return 'Word/Excel 等 Office 文件暂不支持在线预览，请使用右上角「下载」查看原文。'
   if (preview.value?.previewType === 'unsupported') return '当前文件类型暂不支持在线预览。'
@@ -206,6 +240,7 @@ const loadPreviewOriginal = async () => {
   const token = ++previewLoadToken
   revokePreviewObjectUrl()
   previewOriginalError.value = ''
+  previewLoadingOriginal.value = false
   const url = String(preview.value?.url || '')
   if (!previewRequiresBlob.value) return
   previewLoadingOriginal.value = true
@@ -213,15 +248,10 @@ const loadPreviewOriginal = async () => {
     const res = await getDocumentOriginalBlobApi(url)
     if (token !== previewLoadToken) return
     const blob = res?.data
-    // 后端未登录时会回 HTTP 200 + {"code":401}；responseType=blob 会把这段
-    // JSON 原样包成 Blob，塞进 iframe 就是一片空白。类型对不上就直说，
-    // 不要让用户对着空白框猜。
-    if (!(blob instanceof Blob)) {
-      previewOriginalError.value = '原文预览返回的内容无法识别，请尝试下载后查看。'
-      return
-    }
-    if (blob.type && blob.type.includes('json')) {
-      previewOriginalError.value = '原文预览未通过权限校验，请重新登录后再试。'
+    const contentError = await previewContentError(blob, previewIsPdf.value ? 'pdf' : 'image')
+    if (token !== previewLoadToken) return
+    if (contentError) {
+      previewOriginalError.value = contentError
       return
     }
     previewObjectUrl.value = URL.createObjectURL(blob)
@@ -238,9 +268,26 @@ const handlePreviewImageError = () => {
   previewOriginalError.value = '图片预览加载失败，请尝试下载后查看。'
 }
 
+const handlePreviewFrameError = () => {
+  const message = '浏览器未能加载原文预览，请尝试下载原文后查看。'
+  if (previewIsOffice.value) officePreviewError.value = message
+  else previewOriginalError.value = message
+}
+
 watch(
-  () => [visible.value, preview.value?.url, preview.value?.previewType] as const,
+  () =>
+    [
+      visible.value,
+      preview.value?.url,
+      preview.value?.previewType,
+      document.value?.id,
+      currentVersion.value?.id
+    ] as const,
   ([open]) => {
+    officePreviewRequest.current++
+    previewLoadToken++
+    officePreviewLoading.value = false
+    revokeOfficeObjectUrl()
     if (open) {
       void loadPreviewOriginal()
       if (officePreviewSupported.value) void mountOfficePreview()
@@ -254,6 +301,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  officePreviewRequest.current++
+  previewLoadToken++
   revokePreviewObjectUrl()
   revokeOfficeObjectUrl()
 })
@@ -277,7 +326,7 @@ type LocatableItem = {
   kind: 'field' | 'evidence'
 }
 
-const sideTab = ref('fields')
+const sideTab = ref(defaultSideTab.value)
 const activeLocateKey = ref('')
 const canonicalLocatable = ref<LocatableItem>()
 const previewNavigationRevision = ref(0)
@@ -555,7 +604,7 @@ watch(visible, (open) => {
     canonicalLocatable.value = undefined
     previewNavigationRevision.value = 0
     previewNaturalSize.value = null
-    sideTab.value = 'fields'
+    sideTab.value = defaultSideTab.value
   }
 })
 
@@ -594,14 +643,15 @@ watch(
           </div>
           <div class="file-actions">
             <ElButton
-              :disabled="!previewEmbeddable"
-              @click="preview?.url && emit('preview', preview.url)"
+              :disabled="!previewExternalUrl"
+              :aria-label="`在新页打开 ${document.fileName}`"
+              @click="openPreviewInNewPage"
             >
-              预览
+              新页打开原文
             </ElButton>
             <ElButton
               type="primary"
-              :disabled="!download?.url"
+              :disabled="!download?.url || download.url.startsWith('mock://')"
               @click="download?.url && emit('download', download.url)"
             >
               下载
@@ -613,16 +663,16 @@ watch(
           <div class="preview-shell">
             <div class="preview-toolbar">
               <span>{{ previewTitle }}</span>
-              <ElTag v-if="preview?.readonly" size="small" type="success" effect="plain"
-                >只读</ElTag
-              >
             </div>
             <div v-if="locateHint" class="locate-hint">{{ locateHint }}</div>
+            <p v-if="previewIsPdf || previewIsOffice" class="preview-reader-note">
+              PDF 由浏览器显示。若预览区域未显示内容，可使用“新页打开原文”或“下载”。
+            </p>
             <div
               class="preview-body"
               :class="{ 'preview-body--disabled': !previewEmbeddable && !previewIsOffice }"
             >
-              <!-- Office：交给 ONLYOFFICE 只读渲染 -->
+              <!-- Office：服务器转换为 PDF，再交给浏览器只读显示。 -->
               <template v-if="previewIsOffice">
                 <ElAlert
                   v-if="!officePreviewSupported"
@@ -642,22 +692,35 @@ watch(
                     show-icon
                   />
                   <iframe
-                    v-else-if="officeObjectUrl"
+                    v-else-if="officeObjectUrl && browserPdfPreviewSupported"
                     :src="officeObjectUrl"
                     class="office-stage"
                     title="Office 文件预览"
+                    @error="handlePreviewFrameError"
                   ></iframe>
+                  <ElAlert
+                    v-else-if="officeObjectUrl"
+                    title="当前浏览器未启用 PDF 内嵌预览"
+                    description="转换文件已取得。可在新页打开，或下载原文后查看。"
+                    type="info"
+                    :closable="false"
+                    show-icon
+                  />
                 </div>
               </template>
               <template v-else-if="previewEmbeddable">
                 <div class="preview-frame-host" v-loading="previewLoadingOriginal">
-                  <ElAlert
-                    v-if="previewOriginalError"
-                    :title="previewOriginalError"
-                    type="warning"
-                    :closable="false"
-                    show-icon
-                  />
+                  <div v-if="previewOriginalError" role="alert">
+                    <ElAlert
+                      :title="previewOriginalError"
+                      type="warning"
+                      :closable="false"
+                      show-icon
+                    />
+                    <ElButton class="preview-retry" size="small" @click="loadPreviewOriginal">
+                      重新加载原文
+                    </ElButton>
+                  </div>
                   <div v-else-if="!previewFrameUrl" class="preview-placeholder">
                     原文预览加载中
                   </div>
@@ -676,6 +739,14 @@ watch(
                       :style="highlightStyle"
                     ></span>
                   </div>
+                  <ElAlert
+                    v-else-if="!browserPdfPreviewSupported"
+                    title="当前浏览器未启用 PDF 内嵌预览"
+                    description="原文已取得。可在新页打开，或下载后查看。"
+                    type="info"
+                    :closable="false"
+                    show-icon
+                  />
                   <!-- PDF：浏览器内置阅读器，只能靠 #page= 跳页 -->
                   <iframe
                     v-else
@@ -683,12 +754,15 @@ watch(
                     class="preview-frame"
                     :src="previewSrcWithPage"
                     :title="document.fileName"
+                    @error="handlePreviewFrameError"
                   ></iframe>
                 </div>
               </template>
               <ElAlert
                 v-else
-                title="当前格式暂不支持在线预览"
+                :title="
+                  preview?.url?.startsWith('mock://') ? '示例记录没有真实原文' : '原文预览不可用'
+                "
                 :description="previewUnavailableText"
                 type="warning"
                 :closable="false"
@@ -700,13 +774,13 @@ watch(
           <!-- 右侧不再放元数据摘要：核对字段才是主任务，元数据挪进「文件信息」页签 -->
           <div class="detail-side">
             <StandardCanonicalDetail
-              v-if="standardCanonical"
+              v-if="showStructuredReview && standardCanonical"
               :record="standardCanonical"
               :document-id="document?.id"
               @locate="handleCanonicalLocate"
             />
             <ElAlert
-              v-else-if="isStandardDocument"
+              v-else-if="showStructuredReview && isStandardDocument"
               title="暂无标准 canonical 详情"
               description="当前标准规范尚未生成可追溯的 canonical 记录，请完成重建后再查看结构化详情。"
               type="warning"
@@ -716,7 +790,7 @@ watch(
             />
             <template v-else>
               <ElAlert
-                v-if="ocrReadinessAlert"
+                v-if="showStructuredReview && ocrReadinessAlert"
                 :title="ocrReadinessAlert.title"
                 :description="ocrReadinessAlert.description"
                 type="warning"
@@ -725,7 +799,7 @@ watch(
                 class="side-alert"
               />
               <ElTabs v-model="sideTab" class="side-tabs">
-                <ElTabPane :label="structuredTabLabel" name="fields">
+                <ElTabPane v-if="showStructuredReview" :label="structuredTabLabel" name="fields">
                   <div v-if="structuredIsEmpty" class="side-empty">
                     <ElEmpty :image-size="60" description="暂无 OCR 结构化内容" />
                   </div>
@@ -1000,7 +1074,7 @@ watch(
                         {{ document.fileStatus }}
                       </ElTag>
                     </ElDescriptionsItem>
-                    <ElDescriptionsItem label="OCR 状态">
+                    <ElDescriptionsItem :label="showStructuredReview ? 'OCR 状态' : '资料处理'">
                       <ElTag
                         :type="
                           ['ready', 'incomplete'].includes(String(ocrReadiness?.status || ''))
@@ -1171,6 +1245,20 @@ watch(
   gap: 10px;
   align-items: center;
   justify-content: space-between;
+}
+
+.preview-reader-note {
+  margin: 0;
+  padding: 9px 12px;
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.preview-retry {
+  margin-top: 12px;
 }
 
 .preview-body {

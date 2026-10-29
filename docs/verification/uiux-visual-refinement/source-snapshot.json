@@ -1,0 +1,9 @@
+{
+  "sourceFiles": 633,
+  "sha256": "20a6c73e84e242c62f1776f6438a86c747e9efe60b4383d3147ad5bf6b82e919",
+  "includes": [
+    "frontend/src Vue, TypeScript, Less, CSS",
+    "backend/libs/fde_console_views.py",
+    "backend/tests/test_fde_status_semantics.py"
+  ]
+}

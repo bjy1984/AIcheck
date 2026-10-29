@@ -1,0 +1,601 @@
+[
+  {
+    "file": "01-generic-overview.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/generic",
+    "title": "AIcheck - 通用资料审查",
+    "section": "通用資料審查總覽",
+    "status": "loaded",
+    "issues": "原有文字混用 EvidenceRef；人工確認區僅數量，未見辦理入口",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "数据权限合规审计项目"
+  },
+  {
+    "file": "02-inspection-overview.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/inspection?projectId=P-2026-HDCP-001&view=list",
+    "title": "AIcheck - 监检工作台",
+    "section": "完整工作台／項目總覽",
+    "status": "loaded-with-warning",
+    "issues": "左側交接狀態無法核對；總覽資料表可用，已提交審查資料為0",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 舊環境前置條件不足，僅保留為證據；正常畫面以替代圖為準。",
+    "primary": false,
+    "supersededBy": "30-inspection-overview-enabled.jpg",
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "03-contractor-overview.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/contractor",
+    "title": "AIcheck - 施工方工作台",
+    "section": "施工資料摘要、上傳與監檢意見",
+    "status": "loaded-empty",
+    "issues": "預設廣東LNG示範項目沒有文件／監檢意見，後續切有資料項目確認",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 補正單清單未提供可開啟項目，無法覆蓋補正詳情或新附件流程。",
+    "primary": true,
+    "project": "广东 LNG 支线改造工程"
+  },
+  {
+    "file": "04-ndt-overview.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/ndt",
+    "title": "AIcheck - 无损检测工作台",
+    "section": "無損檢測資料庫首頁",
+    "status": "loaded",
+    "issues": "畫面最終為底片2、檢測紀錄1、報告2、待補正1；已上傳原子資料文件為0，兩組統計口徑需區分",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "05-owner-overview.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "建設方唯讀總覽",
+    "status": "loaded",
+    "issues": "唯讀提示與節點上下文清楚；總覽統計0與另有歸檔資料，屬示範資料口徑待確認。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "06-owner-node-chain.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "節點狀態與審查鏈路",
+    "status": "loaded",
+    "issues": "未見重疊；表格文字密集，原有審查鏈路含泛用說明",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "07-owner-report-archive.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "報告與歸檔列表",
+    "status": "loaded-partial",
+    "issues": "報告版本列表為空，但上方靜態摘要顯示V0.8；歸檔列有資料，需留意示範摘要與列表口徑",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 報告版本清單為空，未覆蓋報告編輯及保存失敗保稿；已有單元行為測試另見工作流驗證文件。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "08-owner-archive-files.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "歸檔檔案與唯讀摘要",
+    "status": "loaded",
+    "issues": "歸檔檔案可見；類型用 report/evidence 英文，evidence 在窄欄被拆成兩行",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "09-owner-archive-detail.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "歸檔資料詳情抽屜",
+    "status": "loaded",
+    "issues": "詳情、預覽/下載入口與導出任務清楚；示範檔案不驗證實際下載內容",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 報告版本清單為空，未覆蓋報告編輯及保存失敗保稿；已有單元行為測試另見工作流驗證文件。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "10-shared-project-search.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "目前項目搜尋／文件結果",
+    "status": "loaded",
+    "issues": "搜尋範圍明示正確；結果類型仍顯示document技術值",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "11-shared-file-evidence.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "文件詳情／OCR欄位",
+    "status": "loaded-with-demo-limit",
+    "issues": "搜尋確實開到鋼管文件；原文是mock URL，預覽禁用並顯示原因，OCR缺parse result警告可見",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 示範原文URL為mock，無真實OCR parse result，無法驗證原文或OCR座標。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "12-shared-file-metadata.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "文件詳情／文件資訊",
+    "status": "loaded",
+    "issues": "文件資訊表可讀；較下方列需捲動；原文預覽仍受示範mock限制。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 示範原文URL為mock，無真實OCR parse result，無法驗證原文或OCR座標。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "13-shared-file-history.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "文件詳情／歷史版本",
+    "status": "loaded",
+    "issues": "歷史版本V2可見；右側日期／操作欄需橫向捲動，原文仍為mock地址。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 示範原文URL為mock，無真實OCR parse result，無法驗證原文或OCR座標。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "14-shared-todos-empty.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "待辦頁籤／唯讀角色空狀態",
+    "status": "loaded-empty",
+    "issues": "唯讀建設方沒有待辦，空狀態與數量一致",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "15-shared-messages.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/owner",
+    "title": "AIcheck - 建设方工作台",
+    "section": "訊息頁籤",
+    "status": "loaded",
+    "issues": "兩條示範訊息顯示，未點標記已讀或其他寫入操作",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "16-inspection-ai-overview.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/inspection?projectId=P-2026-HDCP-001&view=ai&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "AI審查／待辦與結果",
+    "status": "loaded-readonly-api-limit",
+    "issues": "自動初始化接口遭隔離服務403；已保存結論仍顯示，未發起審查",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 舊環境前置條件不足，僅保留為證據；正常畫面以替代圖為準。",
+    "primary": false,
+    "supersededBy": "31-inspection-ai-enabled.jpg",
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "17-inspection-ai-assistant.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/inspection?projectId=P-2026-HDCP-001&view=ai&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "AI審查／追問助手與紀錄",
+    "status": "loaded-readonly-api-limit",
+    "issues": "會話初始化被只讀服務阻擋，未發送訊息",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 舊環境前置條件不足，僅保留為證據；正常畫面以替代圖為準。",
+    "primary": false,
+    "supersededBy": "32-inspection-assistant-enabled.jpg",
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "18-inspection-important-nodes.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/inspection?projectId=P-2026-HDCP-001&view=important&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "重要節點審查",
+    "status": "loaded-feature-disabled",
+    "issues": "實際載入5份資料；提示「当前环境尚未开启指定资料审查，请管理员启用工位审查配置。」分析按鈕停用。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 舊環境前置條件不足，僅保留為證據；正常畫面以替代圖為準。",
+    "primary": false,
+    "supersededBy": "33-inspection-important-enabled.jpg",
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "19-inspection-node-ai.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/inspection?projectId=P-2026-HDCP-001&view=list&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "完整工作台／節點 AI 複核",
+    "status": "loaded",
+    "issues": "節點上下文、審查狀態與必傳資料缺項清楚；AI詳細結果見20，未發起複核。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "20-inspection-manual-review.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/inspection?projectId=P-2026-HDCP-001&view=list&nodeId=24&auditItem=human_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "完整工作台／人工結論",
+    "status": "loaded",
+    "issues": "切至人工結論時保留AI結果區；證據不足與AI非正式結論標籤可見；表單另見21。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "21-inspection-manual-form.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/inspection?projectId=P-2026-HDCP-001&view=list&nodeId=24&auditItem=human_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "人工審查表單",
+    "status": "loaded",
+    "issues": "正式結論阻斷與證據不足說明明確，未輸入或提交",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "22-contractor-files.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/contractor",
+    "title": "AIcheck - 施工方工作台",
+    "section": "施工方／審查意見與上傳資料",
+    "status": "loaded",
+    "issues": "3份資料載入，需補正1但意見清單0，示範資料關聯不足；表格需橫向捲動",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。 補正單清單未提供可開啟項目，無法覆蓋補正詳情或新附件流程。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "23-contractor-guide.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/contractor",
+    "title": "AIcheck - 施工方工作台",
+    "section": "施工方／資料分類指引",
+    "status": "loaded",
+    "issues": "10類資料均顯示，但建議資料與提示單行省略；hover提示有長文，仍需逐列查看。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "24-ndt-files-feedback.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/ndt",
+    "title": "AIcheck - 无损检测工作台",
+    "section": "無損檢測／已上傳資料與監檢反饋",
+    "status": "loaded-demo-gap",
+    "issues": "已上傳資料列表空狀態可見；摘要底片與報告屬另一組結構化記錄，反饋表單見26。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "25-ndt-report-upload.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/ndt",
+    "title": "AIcheck - 无损检测工作台",
+    "section": "無損檢測／報告上傳抽屜",
+    "status": "loaded",
+    "issues": "報告主要必填欄位與底片選項可讀；文件選擇與提交按鈕位於抽屜下方，未選文件或上傳。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "26-ndt-feedback-form.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/ndt",
+    "title": "AIcheck - 无损检测工作台",
+    "section": "無損檢測／補正反饋",
+    "status": "loaded",
+    "issues": "待處理項、下拉選擇與說明可見；未提交反饋",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "27-ndt-material-upload.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/ndt",
+    "title": "AIcheck - 无损检测工作台",
+    "section": "無損檢測／資料上傳抽屜",
+    "status": "loaded",
+    "issues": "資料類型與適用業務規則可調整，未選擇文件或上傳",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "28-generic-requirements-findings.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/generic",
+    "title": "AIcheck - 通用资料审查",
+    "section": "通用審查／資料要求與AI發現",
+    "status": "loaded",
+    "issues": "8節點與1發現可見；兩個並排表格最右欄部分被裁切，發現長標題省略，無逐筆證據／人工確認操作。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "数据权限合规审计项目"
+  },
+  {
+    "file": "29-generic-evidence-human.jpg",
+    "route": "http://127.0.0.1:4179/#/workbench/generic",
+    "title": "AIcheck - 通用资料审查",
+    "section": "通用審查／證據鏈路與人工確認",
+    "status": "loaded",
+    "issues": "導覽定位統計卡；EvidenceRef技術詞直接呈現，人工確認0與發現區待確認標題混用；兩側表格需橫向捲動。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "数据权限合规审计项目"
+  },
+  {
+    "file": "30-inspection-overview-enabled.jpg",
+    "route": "http://127.0.0.1:4183/#/workbench/inspection?projectId=P-2026-HDCP-001&view=list",
+    "title": "AIcheck - 监检工作台",
+    "section": "監檢總覽／工位功能啟用",
+    "status": "loaded",
+    "issues": "隔離環境已啟用工位功能，交接計數取代先前warning；未執行業務操作",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "31-inspection-ai-enabled.jpg",
+    "route": "http://127.0.0.1:4183/#/workbench/inspection?projectId=P-2026-HDCP-001&view=ai&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "AI審查／正常初始化",
+    "status": "loaded",
+    "issues": "無403；就緒檢查與未發起狀態顯示，沒有呼叫模型",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "32-inspection-assistant-enabled.jpg",
+    "route": "http://127.0.0.1:4183/#/workbench/inspection?projectId=P-2026-HDCP-001&view=ai&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "AI審查／追問助手與紀錄正常初始化",
+    "status": "loaded",
+    "issues": "空會話初始化成功，快捷提問及輸入區可見；未發送",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "33-inspection-important-enabled.jpg",
+    "route": "http://127.0.0.1:4183/#/workbench/inspection?projectId=P-2026-HDCP-001&view=important&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "重要節點審查／工位功能啟用",
+    "status": "loaded",
+    "issues": "5份工程資料載入，feature-disabled提示已消失；未勾選或發起分析",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "34-inspection-important-scope.jpg",
+    "route": "http://127.0.0.1:4183/#/workbench/inspection?projectId=P-2026-HDCP-001&view=important&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "重要節點審查／選擇範圍與結果",
+    "status": "loaded",
+    "issues": "三組節點範圍可讀，但設計文件較長造成右側大面積留白；開始審查因未選資料／節點停用。",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  },
+  {
+    "file": "35-inspection-important-results.jpg",
+    "route": "http://127.0.0.1:4183/#/workbench/inspection?projectId=P-2026-HDCP-001&view=important&nodeId=24&auditItem=ai_review",
+    "title": "AIcheck - 监检工作台",
+    "section": "重要節點審查／結果空狀態",
+    "status": "loaded-empty",
+    "issues": "尚未開始審查，先選資料並確認範圍提示清楚；未發起審查",
+    "viewport": {
+      "width": 1470,
+      "height": 692
+    },
+    "visuallyReviewed": true,
+    "visualJudgment": "已逐張檢視；主要內容可辨識，詳見issues。",
+    "limitations": "隔離記憶體示範資料；只驗證桌面1470×692；未提交業務寫入、上傳或模型審查。",
+    "primary": true,
+    "project": "华东成品油管道改造工程"
+  }
+]

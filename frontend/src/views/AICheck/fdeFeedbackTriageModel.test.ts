@@ -5,8 +5,11 @@ import type { FdeFeedback } from '@/api/aicheck'
 import {
   ROOT_CAUSE_OPTIONS,
   countBy,
+  feedbackTypeLabel,
   filterRows,
   formatRatio,
+  historicalRootCauses,
+  rootCauseOptionsFor,
   stateTagType,
   triagePayload,
   withinWindow
@@ -77,7 +80,10 @@ assert.equal(formatRatio({ value: 0.4567 }), '45.7%')
 assert.equal(formatRatio({ value: null }), '—')
 assert.equal(formatRatio(undefined), '—')
 assert.equal(stateTagType('promoted_to_eval'), 'success')
-assert.equal(stateTagType(undefined), 'warning')
+assert.equal(stateTagType(undefined), 'info')
+assert.equal(stateTagType('needs_adjudication'), 'warning')
+assert.equal(stateTagType('needs_triage'), 'warning')
+assert.equal(stateTagType('unknown_state'), 'info')
 
 // 归档体：入评测集才是 approved_for_eval
 const base = {
@@ -88,3 +94,28 @@ const base = {
 }
 assert.equal(triagePayload(base).status, 'triaged')
 assert.equal(triagePayload({ ...base, canUseForEval: true }).status, 'approved_for_eval')
+
+// Existing records must remain selectable and submitted with their original
+// classification, rather than silently converting history to the new taxonomy.
+const legacy = row({ feedbackType: 'edited', rootCause: 'prompt_error' })
+assert.equal(feedbackTypeLabel(legacy.feedbackType), '人工编辑')
+assert.equal(feedbackTypeLabel('future_type'), '其他类型（future_type）')
+assert.deepEqual(historicalRootCauses([legacy, legacy, row({ rootCause: 'prompt' })]), [
+  { value: 'prompt_error', label: '提示词问题（历史分类）' }
+])
+const legacyOption = rootCauseOptionsFor(legacy.rootCause).find(
+  (option) => option.value === 'prompt_error'
+)
+assert.ok(legacyOption)
+assert.equal(triagePayload({ ...base, rootCause: legacyOption.value }).rootCause, 'prompt_error')
+assert.equal(
+  filterRows([legacy], { rootCause: 'prompt_error', state: '', window: 'all' }).length,
+  1,
+  'the displayed historical classification remains filterable without rewriting records'
+)
+assert.equal(
+  rootCauseOptionsFor('future_cause').find((option) => option.value === 'future_cause')?.label,
+  '其他分类（future_cause）',
+  'an unknown classification remains visible and traceable'
+)
+assert.equal(rootCauseOptionsFor('prompt').filter((option) => option.value === 'prompt').length, 1)

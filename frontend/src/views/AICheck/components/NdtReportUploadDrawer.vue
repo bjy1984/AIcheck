@@ -14,7 +14,13 @@ import {
   ElSelect,
   ElUpload
 } from 'element-plus'
-import type { FormInstance, FormRules, UploadFile, UploadInstance } from 'element-plus'
+import type {
+  FormInstance,
+  FormRules,
+  UploadFile,
+  UploadInstance,
+  UploadRawFile
+} from 'element-plus'
 import type { NdtReportUploadRequest } from '@/api/aicheck'
 import type { NdtFilm } from '@/types/aicheck'
 
@@ -39,6 +45,8 @@ const visible = computed({
 })
 const formRef = ref<FormInstance>()
 const uploadRef = ref<UploadInstance>()
+let nextUploadUid = Date.now()
+const nextUploadFileId = () => ++nextUploadUid
 const selectedFile = ref<File>()
 const form = reactive({
   reportNo: '',
@@ -83,6 +91,20 @@ const reset = () => {
 
 const handleUploadChange = (uploadFile: UploadFile) => {
   selectedFile.value = uploadFile.raw
+}
+
+const handleUploadExceed = (files: File[]) => {
+  const file = files[0] as UploadRawFile | undefined
+  if (!file || props.loading) return
+  uploadRef.value?.clearFiles()
+  file.uid = nextUploadFileId()
+  selectedFile.value = file
+  uploadRef.value?.handleStart(file)
+}
+const removeSelectedFile = () => {
+  if (props.loading) return
+  uploadRef.value?.clearFiles()
+  selectedFile.value = undefined
 }
 
 const handleMethodChange = (method: NdtFilm['method']) => {
@@ -211,13 +233,20 @@ watch(
         :limit="1"
         accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.zip,.dcm"
         :on-change="handleUploadChange"
+        :on-exceed="handleUploadExceed"
+        :disabled="loading"
       >
         <div class="drop-zone">
-          <strong>选择一份检测报告文件</strong>
+          <strong>{{ selectedFile ? '点击或拖入文件以更换报告' : '选择一份检测报告文件' }}</strong>
           <span>支持 PDF、Word、图片、ZIP 和 DICOM 文件</span>
         </div>
       </ElUpload>
-      <div class="selected-file">{{ fileLabel }}</div>
+      <div class="selected-file">
+        {{ fileLabel }}
+        <ElButton v-if="selectedFile" link :disabled="loading" @click="removeSelectedFile"
+          >移除文件</ElButton
+        >
+      </div>
 
       <div class="drawer-actions">
         <ElButton @click="visible = false">取消</ElButton>

@@ -1,0 +1,46 @@
+{
+  "verifiedAt": "2026-10-29T09:13:38.625258+00:00",
+  "build": "dist-score-followup",
+  "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+  "routes": 6,
+  "captures": 23,
+  "finalBuildCaptures": 22,
+  "beforeCaptures": 1,
+  "allCapturesVisuallyReviewed": true,
+  "allFinalCapturesAfterFinalBuild": true,
+  "checks": {
+    "unitTestFiles": {
+      "passed": 134,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "changedFilesESLint": {
+      "passed": true,
+      "files": 13
+    },
+    "staticOperability": {
+      "passed": true,
+      "scannedFiles": 642,
+      "findings": 0
+    }
+  },
+  "sourceFingerprint": {
+    "files": 642,
+    "sha256": "f85ec3eeb353b67cc87c1b06898e1a556cb88835b9fb0cef9193c0b247b52ce7"
+  },
+  "scope": "6 focal routes plus shared toolbar, quick search and upload drawer; previous 44-route evidence retained separately",
+  "limitations": [
+    "隔離記憶體資料，未部署、未修改正式資料或提交文件。",
+    "FDE新增20筆明示顯示測試資料，僅驗長文與列表，未製造業務判定。",
+    "NDT原子類型已上傳文件為0，正數文件清單渲染仍未實測。",
+    "監檢手機頁首仍較高；完整真實資料流程、大量資料效能、VoiceOver、全鍵盤、縮放及全站對比度未完成。",
+    "本輪未重拍全部44路由，也未重新評分或推論真實用戶成功率。"
+  ],
+  "gallery": {
+    "url": "http://127.0.0.1:4195/score-followup/index.html",
+    "searchAndGroupFilter": "passed",
+    "deliverableTabOpened": true
+  },
+  "testServerCleanup": "completed; static gallery on 4195 retained"
+}

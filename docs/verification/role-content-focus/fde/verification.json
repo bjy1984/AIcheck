@@ -1,0 +1,29 @@
+{
+  "build": "dist-role-content-focus",
+  "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+  "totalRoutes": 16,
+  "totalCaptures": 24,
+  "allReviewed": true,
+  "consoleErrors": [],
+  "checks": {
+    "dashboardBlockerFocus": true,
+    "routeSpecificSummary": true,
+    "ocrNoEvaluationHonest": true,
+    "openOcrSummaryViaAiRunToReviewResetsDrawer": true,
+    "aiRunEvidenceSectionsEachOne": true,
+    "aiRunDiagnosticCorrectionActionPreserved": true,
+    "triageMetricsDrawerAvailable": true,
+    "triageTraceIdsExpandable": true,
+    "blindTraceIdsExpandable": true,
+    "blindNoConclusionLeak": true,
+    "blindQualityZeroSampleHonest": true
+  },
+  "limitations": [
+    "Read-only local environment; no product mutations submitted.",
+    "OCR service is not configured, no OCR or model execution performed.",
+    "Review orchestration tasks absent; empty state and repair entry verified.",
+    "FDE task center returned 0 tasks, so positive execution-details expansion not browser-verified.",
+    "Blind nonempty screenshot uses one explicit pending isolated fixture; no judgement results created.",
+    "Legacy feedback enum strings edited/prompt_error remain raw in the historical demo fixture."
+  ]
+}

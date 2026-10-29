@@ -1,0 +1,38 @@
+{
+  "group": "knowledge",
+  "build": "dist-score-followup",
+  "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+  "environment": "production build + real API + isolated in-memory demo data",
+  "captures": [
+    {
+      "route": "/knowledge/overview",
+      "file": "01-overview-1280.jpg",
+      "title": "知識庫總覽 · 桌面",
+      "reviewNote": "兩列索引表實測高度204px，知識源區塊已在首屏可見；移除原有156px固定留白。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "capturedAt": "2026-10-29T09:09:08.440Z"
+    },
+    {
+      "route": "/knowledge/overview",
+      "file": "02-overview-390.jpg",
+      "title": "知識庫總覽 · 手機",
+      "reviewNote": "手機改用完整名稱卡片，狀態與索引記錄入口可辨；頁面寬度390px，無頁面橫向溢出。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:09:24.684Z"
+    }
+  ]
+}

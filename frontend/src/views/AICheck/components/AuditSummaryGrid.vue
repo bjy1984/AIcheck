@@ -24,19 +24,29 @@ const emit = defineEmits<{ cardAction: [actionKey: string] }>()
 
 const normalizedCards = computed(() =>
   props.cards.map((card) => {
+    const unavailable = ['未取得', '未获取', '未提供', '暂无数据', '待加载', '—', '-'].includes(
+      String(card.value).trim()
+    )
+    const neutralCard = { ...card, tone: unavailable ? ('gray' as const) : card.tone }
     if (typeof card.value === 'number') {
-      return { ...card, statisticValue: card.value, statisticSuffix: '' }
+      return {
+        ...neutralCard,
+        tone: card.value === 0 ? ('gray' as const) : neutralCard.tone,
+        statisticValue: card.value,
+        statisticSuffix: ''
+      }
     }
 
     const match = String(card.value)
       .trim()
       .match(/^(-?\d+(?:\.\d+)?)\s*(.*)$/u)
     if (!match) {
-      return { ...card, statisticValue: null, statisticSuffix: '' }
+      return { ...neutralCard, statisticValue: null, statisticSuffix: '' }
     }
 
     return {
-      ...card,
+      ...neutralCard,
+      tone: Number(match[1]) === 0 ? ('gray' as const) : neutralCard.tone,
       statisticValue: Number(match[1]),
       statisticSuffix: match[2] || ''
     }
@@ -105,10 +115,10 @@ const normalizedCards = computed(() =>
 .audit-summary-card {
   min-width: 0;
   min-height: 104px;
-  background: linear-gradient(180deg, #fff, #f8fbff);
-  border: 0;
+  background: var(--aicheck-surface, #fff);
+  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 8px;
-  box-shadow: 0 8px 20px rgb(15 23 42 / 7%);
+  box-shadow: none;
 }
 
 .audit-summary-card :deep(.el-card__body) {
@@ -163,24 +173,20 @@ const normalizedCards = computed(() =>
   white-space: nowrap;
 }
 
-.audit-summary-card--blue {
-  background: linear-gradient(180deg, #fff, #f8fbff);
+/* Keep the container quiet; status is expressed by the value and its label. */
+.audit-summary-card--orange :deep(.el-statistic__content),
+.audit-summary-card--orange .audit-summary-text-value {
+  color: var(--aicheck-warning, #8a4b00);
 }
 
-.audit-summary-card--green {
-  background: linear-gradient(180deg, #fff, #f8fdf9);
+.audit-summary-card--red :deep(.el-statistic__content),
+.audit-summary-card--red .audit-summary-text-value {
+  color: var(--aicheck-danger, #b42318);
 }
 
-.audit-summary-card--orange {
-  background: linear-gradient(180deg, #fff, #fffaf0);
-}
-
-.audit-summary-card--red {
-  background: linear-gradient(180deg, #fff, #fff7f7);
-}
-
-.audit-summary-card--gray {
-  background: linear-gradient(180deg, #fff, #f8fafc);
+.audit-summary-card--gray :deep(.el-statistic__content),
+.audit-summary-card--gray .audit-summary-text-value {
+  color: var(--aicheck-text-muted, #52647d);
 }
 
 @media (width <= 1180px) {

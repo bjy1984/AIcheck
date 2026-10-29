@@ -1,0 +1,14 @@
+$ pnpm audit:operability:static && pnpm vite build --mode pro
+$ node scripts/audit-operability.mjs
+{
+  "schemaVersion": "aicheck-operability-static-audit@1",
+  "generatedAt": "2026-10-29T01:52:48.123Z",
+  "scannedFiles": 610,
+  "passed": true,
+  "findings": []
+}
+
+
+
+Build successful. Please see dist-pro directory
+

@@ -25,6 +25,7 @@ const props = defineProps<{
     message?: string
   }
   retryLoading?: boolean
+  showTechnicalStatus?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -125,7 +126,12 @@ const alertType = computed(() => {
       <ElTable :data="projectFiles" border height="180">
         <ElTableColumn prop="fileName" label="文件" min-width="190" show-overflow-tooltip />
         <ElTableColumn prop="sourceOrgName" label="来源" width="120" show-overflow-tooltip />
-        <ElTableColumn prop="currentOcrStatus" label="OCR" width="90" />
+        <ElTableColumn
+          v-if="showTechnicalStatus !== false"
+          prop="currentOcrStatus"
+          label="OCR"
+          width="90"
+        />
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
             <ElTag :type="getStatusTagType(projectFileStatus(row))" size="small" effect="plain">

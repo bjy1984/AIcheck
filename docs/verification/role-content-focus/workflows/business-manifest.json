@@ -1,0 +1,136 @@
+{
+  "build": "dist-role-content-focus",
+  "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+  "captures": [
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢助手與記錄",
+      "file": "01-inspection-assistant.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "保留證據、標準條款及人工操作，歡迎詞已使用「歷史審查任務」，沒有模型、Token 或效能資訊。此節點無歷史對話，完成回覆與串流由回歸測試覆蓋，未觸發正式審查。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢文件核驗詳情",
+      "file": "01-inspection-file-verification.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "保留字段、頁碼、證據引用，缺少識別來源以可操作的人話提示。示例無真實原文，沒有把資料狀態當作核驗通過。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢工作台",
+      "file": "01-inspection.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "首頁聚焦需處理節點及人工結論，沒有模型、Token 或效能資訊。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方文件詳情",
+      "file": "02-contractor-file-details.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "預設文件資訊，保留版本、上傳與資料處理狀態，沒有 OCR 字段／表格／印章核驗頁籤。示例無真實原文，已停用預覽下載。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工資料工作台",
+      "file": "02-contractor.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "首頁保留上傳、待提交及監檢意見，需補正文件與意見數分開，沒有工程指標。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測補正詳情",
+      "file": "03-ndt-feedback.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "保留補正事項、期限、需補充的編號頁、關聯報告、底片與疑點，沒有工程執行資訊。未提交或變更補正資料。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測資料工作台",
+      "file": "03-ndt.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "摘要保留上傳、待提交/補正、監檢反饋及底片/紀錄/報告數。示例沒有資料庫已上傳文件，展開文件處理標籤由回歸測試覆蓋。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方文件詳情",
+      "file": "04-owner-file-details.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "展開節點資料後仍可進入原文詳情；預設文件資訊，只保留版本、上傳與資料處理狀態，沒有字段/表格/印章核驗頁籤。示例無真實原文，畫面已提示。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方報告與收合資料",
+      "file": "04-owner-reports-collapsed-materials.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "報告／歸檔與查看下載操作在節點資料之前；節點資料原生 details 預設收合，示例報告清單為真實空值。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方項目概況",
+      "file": "04-owner.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "只保留進度、報告、歸檔與責任單位；節點表呈現單一審查狀態及資料數，不再出現 AI/OCR 指標與工程側欄。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus"
+    }
+  ]
+}

@@ -1,0 +1,208 @@
+{
+  "area": "knowledge",
+  "build": "dist-uiux-visual-refinement",
+  "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+  "visualReview": "complete",
+  "consoleErrors": [],
+  "captures": [
+    {
+      "route": "/knowledge/overview",
+      "title": "知識庫總覽",
+      "file": "01-overview.jpg",
+      "reviewed": true,
+      "reviewNote": "未取得章節溯源與0阻斷均為中性；向量完成數明示本頁8份，未冒充全庫完成率。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:50:44.307Z"
+    },
+    {
+      "route": "/knowledge/overview",
+      "title": "索引記錄數量與狀態",
+      "file": "01b-index-counts.jpg",
+      "reviewed": true,
+      "reviewNote": "索引表與內容同為898px，版本、數量、狀態與操作完整；0值保留真實0，雙條同尺度且有文字標籤。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:51:03.385Z"
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準規範庫",
+      "file": "02-sources.jpg",
+      "reviewed": true,
+      "reviewNote": "來源與全名可讀，待識別/待向量化為黃、未切片為灰，三段狀態和所有操作完整可見。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:48:14.005Z"
+    },
+    {
+      "route": "/knowledge/files",
+      "title": "項目文件知識庫",
+      "file": "03-files.jpg",
+      "reviewed": true,
+      "reviewNote": "文件名、所屬節點、三段處理狀態與所有操作完整可見；表格無橫向遮擋。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:48:28.674Z"
+    },
+    {
+      "route": "/knowledge/tasks",
+      "title": "OCR與向量任務中心",
+      "file": "04-tasks.jpg",
+      "reviewed": true,
+      "reviewNote": "失敗紅色錯誤圖標、正常排隊藍色處理圖標，主要狀態和操作完整；低頻時間/錯誤欄仍可水平捲動或開啟詳情。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:48:51.551Z"
+    },
+    {
+      "route": "/knowledge/rules",
+      "title": "業務判斷規則管理",
+      "file": "05-rules.jpg",
+      "reviewed": true,
+      "reviewNote": "已發布綠色勾圖標完整，規則、依據與全部操作可讀。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:49:15.904Z"
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "title": "知識檢索測試",
+      "file": "06-retrieval.jpg",
+      "reviewed": true,
+      "reviewNote": "表單、範圍與Top K完整；結果空態說明清楚，未執行外部服務。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:49:27.439Z"
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網路",
+      "file": "07-network.jpg",
+      "reviewed": true,
+      "reviewNote": "圖譜259節點/294關係正常；數量中性藍，published使用綠色勾圖標，圖例與詳情完整。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:49:41.892Z"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "title": "推理鏈路歷史",
+      "file": "08-reasoning.jpg",
+      "reviewed": true,
+      "reviewNote": "完成綠色勾圖標可讀，建議內容完整換行，時間與詳情同屏。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:50:12.111Z"
+    },
+    {
+      "route": "/knowledge/compare",
+      "title": "多模型回饋比較",
+      "file": "09-compare.jpg",
+      "reviewed": true,
+      "reviewNote": "比較輸入、模型選擇與結果空態完整可見；未發起外部模型執行。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:50:22.321Z"
+    },
+    {
+      "route": "/knowledge/config",
+      "title": "知識庫配置與審計",
+      "file": "10-config.jpg",
+      "reviewed": true,
+      "reviewNote": "設定標題單行、時間與重新載入自然換行；審計結果成功勾圖標完整可見。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ],
+      "indexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+      "capturedAt": "2026-10-29T06:50:30.639Z"
+    }
+  ],
+  "verifiedAt": "2026-10-29T06:51:17.752Z"
+}

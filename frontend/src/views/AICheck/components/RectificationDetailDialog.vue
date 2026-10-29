@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   ElButton,
+  ElCheckbox,
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
@@ -13,6 +14,7 @@ import {
 } from 'element-plus'
 import type { NodeFileBinding, ProjectTreeNode, RectificationItem, TodoItem } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+import { correctionSubmissionCandidates } from '../correctionSubmission'
 
 const props = defineProps<{
   modelValue: boolean
@@ -21,6 +23,7 @@ const props = defineProps<{
   todos: TodoItem[]
   rectificationId?: string
   rectification?: RectificationItem
+  preferredBindingIds?: string[]
   mode?: 'view' | 'submit'
   loading: boolean
 }>()
@@ -37,17 +40,19 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
-const correctionBindings = computed(() => {
-  const scoped = props.bindings.filter((binding) => binding.bindingStatus === '需补正')
-  return scoped.length ? scoped : props.bindings
-})
+const selectedBindingIds = ref<string[]>([])
+const correctionBindings = computed(() =>
+  correctionSubmissionCandidates(props.bindings, props.rectification, props.preferredBindingIds)
+)
 
 const nodeTodos = computed(() => props.todos.filter((todo) => todo.nodeId === props.node?.nodeId))
 
 const handleSubmit = () => {
   emit('submit', {
     comment: comment.value.trim(),
-    bindingIds: correctionBindings.value.map((binding) => binding.id),
+    bindingIds: selectedBindingIds.value.filter((id) =>
+      correctionBindings.value.some((binding) => binding.id === id)
+    ),
     rectificationId: props.rectificationId
   })
 }
@@ -55,7 +60,12 @@ const handleSubmit = () => {
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) comment.value = '已根据监检意见补充证明材料，请复审。'
+    if (open) {
+      comment.value = '已根据监检意见补充证明材料，请复审。'
+      selectedBindingIds.value = props.preferredBindingIds?.length
+        ? [...props.preferredBindingIds]
+        : correctionBindings.value.map((binding) => binding.id)
+    }
   }
 )
 </script>
@@ -89,6 +99,20 @@ watch(
 
       <div class="section-title">需补正或随同提交资料</div>
       <ElTable :data="correctionBindings" border height="220">
+        <ElTableColumn v-if="mode !== 'view'" label="本次提交" width="90">
+          <template #default="{ row }">
+            <ElCheckbox
+              :model-value="selectedBindingIds.includes(row.id)"
+              :aria-label="`提交 ${row.fileName}`"
+              @change="
+                (checked) =>
+                  (selectedBindingIds = checked
+                    ? [...selectedBindingIds, row.id]
+                    : selectedBindingIds.filter((id) => id !== row.id))
+              "
+            />
+          </template>
+        </ElTableColumn>
         <ElTableColumn prop="fileName" label="文件" min-width="220" show-overflow-tooltip />
         <ElTableColumn
           prop="requirementName"
@@ -126,7 +150,7 @@ watch(
         v-if="mode !== 'view'"
         type="primary"
         :loading="loading"
-        :disabled="!node"
+        :disabled="!node || !selectedBindingIds.length || !comment.trim()"
         @click="handleSubmit"
       >
         提交补正反馈

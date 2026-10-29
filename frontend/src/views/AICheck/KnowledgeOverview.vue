@@ -44,6 +44,7 @@ import {
   ElUpload
 } from 'element-plus'
 import type { UploadFile } from 'element-plus'
+import { Refresh, Filter, Upload } from '@element-plus/icons-vue'
 import {
   batchReindexKnowledgeApi,
   cancelKnowledgeTaskApi,
@@ -55,6 +56,7 @@ import {
   forkKnowledgeRuleVersionApi,
   getBusinessPackApi,
   getKnowledgeConfigApi,
+  getKnowledgeTaskApi,
   getKnowledgeFileDetailApi,
   getDocumentOriginalBlobApi,
   getKnowledgeRuleVersionDiffApi,
@@ -113,8 +115,18 @@ import { useUserStore } from '@/store/modules/user'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
+import StatusTag from './components/StatusTag.vue'
+import KnowledgeIndexCounts from './components/KnowledgeIndexCounts.vue'
+import { indexCountScale } from './knowledgeIndexCounts'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import FileDetailDialog from './components/FileDetailDialog.vue'
+import { adminAuditTypeLabels } from './adminListPresentation'
+import {
+  buildImportResults,
+  hasDuplicateImportNames,
+  getImportSkippedFromError,
+  type ImportFileResult
+} from './knowledgeImportResults'
 
 const emptyOverview = (): KnowledgeOverviewPayload => ({
   metrics: [],
@@ -226,13 +238,6 @@ const routeQueryNumber = (key: string, fallback: number) => {
  * 只会让人怀疑自己点错了地方。
  */
 
-const knowledgeShellBoundaryRows = [
-  { label: '不办理', value: '退回补正、审查意见、报告复核' },
-  { label: '可管理', value: '知识源、OCR、向量、规则版本、推理日志' },
-  { label: '权限', value: '继承项目、单位、角色授权' },
-  { label: '审计', value: '所有重跑、发布、回滚均留痕' }
-] as const
-
 type PaginationState = {
   page: number
   pageSize: number
@@ -240,6 +245,8 @@ type PaginationState = {
 }
 
 type SectionKey =
+  | 'overview'
+  | 'projects'
   | 'sources'
   | 'standardFiles'
   | 'files'
@@ -275,8 +282,8 @@ type KnowledgeTopStatKey = 'sources' | 'vectorTasks' | 'failedTasks'
 type KnowledgeTopStat = {
   key: KnowledgeTopStatKey
   label: string
-  value: number
-  tone: 'blue' | 'green' | 'red'
+  value: number | string
+  tone: 'blue' | 'green' | 'red' | 'gray'
   clickable: true
   title: string
 }
@@ -320,17 +327,28 @@ const getKnowledgeTabFromRoute = (path: string): KnowledgeTabKey =>
   knowledgeRouteTabMap[path] || 'overview'
 
 const activeTab = ref<KnowledgeTabKey>(getKnowledgeTabFromRoute(route.path))
+const knowledgePageTitles: Record<KnowledgeTabKey, string> = {
+  overview: 'AI 知识库管理',
+  'source-manage': '标准规范库',
+  files: '项目文件知识库',
+  tasks: 'OCR / 向量任务中心',
+  rules: '业务判断规则管理',
+  retrieval: '知识检索测试',
+  reasoning: '推理链路历史',
+  compare: '多 LLM 反馈对比',
+  config: '知识库配置'
+}
 
 function loadKnowledgeTabData(tab: KnowledgeTabKey) {
   if (tab === 'source-manage') return Promise.all([loadSources(), loadStandardFiles()])
-  if (tab === 'files') return loadFiles()
-  if (tab === 'tasks') return loadTasks()
+  if (tab === 'files') return Promise.all([loadFiles(), loadProjectOptions()])
+  if (tab === 'tasks') return Promise.all([loadTasks(), loadTaskFromRoute()])
   if (tab === 'rules') return loadRuleVersions()
   if (tab === 'config') return Promise.all([loadKnowledgeConfig(), loadKnowledgeAuditLogs()])
   if (tab === 'reasoning') return loadReasoningLogs()
   if (tab === 'compare') return loadCompareRuns()
   if (tab === 'retrieval') return loadPageIndexNodes()
-  return loadOverview()
+  return Promise.all([loadOverview(), loadSources()])
 }
 
 const pageIssue = ref<{
@@ -344,12 +362,38 @@ const sources = ref<KnowledgeSource[]>([])
 const files = ref<KnowledgeFile[]>([])
 const standardFiles = ref<KnowledgeFile[]>([])
 const tasks = ref<KnowledgeTask[]>([])
+const taskDetail = ref<KnowledgeTask>()
+const taskDetailId = ref('')
+const taskDetailVisible = ref(false)
+const taskDetailLoading = ref(false)
+const taskDetailIssue = ref<SectionIssue>()
+let taskDetailRequest = 0
 const reasoningLogs = ref<AiReviewRun[]>([])
 const compareRuns = ref<LlmCompareRunSummary[]>([])
+const comparePagination = reactive(createPagination(20))
 const ruleVersions = ref<KnowledgeRuleVersion[]>([])
+const rollbackDialogVisible = ref(false)
+const rollbackSource = ref<KnowledgeRuleVersion>()
+const rollbackCandidates = ref<KnowledgeRuleVersion[]>([])
+const rollbackSelectedId = ref('')
+const rollbackLoading = ref(false)
+const rollbackIssue = ref<SectionIssue>()
+const rollbackPagination = reactive(createPagination(20))
+let rollbackRequest = 0
 const auditLogs = ref<KnowledgeAuditLog[]>([])
 const knowledgeConfig = reactive<KnowledgeConfig>(emptyKnowledgeConfig())
+const knowledgeConfigSaved = ref('')
+const knowledgeConfigDirty = computed(
+  () =>
+    Boolean(knowledgeConfigSaved.value) &&
+    JSON.stringify(knowledgeConfig) !== knowledgeConfigSaved.value
+)
+const sectionRequests: Partial<Record<SectionKey, number>> = {}
+const sectionLoading = reactive<Partial<Record<SectionKey, boolean>>>({})
+const sectionLoaded = reactive<Partial<Record<SectionKey, boolean>>>({})
 const sectionIssues = reactive<Record<SectionKey, SectionIssue | undefined>>({
+  overview: undefined,
+  projects: undefined,
   sources: undefined,
   standardFiles: undefined,
   files: undefined,
@@ -386,9 +430,7 @@ const knowledgeShellMenuSections = computed(() => buildAdminMenuSections(route.p
 
 const scrollKnowledgeContentIntoView = () => {
   nextTick(() => {
-    document
-      .querySelector('.knowledge-tabs')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    document.querySelector('.knowledge-page .page-toolbar')?.scrollIntoView({ block: 'start' })
   })
 }
 
@@ -426,6 +468,7 @@ const reasoningDetail = ref<ReasoningLogDetailPayload | null>(null)
 const retrievalLoading = ref(false)
 const retrievalResult = ref<KnowledgeRetrievalTestPayload | null>(null)
 const pageIndexLoading = ref(false)
+const pageIndexLoaded = ref(false)
 const pageIndexNodes = ref<KnowledgePageIndexNode[]>([])
 const retrievalTrace = computed(() => retrievalResult.value?.retrievalTrace || null)
 const retrievalPageIndexTree = computed(() => retrievalTrace.value?.pageIndexTree || null)
@@ -517,6 +560,7 @@ type SourceUploadFileRow = {
 }
 const sourceUploadDirectoryInputRef = ref<HTMLInputElement>()
 const sourceUploadFiles = ref<SourceUploadFileRow[]>([])
+const sourceImportResults = ref<ImportFileResult[]>([])
 const sourceUploadProjectId = ref('')
 const standardFileDialogVisible = ref(false)
 const standardFileDialogMode = ref<'edit' | 'replace'>('edit')
@@ -526,6 +570,7 @@ const standardFileReplacement = ref<File | null>(null)
 const knowledgeImportVisible = ref(false)
 const knowledgeImportDirectoryInputRef = ref<HTMLInputElement>()
 const knowledgeImportFiles = ref<File[]>([])
+const knowledgeImportResults = ref<ImportFileResult[]>([])
 const knowledgeImportDialogTitle = ref('从文件导入业务规则草稿')
 const businessRuleImportVersion = ref('')
 
@@ -557,9 +602,19 @@ const fileFilters = reactive({
 
 const filePagination = reactive(createPagination(10))
 
+const taskStatusQueryAliases: Record<string, string> = {
+  running: '运行中',
+  failed: '失败',
+  queued: '排队中',
+  success: '成功',
+  cancelled: '已取消'
+}
 const taskFilters = reactive({
   taskType: activeTab.value === 'tasks' ? routeQueryText('taskType') : '',
-  status: activeTab.value === 'tasks' ? routeQueryText('status') : ''
+  status:
+    activeTab.value === 'tasks'
+      ? taskStatusQueryAliases[routeQueryText('status')] || routeQueryText('status')
+      : ''
 })
 
 const taskPagination = reactive(createPagination(10))
@@ -736,18 +791,16 @@ const knowledgeTopStats = computed<KnowledgeTopStat[]>(() => [
   {
     key: 'sources',
     label: '知识源',
-    value: getOverviewMetricNumber('source') ?? (sourcePagination.total || sources.value.length),
-    tone: 'blue',
+    value: getOverviewMetricNumber('source') ?? '未取得',
+    tone: getOverviewMetricNumber('source') === undefined ? 'gray' : 'blue',
     clickable: true,
     title: '查看知识源和标准规范列表'
   },
   {
     key: 'vectorTasks',
     label: '向量任务',
-    value: knowledgeTopTaskCounts.vectorLoaded
-      ? knowledgeTopTaskCounts.vectorTotal
-      : tasks.value.filter((task) => task.taskType === 'vector').length,
-    tone: 'green',
+    value: knowledgeTopTaskCounts.vectorLoaded ? knowledgeTopTaskCounts.vectorTotal : '未取得',
+    tone: knowledgeTopTaskCounts.vectorLoaded ? 'blue' : 'gray',
     clickable: true,
     title: '查看向量任务'
   },
@@ -756,9 +809,14 @@ const knowledgeTopStats = computed<KnowledgeTopStat[]>(() => [
     label: '失败任务',
     value: knowledgeTopTaskCounts.failedLoaded
       ? knowledgeTopTaskCounts.failedTotal
-      : (getOverviewMetricNumber('failed') ??
-        tasks.value.filter((task) => task.status === '失败').length),
-    tone: 'red',
+      : (getOverviewMetricNumber('failed') ?? '未取得'),
+    tone: (
+      knowledgeTopTaskCounts.failedLoaded
+        ? knowledgeTopTaskCounts.failedTotal
+        : getOverviewMetricNumber('failed')
+    )
+      ? 'red'
+      : 'gray',
     clickable: true,
     title: '查看失败任务'
   }
@@ -770,72 +828,32 @@ const knowledgeUserLabel = computed(
     userStore.getUserInfo?.roleLabel ||
     '系统管理员'
 )
-const knowledgeFailedTaskCount = computed(
-  () =>
-    getOverviewMetricNumber('failed') ?? tasks.value.filter((task) => task.status === '失败').length
+const knowledgeFailedTaskCount = computed(() =>
+  knowledgeTopTaskCounts.failedLoaded
+    ? knowledgeTopTaskCounts.failedTotal
+    : getOverviewMetricNumber('failed')
 )
-const knowledgeRunningTaskCount = computed(
-  () =>
-    getOverviewMetricNumber('task') ??
-    tasks.value.filter((task) => ['排队中', '运行中'].includes(task.status)).length
-)
+const knowledgeRunningTaskCount = computed(() => getOverviewMetricNumber('task'))
 const knowledgeRuntimeStatus = computed(() => {
-  if (pageIssue.value?.type === 'error') return '数据加载异常'
+  if (pageIssue.value?.type === 'error' || sectionIssues.overview) return '总览数据加载异常'
+  if (!sectionLoaded.overview) return sectionLoading.overview ? '正在加载状态' : '状态尚未取得'
   if (knowledgeFailedTaskCount.value) return `${knowledgeFailedTaskCount.value} 个失败任务`
   if (knowledgeRunningTaskCount.value) return `${knowledgeRunningTaskCount.value} 个任务运行中`
+  if (knowledgeFailedTaskCount.value === undefined || knowledgeRunningTaskCount.value === undefined)
+    return '任务状态尚未取得'
   return overview.value.libraries.length ? '索引状态正常' : '尚未建立索引'
 })
 const knowledgeRuntimeStatusTone = computed(() => {
-  if (pageIssue.value?.type === 'error' || knowledgeFailedTaskCount.value) return 'red' as const
-  if (knowledgeRunningTaskCount.value) return 'orange' as const
-  return overview.value.libraries.length ? ('green' as const) : ('blue' as const)
-})
-const knowledgeShellRightSubtitle = computed(() => {
-  const versions = Array.from(
-    new Set(overview.value.libraries.map((library) => library.indexVersion).filter(Boolean))
+  if (pageIssue.value?.type === 'error' || sectionIssues.overview || knowledgeFailedTaskCount.value)
+    return 'red' as const
+  if (knowledgeRunningTaskCount.value || sectionLoading.overview) return 'blue' as const
+  if (
+    !sectionLoaded.overview ||
+    knowledgeFailedTaskCount.value === undefined ||
+    knowledgeRunningTaskCount.value === undefined
   )
-  return versions.length ? `索引版本：${versions.join('、')}` : '尚无活动索引版本'
-})
-const knowledgeShellRightCards = computed(() => {
-  const latestUpdatedAt = overview.value.libraries
-    .map((library) => library.updatedAt)
-    .filter(Boolean)
-    .sort()
-    .at(-1)
-  return [
-    {
-      title: '索引状态',
-      rows: [
-        { label: '知识库', value: String(overview.value.libraries.length) },
-        { label: '知识源', value: String(sourcePagination.total) },
-        { label: '运行任务', value: String(knowledgeRunningTaskCount.value) },
-        { label: '失败任务', value: String(knowledgeFailedTaskCount.value) },
-        { label: '数据时间', value: latestUpdatedAt || '--' }
-      ]
-    },
-    {
-      title: '当前配置',
-      rows: [
-        {
-          label: 'Embedding',
-          value: knowledgeConfig.updatedAt ? knowledgeConfig.embeddingModel : '--'
-        },
-        {
-          label: '切片长度',
-          value: knowledgeConfig.updatedAt ? String(knowledgeConfig.chunkSize) : '--'
-        },
-        {
-          label: '默认 TopK',
-          value: knowledgeConfig.updatedAt ? String(knowledgeConfig.topKDefault) : '--'
-        },
-        { label: '配置时间', value: knowledgeConfig.updatedAt || '--' }
-      ]
-    },
-    {
-      title: '职责边界',
-      note: '本页面只管理知识源、索引、规则和推理记录；正式审查结论仍由业务工作台人工确认。'
-    }
-  ]
+    return 'gray' as const
+  return overview.value.libraries.length ? ('green' as const) : ('gray' as const)
 })
 const projectFileProjectOptions = computed(() => {
   const optionMap = new Map<string, { id: string; name: string; code?: string }>()
@@ -874,7 +892,7 @@ const knowledgeFileDialogTitle = computed(
 )
 const knowledgeImportFileRows = computed(() =>
   knowledgeImportFiles.value.map((file) => ({
-    id: `${file.name}-${file.size}-${file.lastModified}`,
+    id: `${(file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name}-${file.size}-${file.lastModified}`,
     name: file.name,
     relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
     size: file.size,
@@ -900,31 +918,50 @@ const knowledgeScorecardBlockerRows = computed(() =>
   }))
 )
 const knowledgeRetrievalProbeRows = computed(() => knowledgeScorecard.value?.retrievalProbes || [])
-const canShowKnowledgeContent = computed(() => !pageIssue.value)
+const knowledgeGovernanceStatus = computed(() => {
+  if (!knowledgeScorecard.value) return '治理评分未取得'
+  return knowledgeScorecard.value.blockers.length
+    ? `${knowledgeScorecard.value.blockers.length} 个治理阻断`
+    : '治理评分无阻断'
+})
+const canShowKnowledgeContent = computed(() => pageIssue.value?.type !== 'forbidden')
 const knowledgeAuditCards = computed<AuditSummaryCard[]>(() => [
   {
     label: '知识源入库',
-    value: `${sources.value.length} 个来源`,
-    hint: `${files.value.length} 份资料进入 OCR/切片链路`,
-    tone: 'blue'
+    value:
+      getOverviewMetricNumber('source') === undefined
+        ? '未取得'
+        : `${getOverviewMetricNumber('source')} 个来源`,
+    hint: sectionLoaded.files
+      ? `当前筛选共 ${filePagination.total} 份项目资料`
+      : '项目资料统计尚未加载',
+    tone: getOverviewMetricNumber('source') === undefined ? 'gray' : 'blue'
   },
   {
     label: '向量化状态',
-    value: `${files.value.filter((file) => file.vectorStatus === '已向量化').length} 份完成`,
-    hint: `${tasks.value.filter((task) => task.taskType === 'vector').length} 个向量任务可追踪`,
-    tone: 'green'
+    value: sectionLoaded.files
+      ? `本页 ${files.value.filter((file) => file.vectorStatus === '已向量化').length} 份完成`
+      : '未取得',
+    hint: knowledgeTopTaskCounts.vectorLoaded
+      ? `共 ${knowledgeTopTaskCounts.vectorTotal} 个向量任务`
+      : '向量任务统计尚未取得',
+    tone: sectionLoaded.files ? 'blue' : 'gray'
   },
   {
     label: '章节溯源',
-    value: `${pageIndexNodes.value.length} 个节点`,
-    hint: '用于长文档章节树、命中路径和条款定位',
-    tone: 'orange'
+    value: pageIndexLoaded.value ? `已载入 ${pageIndexNodes.value.length} 个节点` : '未取得',
+    hint: '检索页展示最多 20 个节点，可按关键词查找',
+    tone: pageIndexLoaded.value ? 'blue' : 'gray'
   },
   {
     label: '引用质量',
-    value: `${knowledgeScorecard.value?.blockers.length || 0} 个阻断`,
-    hint: `${reasoningLogs.value.length} 条推理日志可回放评估`,
-    tone: 'red'
+    value: knowledgeScorecard.value
+      ? `${knowledgeScorecard.value.blockers.length} 个阻断`
+      : '未取得',
+    hint: sectionLoaded.reasoning
+      ? `当前筛选共 ${reasoningPagination.total} 条推理日志`
+      : '推理日志统计尚未加载',
+    tone: knowledgeScorecard.value?.blockers.length ? 'red' : 'gray'
   }
 ])
 const hasSectionIssue = computed(() => Object.values(sectionIssues).some(Boolean))
@@ -968,37 +1005,6 @@ const auditObjectTypeOptions = [
   'LlmCompareRun'
 ]
 
-const statusType = (status?: string) => {
-  if (!status) return 'info'
-  if (
-    ['健康', '完成', '成功', '启用', '已向量化', '已切片', '已识别', '已人工确认'].some((key) =>
-      status.includes(key)
-    )
-  ) {
-    return 'success'
-  }
-  if (['失败', '需补正', '停用'].some((key) => status.includes(key))) return 'danger'
-  if (
-    [
-      '索引',
-      '运行',
-      '排队',
-      '待复核',
-      '待识别',
-      '待向量化',
-      '未识别',
-      '未切片',
-      '未向量化',
-      '人工修正',
-      '识别中',
-      '向量化中'
-    ].some((key) => status.includes(key))
-  ) {
-    return 'warning'
-  }
-  return 'info'
-}
-
 const taskTypeLabel = (type: KnowledgeTask['taskType']) => {
   const map: Record<KnowledgeTask['taskType'], string> = {
     ocr: 'OCR',
@@ -1019,10 +1025,7 @@ const sourceTypeLabel = (type: KnowledgeSource['sourceType']) => {
   return map[type]
 }
 
-const vectorPercent = (row: KnowledgeOverviewPayload['libraries'][number]) => {
-  if (!row.chunkCount) return 0
-  return Math.min(100, Math.round((row.vectorCount / row.chunkCount) * 100))
-}
+const libraryCountScale = computed(() => indexCountScale(libraries.value))
 
 const confidencePercent = (value?: number) => {
   if (typeof value !== 'number') return '--'
@@ -1199,12 +1202,25 @@ const clearOperationIssue = (key: OperationIssueKey) => {
   operationIssues[key] = undefined
 }
 
-const loadSection = async (key: SectionKey, title: string, loader: () => Promise<void>) => {
+const loadSection = async (
+  key: SectionKey,
+  title: string,
+  loader: (isCurrent: () => boolean) => Promise<void>
+) => {
+  const request = (sectionRequests[key] || 0) + 1
+  sectionRequests[key] = request
+  sectionLoading[key] = true
+  const isCurrent = () => sectionRequests[key] === request
   try {
-    await loader()
-    clearSectionIssue(key)
+    await loader(isCurrent)
+    if (isCurrent()) {
+      sectionLoaded[key] = true
+      clearSectionIssue(key)
+    }
   } catch (error) {
-    setSectionIssue(key, title, error)
+    if (isCurrent()) setSectionIssue(key, title, error)
+  } finally {
+    if (isCurrent()) sectionLoading[key] = false
   }
 }
 
@@ -1276,24 +1292,26 @@ const readKnowledgeTaskTotal = (response?: Awaited<ReturnType<typeof listKnowled
   response?.data?.total || 0
 
 const loadOverview = async () => {
-  const res = assertApiResponse(await getKnowledgeOverviewApi(), '知识库总览接口未返回有效数据。')
-  overview.value = res.data || emptyOverview()
+  await loadSection('overview', '知识库总览加载失败', async (isCurrent) => {
+    const res = assertApiResponse(await getKnowledgeOverviewApi(), '知识库总览接口未返回有效数据。')
+    if (!isCurrent()) return
+    overview.value = res.data || emptyOverview()
+  })
 }
 
 const loadProjectOptions = async () => {
-  try {
+  await loadSection('projects', '项目列表加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listWorkbenchProjectsApi('admin'),
       '项目列表接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     projects.value = res.data || []
-  } catch {
-    projects.value = []
-  }
+  })
 }
 
 const loadSources = async () => {
-  await loadSection('sources', '知识源加载失败', async () => {
+  await loadSection('sources', '知识源加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listKnowledgeSourcesApi({
         keyword: sourceFilters.keyword || undefined,
@@ -1304,12 +1322,13 @@ const loadSources = async () => {
       }),
       '知识源接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     sources.value = applyPagination(sourcePagination, res.data)
   })
 }
 
 const loadStandardFiles = async () => {
-  await loadSection('standardFiles', '标准规范文件加载失败', async () => {
+  await loadSection('standardFiles', '标准规范文件加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listKnowledgeProjectFilesApi({
         keyword: standardFileFilters.keyword || undefined,
@@ -1320,12 +1339,13 @@ const loadStandardFiles = async () => {
       }),
       '标准规范文件接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     standardFiles.value = applyPagination(standardFilePagination, res.data)
   })
 }
 
 const loadFiles = async () => {
-  await loadSection('files', '项目文件加载失败', async () => {
+  await loadSection('files', '项目文件加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listKnowledgeProjectFilesApi({
         keyword: fileFilters.keyword || undefined,
@@ -1337,12 +1357,13 @@ const loadFiles = async () => {
       }),
       '项目文件接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     files.value = applyPagination(filePagination, res.data)
   })
 }
 
 const loadTasks = async () => {
-  await loadSection('tasks', '任务中心加载失败', async () => {
+  await loadSection('tasks', '任务中心加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listKnowledgeTasksApi({
         taskType: taskFilters.taskType as KnowledgeTask['taskType'] | undefined,
@@ -1352,9 +1373,58 @@ const loadTasks = async () => {
       }),
       '任务中心接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     tasks.value = applyPagination(taskPagination, res.data)
   })
 }
+
+const loadTaskDetail = async (taskId: string) => {
+  const request = ++taskDetailRequest
+  taskDetailId.value = taskId
+  taskDetailVisible.value = true
+  taskDetailLoading.value = true
+  taskDetailIssue.value = undefined
+  taskDetail.value = undefined
+  try {
+    const res = assertApiResponse(await getKnowledgeTaskApi(taskId), '任务详情接口未返回有效数据。')
+    if (request !== taskDetailRequest) return
+    if (!res.data?.task) throw new Error('找不到此任务，任务可能已移除或当前账号无权查看。')
+    taskDetail.value = res.data.task
+  } catch (error) {
+    if (request === taskDetailRequest)
+      taskDetailIssue.value = { title: '无法打开指定任务', message: getErrorMessage(error) }
+  } finally {
+    if (request === taskDetailRequest) taskDetailLoading.value = false
+  }
+}
+
+const loadTaskFromRoute = async () => {
+  const taskId = routeQueryText('taskId')
+  if (taskId) await loadTaskDetail(taskId)
+}
+
+const openTaskDetail = (task: KnowledgeTask) => {
+  void router.replace({ path: '/knowledge/tasks', query: { ...route.query, taskId: task.id } })
+  void loadTaskDetail(task.id)
+}
+
+const closeTaskDetail = () => {
+  taskDetailRequest += 1
+  taskDetailLoading.value = false
+  taskDetailId.value = ''
+  if (route.path !== '/knowledge/tasks' || !route.query.taskId) return
+  const query = { ...route.query }
+  delete query.taskId
+  void router.replace({ path: route.path, query })
+}
+
+watch(
+  () => route.query.taskId,
+  () => {
+    if (route.path === '/knowledge/tasks' && routeQueryText('taskId') !== taskDetailId.value)
+      void loadTaskFromRoute()
+  }
+)
 
 const loadKnowledgeTopTaskCounts = async () => {
   const [vectorResult, failedResult] = await Promise.allSettled([
@@ -1362,14 +1432,14 @@ const loadKnowledgeTopTaskCounts = async () => {
     listKnowledgeTasksApi({ status: '失败', page: 1, pageSize: 1 })
   ])
 
-  if (vectorResult.status === 'fulfilled') {
+  if (vectorResult.status === 'fulfilled' && typeof vectorResult.value?.data?.total === 'number') {
     knowledgeTopTaskCounts.vectorTotal = readKnowledgeTaskTotal(vectorResult.value)
     knowledgeTopTaskCounts.vectorLoaded = true
   } else {
     knowledgeTopTaskCounts.vectorLoaded = false
   }
 
-  if (failedResult.status === 'fulfilled') {
+  if (failedResult.status === 'fulfilled' && typeof failedResult.value?.data?.total === 'number') {
     knowledgeTopTaskCounts.failedTotal = readKnowledgeTaskTotal(failedResult.value)
     knowledgeTopTaskCounts.failedLoaded = true
   } else {
@@ -1378,7 +1448,7 @@ const loadKnowledgeTopTaskCounts = async () => {
 }
 
 const loadRuleVersions = async () => {
-  await loadSection('rules', '规则版本加载失败', async () => {
+  await loadSection('rules', '规则版本加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listKnowledgeRuleVersionsApi({
         keyword: ruleFilters.keyword || undefined,
@@ -1388,21 +1458,40 @@ const loadRuleVersions = async () => {
       }),
       '规则版本接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     ruleVersions.value = applyPagination(rulePagination, res.data)
   })
 }
 
-const loadKnowledgeConfig = async () => {
-  await loadSection('config', '知识库配置加载失败', async () => {
+const loadKnowledgeConfig = async (discardDraft = false) => {
+  if (knowledgeConfigDirty.value && !discardDraft) return
+  await loadSection('config', '知识库配置加载失败', async (isCurrent) => {
     const res = assertApiResponse(await getKnowledgeConfigApi(), '知识库配置接口未返回有效数据。')
+    if (!isCurrent()) return
     if (res.data?.config) {
       Object.assign(knowledgeConfig, res.data.config)
+      knowledgeConfigSaved.value = JSON.stringify(knowledgeConfig)
     }
   })
 }
 
+const handleReloadKnowledgeConfig = async () => {
+  if (knowledgeConfigDirty.value) {
+    try {
+      await ElMessageBox.confirm('重新加载将丢弃当前未保存的配置修改。', '重新加载配置', {
+        confirmButtonText: '丢弃修改并加载',
+        cancelButtonText: '保留修改',
+        type: 'warning'
+      })
+    } catch {
+      return
+    }
+  }
+  await loadKnowledgeConfig(true)
+}
+
 const loadKnowledgeAuditLogs = async () => {
-  await loadSection('audit', '知识库审计加载失败', async () => {
+  await loadSection('audit', '知识库审计加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listKnowledgeAuditLogsApi({
         keyword: auditFilters.keyword || undefined,
@@ -1413,12 +1502,13 @@ const loadKnowledgeAuditLogs = async () => {
       }),
       '知识库审计接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     auditLogs.value = applyPagination(auditPagination, res.data)
   })
 }
 
 const loadReasoningLogs = async () => {
-  await loadSection('reasoning', '推理日志加载失败', async () => {
+  await loadSection('reasoning', '推理日志加载失败', async (isCurrent) => {
     const res = assertApiResponse(
       await listReasoningLogsApi({
         nodeId: reasoningFilters.nodeId,
@@ -1428,17 +1518,22 @@ const loadReasoningLogs = async () => {
       }),
       '推理日志接口未返回有效数据。'
     )
+    if (!isCurrent()) return
     reasoningLogs.value = applyPagination(reasoningPagination, res.data)
   })
 }
 
 const loadCompareRuns = async () => {
-  await loadSection('compare', '多模型历史加载失败', async () => {
+  await loadSection('compare', '多模型历史加载失败', async (isCurrent) => {
     const res = assertApiResponse(
-      await listLlmCompareRunsApi({ pageSize: 20 }),
+      await listLlmCompareRunsApi({
+        page: comparePagination.page,
+        pageSize: comparePagination.pageSize
+      }),
       '多模型历史接口未返回有效数据。'
     )
-    compareRuns.value = res.data?.items || []
+    if (!isCurrent()) return
+    compareRuns.value = applyPagination(comparePagination, res.data)
   })
 }
 
@@ -1454,6 +1549,7 @@ const loadPageIndexNodes = async (keyword = '') => {
       'PageIndex 节点接口未返回有效数据。'
     )
     pageIndexNodes.value = res.data?.items || []
+    pageIndexLoaded.value = true
   } catch (error) {
     setOperationIssue('pageIndex', buildOperationFailureMessage('PageIndex 节点加载'), error)
   } finally {
@@ -1465,11 +1561,11 @@ const loadData = async () => {
   loading.value = true
   pageIssue.value = undefined
   try {
-    const initialRequests: Array<Promise<unknown>> = [loadOverview(), loadKnowledgeTopTaskCounts()]
-    if (activeTab.value !== 'overview') {
-      initialRequests.push(Promise.resolve(loadKnowledgeTabData(activeTab.value)))
-    }
-    if (activeTab.value === 'files') initialRequests.push(loadProjectOptions())
+    const initialRequests: Array<Promise<unknown>> = [
+      Promise.resolve(loadKnowledgeTabData(activeTab.value)),
+      loadKnowledgeTopTaskCounts()
+    ]
+    if (activeTab.value !== 'overview') initialRequests.push(loadOverview())
     await Promise.all(initialRequests)
     if (
       !overview.value.metrics.length &&
@@ -1555,6 +1651,7 @@ const refreshKnowledgeState = async () => {
 }
 
 const openKnowledgeImportDialog = () => {
+  knowledgeImportResults.value = []
   clearOperationIssue('import')
   knowledgeImportDialogTitle.value = '从文件导入业务规则草稿'
   const now = new Date()
@@ -1626,11 +1723,17 @@ const handleImportKnowledgeFiles = async () => {
     ElMessage.warning('请选择业务规则文件')
     return
   }
+  if (hasDuplicateImportNames(knowledgeImportFiles.value, (file) => file.name)) {
+    ElMessage.warning('同批文件名称不能重复。请先重命名同名文件，再分别导入。')
+    return
+  }
+  const submittedFiles = [...knowledgeImportFiles.value]
   actionLoading.value = 'knowledge-import'
+  knowledgeImportResults.value = []
   clearOperationIssue('import')
   try {
     const res = await importBusinessRulesApi({
-      files: knowledgeImportFiles.value,
+      files: submittedFiles,
       importVersion: businessRuleImportVersion.value.trim()
     })
     if (!res) {
@@ -1638,14 +1741,27 @@ const handleImportKnowledgeFiles = async () => {
       return
     }
     const importedCount = res.data?.importedRules?.length || res.data?.rules?.length || 0
-    const skippedCount = res.data?.skipped?.length || 0
-    ElMessage.success(
-      `已导入 ${importedCount} 条业务规则草稿${skippedCount ? `，跳过 ${skippedCount} 个文件` : ''}`
+    const skipped = res.data?.skipped || []
+    knowledgeImportResults.value = buildImportResults(submittedFiles, skipped, (file) => file.name)
+    knowledgeImportFiles.value = submittedFiles.filter((file) =>
+      skipped.some((item) => item.fileName === file.name)
     )
-    knowledgeImportVisible.value = false
-    knowledgeImportFiles.value = []
+    if (skipped.length) {
+      ElMessage.warning(
+        `已导入 ${importedCount} 条业务规则，${skipped.length} 个文件未导入；请查看逐项原因后重试。`
+      )
+    } else {
+      ElMessage.success(`已导入 ${importedCount} 条业务规则草稿`)
+    }
     await Promise.all([loadRuleVersions(), loadKnowledgeAuditLogs()])
   } catch (error) {
+    const skipped = getImportSkippedFromError(error)
+    if (skipped.length)
+      knowledgeImportResults.value = buildImportResults(
+        submittedFiles,
+        skipped,
+        (file) => file.name
+      )
     setOperationIssue('import', buildOperationFailureMessage('业务规则导入'), error)
   } finally {
     actionLoading.value = ''
@@ -1726,6 +1842,7 @@ const openCreateSourceDialog = (
   context: 'source' | 'standard-file' | 'project-file' = 'source'
 ) => {
   clearOperationIssue('source')
+  sourceImportResults.value = []
   sourceDialogContext.value = context
   sourceDialogMode.value = 'create'
   sourceEditingId.value = ''
@@ -1743,9 +1860,25 @@ const openCreateSourceDialog = (
   sourceUploadProjectId.value = isProjectFileUpload ? getDefaultProjectFileUploadProjectId() : ''
   sourceUploadFiles.value = []
   sourceDialogVisible.value = true
+  if (isProjectFileUpload) void loadProjectOptions()
 }
 
 const handleImportRulesStandards = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '将清除默认标准源（KS-STANDARD-RULES）的现有文件及其 OCR、切片、向量和任务记录，再从系统预置标准重新导入。手动上传到此标准源的文件也会被清除；项目文件和其他知识源不受影响。此操作无法从页面撤销。',
+      '重置默认标准库',
+      {
+        type: 'warning',
+        confirmButtonText: '确认清除并重新导入',
+        cancelButtonText: '保留现有标准库',
+        closeOnClickModal: false,
+        autofocus: false
+      }
+    )
+  } catch {
+    return
+  }
   actionLoading.value = 'rules-standards-import'
   clearOperationIssue('source')
   try {
@@ -1777,6 +1910,7 @@ const handleImportRulesStandards = async () => {
 }
 
 const openEditSourceDialog = (row: KnowledgeSource) => {
+  sourceImportResults.value = []
   clearOperationIssue('source')
   sourceDialogContext.value = 'source'
   sourceDialogMode.value = 'edit'
@@ -1822,7 +1956,12 @@ const handleSaveSource = async () => {
     ElMessage.warning('请输入上传文件名称')
     return
   }
+  if (hasDuplicateImportNames(sourceUploadRows, (row) => row.fileName)) {
+    ElMessage.warning('同批文件名称不能重复，请修改文件名称后上传。')
+    return
+  }
   actionLoading.value = 'source-save'
+  sourceImportResults.value = []
   clearOperationIssue('source')
   try {
     if (sourceDialogMode.value === 'create') {
@@ -1862,23 +2001,24 @@ const handleSaveSource = async () => {
           return
         }
         const importedCount = res.data?.files?.length || 0
-        const skippedCount = res.data?.skipped?.length || 0
-        if (!importedCount && skippedCount) {
-          const skippedMessage =
-            res.data?.skipped?.map((item) => `${item.fileName}：${item.reason}`).join('；') ||
-            '文件未写入知识库。'
-          setOperationIssue('source', '知识源文件上传失败', new Error(skippedMessage))
-          return
-        }
-        ElMessage.success(
-          `${
-            isProjectFileUpload
-              ? '项目文件已上传'
-              : isStandardFileUpload
-                ? '标准规范文件已上传'
-                : '知识源已新增'
-          }，已上传 ${importedCount} 个文件${skippedCount ? `，跳过 ${skippedCount} 个` : ''}`
+        const skipped = res.data?.skipped || []
+        sourceImportResults.value = buildImportResults(
+          sourceUploadRows,
+          skipped,
+          (row) => row.fileName
         )
+        sourceUploadFiles.value = sourceUploadRows.filter((row) =>
+          skipped.some((item) => item.fileName === row.fileName.trim())
+        )
+        if (skipped.length) {
+          ElMessage.warning(
+            `已上传 ${importedCount} 个文件，${skipped.length} 个文件未导入；请查看逐项原因后重试。`
+          )
+        } else {
+          ElMessage.success(`已上传 ${importedCount} 个文件`)
+        }
+        await refreshKnowledgeState()
+        return
       } else {
         const res = await createKnowledgeSourceApi({ ...sourceForm, name: sourceName })
         if (!res) {
@@ -1954,8 +2094,46 @@ const handleToggleSourceStatus = async (row: KnowledgeSource) => {
   }
 }
 
-const getRollbackTargetVersion = (row: KnowledgeRuleVersion) =>
-  ruleVersions.value.find((item) => item.ruleKey === row.ruleKey && item.id !== row.id)?.version
+const loadRollbackCandidates = async () => {
+  const source = rollbackSource.value
+  if (!source) return
+  const request = ++rollbackRequest
+  rollbackLoading.value = true
+  rollbackIssue.value = undefined
+  rollbackSelectedId.value = ''
+  try {
+    const res = assertApiResponse(
+      await listKnowledgeRuleVersionsApi({
+        keyword: source.ruleKey,
+        page: rollbackPagination.page,
+        pageSize: rollbackPagination.pageSize
+      }),
+      '历史版本接口未返回有效数据。'
+    )
+    if (request !== rollbackRequest) return
+    rollbackCandidates.value = applyPagination(rollbackPagination, res.data).filter(
+      (item) =>
+        item.ruleKey === source.ruleKey &&
+        item.id !== source.id &&
+        ['已发布', '已回滚'].includes(item.status) &&
+        (!source.publishedAt || !item.publishedAt || item.publishedAt <= source.publishedAt)
+    )
+  } catch (error) {
+    if (request === rollbackRequest)
+      rollbackIssue.value = { title: '历史版本加载失败', message: getErrorMessage(error) }
+  } finally {
+    if (request === rollbackRequest) rollbackLoading.value = false
+  }
+}
+
+const openRollbackDialog = async (row: KnowledgeRuleVersion) => {
+  rollbackSource.value = row
+  rollbackSelectedId.value = ''
+  rollbackCandidates.value = []
+  rollbackPagination.page = 1
+  rollbackDialogVisible.value = true
+  await loadRollbackCandidates()
+}
 
 const ruleDisplayName = (row: KnowledgeRuleVersion) => row.inspectionItem || row.name
 
@@ -2265,15 +2443,14 @@ const handlePublishRule = async (row: KnowledgeRuleVersion) => {
   }
 }
 
-const handleRollbackRule = async (row: KnowledgeRuleVersion) => {
-  const targetVersion = getRollbackTargetVersion(row)
-  if (!targetVersion) {
-    ElMessage.warning('没有可回滚的目标版本')
+const handleRollbackRule = async () => {
+  const row = rollbackSource.value
+  const targetRule = rollbackCandidates.value.find((item) => item.id === rollbackSelectedId.value)
+  if (!row || !targetRule) {
+    ElMessage.warning('请先选择要恢复的历史版本')
     return
   }
-  const targetRule = ruleVersions.value.find(
-    (item) => item.ruleKey === row.ruleKey && item.version === targetVersion
-  )
+  const targetVersion = targetRule.version
   actionLoading.value = `rule-rollback-${row.id}`
   clearOperationIssue('rule')
   try {
@@ -2294,6 +2471,7 @@ const handleRollbackRule = async (row: KnowledgeRuleVersion) => {
       return
     }
     ElMessage.success(`${row.name} 已回滚到 ${targetVersion}`)
+    rollbackDialogVisible.value = false
     await Promise.all([loadRuleVersions(), loadKnowledgeAuditLogs()])
   } catch (error) {
     setOperationIssue('rule', buildOperationFailureMessage('规则版本回滚'), error)
@@ -2320,6 +2498,7 @@ const handleSaveKnowledgeConfig = async () => {
       return
     }
     if (res.data?.config) Object.assign(knowledgeConfig, res.data.config)
+    knowledgeConfigSaved.value = JSON.stringify(knowledgeConfig)
     ElMessage.success('知识库配置已保存')
     await loadKnowledgeAuditLogs()
   } catch (error) {
@@ -2712,6 +2891,7 @@ const handleRetryTask = async (row: KnowledgeTask) => {
       return
     }
     ElMessage.success(`${row.targetName} 已重新排队`)
+    if (taskDetailVisible.value && taskDetailId.value === row.id) await loadTaskDetail(row.id)
     await refreshKnowledgeState()
   } catch (error) {
     setOperationIssue('task', buildOperationFailureMessage('知识库任务重试'), error)
@@ -2734,6 +2914,7 @@ const handleCancelTask = async (row: KnowledgeTask) => {
       return
     }
     ElMessage.success(`${row.targetName} 已取消`)
+    if (taskDetailVisible.value && taskDetailId.value === row.id) await loadTaskDetail(row.id)
     await refreshKnowledgeState()
   } catch (error) {
     setOperationIssue('task', buildOperationFailureMessage('知识库任务取消'), error)
@@ -2848,9 +3029,8 @@ onMounted(() => {
       :refreshing="loading"
       brand-mark="知"
       title="AI 知识库管理"
-      :status="knowledgeRuntimeStatus"
       :status-tone="knowledgeRuntimeStatusTone"
-      search-placeholder="搜索条款、资料、PageIndex、检索 Trace"
+      search-placeholder="搜索标准、资料、条款与检索记录"
       search-scope="knowledge"
       task-area="knowledge"
       :user-label="knowledgeUserLabel"
@@ -2859,42 +3039,39 @@ onMounted(() => {
       right-toggle-label="运行摘要"
       right-collapsed-default
       boundary-collapsed-default
-      :top-stats="knowledgeTopStats"
+      :top-stats="
+        knowledgeTopStats.filter((stat) => stat.key === 'failedTasks' && Number(stat.value) > 0)
+      "
       :menu-title="ADMIN_MENU_TITLE"
       :menu-root="ADMIN_MENU_ROOT"
       :menu-sections="knowledgeShellMenuSections"
       :boundary-title="ADMIN_BOUNDARY_TITLE"
       :boundary-badge="ADMIN_BOUNDARY_BADGE"
       boundary-tone="green"
-      :boundary-rows="knowledgeShellBoundaryRows"
+      :boundary-rows="[]"
       right-title="运行状态"
-      :right-subtitle="knowledgeShellRightSubtitle"
-      :right-cards="knowledgeShellRightCards"
+      :right-cards="[]"
       @menu-select="handleKnowledgeMenuSelect"
       @top-stat-click="handleKnowledgeTopStatClick"
     >
       <div class="page-toolbar">
         <div>
-          <h1 class="page-title">AI 知识库管理</h1>
-          <div class="page-subtitle"
-            >知识工程审计台 · 追踪资料入库、OCR 切片、向量化、PageIndex 与引用质量</div
+          <h1 class="page-title">{{ knowledgePageTitles[activeTab] }}</h1>
+          <div v-if="activeTab === 'overview'" class="page-subtitle"
+            >管理标准与项目资料，检查处理状态，处理失败任务并验证检索结果</div
           >
         </div>
         <ElButton
+          v-if="activeTab === 'overview'"
           type="primary"
           :disabled="!!pageIssue"
           :loading="actionLoading === 'reindex-all'"
+          :icon="Refresh"
           @click="handleReindexAll"
         >
           重建索引
         </ElButton>
       </div>
-
-      <AuditSummaryGrid
-        v-if="canShowKnowledgeContent"
-        :cards="knowledgeAuditCards"
-        aria-label="知识工程审计摘要"
-      />
 
       <WorkbenchStateBanner
         v-if="pageIssue"
@@ -2906,6 +3083,14 @@ onMounted(() => {
         @action="handleRetryLoad"
       />
 
+      <div v-if="sectionIssues.overview" class="section-error" role="alert">
+        <div
+          ><strong>{{ sectionIssues.overview.title }}</strong
+          ><span>{{ sectionIssues.overview.message }} 各功能页仍可独立使用。</span></div
+        >
+        <ElButton :loading="sectionLoading.overview" @click="loadOverview">重试总览</ElButton>
+      </div>
+
       <div v-if="operationIssues.reindex && canShowKnowledgeContent" class="section-error">
         <div>
           <strong>{{ operationIssues.reindex.title }}</strong>
@@ -2916,145 +3101,177 @@ onMounted(() => {
           type="primary"
           plain
           :loading="actionLoading === 'reindex-all'"
+          :icon="Refresh"
           @click="handleReindexAll"
         >
           重试重建索引
         </ElButton>
       </div>
 
-      <details v-if="canShowKnowledgeContent" class="secondary-summary-collapse">
-        <summary>
-          <span>索引统计明细</span>
-          <small>摘要卡已展示核心状态，展开查看任务与索引计数</small>
+      <details
+        v-if="canShowKnowledgeContent && activeTab === 'config'"
+        :key="activeTab"
+        class="knowledge-governance knowledge-governance--secondary"
+        aria-label="索引诊断"
+      >
+        <summary class="governance-summary">
+          <span class="governance-summary-title">索引诊断</span>
+          <span class="governance-summary-status">
+            <StatusTag
+              :status="
+                { red: 'failed', blue: 'running', green: 'completed', gray: 'unknown' }[
+                  knowledgeRuntimeStatusTone
+                ]
+              "
+              :label="knowledgeRuntimeStatus"
+              effect="plain"
+            />
+            <span>{{ knowledgeGovernanceStatus }}</span>
+          </span>
+          <span class="governance-summary-action" aria-hidden="true"></span>
         </summary>
-        <div class="metric-grid">
-          <div
-            v-for="metric in metrics"
-            :key="metric.key"
-            :class="`metric-card metric-card--${metric.tone}`"
-          >
-            <span>{{ metric.label }}</span>
-            <strong>{{ metric.value }}</strong>
-          </div>
+        <div class="governance-detail">
+          <AuditSummaryGrid :cards="knowledgeAuditCards" aria-label="知识工程审计摘要" />
+          <details class="secondary-summary-collapse">
+            <summary>
+              <span>索引统计明细</span>
+              <small>摘要卡已展示核心状态，展开查看任务与索引计数</small>
+            </summary>
+            <div class="metric-grid">
+              <div
+                v-for="metric in metrics"
+                :key="metric.key"
+                :class="`metric-card metric-card--${metric.tone}`"
+              >
+                <span>{{ metric.label }}</span>
+                <strong>{{ metric.value }}</strong>
+              </div>
+            </div>
+          </details>
+
+          <ElCard v-if="knowledgeScorecard" shadow="never" class="panel">
+            <template #header>
+              <div class="panel-header">
+                <span>知识依据链治理评分</span>
+                <ElTag :type="knowledgeScorecard.ok ? 'success' : 'danger'" effect="plain">
+                  {{ knowledgeScorecard.ok ? '生产就绪' : '存在阻断' }}
+                </ElTag>
+              </div>
+            </template>
+            <div class="score-scope-notice" role="note" aria-label="评分口径说明">
+              <div>
+                <span>评分对象</span>
+                <strong>知识来源、切片索引、检索探针与引用链</strong>
+              </div>
+              <div>
+                <span>数据范围</span>
+                <strong>知识工程治理域，不代表 FDE 规范库向量完整度</strong>
+              </div>
+              <div>
+                <span>数据时间</span>
+                <strong>{{ knowledgeScoreUpdatedAt }}</strong>
+              </div>
+            </div>
+            <div class="scorecard-grid">
+              <div class="scorecard-item">
+                <span>总分</span>
+                <strong>{{ knowledgeScorecard.score }}/{{ knowledgeScorecard.targetScore }}</strong>
+              </div>
+              <div class="scorecard-item">
+                <span>评分域</span>
+                <strong>{{ knowledgeScorecardSections.length }}</strong>
+              </div>
+              <div class="scorecard-item">
+                <span>阻断项</span>
+                <strong>{{ knowledgeScorecard.blockers.length }}</strong>
+              </div>
+              <div class="scorecard-item">
+                <span>检索探针</span>
+                <strong>{{ knowledgeRetrievalProbeRows.length }}</strong>
+              </div>
+            </div>
+            <ElRow :gutter="12" class="mt-12">
+              <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+                <ElTable
+                  :data="knowledgeScorecardSections"
+                  border
+                  height="190"
+                  empty-text="暂无知识质量评分项"
+                >
+                  <ElTableColumn prop="name" label="评分域" min-width="140" show-overflow-tooltip />
+                  <ElTableColumn label="分数" width="105">
+                    <template #default="{ row }">{{ row.score }}/{{ row.maxScore }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="status" label="状态" width="95">
+                    <template #default="{ row }">
+                      <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
+                        {{ row.status }}
+                      </ElTag>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </ElCol>
+              <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+                <ElTable
+                  :data="knowledgeRetrievalProbeRows"
+                  border
+                  height="190"
+                  empty-text="暂无检索探针"
+                >
+                  <ElTableColumn
+                    prop="expectedRoute"
+                    label="期望路由"
+                    min-width="155"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn
+                    prop="selectedRoute"
+                    label="实际路由"
+                    min-width="155"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn prop="selectedClauseCount" label="条款" width="80" />
+                  <ElTableColumn prop="passed" label="结果" width="90">
+                    <template #default="{ row }">
+                      <ElTag :type="row.passed ? 'success' : 'danger'" effect="plain">
+                        {{ row.passed ? '通过' : '失败' }}
+                      </ElTag>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </ElCol>
+              <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+                <ElTable
+                  v-if="knowledgeScorecardBlockerRows.length"
+                  :data="knowledgeScorecardBlockerRows"
+                  border
+                  height="190"
+                >
+                  <ElTableColumn prop="id" label="#" width="64" />
+                  <ElTableColumn
+                    prop="blocker"
+                    label="阻断项"
+                    min-width="250"
+                    show-overflow-tooltip
+                  />
+                </ElTable>
+                <ElAlert
+                  v-else
+                  type="success"
+                  show-icon
+                  :closable="false"
+                  title="知识依据链未发现生产阻断项。"
+                />
+              </ElCol>
+            </ElRow>
+          </ElCard>
         </div>
       </details>
-
-      <ElCard v-if="canShowKnowledgeContent && knowledgeScorecard" shadow="never" class="panel">
-        <template #header>
-          <div class="panel-header">
-            <span>知识依据链治理评分</span>
-            <ElTag :type="knowledgeScorecard.ok ? 'success' : 'danger'" effect="plain">
-              {{ knowledgeScorecard.ok ? '生产就绪' : '存在阻断' }}
-            </ElTag>
-          </div>
-        </template>
-        <div class="score-scope-notice" role="note" aria-label="评分口径说明">
-          <div>
-            <span>评分对象</span>
-            <strong>知识来源、切片索引、检索探针与引用链</strong>
-          </div>
-          <div>
-            <span>数据范围</span>
-            <strong>知识工程治理域，不代表 FDE 规范库向量完整度</strong>
-          </div>
-          <div>
-            <span>数据时间</span>
-            <strong>{{ knowledgeScoreUpdatedAt }}</strong>
-          </div>
-        </div>
-        <div class="scorecard-grid">
-          <div class="scorecard-item">
-            <span>总分</span>
-            <strong>{{ knowledgeScorecard.score }}/{{ knowledgeScorecard.targetScore }}</strong>
-          </div>
-          <div class="scorecard-item">
-            <span>评分域</span>
-            <strong>{{ knowledgeScorecardSections.length }}</strong>
-          </div>
-          <div class="scorecard-item">
-            <span>阻断项</span>
-            <strong>{{ knowledgeScorecard.blockers.length }}</strong>
-          </div>
-          <div class="scorecard-item">
-            <span>检索探针</span>
-            <strong>{{ knowledgeRetrievalProbeRows.length }}</strong>
-          </div>
-        </div>
-        <ElRow :gutter="12" class="mt-12">
-          <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
-            <ElTable
-              :data="knowledgeScorecardSections"
-              border
-              height="190"
-              empty-text="暂无知识质量评分项"
-            >
-              <ElTableColumn prop="name" label="评分域" min-width="140" show-overflow-tooltip />
-              <ElTableColumn label="分数" width="105">
-                <template #default="{ row }">{{ row.score }}/{{ row.maxScore }}</template>
-              </ElTableColumn>
-              <ElTableColumn prop="status" label="状态" width="95">
-                <template #default="{ row }">
-                  <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
-                    {{ row.status }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-            </ElTable>
-          </ElCol>
-          <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
-            <ElTable
-              :data="knowledgeRetrievalProbeRows"
-              border
-              height="190"
-              empty-text="暂无检索探针"
-            >
-              <ElTableColumn
-                prop="expectedRoute"
-                label="期望路由"
-                min-width="155"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="selectedRoute"
-                label="实际路由"
-                min-width="155"
-                show-overflow-tooltip
-              />
-              <ElTableColumn prop="selectedClauseCount" label="条款" width="80" />
-              <ElTableColumn prop="passed" label="结果" width="90">
-                <template #default="{ row }">
-                  <ElTag :type="row.passed ? 'success' : 'danger'" effect="plain">
-                    {{ row.passed ? '通过' : '失败' }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-            </ElTable>
-          </ElCol>
-          <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
-            <ElTable
-              v-if="knowledgeScorecardBlockerRows.length"
-              :data="knowledgeScorecardBlockerRows"
-              border
-              height="190"
-            >
-              <ElTableColumn prop="id" label="#" width="64" />
-              <ElTableColumn prop="blocker" label="阻断项" min-width="250" show-overflow-tooltip />
-            </ElTable>
-            <ElAlert
-              v-else
-              type="success"
-              show-icon
-              :closable="false"
-              title="知识依据链未发现生产阻断项。"
-            />
-          </ElCol>
-        </ElRow>
-      </ElCard>
 
       <ElTabs v-if="canShowKnowledgeContent" v-model="activeTab" class="knowledge-tabs">
         <ElTabPane label="总览" name="overview">
           <ElRow :gutter="16">
-            <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
+            <ElCol class="overview-library-column" :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -3062,29 +3279,47 @@ onMounted(() => {
                     <ElTag type="info" effect="plain">{{ libraries.length }} 个库</ElTag>
                   </div>
                 </template>
+                <p class="index-count-note"
+                  >按知识库查看资料数量与可用状态，处理失败后可重建索引。</p
+                >
                 <ElTable
                   class="desktop-library-table"
                   :data="libraries"
+                  v-loading="sectionLoading.overview"
+                  :aria-busy="Boolean(sectionLoading.overview)"
                   border
-                  height="360"
+                  max-height="360"
                   empty-text="暂无知识库索引"
                 >
-                  <ElTableColumn prop="name" label="知识库" min-width="220" />
-                  <ElTableColumn prop="fileCount" label="文件" width="88" />
-                  <ElTableColumn prop="chunkCount" label="切片" width="100" />
-                  <ElTableColumn prop="vectorCount" label="向量" width="100" />
-                  <ElTableColumn label="向量化" min-width="160">
+                  <ElTableColumn label="知识库" min-width="180">
                     <template #default="{ row }">
-                      <ElProgress :percentage="vectorPercent(row)" :stroke-width="8" />
+                      <div class="library-metadata">
+                        <strong>{{ row.name }}</strong>
+                        <span>{{ row.fileCount }} 个文件</span>
+                        <span>更新：{{ row.updatedAt || '未取得' }}</span>
+                      </div>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="indexVersion" label="索引版本" width="150" />
-                  <ElTableColumn label="状态" width="100">
+                  <ElTableColumn label="索引详情" min-width="210">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                      <details class="index-record-details">
+                        <summary>查看记录数量</summary>
+                        <p>版本：{{ row.indexVersion || '未取得' }}</p>
+                        <KnowledgeIndexCounts
+                          :chunks="row.chunkCount"
+                          :vectors="row.vectorCount"
+                          :scale="libraryCountScale"
+                        />
+                      </details>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+
+                  <ElTableColumn label="状态" width="118">
+                    <template #default="{ row }">
+                      <StatusTag :status="row.status" effect="light">{{ row.status }}</StatusTag>
+                    </template>
+                  </ElTableColumn>
+
                   <ElTableColumn label="操作" width="110" fixed="right">
                     <template #default="{ row }">
                       <ElButton
@@ -3102,7 +3337,7 @@ onMounted(() => {
                   <article v-for="row in libraries" :key="row.key" class="mobile-library-card">
                     <header>
                       <strong>{{ row.name }}</strong>
-                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                      <StatusTag :status="row.status" effect="light">{{ row.status }}</StatusTag>
                     </header>
                     <dl>
                       <div>
@@ -3110,19 +3345,19 @@ onMounted(() => {
                         <dd>{{ row.fileCount }}</dd>
                       </div>
                       <div>
-                        <dt>切片 / 向量</dt>
-                        <dd>{{ row.chunkCount }} / {{ row.vectorCount }}</dd>
-                      </div>
-                      <div>
-                        <dt>索引版本</dt>
-                        <dd>{{ row.indexVersion || '--' }}</dd>
-                      </div>
-                      <div>
                         <dt>更新时间</dt>
                         <dd>{{ row.updatedAt || '--' }}</dd>
                       </div>
                     </dl>
-                    <ElProgress :percentage="vectorPercent(row)" :stroke-width="8" />
+                    <details class="index-record-details">
+                      <summary>查看索引记录数量</summary>
+                      <p>版本：{{ row.indexVersion || '未取得' }}</p>
+                      <KnowledgeIndexCounts
+                        :chunks="row.chunkCount"
+                        :vectors="row.vectorCount"
+                        :scale="libraryCountScale"
+                      />
+                    </details>
                     <ElButton
                       type="primary"
                       plain
@@ -3137,13 +3372,18 @@ onMounted(() => {
               </ElCard>
             </ElCol>
 
-            <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
+            <ElCol class="overview-source-column" :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>知识源</span>
                     <ElSpace>
-                      <ElTag type="success" effect="plain">{{ sources.length }} 个来源</ElTag>
+                      <ElTag type="success" effect="plain"
+                        >{{
+                          sectionLoaded.sources ? sourcePagination.total : '未取得'
+                        }}
+                        个来源（当前筛选）</ElTag
+                      >
                       <ElButton size="small" type="primary" @click="openCreateSourceDialog()">
                         新增
                       </ElButton>
@@ -3202,7 +3442,11 @@ onMounted(() => {
                     >刷新列表</ElButton
                   >
                 </div>
-                <div class="source-list">
+                <div
+                  class="source-list"
+                  v-loading="sectionLoading.sources"
+                  :aria-busy="Boolean(sectionLoading.sources)"
+                >
                   <div v-for="source in sources" :key="source.id" class="source-item">
                     <div>
                       <strong>{{ source.name }}</strong>
@@ -3212,12 +3456,12 @@ onMounted(() => {
                       >
                     </div>
                     <div class="source-actions">
-                      <ElTag :type="statusType(source.status)" effect="light">
+                      <StatusTag :status="source.status" effect="light">
                         {{ source.status }}
-                      </ElTag>
-                      <ElTag :type="statusType(source.vectorStatus)" effect="plain">
+                      </StatusTag>
+                      <StatusTag :status="source.vectorStatus" effect="plain">
                         {{ source.vectorStatus }}
-                      </ElTag>
+                      </StatusTag>
                       <ElButton link type="primary" @click="openEditSourceDialog(source)">
                         编辑
                       </ElButton>
@@ -3257,14 +3501,18 @@ onMounted(() => {
                 <ElSpace>
                   <ElTag effect="plain">{{ standardFilePagination.total }} 个标准规范</ElTag>
                   <ElButton
-                    type="success"
+                    type="danger"
                     plain
                     :loading="actionLoading === 'rules-standards-import'"
                     @click="handleImportRulesStandards"
                   >
-                    重新初始化标准库
+                    重置默认标准库
                   </ElButton>
-                  <ElButton type="primary" @click="openCreateSourceDialog('standard-file')">
+                  <ElButton
+                    :icon="Upload"
+                    type="primary"
+                    @click="openCreateSourceDialog('standard-file')"
+                  >
                     上传标准文件
                   </ElButton>
                 </ElSpace>
@@ -3275,7 +3523,13 @@ onMounted(() => {
                 <strong>{{ sectionIssues.standardFiles.title }}</strong>
                 <span>{{ sectionIssues.standardFiles.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadStandardFiles">
+              <ElButton
+                :icon="Refresh"
+                size="small"
+                type="primary"
+                plain
+                @click="loadStandardFiles"
+              >
                 重新加载
               </ElButton>
             </div>
@@ -3284,7 +3538,13 @@ onMounted(() => {
                 <strong>{{ operationIssues.source.title }}</strong>
                 <span>{{ operationIssues.source.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadStandardFiles">
+              <ElButton
+                :icon="Refresh"
+                size="small"
+                type="primary"
+                plain
+                @click="loadStandardFiles"
+              >
                 刷新列表
               </ElButton>
             </div>
@@ -3293,7 +3553,13 @@ onMounted(() => {
                 <strong>{{ operationIssues.file.title }}</strong>
                 <span>{{ operationIssues.file.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadStandardFiles">
+              <ElButton
+                :icon="Refresh"
+                size="small"
+                type="primary"
+                plain
+                @click="loadStandardFiles"
+              >
                 刷新列表
               </ElButton>
             </div>
@@ -3319,44 +3585,39 @@ onMounted(() => {
                 <ElOption label="待向量化" value="待向量化" />
                 <ElOption label="已向量化" value="已向量化" />
               </ElSelect>
-              <ElButton @click="loadStandardFiles">刷新</ElButton>
+              <ElButton :icon="Refresh" @click="loadStandardFiles">刷新</ElButton>
             </div>
-            <ElTable :data="standardFiles" border height="430" empty-text="暂无标准规范文件">
-              <ElTableColumn
-                prop="fileName"
-                label="标准规范"
-                min-width="280"
-                show-overflow-tooltip
-              />
-              <ElTableColumn label="来源路径" min-width="320" show-overflow-tooltip>
-                <template #default="{ row }">{{ standardFilePath(row) }}</template>
-              </ElTableColumn>
-              <ElTableColumn label="OCR" width="110">
+            <ElTable
+              :data="standardFiles"
+              v-loading="sectionLoading.standardFiles"
+              :aria-busy="Boolean(sectionLoading.standardFiles)"
+              border
+              height="430"
+              empty-text="暂无标准规范文件"
+            >
+              <ElTableColumn label="标准规范 / 来源" min-width="300">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.ocrStatus)" effect="light">{{
-                    row.ocrStatus
-                  }}</ElTag>
+                  <div class="file-list-metadata">
+                    <strong>{{ row.fileName }}</strong>
+                    <span class="file-source-path" :title="standardFilePath(row)">{{
+                      standardFilePath(row)
+                    }}</span>
+                    <span>更新：{{ row.updatedAt || '未取得' }}</span>
+                  </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="切片" width="110">
+              <ElTableColumn label="处理状态" width="210">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.sliceStatus)" effect="light">{{
-                    row.sliceStatus
-                  }}</ElTag>
+                  <div class="file-processing-states">
+                    <div><span>OCR</span><StatusTag :status="row.ocrStatus" size="small" /></div>
+                    <div><span>切片</span><StatusTag :status="row.sliceStatus" size="small" /></div>
+                    <div
+                      ><span>向量</span><StatusTag :status="row.vectorStatus" size="small"
+                    /></div>
+                  </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="向量" width="120">
-                <template #default="{ row }">
-                  <ElTag :type="statusType(row.vectorStatus)" effect="plain">
-                    {{ row.vectorStatus }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn label="切片/向量" width="120">
-                <template #default="{ row }">{{ row.chunkCount }} / {{ row.vectorCount }}</template>
-              </ElTableColumn>
-              <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-              <ElTableColumn label="操作" width="320" fixed="right">
+              <ElTableColumn label="操作" width="160" fixed="right">
                 <template #default="{ row }">
                   <div class="standard-file-actions">
                     <ElButton link type="primary" @click="handleOpenFile(row)">详情</ElButton>
@@ -3452,14 +3713,14 @@ onMounted(() => {
                   :value="status"
                 />
               </ElSelect>
-              <ElButton @click="loadRuleVersions">刷新</ElButton>
+              <ElButton :icon="Refresh" @click="loadRuleVersions">刷新</ElButton>
             </div>
             <div v-if="sectionIssues.rules" class="section-error">
               <div>
                 <strong>{{ sectionIssues.rules.title }}</strong>
                 <span>{{ sectionIssues.rules.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadRuleVersions">
+              <ElButton :icon="Refresh" size="small" type="primary" plain @click="loadRuleVersions">
                 重新加载
               </ElButton>
             </div>
@@ -3468,7 +3729,7 @@ onMounted(() => {
                 <strong>{{ operationIssues.rule.title }}</strong>
                 <span>{{ operationIssues.rule.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadRuleVersions">
+              <ElButton :icon="Refresh" size="small" type="primary" plain @click="loadRuleVersions">
                 刷新规则
               </ElButton>
             </div>
@@ -3481,73 +3742,89 @@ onMounted(() => {
                 重新导入
               </ElButton>
             </div>
-            <ElTable :data="ruleVersions" border height="430" empty-text="暂无业务规则">
-              <ElTableColumn label="序号" width="78">
+            <ElTable
+              :data="ruleVersions"
+              v-loading="sectionLoading.rules"
+              :aria-busy="Boolean(sectionLoading.rules)"
+              border
+              height="430"
+              empty-text="暂无业务规则"
+            >
+              <ElTableColumn label="序号" width="56">
                 <template #default="{ row }">{{
                   row.sourceSequence || row.nodeIds?.[0] || '-'
                 }}</template>
               </ElTableColumn>
-              <ElTableColumn
-                prop="inspectionCategory"
-                label="监检项目（大类）"
-                min-width="150"
-                show-overflow-tooltip
-              />
-              <ElTableColumn label="监检项目（内容）" min-width="220" show-overflow-tooltip>
-                <template #default="{ row }">{{ ruleDisplayName(row) }}</template>
+              <ElTableColumn label="监检项目" min-width="240">
+                <template #default="{ row }"
+                  ><div class="readable-table-cell">
+                    <strong>{{ ruleDisplayName(row) }}</strong>
+                    <span
+                      >{{ row.inspectionCategory || '未分类' }} · 类别
+                      {{ row.inspectionClass || row.reviewClass || '未提供' }}</span
+                    >
+                  </div></template
+                >
               </ElTableColumn>
-              <ElTableColumn label="类别" width="82">
-                <template #default="{ row }">{{
-                  row.inspectionClass || row.reviewClass || '-'
-                }}</template>
+              <ElTableColumn label="状态" width="118">
+                <template #default="{ row }"
+                  ><StatusTag :status="row.status" effect="light">{{
+                    row.status
+                  }}</StatusTag></template
+                >
               </ElTableColumn>
-              <ElTableColumn label="状态" width="100">
-                <template #default="{ row }">
-                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
-                </template>
+              <ElTableColumn label="判断依据与见证" min-width="300">
+                <template #default="{ row }"
+                  ><details class="rule-basis-details">
+                    <summary
+                      ><span class="rule-basis-preview">{{
+                        row.standardText || '未提供判断依据'
+                      }}</span
+                      ><span class="rule-basis-toggle">展开完整依据与见证</span></summary
+                    >
+                    <dl
+                      ><dt>判断准则 / 标准规范</dt><dd>{{ row.standardText || '未提供' }}</dd>
+                      <dt>方法及内容 / 工作见证</dt><dd>{{ row.witnessText || '未提供' }}</dd>
+                      <dt>版本 / 更新时间</dt
+                      ><dd
+                        >{{ row.version || '未提供版本' }} ·
+                        {{ row.updatedAt || '未提供更新时间' }}</dd
+                      >
+                    </dl>
+                  </details></template
+                >
               </ElTableColumn>
-              <ElTableColumn
-                prop="standardText"
-                label="判断准则 / 标准规范"
-                min-width="260"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="witnessText"
-                label="方法及内容 / 工作见证"
-                min-width="280"
-                show-overflow-tooltip
-              />
-              <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-              <ElTableColumn label="操作" width="230" fixed="right">
-                <template #default="{ row }">
-                  <ElButton
-                    link
-                    type="primary"
-                    :loading="actionLoading === `rule-fork-${row.id}`"
-                    @click="openEditRuleEditor(row)"
+              <ElTableColumn label="操作" width="180" fixed="right">
+                <template #default="{ row }"
+                  ><div class="rule-row-actions">
+                    <ElButton
+                      link
+                      type="primary"
+                      :loading="actionLoading === `rule-fork-${row.id}`"
+                      @click="openEditRuleEditor(row)"
+                    >
+                      {{ row.status === '草稿' || row.status === '待发布' ? '编辑' : '基于此编辑' }}
+                    </ElButton>
+                    <ElButton
+                      v-if="row.status === '草稿' || row.status === '待发布'"
+                      link
+                      type="primary"
+                      :loading="actionLoading === `rule-publish-${row.id}`"
+                      @click="handlePublishRule(row)"
+                    >
+                      发布
+                    </ElButton>
+                    <ElButton
+                      v-if="row.status === '已发布'"
+                      link
+                      type="warning"
+                      :loading="actionLoading === `rule-rollback-${row.id}`"
+                      @click="openRollbackDialog(row)"
+                    >
+                      回滚
+                    </ElButton>
+                    <ElButton link type="info" @click="handleOpenRuleDiff(row)">变更</ElButton></div
                   >
-                    {{ row.status === '草稿' || row.status === '待发布' ? '编辑' : '基于此编辑' }}
-                  </ElButton>
-                  <ElButton
-                    v-if="row.status === '草稿' || row.status === '待发布'"
-                    link
-                    type="primary"
-                    :loading="actionLoading === `rule-publish-${row.id}`"
-                    @click="handlePublishRule(row)"
-                  >
-                    发布
-                  </ElButton>
-                  <ElButton
-                    v-if="row.status === '已发布'"
-                    link
-                    type="warning"
-                    :loading="actionLoading === `rule-rollback-${row.id}`"
-                    @click="handleRollbackRule(row)"
-                  >
-                    回滚
-                  </ElButton>
-                  <ElButton link type="info" @click="handleOpenRuleDiff(row)">变更</ElButton>
                 </template>
               </ElTableColumn>
             </ElTable>
@@ -3568,12 +3845,20 @@ onMounted(() => {
 
         <ElTabPane label="配置审计" name="config">
           <ElRow :gutter="16">
-            <ElCol :xl="9" :lg="10" :md="24" :sm="24" :xs="24">
+            <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>知识库配置</span>
-                    <ElTag effect="plain">{{ knowledgeConfig.updatedAt || '未保存' }}</ElTag>
+                    <ElButton
+                      size="small"
+                      :loading="sectionLoading.config"
+                      @click="handleReloadKnowledgeConfig"
+                      >重新加载</ElButton
+                    >
+                    <ElTag effect="plain">{{
+                      knowledgeConfigDirty ? '有未保存修改' : knowledgeConfig.updatedAt || '未取得'
+                    }}</ElTag>
                   </div>
                 </template>
                 <div v-if="sectionIssues.config" class="section-error">
@@ -3581,7 +3866,7 @@ onMounted(() => {
                     <strong>{{ sectionIssues.config.title }}</strong>
                     <span>{{ sectionIssues.config.message }}</span>
                   </div>
-                  <ElButton size="small" type="primary" plain @click="loadKnowledgeConfig">
+                  <ElButton size="small" type="primary" plain @click="handleReloadKnowledgeConfig">
                     重新加载
                   </ElButton>
                 </div>
@@ -3600,7 +3885,12 @@ onMounted(() => {
                     重试保存
                   </ElButton>
                 </div>
-                <ElForm label-position="top" class="config-form">
+                <ElForm
+                  label-position="top"
+                  class="config-form"
+                  :disabled="!sectionLoaded.config || sectionLoading.config"
+                  v-loading="sectionLoading.config"
+                >
                   <ElFormItem label="Embedding 模型">
                     <ElInput v-model="knowledgeConfig.embeddingModel" />
                   </ElFormItem>
@@ -3621,14 +3911,21 @@ onMounted(() => {
                     <div>
                       <span>重排序</span>
                       <ElSwitch v-model="knowledgeConfig.rerankEnabled" />
+                      <p class="dialog-help">保存检索重排序策略；是否应用以检索执行记录为准。</p>
                     </div>
                     <div>
                       <span>证据严格模式</span>
                       <ElSwitch v-model="knowledgeConfig.evidenceStrictMode" />
+                      <p class="dialog-help"
+                        >记录证据完整性要求，并参与知识库就绪检查；正式结论仍需人工确认。</p
+                      >
                     </div>
                     <div>
                       <span>自动重建索引</span>
                       <ElSwitch v-model="knowledgeConfig.autoReindex" />
+                      <p class="dialog-help"
+                        >保存索引更新策略；保存不会立即重建索引。需立即更新请使用“重建索引”。</p
+                      >
                     </div>
                   </div>
                   <ElFormItem label="审计留存天数">
@@ -3644,7 +3941,7 @@ onMounted(() => {
                 </ElForm>
               </ElCard>
             </ElCol>
-            <ElCol :xl="15" :lg="14" :md="24" :sm="24" :xs="24">
+            <ElCol :xl="16" :lg="16" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -3668,7 +3965,7 @@ onMounted(() => {
                     <ElOption
                       v-for="item in auditObjectTypeOptions"
                       :key="item"
-                      :label="item"
+                      :label="adminAuditTypeLabels[item] || item"
                       :value="item"
                     />
                   </ElSelect>
@@ -3681,31 +3978,47 @@ onMounted(() => {
                     <ElOption label="成功" value="成功" />
                     <ElOption label="失败" value="失败" />
                   </ElSelect>
-                  <ElButton @click="loadKnowledgeAuditLogs">刷新</ElButton>
+                  <ElButton :icon="Refresh" @click="loadKnowledgeAuditLogs">刷新</ElButton>
                 </div>
                 <div v-if="sectionIssues.audit" class="section-error">
                   <div>
                     <strong>{{ sectionIssues.audit.title }}</strong>
                     <span>{{ sectionIssues.audit.message }}</span>
                   </div>
-                  <ElButton size="small" type="primary" plain @click="loadKnowledgeAuditLogs">
+                  <ElButton
+                    :icon="Refresh"
+                    size="small"
+                    type="primary"
+                    plain
+                    @click="loadKnowledgeAuditLogs"
+                  >
                     重新加载
                   </ElButton>
                 </div>
-                <ElTable :data="auditLogs" border height="392" empty-text="当前筛选下暂无审计日志">
-                  <ElTableColumn prop="createdAt" label="时间" width="170" />
-                  <ElTableColumn prop="actorName" label="人员" width="110" />
-                  <ElTableColumn prop="action" label="操作" min-width="160" show-overflow-tooltip />
-                  <ElTableColumn prop="objectType" label="对象" width="150" />
-                  <ElTableColumn
-                    prop="objectId"
-                    label="对象 ID"
-                    min-width="180"
-                    show-overflow-tooltip
-                  />
-                  <ElTableColumn label="结果" width="90">
+                <ElTable
+                  :data="auditLogs"
+                  v-loading="sectionLoading.audit"
+                  :aria-busy="Boolean(sectionLoading.audit)"
+                  border
+                  height="392"
+                  empty-text="当前筛选下暂无审计日志"
+                >
+                  <ElTableColumn prop="createdAt" label="时间" width="156" />
+                  <ElTableColumn prop="actorName" label="人员" width="100" />
+                  <ElTableColumn label="操作与对象" min-width="220">
+                    <template #default="{ row }"
+                      ><div class="readable-table-cell">
+                        <strong>{{ row.action }}</strong>
+                        <span>{{
+                          adminAuditTypeLabels[row.objectType] || row.objectType || '未提供对象类型'
+                        }}</span>
+                        <span>{{ row.objectId || '未提供对象编号' }}</span>
+                      </div></template
+                    >
+                  </ElTableColumn>
+                  <ElTableColumn label="结果" width="100">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.result)" effect="light">{{ row.result }}</ElTag>
+                      <StatusTag :status="row.result" effect="light">{{ row.result }}</StatusTag>
                     </template>
                   </ElTableColumn>
                 </ElTable>
@@ -3737,7 +4050,11 @@ onMounted(() => {
                 <span>项目文件知识库</span>
                 <ElSpace>
                   <ElTag effect="plain">{{ filePagination.total }} 个文件</ElTag>
-                  <ElButton type="primary" @click="openCreateSourceDialog('project-file')">
+                  <ElButton
+                    :icon="Upload"
+                    type="primary"
+                    @click="openCreateSourceDialog('project-file')"
+                  >
                     上传项目文件
                   </ElButton>
                 </ElSpace>
@@ -3752,6 +4069,7 @@ onMounted(() => {
               />
               <ElSelect
                 v-model="fileFilters.projectId"
+                :loading="sectionLoading.projects"
                 clearable
                 filterable
                 placeholder="按项目筛选"
@@ -3789,60 +4107,74 @@ onMounted(() => {
                 <ElOption label="向量化中" value="向量化中" />
                 <ElOption label="已向量化" value="已向量化" />
               </ElSelect>
-              <ElButton @click="loadFiles">筛选</ElButton>
+              <ElButton :icon="Filter" @click="loadFiles">筛选</ElButton>
+            </div>
+            <div v-if="sectionIssues.projects" class="section-error" role="alert">
+              <div
+                ><strong>{{ sectionIssues.projects.title }}</strong
+                ><span>项目选项可能不完整。{{ sectionIssues.projects.message }}</span></div
+              >
+              <ElButton :loading="sectionLoading.projects" @click="loadProjectOptions"
+                >重新加载项目</ElButton
+              >
             </div>
             <div v-if="sectionIssues.files" class="section-error">
               <div>
                 <strong>{{ sectionIssues.files.title }}</strong>
                 <span>{{ sectionIssues.files.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadFiles">重新加载</ElButton>
+              <ElButton :icon="Refresh" size="small" type="primary" plain @click="loadFiles"
+                >重新加载</ElButton
+              >
             </div>
             <div v-if="operationIssues.file" class="section-error">
               <div>
                 <strong>{{ operationIssues.file.title }}</strong>
                 <span>{{ operationIssues.file.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadFiles">刷新文件</ElButton>
+              <ElButton :icon="Refresh" size="small" type="primary" plain @click="loadFiles"
+                >刷新文件</ElButton
+              >
             </div>
-            <ElTable :data="files" border height="430" empty-text="暂无项目知识文件">
-              <ElTableColumn label="项目" min-width="220" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.projectName || '未绑定项目' }}</template>
-              </ElTableColumn>
-              <ElTableColumn prop="nodeId" label="节点" width="76" />
-              <ElTableColumn
-                prop="nodeName"
-                label="节点名称"
-                min-width="220"
-                show-overflow-tooltip
-              />
-              <ElTableColumn prop="fileName" label="文件" min-width="240" show-overflow-tooltip />
-              <ElTableColumn label="OCR" width="110">
+            <ElTable
+              :data="files"
+              v-loading="sectionLoading.files"
+              :aria-busy="Boolean(sectionLoading.files)"
+              border
+              height="430"
+              empty-text="暂无项目知识文件"
+            >
+              <ElTableColumn label="文件" min-width="260">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.ocrStatus)" effect="light">{{
-                    row.ocrStatus
-                  }}</ElTag>
+                  <div class="file-list-metadata">
+                    <strong>{{ row.fileName }}</strong>
+                    <span>更新：{{ row.updatedAt || '未取得' }}</span>
+                  </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="切片" width="110">
+              <ElTableColumn label="所属项目 / 节点" min-width="210">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.sliceStatus)" effect="light">{{
-                    row.sliceStatus
-                  }}</ElTag>
+                  <div class="file-list-metadata">
+                    <span class="file-project-name">{{ row.projectName || '未绑定项目' }}</span>
+                    <span
+                      >节点 {{ row.nodeId ?? '未绑定' }} ·
+                      {{ row.nodeName || '未取得节点名称' }}</span
+                    >
+                  </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="向量" width="120">
+              <ElTableColumn label="处理状态" width="210">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.vectorStatus)" effect="light">{{
-                    row.vectorStatus
-                  }}</ElTag>
+                  <div class="file-processing-states">
+                    <div><span>OCR</span><StatusTag :status="row.ocrStatus" size="small" /></div>
+                    <div><span>切片</span><StatusTag :status="row.sliceStatus" size="small" /></div>
+                    <div
+                      ><span>向量</span><StatusTag :status="row.vectorStatus" size="small"
+                    /></div>
+                  </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="切片/向量" width="120">
-                <template #default="{ row }">{{ row.chunkCount }} / {{ row.vectorCount }}</template>
-              </ElTableColumn>
-              <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-              <ElTableColumn label="操作" width="320" fixed="right">
+              <ElTableColumn label="操作" width="160" fixed="right">
                 <template #default="{ row }">
                   <div class="standard-file-actions">
                     <ElButton link type="primary" @click="handleOpenFile(row)">详情</ElButton>
@@ -3927,31 +4259,48 @@ onMounted(() => {
                 <ElOption label="失败" value="失败" />
                 <ElOption label="已取消" value="已取消" />
               </ElSelect>
-              <ElButton @click="loadTasks">刷新</ElButton>
+              <ElButton :icon="Refresh" @click="loadTasks">刷新</ElButton>
             </div>
             <div v-if="sectionIssues.tasks" class="section-error">
               <div>
                 <strong>{{ sectionIssues.tasks.title }}</strong>
                 <span>{{ sectionIssues.tasks.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadTasks">重新加载</ElButton>
+              <ElButton :icon="Refresh" size="small" type="primary" plain @click="loadTasks"
+                >重新加载</ElButton
+              >
             </div>
             <div v-if="operationIssues.task" class="section-error">
               <div>
                 <strong>{{ operationIssues.task.title }}</strong>
                 <span>{{ operationIssues.task.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadTasks">刷新任务</ElButton>
+              <ElButton :icon="Refresh" size="small" type="primary" plain @click="loadTasks"
+                >刷新任务</ElButton
+              >
             </div>
-            <ElTable :data="tasks" border height="430" empty-text="暂无 OCR 或向量任务">
-              <ElTableColumn prop="id" label="任务号" width="170" />
+            <ElTable
+              :data="tasks"
+              v-loading="sectionLoading.tasks"
+              :aria-busy="Boolean(sectionLoading.tasks)"
+              border
+              height="430"
+              empty-text="暂无 OCR 或向量任务"
+            >
+              <ElTableColumn label="任务号" width="170">
+                <template #default="{ row }"
+                  ><ElButton link type="primary" @click="openTaskDetail(row)">{{
+                    row.id
+                  }}</ElButton></template
+                >
+              </ElTableColumn>
               <ElTableColumn label="类型" width="110">
                 <template #default="{ row }">{{ taskTypeLabel(row.taskType) }}</template>
               </ElTableColumn>
               <ElTableColumn prop="targetName" label="目标" min-width="240" show-overflow-tooltip />
               <ElTableColumn label="状态" width="110">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                  <StatusTag :status="row.status" effect="light">{{ row.status }}</StatusTag>
                 </template>
               </ElTableColumn>
               <ElTableColumn label="进度" min-width="150">
@@ -4235,43 +4584,54 @@ onMounted(() => {
                 <ElOption label="失败" value="失败" />
                 <ElOption label="已人工确认" value="已人工确认" />
               </ElSelect>
-              <ElButton @click="loadReasoningLogs">刷新</ElButton>
+              <ElButton :icon="Refresh" @click="loadReasoningLogs">刷新</ElButton>
             </div>
             <div v-if="sectionIssues.reasoning" class="section-error">
               <div>
                 <strong>{{ sectionIssues.reasoning.title }}</strong>
                 <span>{{ sectionIssues.reasoning.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadReasoningLogs">
+              <ElButton
+                :icon="Refresh"
+                size="small"
+                type="primary"
+                plain
+                @click="loadReasoningLogs"
+              >
                 重新加载
               </ElButton>
             </div>
-            <ElTable :data="reasoningLogs" border height="430" empty-text="暂无推理日志">
-              <ElTableColumn prop="id" label="Run ID" width="190" />
-              <ElTableColumn prop="nodeId" label="节点" width="76" />
-              <ElTableColumn prop="subject" label="主题" min-width="220" show-overflow-tooltip />
-              <ElTableColumn prop="model" label="模型" width="110" />
-              <ElTableColumn
-                prop="promptVersion"
-                label="Prompt"
-                min-width="170"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="ruleVersion"
-                label="规则版本"
-                min-width="190"
-                show-overflow-tooltip
-              />
-              <ElTableColumn label="状态" width="110">
-                <template #default="{ row }">
-                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
-                </template>
+            <ElTable
+              :data="reasoningLogs"
+              v-loading="sectionLoading.reasoning"
+              :aria-busy="Boolean(sectionLoading.reasoning)"
+              border
+              height="430"
+              empty-text="暂无推理日志"
+            >
+              <ElTableColumn label="审查主题 / 运行编号" min-width="230">
+                <template #default="{ row }"
+                  ><div class="readable-table-cell">
+                    <strong>{{ row.subject || '未提供主题' }}</strong
+                    ><span>节点 {{ row.nodeId }} · {{ row.id }}</span>
+                  </div></template
+                >
               </ElTableColumn>
-              <ElTableColumn label="建议" min-width="260" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.suggestion?.opinionDraft }}</template>
+              <ElTableColumn label="状态" width="118">
+                <template #default="{ row }"
+                  ><StatusTag :status="row.status" effect="light">{{
+                    row.status
+                  }}</StatusTag></template
+                >
               </ElTableColumn>
-              <ElTableColumn prop="finishedAt" label="完成时间" width="170" />
+              <ElTableColumn label="建议" min-width="260">
+                <template #default="{ row }"
+                  ><div class="readable-table-cell">{{
+                    row.suggestion?.opinionDraft || '未提供审查建议'
+                  }}</div></template
+                >
+              </ElTableColumn>
+              <ElTableColumn prop="finishedAt" label="完成时间" width="154" />
               <ElTableColumn label="操作" width="90" fixed="right">
                 <template #default="{ row }">
                   <ElButton link type="primary" @click="handleOpenReasoningLog(row)">详情</ElButton>
@@ -4361,9 +4721,17 @@ onMounted(() => {
                     重新加载
                   </ElButton>
                 </div>
-                <div class="compare-history">
-                  <div
+                <p aria-live="polite"
+                  >共 {{ sectionLoaded.compare ? comparePagination.total : '未取得' }} 条历史记录</p
+                >
+                <div
+                  class="compare-history"
+                  v-loading="sectionLoading.compare"
+                  :aria-busy="Boolean(sectionLoading.compare)"
+                >
+                  <button
                     v-for="run in compareRuns"
+                    type="button"
                     :key="run.runId"
                     class="compare-history-item"
                     @click="handleOpenCompareRun(run)"
@@ -4372,8 +4740,19 @@ onMounted(() => {
                     <span
                       >{{ run.modelCodes.map(modelLabel).join(' / ') }} · {{ run.createdAt }}</span
                     >
-                  </div>
+                  </button>
                 </div>
+                <ElPagination
+                  v-if="comparePagination.total > comparePagination.pageSize"
+                  class="table-pagination"
+                  :current-page="comparePagination.page"
+                  :page-size="comparePagination.pageSize"
+                  :total="comparePagination.total"
+                  layout="total, prev, pager, next"
+                  @current-change="
+                    (page) => handlePageChange(comparePagination, loadCompareRuns, page)
+                  "
+                />
               </ElCard>
             </ElCol>
             <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
@@ -4430,6 +4809,127 @@ onMounted(() => {
         </ElTabPane>
       </ElTabs>
 
+      <ElDialog v-model="rollbackDialogVisible" title="选择规则回滚版本" width="min(760px, 94vw)">
+        <p v-if="rollbackSource"
+          >{{ rollbackSource.name }}（{{ rollbackSource.ruleKey }}）· 当前版本
+          {{ rollbackSource.version }}</p
+        >
+        <p
+          >请选择要恢复的历史版本。只显示同一规则中曾发布的其他版本；继续后还需填写原因并确认差异。</p
+        >
+        <div v-if="rollbackIssue" class="section-error" role="alert"
+          ><div
+            ><strong>{{ rollbackIssue.title }}</strong
+            ><span>{{ rollbackIssue.message }}</span></div
+          ><ElButton @click="loadRollbackCandidates">重试</ElButton></div
+        >
+        <ElTable
+          :data="rollbackCandidates"
+          v-loading="rollbackLoading"
+          border
+          empty-text="本页没有可回滚版本，可查看其他分页；草稿不能作为回滚目标。"
+        >
+          <ElTableColumn label="选择" width="80"
+            ><template #default="{ row }"
+              ><input
+                v-model="rollbackSelectedId"
+                type="radio"
+                name="rollback-version"
+                :value="row.id"
+                :aria-label="`选择版本 ${row.version}`" /></template
+          ></ElTableColumn>
+          <ElTableColumn prop="version" label="版本" min-width="150" />
+          <ElTableColumn prop="status" label="状态" width="118" />
+          <ElTableColumn prop="publishedAt" label="发布时间" min-width="170" />
+        </ElTable>
+        <ElPagination
+          v-if="rollbackPagination.total > rollbackPagination.pageSize"
+          class="table-pagination"
+          :current-page="rollbackPagination.page"
+          :page-size="rollbackPagination.pageSize"
+          :total="rollbackPagination.total"
+          layout="prev, pager, next"
+          @current-change="
+            (page) => handlePageChange(rollbackPagination, loadRollbackCandidates, page)
+          "
+        />
+        <template #footer
+          ><ElButton @click="rollbackDialogVisible = false">取消</ElButton
+          ><ElButton
+            type="warning"
+            :disabled="!rollbackSelectedId || rollbackLoading"
+            :loading="actionLoading.startsWith('rule-rollback-')"
+            @click="handleRollbackRule"
+            >预览所选版本的回滚影响</ElButton
+          ></template
+        >
+      </ElDialog>
+
+      <ElDrawer
+        v-model="taskDetailVisible"
+        title="任务详情"
+        size="min(640px, 94vw)"
+        @closed="closeTaskDetail"
+      >
+        <div
+          v-loading="taskDetailLoading"
+          :aria-busy="taskDetailLoading"
+          class="task-detail-content"
+        >
+          <p>任务号：{{ taskDetailId }}</p>
+          <div v-if="taskDetailIssue" class="section-error" role="alert">
+            <div
+              ><strong>{{ taskDetailIssue.title }}</strong
+              ><span>{{ taskDetailIssue.message }}</span></div
+            >
+            <ElButton :loading="taskDetailLoading" @click="loadTaskDetail(taskDetailId)"
+              >重试加载</ElButton
+            >
+          </div>
+          <ElDescriptions v-if="taskDetail" :column="1" border>
+            <ElDescriptionsItem label="目标">{{ taskDetail.targetName }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="类型">{{
+              taskTypeLabel(taskDetail.taskType)
+            }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="状态">{{ taskDetail.status }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="进度">{{ taskDetail.progress }}%</ElDescriptionsItem>
+            <ElDescriptionsItem label="错误">{{
+              taskDetail.errorMessage || '无'
+            }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="创建时间">{{ taskDetail.createdAt }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="结束时间">{{
+              taskDetail.finishedAt || '尚未结束'
+            }}</ElDescriptionsItem>
+          </ElDescriptions>
+          <div v-if="operationIssues.task" class="section-error" role="alert"
+            ><div
+              ><strong>{{ operationIssues.task.title }}</strong
+              ><span>{{ operationIssues.task.message }}</span></div
+            ></div
+          >
+          <ElSpace v-if="taskDetail" class="task-detail-actions">
+            <ElButton :loading="taskDetailLoading" @click="loadTaskDetail(taskDetailId)"
+              >刷新状态</ElButton
+            >
+            <ElButton
+              v-if="['失败', '已取消'].includes(taskDetail.status)"
+              type="primary"
+              :loading="actionLoading === `retry-${taskDetail.id}`"
+              @click="handleRetryTask(taskDetail)"
+              >重试任务</ElButton
+            >
+            <ElButton
+              v-if="taskDetail.status === '排队中'"
+              type="danger"
+              plain
+              :loading="actionLoading === `cancel-${taskDetail.id}`"
+              @click="handleCancelTask(taskDetail)"
+              >取消任务</ElButton
+            >
+          </ElSpace>
+        </div>
+      </ElDrawer>
+
       <ElDialog
         v-model="sourceDialogVisible"
         :title="
@@ -4443,7 +4943,7 @@ onMounted(() => {
         "
         width="min(780px, 94vw)"
       >
-        <ElForm label-position="top" class="source-form">
+        <ElForm label-position="top" class="source-form" :disabled="Boolean(actionLoading)">
           <div v-if="operationIssues.source" class="section-error local-operation-error">
             <div>
               <strong>{{ operationIssues.source.title }}</strong>
@@ -4458,6 +4958,21 @@ onMounted(() => {
             >
               重试保存
             </ElButton>
+          </div>
+          <div
+            v-if="sourceImportResults.length"
+            class="import-results"
+            role="status"
+            aria-live="polite"
+          >
+            <p
+              >本次导入结果。已导入的文件已从待上传列表移除；未导入的文件保留，修正原因后可重试。</p
+            >
+            <ElTable :data="sourceImportResults" border max-height="240">
+              <ElTableColumn prop="fileName" label="文件" min-width="180" />
+              <ElTableColumn prop="status" label="结果" width="90" />
+              <ElTableColumn prop="reason" label="说明" min-width="240" />
+            </ElTable>
           </div>
           <template v-if="sourceDialogContext === 'source'">
             <ElFormItem label="类别名称">
@@ -4480,9 +4995,23 @@ onMounted(() => {
             </ElFormItem>
           </template>
           <template v-if="sourceDialogMode === 'create'">
+            <div
+              v-if="sourceDialogContext === 'project-file' && sectionIssues.projects"
+              class="section-error"
+              role="alert"
+            >
+              <div
+                ><strong>{{ sectionIssues.projects.title }}</strong
+                ><span>项目选项可能不完整，请重试。{{ sectionIssues.projects.message }}</span></div
+              >
+              <ElButton :loading="sectionLoading.projects" @click="loadProjectOptions"
+                >重新加载项目</ElButton
+              >
+            </div>
             <ElFormItem v-if="sourceDialogContext === 'project-file'" label="所属项目">
               <ElSelect
                 v-model="sourceUploadProjectId"
+                :loading="sectionLoading.projects"
                 filterable
                 placeholder="选择项目"
                 class="full-width-control"
@@ -4613,13 +5142,20 @@ onMounted(() => {
           </template>
         </ElForm>
         <template #footer>
-          <ElButton @click="sourceDialogVisible = false">取消</ElButton>
+          <ElButton @click="sourceDialogVisible = false">{{
+            sourceImportResults.length ? '关闭' : '取消'
+          }}</ElButton>
           <ElButton
             type="primary"
             :loading="actionLoading === 'source-save'"
+            :disabled="
+              sourceDialogMode === 'create' &&
+              sourceImportResults.length > 0 &&
+              !sourceUploadFiles.length
+            "
             @click="handleSaveSource"
           >
-            保存
+            {{ sourceImportResults.length ? '重试剩余文件' : '保存' }}
           </ElButton>
         </template>
       </ElDialog>
@@ -4629,7 +5165,7 @@ onMounted(() => {
         :title="knowledgeFileDialogTitle"
         width="min(680px, 94vw)"
       >
-        <ElForm label-position="top" class="source-form">
+        <ElForm label-position="top" class="source-form" :disabled="Boolean(actionLoading)">
           <div v-if="operationIssues.file" class="section-error local-operation-error">
             <div>
               <strong>{{ operationIssues.file.title }}</strong>
@@ -4642,6 +5178,8 @@ onMounted(() => {
           <ElFormItem v-if="isProjectKnowledgeFile(standardFileEditing)" label="所属项目">
             <ElSelect
               v-model="standardFileForm.projectId"
+              :loading="sectionLoading.projects"
+              :disabled="standardFileDialogMode === 'replace'"
               filterable
               placeholder="选择项目"
               class="full-width-control"
@@ -4657,6 +5195,13 @@ onMounted(() => {
               </ElOption>
             </ElSelect>
           </ElFormItem>
+          <p
+            v-if="
+              standardFileDialogMode === 'replace' && isProjectKnowledgeFile(standardFileEditing)
+            "
+            class="dialog-help"
+            >替换版本保留所属项目。如需更改项目，请关闭后使用“编辑”操作。</p
+          >
           <ElFormItem label="来源路径">
             <ElInput
               v-model="standardFileForm.sourceRelativePath"
@@ -4709,7 +5254,7 @@ onMounted(() => {
         :title="knowledgeImportDialogTitle"
         width="min(760px, 94vw)"
       >
-        <ElForm label-position="top" class="source-form">
+        <ElForm label-position="top" class="source-form" :disabled="Boolean(actionLoading)">
           <div v-if="operationIssues.import" class="section-error local-operation-error">
             <div>
               <strong>{{ operationIssues.import.title }}</strong>
@@ -4724,6 +5269,21 @@ onMounted(() => {
             >
               重试导入
             </ElButton>
+          </div>
+          <div
+            v-if="knowledgeImportResults.length"
+            class="import-results"
+            role="status"
+            aria-live="polite"
+          >
+            <p
+              >本次导入结果。已导入的文件已从待上传列表移除；未导入的文件保留，修正原因后可重试。</p
+            >
+            <ElTable :data="knowledgeImportResults" border max-height="240">
+              <ElTableColumn prop="fileName" label="文件" min-width="180" />
+              <ElTableColumn prop="status" label="结果" width="90" />
+              <ElTableColumn prop="reason" label="说明" min-width="240" />
+            </ElTable>
           </div>
           <ElFormItem label="草稿版本号">
             <ElInput
@@ -4788,14 +5348,16 @@ onMounted(() => {
           </ElTable>
         </ElForm>
         <template #footer>
-          <ElButton @click="knowledgeImportVisible = false">取消</ElButton>
+          <ElButton @click="knowledgeImportVisible = false">{{
+            knowledgeImportResults.length ? '关闭' : '取消'
+          }}</ElButton>
           <ElButton
             type="primary"
             :disabled="!knowledgeImportFiles.length"
             :loading="actionLoading === 'knowledge-import'"
             @click="handleImportKnowledgeFiles"
           >
-            开始导入
+            {{ knowledgeImportResults.length ? '重试剩余文件' : '开始导入' }}
           </ElButton>
         </template>
       </ElDialog>
@@ -5060,9 +5622,9 @@ onMounted(() => {
               <ElDescriptionsItem label="节点">{{ reasoningDetail.log.nodeId }}</ElDescriptionsItem>
               <ElDescriptionsItem label="模型">{{ reasoningDetail.log.model }}</ElDescriptionsItem>
               <ElDescriptionsItem label="状态">
-                <ElTag :type="statusType(reasoningDetail.log.status)" effect="light">
+                <StatusTag :status="reasoningDetail.log.status" effect="light">
                   {{ reasoningDetail.log.status }}
-                </ElTag>
+                </StatusTag>
               </ElDescriptionsItem>
               <ElDescriptionsItem label="规则版本">
                 {{ reasoningDetail.log.ruleVersion }}
@@ -5165,9 +5727,9 @@ onMounted(() => {
             </ElTable>
             <ElDivider content-position="left">模型建议</ElDivider>
             <div class="reasoning-suggestion">
-              <ElTag :type="statusType(reasoningDetail.log.suggestion.result)" effect="light">
+              <StatusTag :status="reasoningDetail.log.suggestion.result" effect="light">
                 {{ reasoningDetail.log.suggestion.result }}
-              </ElTag>
+              </StatusTag>
               <p>{{ reasoningDetail.log.suggestion.opinionDraft }}</p>
               <ElSpace wrap>
                 <ElTag
@@ -5199,6 +5761,22 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.index-record-details summary {
+  cursor: pointer;
+  color: var(--el-color-primary);
+}
+
+.index-record-details summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+
+.index-record-details p {
+  margin: 8px 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
 .knowledge-page {
   min-height: 100vh;
   padding: 0;
@@ -5229,6 +5807,65 @@ onMounted(() => {
   color: #667085;
 }
 
+.knowledge-governance--secondary {
+  margin-bottom: 16px;
+  border-block: 1px solid var(--el-border-color-light);
+}
+
+.governance-summary {
+  display: flex;
+  min-height: 54px;
+  padding: 10px 0;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+  gap: 12px;
+  align-items: center;
+}
+
+.governance-summary::-webkit-details-marker {
+  display: none;
+}
+
+.governance-summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+
+.governance-summary-title {
+  flex-shrink: 0;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.governance-summary-status {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.governance-summary-action {
+  flex-shrink: 0;
+  color: var(--el-color-primary);
+}
+
+.governance-summary-action::after {
+  content: '展开';
+}
+
+.knowledge-governance[open] .governance-summary-action::after {
+  content: '收起';
+}
+
+.knowledge-governance--secondary .governance-detail {
+  padding-top: 8px;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -5242,7 +5879,7 @@ onMounted(() => {
   background: var(--aicheck-surface, #fff);
   border: 1px solid var(--aicheck-border, #d4deeb);
   border-radius: 8px;
-  box-shadow: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
+  box-shadow: none;
 }
 
 .secondary-summary-collapse summary {
@@ -5285,6 +5922,11 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.secondary-summary-collapse .metric-card {
+  border: 0;
+  background: transparent;
+}
+
 .secondary-summary-collapse .metric-grid {
   padding: 0 14px 14px;
   margin-bottom: 0;
@@ -5296,7 +5938,7 @@ onMounted(() => {
   background: var(--aicheck-surface, #fff);
   border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 8px;
-  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+  box-shadow: none;
 }
 
 .metric-card span {
@@ -5312,28 +5954,28 @@ onMounted(() => {
 }
 
 .metric-card--blue {
-  background: var(--aicheck-surface-soft, #f8fbff);
-  border-color: #cbdcf8;
+  background: var(--aicheck-surface, #fff);
+  border-color: var(--aicheck-border-soft, #e5ecf6);
 }
 
 .metric-card--green {
-  background: #f8fdf9;
-  border-color: #cfe8d7;
+  background: var(--aicheck-surface, #fff);
+  border-color: var(--aicheck-border-soft, #e5ecf6);
 }
 
 .metric-card--orange {
-  background: #fffaf0;
-  border-color: #f0dfb8;
+  background: var(--aicheck-surface, #fff);
+  border-color: var(--aicheck-border-soft, #e5ecf6);
 }
 
 .metric-card--red {
-  background: #fff7f7;
-  border-color: #efc8c8;
+  background: var(--aicheck-surface, #fff);
+  border-color: var(--aicheck-border-soft, #e5ecf6);
 }
 
 .metric-card--gray {
-  background: var(--aicheck-surface-muted, #f2f6fb);
-  border-color: #d7dde8;
+  background: var(--aicheck-surface, #fff);
+  border-color: var(--aicheck-border-soft, #e5ecf6);
 }
 
 .scorecard-grid {
@@ -5348,7 +5990,7 @@ onMounted(() => {
   gap: 10px;
   padding: 12px 14px;
   margin-bottom: 12px;
-  background: linear-gradient(135deg, #f4f8ff, #f8fbff);
+  background: var(--aicheck-surface-soft, #f8fbff);
   border-radius: 10px;
 }
 
@@ -5377,10 +6019,10 @@ onMounted(() => {
 .scorecard-item {
   min-height: 72px;
   padding: 12px;
-  background: var(--aicheck-surface-soft, #f8fbff);
-  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
-  border-radius: 8px;
-  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .scorecard-item span {
@@ -5403,6 +6045,28 @@ onMounted(() => {
   padding: 0 2px;
 }
 
+.library-metadata {
+  display: grid;
+  gap: 3px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.library-metadata strong {
+  font-weight: 600;
+}
+.library-metadata span {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
+}
+
+.index-count-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+
 .mobile-library-list {
   display: none;
 }
@@ -5414,7 +6078,7 @@ onMounted(() => {
   background: #fff;
   border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 12px;
-  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+  box-shadow: none;
 }
 
 .mobile-library-card header {
@@ -5473,10 +6137,15 @@ onMounted(() => {
 
 .panel-header {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
+}
+
+.panel-header > span:first-child {
+  flex-shrink: 0;
 }
 
 .panel-header.compact {
@@ -5676,6 +6345,50 @@ onMounted(() => {
   margin-left: 0;
 }
 
+.file-list-metadata {
+  display: grid;
+  gap: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.file-list-metadata strong {
+  font-weight: 600;
+}
+.file-list-metadata > span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.file-list-metadata .file-project-name {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+.file-source-path {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.file-processing-states {
+  display: grid;
+  gap: 5px;
+}
+.file-processing-states > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.file-processing-states > div > span:first-child {
+  width: 28px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.file-processing-states small {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
 .standard-file-actions {
   display: flex;
   flex-wrap: wrap;
@@ -5713,10 +6426,31 @@ onMounted(() => {
 }
 
 .compare-history-item {
+  width: 100%;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition:
     border-color 0.2s ease,
     background 0.2s ease;
+}
+
+.compare-history-item:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+
+.task-detail-content {
+  min-height: 180px;
+}
+.task-detail-actions {
+  margin-top: 16px;
+}
+.import-results {
+  margin-bottom: 16px;
+}
+.dialog-help {
+  color: var(--el-text-color-regular);
 }
 
 .compare-history-item:hover {
@@ -5747,6 +6481,64 @@ onMounted(() => {
   margin: 10px 0 0;
   line-height: 22px;
   color: #344054;
+}
+
+.readable-table-cell {
+  display: grid;
+  gap: 4px;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.readable-table-cell strong {
+  font-weight: 600;
+}
+.readable-table-cell span {
+  color: var(--el-text-color-regular);
+}
+.rule-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+.rule-row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.rule-basis-details {
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.rule-basis-details summary {
+  cursor: pointer;
+}
+.rule-basis-details summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+.rule-basis-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.rule-basis-toggle {
+  color: var(--el-color-primary);
+}
+.rule-basis-details[open] .rule-basis-toggle {
+  display: none;
+}
+.rule-basis-details dl {
+  margin: 12px 0 0;
+}
+.rule-basis-details dt {
+  margin-top: 10px;
+  font-weight: 600;
+}
+.rule-basis-details dd {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
 }
 
 .source-form :deep(.el-select),
@@ -5858,6 +6650,7 @@ onMounted(() => {
 
 .config-switch-list > div {
   display: flex;
+  flex-wrap: wrap;
   min-height: 44px;
   padding: 8px 10px;
   color: #344054;
@@ -5866,6 +6659,13 @@ onMounted(() => {
   border-radius: 8px;
   align-items: center;
   justify-content: space-between;
+}
+
+.config-switch-list .dialog-help {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .drawer-content {
@@ -5991,6 +6791,14 @@ onMounted(() => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
   line-height: 18px;
+}
+
+@media (width < 1600px) {
+  .overview-library-column,
+  .overview-source-column {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
 }
 
 @media (width <= 768px) {

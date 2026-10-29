@@ -58,5 +58,9 @@ assert.ok(
 )
 
 // 200 + code 401 伪装成 Blob 的情况要识别出来
-assert.ok(/instanceof Blob/.test(fn), '要校验拿回来的确实是 Blob')
-assert.ok(/includes\('json'\)/.test(fn), 'JSON 伪装成原文时要给出可读的提示')
+assert.ok(/await previewContentError\(/.test(fn), '必须校验原文响应内容后再创建预览地址')
+const contentCheckAt = fn.indexOf('await previewContentError(')
+assert.ok(
+  fn.indexOf('if (token !== previewLoadToken) return', contentCheckAt) > contentCheckAt,
+  '异步读取文件签名后也必须丢弃过期响应'
+)

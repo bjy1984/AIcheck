@@ -34,6 +34,10 @@ const props = defineProps({
   height: propTypes.oneOfType([Number, String]).def('500px')
 })
 
+const emit = defineEmits<{
+  (event: 'chart-click', payload: unknown): void
+}>()
+
 const isDark = computed(() => appStore.getIsDark)
 
 const theme = computed<boolean | 'auto'>(() => (unref(isDark) ? true : 'auto'))
@@ -79,6 +83,7 @@ const initChart = () => {
     height: Math.floor(rect.height)
   })
   echartRef?.setOption(unref(options))
+  echartRef.on('click', (params) => emit('chart-click', params))
   return true
 }
 

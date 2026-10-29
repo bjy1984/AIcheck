@@ -1,0 +1,283 @@
+{
+  "environment": "dist-uiux-followup-final + isolated in-memory real API + workflow-filter-extras; original before evidence uses dist-uiux-release",
+  "captures": [
+    {
+      "route": "/workbench/generic",
+      "title": "修前：待確認篩選殘留已採納詳情",
+      "file": "before-generic-stale-selection.jpg",
+      "status": "before-confirmed",
+      "reviewed": true,
+      "reviewNote": "待人工確認篩選只列出2筆待確認發現，下面仍顯示已採納發現詳情，目視確認錯誤。",
+      "limitations": [
+        "隔離記憶體示例，同既有tenant/project/node；未修改產品seed或授權。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-release"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "修前：證據篩選殘留無證據詳情",
+      "file": "before-generic-stale-evidence.jpg",
+      "status": "before-confirmed",
+      "reviewed": true,
+      "reviewNote": "有關聯證據篩選只列出2筆有證據發現，下面仍顯示無證據發現詳情，目視確認錯誤。",
+      "limitations": [
+        "隔離記憶體示例，同既有tenant/project/node；未修改產品seed或授權。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-release"
+    },
+    {
+      "route": "/workbench/inspection?projectId=P-2026-HDCP-001&view=list",
+      "title": "監檢工作台",
+      "file": "01-inspection.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "完整工作台、需處理節點與已提交資料分區可讀；等待載入完成後截圖，無殘留loading遮罩。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方工作台",
+      "file": "02-contractor.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "真實顯示待處理意見0、待提交1、審核中1；補正文件與可見意見口徑分開解釋。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方需補正文件篩選",
+      "file": "02b-contractor-corrections.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "點擊補正入口實際選中需補正，列表顯示1／3份文件，只列鋼管質量證明書；狀態與操作同列可見。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測工作台",
+      "file": "03-ndt.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "等待真實資料載入後顯示2份底片索引、1份記錄、2份報告及1項待補正，與已上傳文件0分開呈現。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方工作台",
+      "file": "04-owner.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "只讀邊界明確，6個授權節點，報告版本0、歸檔資料2；沒有虛構可查看報告。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方歸檔類型中文與欄寬",
+      "file": "04b-owner-archive-types.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "類型欄完整顯示「報告」「證據資料」，沒有raw report/evidence或英文拆行；名稱、日期及操作可讀。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方最新歸檔摘要",
+      "file": "04c-owner-latest-archive.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "最近歸檔正確顯示時間較晚的「節點24證據定位包.zip」，沒有錯取先傳入的較舊報告；報告空態仍如實顯示。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方實際活動與主區摘要",
+      "file": "04d-owner-activity.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "09:45證據包、09:40報告、09:30項目更新依實際時間排列；主區過程資料包與最新歸檔摘要一致。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用資料審查工作台",
+      "file": "05-generic.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "最終版完整總覽正常載入；隔離示例共3筆發現，其中2筆待確認，已採納記錄不被誤算為待確認。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "已採納發現篩選前詳情",
+      "file": "05b-generic-selected-accepted.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "全部發現中開啟已採納示例，可清楚辨識它的已採納狀態和隔離用途，為排除測試建立可見前置狀態。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "待確認篩選移除已採納詳情",
+      "file": "05c-generic-pending-clears-detail.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "從待確認入口切換後僅列2筆待確認發現，已採納詳情移除（heading count=0），側欄同步高亮人工確認。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "無證據發現篩選前詳情",
+      "file": "05d-generic-selected-no-evidence.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "先開啟尚未關聯證據的示例，0筆證據及待人工確認狀態明確，為第二個排除測試建立前置狀態。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "證據篩選移除無證據詳情與同步導航",
+      "file": "05e-generic-evidence-clears-detail.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "下拉改成有關聯證據後只列2筆有引用發現，無證據詳情移除（heading count=0），側欄同步高亮證據鏈路。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "全部發現篩選同步導航",
+      "file": "05f-generic-all-navigation.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "下拉回全部發現後顯示3筆、側欄高亮AI發現；恢復可見的原選取可呈現詳情，不會展示被當前篩選排除的內容。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final"
+    }
+  ],
+  "coverage": {
+    "mainRoutes": 5,
+    "finalCaptures": 14,
+    "beforeCaptures": 2,
+    "intermediateExcluded": true
+  }
+}

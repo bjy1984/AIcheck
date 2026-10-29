@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getStatusTagType } from '../status'
 import { ref, watch } from 'vue'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { ElButton, ElCard, ElEmpty, ElTag } from 'element-plus'
@@ -20,6 +21,8 @@ export type ContractorFeedbackRow = {
 const props = defineProps<{
   items: ContractorFeedbackRow[]
   readOnly?: boolean
+  loading?: boolean
+  issue?: string
 }>()
 
 const emit = defineEmits<{
@@ -46,11 +49,7 @@ const toggle = (id: string) => {
   expandedId.value = expandedId.value === id ? '' : id
 }
 
-const tagType = (status: string) => {
-  if (status.includes('关闭') || status.includes('通过')) return 'success'
-  if (status.includes('待')) return 'warning'
-  return 'primary'
-}
+const tagType = getStatusTagType
 </script>
 
 <template>
@@ -62,7 +61,12 @@ const tagType = (status: string) => {
           <p>优先处理待补正意见，上传资料时自动带入对应意见。</p>
         </div>
         <span class="feedback-count">
-          {{ items.filter((item) => item.sourceStatus === '待反馈').length }} 项待处理
+          <template v-if="loading || issue">{{
+            loading ? '更新中' : '待处理数量暂不可用'
+          }}</template>
+          <template v-else
+            >{{ items.filter((item) => item.sourceStatus === '待反馈').length }} 项待处理</template
+          >
         </span>
       </div>
     </template>
@@ -129,7 +133,17 @@ const tagType = (status: string) => {
         </div>
       </article>
     </div>
-    <ElEmpty v-else :image-size="56" description="暂无监检审查意见" />
+    <ElEmpty
+      v-else
+      :image-size="56"
+      :description="
+        issue
+          ? '补正清单加载失败，请重试'
+          : loading
+            ? '正在加载全项目补正清单…'
+            : '暂无监检审查意见'
+      "
+    />
   </ElCard>
 </template>
 
@@ -147,6 +161,20 @@ const tagType = (status: string) => {
 
 .contractor-feedback-panel :deep(.el-card__body) {
   padding: 10px 14px 14px;
+}
+
+@media (width <= 767px) {
+  .contractor-feedback-panel :deep(.el-empty) {
+    padding: 8px 0;
+  }
+
+  .contractor-feedback-panel :deep(.el-empty__image) {
+    display: none;
+  }
+
+  .contractor-feedback-panel :deep(.el-empty__description) {
+    margin-top: 0;
+  }
 }
 
 .panel-head {

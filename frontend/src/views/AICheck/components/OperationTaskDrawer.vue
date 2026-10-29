@@ -17,6 +17,8 @@ import { useRouter } from 'vue-router'
 import { cancelKnowledgeTaskApi, listOperationTasksApi, retryKnowledgeTaskApi } from '@/api/aicheck'
 import type { OperationArea, OperationTask } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { useUserStore } from '@/store/modules/user'
+import { getRoleDefaultPath } from '@/utils/roleAccess'
 
 const props = defineProps<{
   area?: OperationArea
@@ -24,6 +26,10 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const userStore = useUserStore()
+const showTaskDiagnostics = computed(() =>
+  ['admin', 'fde'].includes(userStore.getUserInfo?.role || '')
+)
 const visible = ref(false)
 const loading = ref(false)
 const actionLoading = ref('')
@@ -49,8 +55,19 @@ const taskTypeLabels: Record<string, string> = {
   export: '导出任务'
 }
 
+const taskTypeLabel = (type: string) => {
+  if (showTaskDiagnostics.value) return taskTypeLabels[type] || type
+  if (['ocr_or_index', 'ocr', 'ocr_pipeline'].includes(type)) return '资料处理'
+  return taskTypeLabels[type] || '处理任务'
+}
+
 const formatElapsed = (seconds?: number | null) => {
-  if (seconds == null) return '--'
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '--'
+  seconds = Math.floor(seconds)
+  if (seconds >= 86400)
+    return `${Math.floor(seconds / 86400)} 天 ${Math.floor((seconds % 86400) / 3600)} 小时`
+  if (seconds >= 3600)
+    return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分`
   if (seconds < 60) return `${seconds} 秒`
   const minutes = Math.floor(seconds / 60)
   const remainder = seconds % 60
@@ -129,7 +146,7 @@ const taskRoute = (task: OperationTask) => {
   if (task.area === 'fde') return `/fde/review-runs?reviewRunId=${task.id}`
   if (task.area === 'admin') return '/admin/audit'
   if (task.area === 'workbench' && task.projectId) {
-    return `/workbench/${router.currentRoute.value.params.role || 'inspection'}?projectId=${task.projectId}`
+    return `${getRoleDefaultPath(userStore.getUserInfo?.role)}?projectId=${encodeURIComponent(task.projectId)}`
   }
   return ''
 }
@@ -217,10 +234,7 @@ onBeforeUnmount(() => {
         <div class="task-row-head">
           <div>
             <strong :title="task.targetLabel">{{ task.targetLabel }}</strong>
-            <span
-              >{{ taskTypeLabels[task.taskType] || task.taskType }} ·
-              {{ areaLabels[task.area] }}</span
-            >
+            <span>{{ taskTypeLabel(task.taskType) }} · {{ areaLabels[task.area] }}</span>
           </div>
           <ElTag :type="statusType(task)" effect="light">{{ task.status }}</ElTag>
         </div>
@@ -234,45 +248,57 @@ onBeforeUnmount(() => {
         />
         <dl class="task-meta">
           <div
-            ><dt>任务 ID</dt><dd>{{ task.id }}</dd></div
-          >
-          <div
-            ><dt>Operation ID</dt><dd>{{ task.operationId || '--' }}</dd></div
-          >
-          <div
             ><dt>更新时间</dt><dd>{{ task.updatedAt || task.createdAt || '--' }}</dd></div
           >
-          <div v-if="task.stageLabel || task.stage"
-            ><dt>当前阶段</dt><dd>{{ task.stageLabel || task.stage }}</dd></div
+          <div v-if="task.stageLabel"
+            ><dt>当前阶段</dt><dd>{{ task.stageLabel }}</dd></div
           >
           <div v-if="task.queuePosition"
             ><dt>排队位置</dt><dd>第 {{ task.queuePosition }} 位</dd></div
           >
-          <div
+          <div v-if="task.elapsedSeconds != null"
             ><dt>已用时间</dt><dd>{{ formatElapsed(task.elapsedSeconds) }}</dd></div
-          >
-          <div v-if="task.attempt"
-            ><dt>执行次数</dt><dd>{{ task.attempt }}</dd></div
           >
           <div v-if="task.pageProgress?.total"
             ><dt>页面进度</dt
             ><dd>{{ task.pageProgress.completed || 0 }} / {{ task.pageProgress.total }}</dd></div
           >
-          <div v-if="task.provider || task.model"
-            ><dt>识别服务</dt><dd>{{ task.provider || '--' }} · {{ task.model || '--' }}</dd></div
-          >
-          <div v-if="task.callCount"
-            ><dt>调用次数</dt><dd>{{ task.callCount }}</dd></div
-          >
-          <div v-if="task.costCny != null"
-            ><dt>累计费用</dt><dd>{{ formatCost(task.costCny) }}</dd></div
-          >
-          <div v-if="task.lastHeartbeatAt"
-            ><dt>最近心跳</dt><dd>{{ task.lastHeartbeatAt }}</dd></div
-          >
         </dl>
+        <details v-if="showTaskDiagnostics" class="task-diagnostics">
+          <summary>执行详情</summary>
+          <dl class="task-meta">
+            <div
+              ><dt>任务编号</dt><dd>{{ task.id }}</dd></div
+            >
+            <div v-if="task.operationId"
+              ><dt>操作编号</dt><dd>{{ task.operationId }}</dd></div
+            >
+            <div v-if="task.stage && !task.stageLabel"
+              ><dt>执行阶段</dt><dd>{{ task.stage }}</dd></div
+            >
+            <div v-if="task.attempt"
+              ><dt>执行次数</dt><dd>{{ task.attempt }}</dd></div
+            >
+            <div v-if="task.provider || task.model"
+              ><dt>识别服务</dt><dd>{{ task.provider || '--' }} · {{ task.model || '--' }}</dd></div
+            >
+            <div v-if="task.callCount"
+              ><dt>调用次数</dt><dd>{{ task.callCount }}</dd></div
+            >
+            <div v-if="task.costCny != null"
+              ><dt>累计费用</dt><dd>{{ formatCost(task.costCny) }}</dd></div
+            >
+            <div v-if="task.lastHeartbeatAt"
+              ><dt>最近心跳</dt><dd>{{ task.lastHeartbeatAt }}</dd></div
+            >
+          </dl>
+        </details>
         <p v-if="task.providerWaitReason" class="task-provider-wait" role="status">
-          正在等待识别服务：{{ task.providerWaitReason }}
+          {{
+            showTaskDiagnostics
+              ? `正在等待识别服务：${task.providerWaitReason}`
+              : '资料处理尚未完成，完成后会更新状态。'
+          }}
         </p>
         <p v-if="task.errorSummary" class="task-failure">{{ task.errorSummary }}</p>
         <div v-if="task.blockingReasons?.length" class="task-blockers" role="status">
@@ -282,7 +308,9 @@ onBeforeUnmount(() => {
               v-for="(reason, index) in task.blockingReasons"
               :key="`${task.id}-blocker-${index}`"
             >
-              {{ reason.message || reason.code || '需要人工复核' }}
+              {{
+                reason.message || (showTaskDiagnostics ? reason.code : '') || '需要处理，请查看详情'
+              }}
             </li>
           </ul>
         </div>
@@ -316,6 +344,18 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.task-diagnostics {
+  margin: 10px 0;
+  color: var(--el-text-color-regular);
+}
+.task-diagnostics summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.task-diagnostics summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
 .task-toolbar,
 .task-row-head,
 .task-actions {

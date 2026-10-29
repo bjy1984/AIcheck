@@ -1,0 +1,54 @@
+{
+  "verifiedAt": "2026-10-29T07:54:57.954879+00:00",
+  "build": "dist-role-content-focus",
+  "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+  "routes": 44,
+  "captures": 68,
+  "allCapturesVisuallyReviewed": true,
+  "allCapturesAfterFinalBuild": true,
+  "groups": {
+    "admin": {
+      "routes": 13,
+      "captures": 13
+    },
+    "knowledge": {
+      "routes": 10,
+      "captures": 13
+    },
+    "fde": {
+      "routes": 16,
+      "captures": 24
+    },
+    "workflows": {
+      "routes": 5,
+      "captures": 18
+    }
+  },
+  "checks": {
+    "unitTestFiles": {
+      "passed": 133,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "changedFilesESLint": "passed",
+    "staticOperability": {
+      "passed": true,
+      "scannedFiles": 641,
+      "findings": 0
+    }
+  },
+  "limitations": [
+    "真實API搭配隔離記憶體示例資料，未部署或寫入正式資料。",
+    "部分示例缺少真實原文、歷史對話或人工意見，已確認缺失提示，不能據此宣稱正向原文或模型流程通過。",
+    "盲審非空列表使用明示的隔離未判任務，未製造AI、常規或盲審判定。",
+    "FDE任務中心示例為0項，執行詳情的角色條件由正式元件回歸覆蓋。",
+    "固定歷史任務時間造成長耗時，只驗證格式，不作效能結論。"
+  ],
+  "gallery": {
+    "url": "http://127.0.0.1:4195/role-content-focus/index.html",
+    "searchAndGroupFilter": "passed",
+    "deliverableTabOpened": true
+  },
+  "testServerCleanup": "completed; static evidence gallery retained"
+}

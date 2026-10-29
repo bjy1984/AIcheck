@@ -1,0 +1,15 @@
+{
+  "backendRoutes": 44,
+  "accountRoutes": 4,
+  "screenshots": 113,
+  "currentScreenshots": 107,
+  "priorEvidence": 6,
+  "unitTests": "118 passed; before fix 117 passed / 1 failed",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "eslint": "passed",
+  "gallerySearch": "passed: 盲審=1 current image; auth=4",
+  "screenshotFormat": "all 113 indexed images are JPEG",
+  "backendCaptureServers": "stopped",
+  "gallery": "http://127.0.0.1:4185/index.html"
+}

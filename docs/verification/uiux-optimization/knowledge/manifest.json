@@ -1,0 +1,390 @@
+{
+  "environment": "production build + isolated in-memory demo API",
+  "baseUrl": "http://127.0.0.1:4187/",
+  "captureTool": "CUA Chrome",
+  "imageFormat": "JPEG",
+  "reviewedOn": "2026-10-28",
+  "timezone": "America/Los_Angeles",
+  "routeCount": 10,
+  "captureCount": 21,
+  "defaultViewport": {
+    "width": 1470,
+    "height": 692
+  },
+  "captures": [
+    {
+      "route": "/knowledge/overview",
+      "title": "知識庫總覽",
+      "file": "overview.jpg",
+      "reviewed": true,
+      "reviewNote": "總覽保留共用治理卡；向量與章節狀態明示未取得，索引明細預設收起。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準規範庫",
+      "file": "sources.jpg",
+      "reviewed": true,
+      "reviewNote": "折疊列保留1個失敗任務與未知狀態，62個標準規範的搜尋及主要操作在首屏可見。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "寬表部分欄位需橫向捲動；不是全部欄位同屏驗收。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準規範庫：展開治理摘要",
+      "file": "sources-summary-expanded.jpg",
+      "reviewed": true,
+      "reviewNote": "展開摘要後核心治理資料完整可見，折疊列改為收起。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準原文 PDF 預覽",
+      "file": "sources-detail.jpg",
+      "reviewed": true,
+      "reviewNote": "Chrome 實際顯示 GB 50235–2010 PDF 封面與第1/129頁；新頁開原文及下載入口可辨認。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "標準 canonical 詳情仍未生成；本張未驗證全129頁。",
+        "先前 IAB 白區與 Chrome 成功渲染不同，不能據此歸因缺原文或聲稱跨瀏覽器 PDF 渲染全部修復。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/files",
+      "title": "項目文件知識庫",
+      "file": "files.jpg",
+      "reviewed": true,
+      "reviewNote": "9個文件及項目、節點、狀態篩選在首屏可見，治理摘要保留未知狀態。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "寬表可橫向捲動，長節點名稱使用省略顯示。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/files",
+      "title": "項目原文缺失提示",
+      "file": "files-preview-error.jpg",
+      "reviewed": true,
+      "reviewNote": "原文 NOT_FOUND 明示不可直接預覽或下載，提供重新加載；OCR缺少可追溯結果的提示保留。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "示例項目原文仍不存在；此張證明錯誤呈現與恢復入口，沒有宣稱文件本身已修復。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/tasks",
+      "title": "OCR／向量任務中心",
+      "file": "tasks.jpg",
+      "reviewed": true,
+      "reviewNote": "任務清單及篩選首屏可見；實際失敗任務保留失敗原因和重試入口。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "重試與取消為寫入，未提交。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/rules",
+      "title": "業務判斷規則管理",
+      "file": "rules.jpg",
+      "reviewed": true,
+      "reviewNote": "69條規則、搜尋篩選與新增/匯入草稿操作在首屏可見。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "寬表部分依據需橫向捲動；未修改、發布或回滾規則。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "title": "知識檢索測試",
+      "file": "retrieval.jpg",
+      "reviewed": true,
+      "reviewNote": "問題輸入、檢索範圍與執行按鈕可見；結果區清楚說明執行後才顯示。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "未發起檢索，不代表外部檢索質量驗收。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "title": "推理鏈路歷史",
+      "file": "reasoning.jpg",
+      "reviewed": true,
+      "reviewNote": "1條歷史記錄及篩選在首屏可見。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "完整規則版本等中間欄位仍需橫向捲動或查看詳情。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/compare",
+      "title": "多模型回饋對比",
+      "file": "compare.jpg",
+      "reviewed": true,
+      "reviewNote": "問題、節點及模型選擇首屏可見；空結果有明確下一步。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "未發起模型調用，不代表模型端到端驗收。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/config",
+      "title": "知識庫配置",
+      "file": "config.jpg",
+      "reviewed": true,
+      "reviewNote": "配置表單與審計搜尋區首屏可見，無共用摘要阻擋。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "未儲存配置；審計物件仍有 Authentication、ReviewOpinion 等技術標籤。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：結構總覽",
+      "file": "network.jpg",
+      "reviewed": true,
+      "reviewNote": "259個節點/294條關係保留；結構標籤、類型圖例與節點詳情入口可見。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "完整網絡高度超過首屏；密集圖譜需搜尋、縮放或節點詳情閱讀。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：結構下半部",
+      "file": "network-structure.jpg",
+      "reviewed": true,
+      "reviewNote": "原始節點數保留，右側一跳關係清單可操作；未刪節點以達成標籤簡化。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：懸停全名",
+      "file": "network-zoom.jpg",
+      "reviewed": true,
+      "reviewNote": "懸停顯示設計文件全名與業務模組類型。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "檔名保留原名，但本張只能證明懸停tooltip；底部仍為結構標籤，不能當作縮放門檻證據。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：選中詳情",
+      "file": "network-node-detail.jpg",
+      "reviewed": true,
+      "reviewNote": "防腐、保溫節點高亮，右側顯示對應6條一跳關係，tooltip有完整名稱。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：搜尋焊工",
+      "file": "network-search.jpg",
+      "reviewed": true,
+      "reviewNote": "實際搜尋焊工命中3個，保留其一跳關係，共4個節點/4條關係，搜尋範圍與數量明示。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "搜尋不會自動切換已選節點，右側可能保留先前詳情；點擊命中後可查看該節點。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：搜尋結果圖",
+      "file": "network-search-results.jpg",
+      "reviewed": true,
+      "reviewNote": "搜尋結果以稀疏關係圖呈現；可點選命中節點。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "圖上長標籤仍有省略，完整文字透過懸停與詳情閱讀。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：搜尋結果詳情",
+      "file": "network-search-detail.jpg",
+      "reviewed": true,
+      "reviewNote": "點擊焊工規則命中後，右側標題與完整規則說明更新為該規則，文字可換行閱讀。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：監檢節點標籤層級",
+      "file": "network-zoom-sections.jpg",
+      "reviewed": true,
+      "reviewNote": "真實滾輪放大後，畫面標記變為結構與監檢節點標籤，R編號節點標籤出現。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "縮放會同時放大節點；非當前視窗範圍的節點需平移查看。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網絡：詳細標籤層級",
+      "file": "network-zoom-detail-level.jpg",
+      "reviewed": true,
+      "reviewNote": "繼續真實滾輪放大後，畫面底部變為詳細標籤；已目視確認層級切換。",
+      "limitations": [
+        "production 建置＋隔離記憶體 demo API；未驗證正式資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建、取消、儲存設定等業務寫入。",
+        "圖僅驗證詳細層級觸發，不代表全部259個節點同時可讀；原文全名以tooltip/詳情為準。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "status": "pass_with_limitations",
+      "issues": []
+    }
+  ]
+}

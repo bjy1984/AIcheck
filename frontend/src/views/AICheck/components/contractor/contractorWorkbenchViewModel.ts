@@ -116,7 +116,7 @@ export const buildContractorWorkbenchModel = (
         key: 'reviewing',
         label: '审核中',
         count: statusCount('审核中'),
-        tone: 'green'
+        tone: 'blue'
       }
     ],
     primaryTabs: (['全部', '待提交', '审核中', '需补正', '已通过'] as const).map((key) => ({

@@ -1,0 +1,124 @@
+{
+  "build": "dist-score-followup",
+  "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+  "knowledgeDesktop": {
+    "docWidth": 1280,
+    "indexTable": {
+      "bottom": 473.59375,
+      "height": 204,
+      "maxHeight": "360px",
+      "rowCount": 2,
+      "top": 269.59375
+    },
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "knowledgeMobile": {
+    "desktopDisplay": "none",
+    "docWidth": 390,
+    "mobileDisplay": "grid",
+    "viewport": {
+      "height": 844,
+      "width": 390
+    }
+  },
+  "ndtDesktop": {
+    "docWidth": 1280,
+    "registered": "已登记底片2已导入记录1检测报告2",
+    "tableRows": 22,
+    "topSummary": "已上传文件0 份0 种资料类型待提交/补正0每个文件可单独提交审批监检反馈1 项按反馈补充报告、底片、记录或说明",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "ndtMobile": {
+    "desktopDisplay": "none",
+    "docWidth": 390,
+    "materialCount": 22,
+    "mobileDisplay": "grid",
+    "viewport": {
+      "height": 844,
+      "width": 390
+    }
+  },
+  "ndtDrawer": {
+    "cardRight": 370,
+    "clientWidth": 367,
+    "labels": [
+      {
+        "height": 14,
+        "right": 344.40625,
+        "text": "无损检测机构施工现场质量保证体系的实施",
+        "whiteSpace": "normal",
+        "width": 274
+      },
+      {
+        "height": 14,
+        "right": 162.40625,
+        "text": "无损检测方案",
+        "whiteSpace": "normal",
+        "width": 92
+      },
+      {
+        "height": 14,
+        "right": 246.40625,
+        "text": "检测过程中发现问题的处理",
+        "whiteSpace": "normal",
+        "width": 176
+      },
+      {
+        "height": 28,
+        "right": 357,
+        "text": "无损检测人员资格证、执业注册证及持证合格项目",
+        "whiteSpace": "normal",
+        "width": 286.59375
+      },
+      {
+        "height": 14,
+        "right": 190.40625,
+        "text": "无损检测工艺文件",
+        "whiteSpace": "normal",
+        "width": 120
+      },
+      {
+        "height": 14,
+        "right": 204.40625,
+        "text": "无损检测记录、报告",
+        "whiteSpace": "normal",
+        "width": 134
+      },
+      {
+        "height": 14,
+        "right": 190.40625,
+        "text": "射线检测底片抽查",
+        "whiteSpace": "normal",
+        "width": 120
+      },
+      {
+        "height": 14,
+        "right": 190.40625,
+        "text": "射线检测现场抽查",
+        "whiteSpace": "normal",
+        "width": 120
+      }
+    ],
+    "rect": {
+      "left": 23.40625,
+      "width": 366.59375
+    },
+    "scrollWidth": 367
+  },
+  "ndtKeyboard": {
+    "expanded": true,
+    "focusVisible": true,
+    "focusedTag": "SUMMARY"
+  },
+  "ndtCheckboxLabelToggle": {
+    "checked": true,
+    "unchecked": true
+  },
+  "positiveUploadedFileRenderVerified": false
+}

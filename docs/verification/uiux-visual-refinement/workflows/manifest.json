@@ -1,0 +1,138 @@
+{
+  "group": "workflows",
+  "build": "dist-uiux-visual-refinement",
+  "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+  "environment": "production build + real API + isolated in-memory demo data",
+  "captures": [
+    {
+      "route": "/workbench/owner",
+      "title": "建設方工作台",
+      "file": "04-owner.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "唯讀模式為中性、執行中專案藍色；零人工確認不標警示，欄位提取不再假報一致性通過。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方・已提取仍待核驗",
+      "file": "04b-owner-field-awaiting-verification.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "已提取證書編號、OCR信心值高也不等同一致性通過；鏈路顯示待核驗。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方・缺字段待核驗",
+      "file": "04c-owner-no-fields.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "已載入節點1但沒有結構化字段時，顯示待核驗與等待OCR/補錄說明；不再因空陣列而標通過。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測工作台",
+      "file": "03-ndt.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "底片2、紀錄1、報告2與待補正1分別呈現，與已上傳文件數分開；零值摘要為中性。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方工作台",
+      "file": "02-contractor.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "審核中使用藍色時鐘、待提交黃色；0條待處理意見摘要為中性，狀態不再以綠色暗示已完成。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/inspection?projectId=P-2026-HDCP-001&view=list",
+      "title": "監檢工作台",
+      "file": "01-inspection.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "483個審計項按狀態呈現，區分審計項與節點；執行中藍、需關注黃、未開始中性。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/inspection?projectId=P-2026-HDCP-001&view=list",
+      "title": "監檢・圖表聯動",
+      "file": "01b-inspection-completed-filter.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "點已完成3項篩出節點24；此節點3/7項已完成，整節點保持處理中，沒有混淆統計口徑。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用資料審查",
+      "file": "05-generic.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "導航圖標區分各工作項；引用件數為中性，待確認項保留警示文字。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用審查・900px",
+      "file": "05b-generic-900.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "900px下摘要與主欄不重疊；主導覽改由抽屜存取，保留文字與操作。",
+      "viewport": {
+        "height": 900,
+        "width": 900
+      },
+      "build": "dist-uiux-visual-refinement"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用審查・窄版導航",
+      "file": "05c-generic-navigation-900.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "窄版圖標欄寬已修正，圖標與文字間距足夠；目前項目與分項清楚可辨。",
+      "viewport": {
+        "height": 900,
+        "width": 900
+      },
+      "build": "dist-uiux-visual-refinement"
+    }
+  ]
+}

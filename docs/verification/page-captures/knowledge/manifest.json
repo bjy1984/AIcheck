@@ -1,0 +1,363 @@
+{
+  "baseUrl": "http://127.0.0.1:4178/",
+  "environment": "production build + isolated in-memory demo API",
+  "captureTool": "CUA in-app browser",
+  "imageFormat": "JPEG",
+  "routeCount": 10,
+  "captureCount": 19,
+  "defaultViewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "reviewedAt": "2026-10-29T02:22:32.447Z",
+  "captures": [
+    {
+      "route": "/knowledge/overview",
+      "title": "知識庫總覽",
+      "file": "overview.jpg",
+      "status": "pass_with_observations",
+      "issues": [
+        "1280×720 首屏主要呈現共用治理摘要，索引表與知識源操作位於下方，需捲動。"
+      ],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "摘要部分欄位顯示未取得或尚未載入，未當作真實運行健康度。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "摘要、重建索引與導航可見，無意外遮擋。"
+    },
+    {
+      "route": "/knowledge/overview",
+      "title": "知識庫總覽：索引與知識源",
+      "file": "overview-lower.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "寬表採橫向捲動，部分中間欄位未同屏顯示。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "兩個庫與知識源篩選、新增、編輯、停用、重建索引操作可見。"
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準規範庫：首屏",
+      "file": "sources.jpg",
+      "status": "pass_with_observations",
+      "issues": [
+        "共用治理摘要佔據首屏，標準規範列表與主要頁面操作須往下捲動。"
+      ],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "首屏無錯位、白屏或錯誤遮罩。"
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準規範庫：列表",
+      "file": "sources-content.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "列表顯示62個規範；寬表需橫向捲動讀取OCR、切片、向量等欄位。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "搜尋、處理狀態、刷新、上傳與每列操作可見。"
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準規範唯讀詳情",
+      "file": "sources-detail.jpg",
+      "status": "limited",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "canonical詳情尚未生成；截圖中的PDF預覽區為空白，無法確認原文渲染。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "對話框標題、關閉、預覽、下載與缺資料提示清楚；未發起下載。"
+    },
+    {
+      "route": "/knowledge/files",
+      "title": "項目文件知識庫",
+      "file": "files.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "9個文件；寬表中的檔名及處理狀態需橫向捲動。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "搜尋、項目/節點/狀態篩選、上傳和每列操作可見。"
+    },
+    {
+      "route": "/knowledge/files",
+      "title": "項目文件唯讀詳情",
+      "file": "files-detail.jpg",
+      "status": "limited",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "原文預覽回報NOT_FOUND；文件標記已識別，但缺少可追溯OCR parse result。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "錯誤和OCR狀態提示完整可讀；結構化欄位、分頁及關閉操作可見。"
+    },
+    {
+      "route": "/knowledge/tasks",
+      "title": "OCR／向量任務中心",
+      "file": "tasks.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "65條demo任務，含1條失敗示例；未重試或取消任何任務。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "篩選、刷新、任務號、狀態、進度、重試與取消操作清楚。"
+    },
+    {
+      "route": "/knowledge/tasks",
+      "title": "失敗任務唯讀詳情",
+      "file": "tasks-detail.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "38%失敗任務原因、時間、刷新與重試操作可見，側欄無錯位。"
+    },
+    {
+      "route": "/knowledge/rules",
+      "title": "業務判斷規則管理",
+      "file": "rules.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "69條規則；寬表內容需橫向捲動。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "新增、匯入、搜尋、狀態篩選、每列編輯/回滾/變更可見；未執行。"
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "title": "知識檢索測試",
+      "file": "retrieval.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "未執行檢索，僅確認初始輸入與結果空狀態；4個PageIndex節點。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "問題輸入、範圍、Top K、運行檢索與結果空狀態清楚。"
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網路",
+      "file": "network.jpg",
+      "status": "pass_with_observations",
+      "issues": [
+        "259個節點的預設圖譜標籤密集且部分重疊，總覽文字閱讀受限。"
+      ],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "圖譜總覽用於定位，細節依賴節點面板或全屏檢視。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "259節點、294關係載入；搜尋、類型、核心網路、顯示全部、重設、全屏及重建按鈕可見。"
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網路：全屏",
+      "file": "network-fullscreen.jpg",
+      "status": "pass_with_observations",
+      "issues": [
+        "全屏改善空間，但大量節點標籤仍有重疊。"
+      ],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "透過頁面全屏按鈕進入1470×923；已退出並恢復1280×720，未調整共享viewport。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 923
+      },
+      "reviewed": true,
+      "reviewNote": "圖譜可全屏並退出，圖例與退出按鈕清楚。"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "title": "推理鏈路歷史",
+      "file": "reasoning.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "1條demo記錄；寬表內容需橫向捲動。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "節點/狀態篩選、刷新、Run ID和詳情操作可見。"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "title": "推理鏈路唯讀詳情",
+      "file": "reasoning-detail.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "長內容需在抽屜中捲動；未進行推理或變更資料。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "Run ID、模型、Prompt與雜湊資訊排版正常，關閉操作可見。"
+    },
+    {
+      "route": "/knowledge/compare",
+      "title": "多LLM反饋對比",
+      "file": "compare.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "未呼叫模型或執行新對比。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "問題、節點、模型選擇、開始對比與歷史入口可見。"
+    },
+    {
+      "route": "/knowledge/compare",
+      "title": "多LLM歷史對比結果",
+      "file": "compare-history.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "僅讀取一條既有demo歷史，輸出內容未作為有效業務結論驗證。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "歷史對比可選取，兩個模型結果、信心值、耗時與證據引用清楚。"
+    },
+    {
+      "route": "/knowledge/config",
+      "title": "知識庫配置與審計",
+      "file": "config.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "設定未修改；審計表採橫向捲動。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "Embedding、切片、Top K、重排序與證據嚴格模式可見，審計篩選及列表正常。"
+    },
+    {
+      "route": "/knowledge/config",
+      "title": "知識庫配置：儲存區",
+      "file": "config-lower.jpg",
+      "status": "pass",
+      "issues": [],
+      "limitations": [
+        "隔離記憶體 demo API；未驗證真實資料庫、外部 OCR、向量服務或 LLM。",
+        "除登入外未執行提交、上傳、重建索引、重試、取消、儲存設定等寫入操作。",
+        "未點擊保存配置或開關。"
+      ],
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "reviewed": true,
+      "reviewNote": "自動重建策略、留存天數和保存配置完整可見。"
+    }
+  ]
+}

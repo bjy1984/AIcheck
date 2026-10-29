@@ -1,0 +1,177 @@
+[
+  {
+    "route": "/knowledge/network",
+    "file": "final-network.jpg",
+    "reviewNote": "全圖259節點/294關係，初始工業管道詳情與選取外框一致，漸進標籤及圖例保留。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/network",
+    "file": "final-network-filter-cleared.jpg",
+    "reviewNote": "搜尋焊工命中3個、保留4節點4關係；不在結果中的工業管道詳情及選取清除，顯示重新點選指引。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/network",
+    "file": "final-network-reset-no-selection.jpg",
+    "reviewNote": "清空搜尋恢復259節點，工業管道舊黑色外框已消失，右側仍未選取；沒有自動跳選。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/network",
+    "file": "final-network-visible-selection-retained.jpg",
+    "reviewNote": "將焊工搜尋改為焊後，圖中仍可見的焊接（粘接）選取外框與右側詳情保留，未自動跳到第一個命中。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/rules",
+    "file": "final-rules.jpg",
+    "reviewNote": "69條規則載入，監檢項目/分類、狀態、依據摘要及操作同屏；無水平溢出。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/rules",
+    "file": "final-rules-expanded.jpg",
+    "reviewNote": "規則展開後保留完整判斷依據及工作見證，長內容可在表格內垂直捲讀。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": [
+      "長依據需要垂直捲讀；未執行發布或回滾。"
+    ]
+  },
+  {
+    "route": "/knowledge/rules",
+    "file": "final-rules-expanded-witness.jpg",
+    "reviewNote": "展開後的工作見證完整保留，垂直捲動可讀取詳細核查內容。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": [
+      "長依據需在表格內垂直捲讀；版本與時間另見final-rules-expanded.jpg。"
+    ]
+  },
+  {
+    "route": "/knowledge/config",
+    "file": "final-config.jpg",
+    "reviewNote": "審計表時間、人員、中文操作對象與結果同屏，設定表單保持清楚分組。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/reasoning",
+    "file": "final-reasoning.jpg",
+    "reviewNote": "歷史列表主題、狀態、完整建議、完成時間與詳情入口同屏，無水平溢出。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/reasoning",
+    "file": "final-reasoning-detail.jpg",
+    "reviewNote": "模型、規則版本、Prompt版本與對話資訊仍可在詳情中查閱。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/overview",
+    "file": "final-overview.jpg",
+    "reviewNote": "知識庫總覽保留精簡治理摘要、來源/索引/引用品質卡片與主要維護入口。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": []
+  },
+  {
+    "route": "/knowledge/sources?pageSize=6",
+    "file": "final-sources.jpg",
+    "reviewNote": "標準規範庫顯示檔案數、來源篩選、檔名與解析/索引狀態，維護入口清楚。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": [
+      "本輪未重跑PDF預覽；沿用前輪Chrome真實渲染證據。"
+    ]
+  },
+  {
+    "route": "/knowledge/files",
+    "file": "final-files.jpg",
+    "reviewNote": "項目文件知識庫顯示搜尋、項目/節點/狀態篩選與檔案維護入口，資料與操作正常載入。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": [
+      "既有多欄表仍需水平捲動查看低頻欄位；本輪未調整此表。",
+      "原文缺檔回退沿用前輪獨立證據，未宣稱修復缺失檔案。"
+    ]
+  },
+  {
+    "route": "/knowledge/tasks",
+    "file": "final-tasks.jpg",
+    "reviewNote": "任務中心清楚顯示任務類型、來源與狀態；失敗任務有錯誤資訊及詳情入口。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": [
+      "本輪未執行重試或重建任務。"
+    ]
+  },
+  {
+    "route": "/knowledge/retrieval",
+    "file": "final-retrieval.jpg",
+    "reviewNote": "檢索測試顯示問題輸入、Top K、資料篩選與檢索入口，空結果及PageIndex區分清楚。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": [
+      "本輪未提交外部模型或檢索請求。"
+    ]
+  },
+  {
+    "route": "/knowledge/compare",
+    "file": "final-compare.jpg",
+    "reviewNote": "多LLM對比輸入與已儲存歷史對比呈現清楚，主要操作可見。",
+    "viewport": {
+      "height": 748,
+      "width": 1470
+    },
+    "limitations": [
+      "本輪未執行外部模型對比。"
+    ]
+  }
+]

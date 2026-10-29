@@ -1,0 +1,242 @@
+{
+  "group": "admin",
+  "build": "dist-uiux-visual-refinement",
+  "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+  "captures": [
+    {
+      "route": "/admin/overview",
+      "title": "管理總覽",
+      "file": "01-overview.jpg",
+      "reviewed": true,
+      "reviewNote": "總覽保留治理摘要；未取得規則/審計為灰色，監檢審查為藍、補正為紅，導航與查詢/刷新圖標清楚。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:45:37.823Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/projects",
+      "title": "項目管理",
+      "file": "02-projects.jpg",
+      "reviewed": true,
+      "reviewNote": "治理摘要預設收合；項目清單更靠前，監檢審查/AI預審藍色、退回補正紅色、歸檔綠色，標籤含圖標且完整可讀。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "長表仍可橫向捲動查看待辦與更新時間，固定操作欄保持可用。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:51:02.290Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/org",
+      "title": "組織使用者",
+      "file": "03-org.jpg",
+      "reviewed": true,
+      "reviewNote": "組織與使用者入口、篩選和啟用狀態可讀；狀態含綠色勾選，表格橫向分隔一致，摘要收合。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:46:14.889Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/business-packs",
+      "title": "業務類型管理",
+      "file": "04-business-packs.jpg",
+      "reviewed": true,
+      "reviewNote": "三種業務類型完整顯示，已發布標籤含勾選圖標，長範圍文字換行，未檢查狀態保持中性。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "寬表可橫向捲動查看右側節點與規則數量。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:46:27.525Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/permission",
+      "title": "權限與節點",
+      "file": "05-permission.jpg",
+      "reviewed": true,
+      "reviewNote": "唯讀是/否使用中性色分類；角色範圍、權限摘要與操作可讀，導航鎖圖標與清楚文字搭配。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:49:07.376Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "AI業務規則與流程",
+      "file": "06-rules.jpg",
+      "reviewed": true,
+      "reviewNote": "待發布為黃色時鐘、已發布為綠色勾選；未知審計為灰色。摘要預設收合後，首屏可見規則清單與操作。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:49:15.202Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "規則頁展開配置摘要",
+      "file": "06b-rules-summary-expanded.jpg",
+      "reviewed": true,
+      "reviewNote": "配置摘要可展開；治理資訊與完整計數仍可讀，未獲取資料使用中性色，返回其他頁時重新收合。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:49:30.635Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "業務資料審查點",
+      "file": "07-material-review-points.jpg",
+      "reviewed": true,
+      "reviewNote": "摘要收合後首屏能看到審查內容資料列；長文字仍換行，搜尋與狀態篩選保持可用。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "欄位較多，已提示可橫向捲動或打開編輯核對完整內容。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:49:39.290Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 模板管理",
+      "file": "08-prompt-templates.jpg",
+      "reviewed": true,
+      "reviewNote": "生產狀態含綠色勾選，模板資訊與建立草稿操作完整可見，刷新圖標與文字並列。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:49:48.244Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "報告模板管理",
+      "file": "09-report-templates.jpg",
+      "reviewed": true,
+      "reviewNote": "三個報告模板的生產狀態、章節、導出類型與操作可讀；摘要收合後清單占據首屏。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:49:59.770Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/fine-config",
+      "title": "細項配置",
+      "file": "10-fine-config.jpg",
+      "reviewed": true,
+      "reviewNote": "待辦規則、啟用標籤及編輯入口可讀；卡片與表格以中性細線分隔，摘要預設收合。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "細項清單較長，部分區段位於下方；寬表保留橫向捲動提示。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:50:09.199Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/integration",
+      "title": "聯調清單",
+      "file": "11-integration.jpg",
+      "reviewed": true,
+      "reviewNote": "已對齊數量使用成功色，0待確認與0阻塞以中性顯示；摘要白底細框，刷新入口可辨識。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:50:26.485Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/skill-requests",
+      "title": "Skill 請求記錄",
+      "file": "12-skill-requests.jpg",
+      "reviewed": true,
+      "reviewNote": "空記錄狀態清楚，查詢與刷新入口可見；全域摘要收合，未取得規則狀態為中性。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:50:44.972Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    },
+    {
+      "route": "/admin/audit",
+      "title": "審計日誌",
+      "file": "13-audit.jpg",
+      "reviewed": true,
+      "reviewNote": "審計記錄數量為藍色資訊；未封存歷史資料以黃色說明未驗證，成功事件帶綠色勾選，導出圖標與文字並列。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離示例含1條歷史未驗證記錄，提示忠實保留；未執行封存或導出。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-visual-refinement",
+      "capturedAt": "2026-10-29T06:50:53.702Z",
+      "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5"
+    }
+  ],
+  "verifiedAt": "2026-10-29T06:51:25.282Z"
+}

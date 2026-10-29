@@ -1,0 +1,339 @@
+{
+  "environment": "production build dist-uiux-final + isolated in-memory real API",
+  "captures": [
+    {
+      "route": "/workbench/inspection?projectId=P-2026-HDCP-001&view=list",
+      "title": "監檢工作台",
+      "file": "01-inspection.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "總覽、節點待辦與資料列表可見，表格操作在視窗內。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "示例資料中節點統計與已提交資料為不同口徑，未執行AI或正式寫入。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/inspection?projectId=P-2026-HDCP-001&view=list&nodeId=16&auditItem=ai_review",
+      "title": "監檢節點與人工審查",
+      "file": "01b-inspection-node.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "節點資料缺漏、AI尚未運行與人工審查阻斷均保留，未顯示虛構成功結果。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方工作台",
+      "file": "02-contractor.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "真實顯示待處理意見0、待提交1、審核中1；補正意見與文件數分別解釋。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "未改變可見補正資料的權限。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方需補正文件篩選",
+      "file": "02b-contractor-correction-filter.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "點擊入口後選中需補正，列表只剩鋼管質量證明書；未用意見數冒充文件數。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方補正篩選狀態",
+      "file": "02c-contractor-filter-state.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "需補正選項已選中，1/3個文件，實際列出一個需補正文件。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測工作台",
+      "file": "03-ndt.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "資料分類及逐項上傳入口可讀，已上傳檔案0與歷史檢測記錄5項分別呈現；監檢回饋1項。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "此角色在隔離示例中無已上傳文件；不等於已驗收上傳或外部處理。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "檢測報告上傳對話框",
+      "file": "03b-ndt-report-dialog.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "節點、必要欄位與選檔說明可讀；對話框可捲動，取消及提交操作由可存取狀態確認。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "僅開啟表單，未選檔或提交。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方工作台",
+      "file": "04-owner.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "顯示真實可見節點與報告/歸檔數，不再固定報告版本V0.8。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "示例API的報告列表為空、歸檔清單含歷史報告檔；兩者來源不同，畫面分別呈現。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方活動與報告狀態",
+      "file": "04b-owner-activity-report.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "最近可見更新來自真實歸檔/專案時間，報告缺省呈現當前無可查看報告。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方實際更新時間線",
+      "file": "04c-owner-timeline.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "三筆活動均有真實時間與對象，無固定預計審核/歸檔時程；報告與歸檔來源分開。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方歸檔表與節點摘要",
+      "file": "04d-owner-detail-summary.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "空報告清單與2份實際歸檔資料分開呈現；下方節點摘要使用當前節點資料。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": [
+        "歸檔類型仍為report/evidence原始值，evidence在窄欄換行；已回報主代理，未修改產品碼。"
+      ]
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方節點風險摘要",
+      "file": "04e-owner-risk-summary.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "當前節點只顯示可見補正標記，清楚說明不代表所有風險已排除；報告提醒無虛構版本。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用資料審查工作台",
+      "file": "05-generic.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "人工確認正確顯示1條；節點和發現改為全寬排列，提供證據/人工確認入口。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "合規專案的業務類型名稱長輸管道來自現有後端配置，未聲稱修復此資料語意衝突。",
+        "業務類型名稱長輸管道來自既有合規業務包配置，未改資料或宣稱此語意衝突已修復。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台待確認發現",
+      "file": "05b-generic-pending.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "點擊待確認卡片會篩選至實際發現，長標題、置信度及人工狀態可同列讀取。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "業務類型名稱長輸管道來自既有合規業務包配置，未改資料或宣稱此語意衝突已修復。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台逐筆證據與人工意見",
+      "file": "05c-generic-evidence-detail.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "逐筆呈現發現、規則及證據引用；無法解析的legacy引用明確標示暫不可查看，不提供錯誤原文跳轉。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "僅有一筆待確認示例；缺失引用的資料修復不在本輪前端範圍。",
+        "業務類型名稱長輸管道來自既有合規業務包配置，未改資料或宣稱此語意衝突已修復。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台人工意見明細",
+      "file": "05d-generic-human-detail.jpg",
+      "status": "pass_with_limitations",
+      "reviewed": true,
+      "reviewNote": "同節點人工意見與本條發現處理狀態分開說明；管理員僅查看，沒有越權確認按鈕。",
+      "limitations": [
+        "隔離記憶體示例資料與真實API，未執行業務寫入、LLM或外部服務。",
+        "業務類型名稱長輸管道來自既有合規業務包配置，未改資料或宣稱此語意衝突已修復。"
+      ],
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "build": "dist-uiux-final",
+      "issues": []
+    }
+  ],
+  "routeCount": 5,
+  "captureCount": 16,
+  "defaultViewport": {
+    "height": 748,
+    "width": 1470
+  },
+  "coverage": [
+    {
+      "route": "/workbench/contractor",
+      "captures": [
+        "02-contractor.jpg",
+        "02b-contractor-correction-filter.jpg",
+        "02c-contractor-filter-state.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/generic",
+      "captures": [
+        "05-generic.jpg",
+        "05b-generic-pending.jpg",
+        "05c-generic-evidence-detail.jpg",
+        "05d-generic-human-detail.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/inspection",
+      "captures": [
+        "01-inspection.jpg",
+        "01b-inspection-node.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/ndt",
+      "captures": [
+        "03-ndt.jpg",
+        "03b-ndt-report-dialog.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/owner",
+      "captures": [
+        "04-owner.jpg",
+        "04b-owner-activity-report.jpg",
+        "04c-owner-timeline.jpg",
+        "04d-owner-detail-summary.jpg",
+        "04e-owner-risk-summary.jpg"
+      ]
+    }
+  ]
+}

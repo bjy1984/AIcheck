@@ -1,0 +1,181 @@
+{
+  "area": "knowledge",
+  "captures": [
+    {
+      "route": "/knowledge/overview",
+      "title": "知識庫總覽",
+      "file": "01-overview.jpg",
+      "reviewed": true,
+      "reviewNote": "確認未取得與0阻斷被固定著色，待修正。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/overview",
+      "title": "索引記錄數量與狀態",
+      "file": "01b-index-counts.jpg",
+      "reviewed": true,
+      "reviewNote": "數量比較與狀態完整可見，表格與內容均898px。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/sources",
+      "title": "標準規範庫",
+      "file": "02-sources.jpg",
+      "reviewed": true,
+      "reviewNote": "確認寬表把處理狀態藏在固定操作欄後，待收斂欄位。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/files",
+      "title": "項目文件知識庫",
+      "file": "03-files.jpg",
+      "reviewed": true,
+      "reviewNote": "確認文件名與處理狀態被寬表藏起，待收斂欄位。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/tasks",
+      "title": "OCR與向量任務中心",
+      "file": "04-tasks.jpg",
+      "reviewed": true,
+      "reviewNote": "排隊中藍色、失敗紅色，圖標與文字均可讀。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/rules",
+      "title": "業務判斷規則管理",
+      "file": "05-rules.jpg",
+      "reviewed": true,
+      "reviewNote": "已發布綠色勾圖標，規則依據與操作可讀。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "title": "知識檢索測試",
+      "file": "06-retrieval.jpg",
+      "reviewed": true,
+      "reviewNote": "檢索表單與結果空態層次清楚。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "知識網路",
+      "file": "07-network.jpg",
+      "reviewed": true,
+      "reviewNote": "圖譜可用；published固定灰、計數分類色需一致化。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "title": "推理鏈路歷史",
+      "file": "08-reasoning.jpg",
+      "reviewed": true,
+      "reviewNote": "完成狀態與建議完整可見。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/compare",
+      "title": "多模型回饋比較",
+      "file": "09-compare.jpg",
+      "reviewed": true,
+      "reviewNote": "比較輸入與結果空態完整，未執行付費或外部模型請求。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    },
+    {
+      "route": "/knowledge/config",
+      "title": "知識庫配置與審計",
+      "file": "10-config.jpg",
+      "reviewed": true,
+      "reviewNote": "確認標題被擠成直排、審計結果標籤截斷，待修正。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "status": "intermediate-reviewed",
+      "build": "dist-uiux-visual-refinement",
+      "limitations": [
+        "本機隔離 demo API；未部署正式環境。"
+      ]
+    }
+  ]
+}

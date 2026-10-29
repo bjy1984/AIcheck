@@ -1,0 +1,28 @@
+{
+  "checkedAtUtc": "2026-10-29T06:53:33.733299+00:00",
+  "build": "dist-uiux-visual-refinement",
+  "buildIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+  "checks": {
+    "unitTestFiles": 130,
+    "unitFailures": 0,
+    "typecheckExitCode": 0,
+    "productionBuildExitCode": 0,
+    "operabilityFiles": 637,
+    "operabilityFindings": 0,
+    "backendTests": 65,
+    "backendFailures": 0
+  },
+  "visualReview": "complete",
+  "routes": 44,
+  "screenshots": 55,
+  "groups": {
+    "admin": 14,
+    "knowledge": 11,
+    "fde": 20,
+    "workflows": 10
+  },
+  "allCapturesReviewed": true,
+  "allCapturesAfterFinalBuild": true,
+  "environment": "production build + real API + isolated in-memory demo data",
+  "deployment": "not deployed"
+}

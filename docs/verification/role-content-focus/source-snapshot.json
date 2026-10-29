@@ -1,0 +1,7 @@
+{
+  "sourceFiles": 654,
+  "sha256": "b6d32b800687a6642a745f4f7dbf532f10753724fecefffdbd5ac36cdc3d8a45",
+  "build": "dist-role-content-focus",
+  "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+  "method": "sha256 of sorted relative paths + NUL + file bytes + NUL; frontend/src; temporary unit bundles excluded"
+}

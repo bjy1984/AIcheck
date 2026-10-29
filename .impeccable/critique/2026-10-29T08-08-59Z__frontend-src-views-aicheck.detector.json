@@ -1,0 +1,136 @@
+[
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/FdeConsole.vue",
+    "line": 26663,
+    "snippet": "border-left: 3px solid #f59e0b"
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/FdeConsole.vue",
+    "line": 26667,
+    "snippet": "border-left: 3px solid #16a34a"
+  },
+  {
+    "antipattern": "codex-grid-background",
+    "name": "Decorative grid-line background",
+    "description": "A decorative grid or line-field background drawn with hairline linear-gradient layers tiled by a fixed pixel cell is a recurring generated-UI signature. Reserve grid overlays for actual canvas, map, blueprint, or measurement surfaces; elsewhere use product structure or a plain surface.",
+    "severity": "advisory",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/FdeConsole.vue",
+    "line": 22701,
+    "snippet": "two-axis grid-line gradient background",
+    "advisory": true
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/FdeConsole.vue",
+    "line": 23757,
+    "snippet": ".graph-node-card::before — absolute 4px pseudo-element stripe (left: 0)"
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/components/FileDetailDialog.vue",
+    "line": 1534,
+    "snippet": "border-left: 3px solid #409eff",
+    "importedBy": [
+      "KnowledgeOverview.vue",
+      "Workbench.vue"
+    ]
+  },
+  {
+    "antipattern": "codex-grid-background",
+    "name": "Decorative grid-line background",
+    "description": "A decorative grid or line-field background drawn with hairline linear-gradient layers tiled by a fixed pixel cell is a recurring generated-UI signature. Reserve grid overlays for actual canvas, map, blueprint, or measurement surfaces; elsewhere use product structure or a plain surface.",
+    "severity": "advisory",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/components/OcrAnnotationCanvas.vue",
+    "line": 721,
+    "snippet": "two-axis grid-line gradient background",
+    "advisory": true,
+    "importedBy": [
+      "FdeConsole.vue"
+    ]
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/components/OperationTaskDrawer.vue",
+    "line": 398,
+    "snippet": "border-left: 3px solid #8a4b00",
+    "importedBy": [
+      "StaticPageShell.vue"
+    ]
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/components/OperationTaskDrawer.vue",
+    "line": 481,
+    "snippet": "border-left: 3px solid #d92d20",
+    "importedBy": [
+      "StaticPageShell.vue"
+    ]
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/components/OperationTaskDrawer.vue",
+    "line": 495,
+    "snippet": "border-left: 3px solid #d97706",
+    "importedBy": [
+      "StaticPageShell.vue"
+    ]
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/components/WorkbenchAiReviewPanel.vue",
+    "line": 1625,
+    "snippet": "border-left: 3px solid #d8e3f8",
+    "importedBy": [
+      "Workbench.vue"
+    ]
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "/Volumes/Volume/project/AIcheck/frontend/src/views/AICheck/components/contractor/ContractorFeedbackPanel.vue",
+    "line": 211,
+    "snippet": ".feedback-item.is-open — inset box-shadow 3px stripe (left)",
+    "importedBy": [
+      "WorkbenchRoleStaticSections.vue"
+    ]
+  }
+]

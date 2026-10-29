@@ -1,0 +1,491 @@
+{
+  "environment": "production build + real API + isolated in-memory demo data",
+  "routeCount": 6,
+  "captureCount": 23,
+  "coverage": [
+    {
+      "route": "/knowledge/overview",
+      "files": [
+        "knowledge/01-overview-1280.jpg",
+        "knowledge/02-overview-390.jpg"
+      ]
+    },
+    {
+      "route": "/fde-feedback-triage",
+      "files": [
+        "fde/01-desktop-1280.jpg",
+        "fde/02-keyboard-expanded-1280.jpg",
+        "fde/03-medium-900.jpg",
+        "fde/04-mobile-390.jpg",
+        "fde/05-mobile-long-comment.jpg",
+        "fde/06-mobile-last-record.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/inspection",
+      "files": [
+        "workflows/03-inspection-1280.jpg",
+        "workflows/04-inspection-390.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/contractor",
+      "files": [
+        "workflows/05-contractor-1280.jpg",
+        "interaction/01-contractor-390.jpg",
+        "interaction/02-keyboard-search-390.jpg",
+        "interaction/03-contractor-360-focus.jpg",
+        "interaction/04-search-desktop-1280.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/ndt",
+      "files": [
+        "workflows/06-ndt-1280.jpg",
+        "ndt/01-library-1280.jpg",
+        "ndt/02-library-390.jpg",
+        "ndt/03-rules-390.jpg",
+        "ndt/04-upload-drawer-390.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/owner",
+      "files": [
+        "workflows/01-owner-1280.jpg",
+        "workflows/02-owner-900.jpg"
+      ]
+    }
+  ],
+  "captures": [
+    {
+      "route": "/knowledge/overview",
+      "file": "knowledge/01-overview-1280.jpg",
+      "title": "知識庫總覽 · 桌面",
+      "reviewNote": "兩列索引表實測高度204px，知識源區塊已在首屏可見；移除原有156px固定留白。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "capturedAt": "2026-10-29T09:09:08.440Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/overview",
+      "file": "knowledge/02-overview-390.jpg",
+      "title": "知識庫總覽 · 手機",
+      "reviewNote": "手機改用完整名稱卡片，狀態與索引記錄入口可辨；頁面寬度390px，無頁面橫向溢出。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:09:24.684Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "file": "fde/01-desktop-1280.jpg",
+      "title": "反饋歸因 · 桌面工作列",
+      "reviewNote": "21筆隔離示例可按列閱讀；原始短說明完整，分類與歸檔不再遮擋內容。",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:06:58.440Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/02-keyboard-expanded-1280.jpg",
+      "title": "反饋歸因 · 鍵盤展開長評論",
+      "reviewNote": "Enter 展開287字全文，summary 保留可見鍵盤焦點；文字無固定欄遮擋。",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:07:16.896Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/03-medium-900.jpg",
+      "title": "反饋歸因 · 中窄版與原始分類",
+      "reviewNote": "900px 列內容與歸因欄均可讀；鍵盤展開追溯資訊可見 edited、prompt_error 原始值。",
+      "viewport": {
+        "width": 900,
+        "height": 900
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:07:33.255Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/04-mobile-390.jpg",
+      "title": "反饋歸因 · 手機完整工具列",
+      "reviewNote": "390px 工具列自然換行，導航、任務中心和帳號完整可見；工作列單欄，所有主要控制44px高。",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:11:32.233Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/05-mobile-long-comment.jpg",
+      "title": "反饋歸因 · 手機長文鍵盤閱讀",
+      "reviewNote": "手機以 Enter 展開287字原文，保留可見焦點且段落自然換行。",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:12:35.716Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/06-mobile-last-record.jpg",
+      "title": "反饋歸因 · 長清單最後一筆",
+      "reviewNote": "21筆列表最後一筆可由鍵盤定位並展開原始分類；保留顯示測試20編號，沒有提交歸檔。",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:12:48.923Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方總覽 · 位置與單列頁首",
+      "file": "workflows/01-owner-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "總覽麵包屑明確顯示項目總覽，沒有選中節點或節點類別干擾；1280px 頁首收為 68px 單列，項目與使用者控制均可見。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方總覽 · 900px 斷點",
+      "file": "workflows/02-owner-900.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 900,
+        "height": 900
+      },
+      "reviewNote": "中窄版切為單欄與審核節點入口，控制完整可見；頂部仍較高，屬後續密度改善空間。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢總覽 · 完整長節點名稱",
+      "file": "workflows/03-inspection-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "需處理節點的長名稱換成兩行完整顯示，未被省略；名稱按鈕實測273×48px，文字scrollWidth等於clientWidth。總覽麵包屑正確。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢手機頁 · 控制區完整可見",
+      "file": "workflows/04-inspection-390.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "待辦、三個工作台切換、自動審查、一鍵分析與使用者選單均在390px內，document scrollWidth390。頁首仍偏高；此截圖驗證控制可見性，不代表全流程手機驗收。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工桌面 · 上傳與監檢意見",
+      "file": "workflows/05-contractor-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "1280px 保留上傳/意見雙欄，頂部68px單列；3份文件、1待提交與1審核中按既有資料顯示，補正文件與補正意見數量有分開說明。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "檢測桌面 · 提交摘要與登記量",
+      "file": "workflows/06-ndt-1280.jpg",
+      "status": "after-verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "頂部改為3項緊湊摘要，下方登記量改行內統計。已上傳0份、已登記底片2、記錄1、報告2屬不同口徑，分開保留；待提交0時沒有製造待處理按鈕。",
+      "build": "dist-score-followup",
+      "limitations": [
+        "隔離示例資料，只讀驗證；未執行正式上傳、審查或補正提交。"
+      ],
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/ndt",
+      "file": "ndt/01-library-1280.jpg",
+      "title": "檢測資料庫 · 桌面",
+      "reviewNote": "上層三項工作摘要及下層登記數緊湊呈現；22種資料的類型、規則與上傳入口保留，登記數與上傳文件數分開。",
+      "limitations": [
+        "本隔離資料有底片2筆、記錄1筆、報告2筆，但已上傳原子資料文件為0；未驗證正數已上傳文件的手機展開渲染。"
+      ],
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "capturedAt": "2026-10-29T09:06:55.416Z",
+      "group": "ndt",
+      "groupLabel": "檢測資料"
+    },
+    {
+      "route": "/workbench/ndt",
+      "file": "ndt/02-library-390.jpg",
+      "title": "檢測資料庫 · 手機首屏",
+      "reviewNote": "手機摘要改為三行，登記計數緊湊排列；資料清單切換為單欄，頁面390px無橫向溢出。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:07:14.163Z",
+      "group": "ndt",
+      "groupLabel": "檢測資料"
+    },
+    {
+      "route": "/workbench/ndt",
+      "file": "ndt/03-rules-390.jpg",
+      "title": "檢測資料庫 · 手機規則與操作",
+      "reviewNote": "Enter可展開適用業務規則且焦點輪廓可見；完整資料類型、零值狀態及上傳按鈕在同一列組中可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:07:31.129Z",
+      "group": "ndt",
+      "groupLabel": "檢測資料"
+    },
+    {
+      "route": "/workbench/ndt",
+      "file": "ndt/04-upload-drawer-390.jpg",
+      "title": "檢測資料庫 · 手機上傳入口",
+      "reviewNote": "長業務規則換為兩行且完整位於卡片內；點文字可勾選及取消。對應資料類型、預選規則、選檔和取消入口可見，未上傳或提交文件。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:08:46.037Z",
+      "group": "ndt",
+      "groupLabel": "檢測資料"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工手機頁 · 上傳入口恢復",
+      "file": "interaction/01-contractor-390.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "上傳與意見區均為366px寬，整頁無水平溢出；三項摘要保持可讀，上傳按鈕在首屏可見。",
+      "group": "interaction",
+      "groupLabel": "鍵盤與窄版",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "手機快捷搜尋 · 長結果完整閱讀",
+      "file": "interaction/02-keyboard-search-390.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "Enter 開啟後焦點進入搜尋框；長節點名稱完整換行，類型顯示「审核环节」，說明與定位入口無需橫滑。",
+      "group": "interaction",
+      "groupLabel": "鍵盤與窄版",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工360px · 鍵盤焦點返回",
+      "file": "interaction/03-contractor-360-focus.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "reviewNote": "Escape 關閉後焦點返回搜尋按鈕且可見；336px寬上傳區完整，頁面無水平溢出。",
+      "group": "interaction",
+      "groupLabel": "鍵盤與窄版",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "桌面快捷搜尋 · 表格回歸",
+      "file": "interaction/04-search-desktop-1280.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewNote": "桌面保留表格與定位操作，類型使用業務名稱；少量結果不再撐高表格。長結果仍沿用桌面提示查看。",
+      "group": "interaction",
+      "groupLabel": "鍵盤與窄版",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工手機頁 · 修前上傳欄被擠壓",
+      "file": "interaction/00-before-contractor-390.jpg",
+      "status": "before-verified",
+      "reviewed": true,
+      "build": "dist-role-content-focus",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewNote": "固定雙欄令上傳區實測寬度為0px，修前截圖保留作對照。",
+      "group": "interaction",
+      "groupLabel": "鍵盤與窄版"
+    }
+  ]
+}

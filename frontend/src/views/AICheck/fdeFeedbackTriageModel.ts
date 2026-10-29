@@ -1,3 +1,4 @@
+import { getStatusTagType } from './components/status'
 /** P12 F2 triage 页的纯逻辑：筛选、计数、指标格式化。页面只做渲染，这里可单测。 */
 import type { FdeFeedback } from '@/api/aicheck'
 
@@ -23,12 +24,64 @@ export const GOVERNANCE_LABELS: Record<string, string> = {
 
 export const FEEDBACK_TYPE_LABELS: Record<string, string> = {
   accepted: '采纳',
+  edited: '人工编辑',
   rejected: '驳回',
+  rejected_false_positive: '驳回误报',
   wrong_evidence: '证据有误',
+  wrong_rule_reference: '依据引用有误',
+  wrong_severity: '风险等级有误',
+  hallucination: '无依据内容',
+  format_error: '格式有误',
+  unsafe_output: '输出安全问题',
   missed_issue: '漏报',
   guard_false_downgrade: '守卫误降级',
   human_override: '人工改判',
   return_for_correction: '退回补正'
+}
+
+/** 后端仍支持这些历史根因；只翻译显示，不合并成新分类或改写提交值。 */
+export const LEGACY_ROOT_CAUSE_LABELS: Record<string, string> = {
+  ocr_error: 'OCR 识别错误',
+  field_mapping_error: '字段映射错误',
+  rule_error: '规则配置错误',
+  kb_retrieval_error: '知识检索错误',
+  kb_content_error: '知识内容错误',
+  prompt_error: '提示词问题',
+  model_reasoning_error: '模型推理问题',
+  schema_error: '结构格式错误',
+  business_pack_config_error: '业务类型配置问题',
+  user_uploaded_bad_file: '上传文件问题',
+  ambiguous_business_standard: '业务标准不明确',
+  human_review_error: '人工审查问题'
+}
+
+export const feedbackTypeLabel = (value?: string) =>
+  value ? FEEDBACK_TYPE_LABELS[value] || `其他类型（${value}）` : '未记录类型'
+
+export const rootCauseLabel = (value?: string) => {
+  if (!value) return '未归因'
+  return (
+    ROOT_CAUSE_OPTIONS.find((option) => option.value === value)?.label ||
+    (LEGACY_ROOT_CAUSE_LABELS[value]
+      ? `${LEGACY_ROOT_CAUSE_LABELS[value]}（历史分类）`
+      : `其他分类（${value}）`)
+  )
+}
+
+/** 只为当前数据中出现的旧分类补选项，避免展示所有历史类别。 */
+export const historicalRootCauses = (rows: Pick<FdeFeedback, 'rootCause'>[]) =>
+  [...new Set(rows.map((row) => row.rootCause).filter((value): value is string => Boolean(value)))]
+    .filter((value) => !ROOT_CAUSE_OPTIONS.some((option) => option.value === value))
+    .map((value) => ({ value, label: rootCauseLabel(value) }))
+
+export const rootCauseOptionsFor = (value?: string) => [
+  ...ROOT_CAUSE_OPTIONS,
+  ...historicalRootCauses([{ rootCause: value }])
+]
+
+export const feedbackCommentPreview = (comment?: string) => {
+  const text = String(comment || '').trim()
+  return text.length > 140 ? `${text.slice(0, 140)}…` : text
 }
 
 export type WindowKey = 'week' | 'month' | 'all'
@@ -72,12 +125,7 @@ export const formatRatio = (item: unknown) => {
   return `${(Number(value) * 100).toFixed(1)}%`
 }
 
-export const stateTagType = (state?: string) => {
-  if (state === 'promoted_to_eval' || state === 'ready_for_eval') return 'success'
-  if (state === 'needs_adjudication') return 'danger'
-  if (state === 'triaged') return 'info'
-  return 'warning'
-}
+export const stateTagType = (state?: string) => getStatusTagType(state)
 
 /** 归档提交体：勾了入评测集才用 approved_for_eval，否则只是 triaged。 */
 export const triagePayload = (draft: {

@@ -1,0 +1,2 @@
+[ECharts] Specified `grid.containLabel` but no `use(LegacyGridContainLabel)`;use `grid.outerBounds` instead.
+Production OCR chart options render both synthetic count scopes; timeline keeps zero and unknown distinct.

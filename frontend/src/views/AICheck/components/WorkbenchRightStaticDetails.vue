@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { latestArchiveItem, latestReportVersion } from '../workbenchTruth'
 import type {
   ArchiveItem,
   NdtFeedback,
@@ -31,6 +32,9 @@ const props = defineProps<{
   aiConfidence: string
   reports: ReportVersion[]
   archiveItems: ArchiveItem[]
+  reportArchiveLoaded?: boolean
+  reportArchiveLoading?: boolean
+  reportArchiveIssue?: string
   ndtFilms: NdtFilm[]
   ndtRecords: NdtRecord[]
   ndtReports: NdtReport[]
@@ -42,8 +46,8 @@ const projectFiles = computed(() => props.packageData?.projectFiles || [])
 const extractedFields = computed(() => props.packageData?.extractedFields || [])
 const evidenceLinks = computed(() => props.packageData?.aiRuns[0]?.evidenceLinks || [])
 const latestAiRun = computed(() => props.packageData?.aiRuns[0])
-const latestReport = computed(() => props.reports[0])
-const latestArchive = computed(() => props.archiveItems[0])
+const latestReport = computed(() => latestReportVersion(props.reports))
+const latestArchive = computed(() => latestArchiveItem(props.archiveItems))
 const firstBinding = computed(() => bindings.value[0])
 const firstProjectFile = computed(() => projectFiles.value[0])
 const firstExtractedField = computed(() => extractedFields.value[0])
@@ -507,14 +511,15 @@ const getPillClass = (value?: string | number) => {
                 ><td>{{ node?.status === '需补正' ? '退回补正' : node?.status || '-' }}</td></tr
               >
               <tr
-                ><th>挂载资料数</th><td>{{ node?.fileCount || bindings.length || 0 }}</td></tr
+                ><th>挂载资料数</th
+                ><td>{{ node?.fileCount ?? (packageData ? bindings.length : '—') }}</td></tr
               >
               <tr
                 ><th>最近异常</th
                 ><td>{{
                   node?.status === '需补正'
-                    ? '炉批号与材料清单不一致，需补充说明。'
-                    : '暂无高风险异常。'
+                    ? '当前节点标记为需补正，具体要求以监检意见为准。'
+                    : '当前可见状态未标记需补正；不代表所有风险均已排除。'
                 }}</td></tr
               >
             </tbody>
@@ -545,28 +550,19 @@ const getPillClass = (value?: string | number) => {
       </section>
 
       <section class="right-card">
-        <h3>最近异常提醒</h3>
+        <h3>报告与归档提醒</h3>
         <div class="body">
-          <div class="timeline">
-            <div class="time-row"
-              ><span class="time-dot red"></span
-              ><div><strong>材料质量证明文件</strong><br />炉批号差异说明缺失。</div></div
-            >
-            <div class="time-row"
-              ><span class="time-dot red"></span
-              ><div
-                ><strong>射线检测现场抽查</strong><br />照片缺少拍摄时间和焊口编号标识。</div
-              ></div
-            >
-            <div class="time-row"
-              ><span class="time-dot orange"></span
-              ><div
-                ><strong>报告归档</strong><br />{{
-                  latestReport?.status || latestArchive?.status || '待生成'
-                }}。</div
-              ></div
-            >
-          </div>
+          <p v-if="reportArchiveLoading">正在更新报告与归档资料…</p>
+          <p v-else-if="reportArchiveIssue">报告与归档暂不可用，请在上方重试。</p>
+          <p v-else-if="!reportArchiveLoaded">报告与归档资料待加载。</p>
+          <template v-else>
+            <p>{{
+              latestReport ? `${latestReport.title}：${latestReport.status}` : '当前无可查看报告。'
+            }}</p>
+            <p>{{
+              latestArchive ? `最近归档资料：${latestArchive.name}` : '当前无可查看归档资料。'
+            }}</p>
+          </template>
         </div>
       </section>
     </template>

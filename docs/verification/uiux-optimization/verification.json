@@ -1,0 +1,35 @@
+{
+  "verifiedAt": "2026-10-28T21:32:11.235104-07:00",
+  "timezone": "America/Los_Angeles",
+  "unitTests": {
+    "passedFiles": 123,
+    "failedFiles": 0,
+    "exitCode": 0
+  },
+  "typecheck": {
+    "exitCode": 0
+  },
+  "productionBuild": {
+    "directory": "frontend/dist-uiux-release",
+    "exitCode": 0,
+    "includesEslint": true,
+    "indexSha256": "71ccbca00fef8844b7d152590a64960953b8b7308946d4c4b07cc6ed742312b5"
+  },
+  "operability": {
+    "scannedFiles": 622,
+    "findings": 0,
+    "exitCode": 0
+  },
+  "visual": {
+    "mainRoutes": 44,
+    "captures": 83,
+    "allReviewed": true,
+    "responsiveWidths": [
+      1470,
+      1280,
+      900
+    ]
+  },
+  "environment": "real API, isolated in-memory demo data, business writes blocked",
+  "deployed": false
+}

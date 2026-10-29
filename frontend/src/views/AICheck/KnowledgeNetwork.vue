@@ -14,6 +14,7 @@ import {
   ElTag
 } from 'element-plus'
 import type { EChartsOption } from 'echarts'
+import { LabelLayout } from 'echarts/features'
 import echarts from '@/plugins/echarts'
 import { getKnowledgeNetworkApi } from '@/api/aicheck'
 import {
@@ -28,7 +29,17 @@ import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import StaticPageShell from './components/StaticPageShell.vue'
+import StatusTag from './components/StatusTag.vue'
 import { radialLayout } from './knowledgeGraphLayout'
+import {
+  graphLabelLevel,
+  graphSearchContext,
+  showGraphNodeLabel,
+  visibleGraphSelection
+} from './knowledgeGraphLabels'
+
+// ECharts' modular build does not register labelLayout automatically.
+echarts.use([LabelLayout])
 
 const DEFAULT_BUSINESS_PACK_ID = 'engineering_inspection_v1'
 const DEFAULT_VISIBLE_TYPES = [
@@ -49,11 +60,7 @@ const FAMILY_LABELS: Record<string, string> = {
   execution: 'Agent 与 Tool'
 }
 
-/* 每个节点都写名字。
- *
- * 原先只有 business_pack / domain_module 显示标签，其余十几种类型
- * （规则、标准条款、原子检查项、项目、工具……）在图上就是一个个纯色块——
- * **看得见有东西，但不知道是什么**，只能一个个悬停去问。 */
+// 全景先显示结构标签；放大、搜索、悬停与选中时逐步显示细节，节点始终保留。
 
 const MAJOR_TYPES = new Set(['business_pack', 'domain_module'])
 
@@ -126,7 +133,7 @@ const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
 
 function labelFontSize(type: string): number {
   if (type === 'business_pack') return 13
-  return MAJOR_TYPES.has(type) ? 12 : 10
+  return MAJOR_TYPES.has(type) ? 12 : 11
 }
 
 function lineHeightOf(type: string): number {
@@ -162,6 +169,16 @@ const loadError = ref('')
 const keyword = ref('')
 const selectedTypes = ref<string[]>([])
 const selectedNodeId = ref('')
+const selectionClearedByFilter = ref(false)
+const graphZoom = ref(1)
+const labelLevel = computed(() => graphLabelLevel(graphZoom.value))
+const labelLevelText = computed(() =>
+  labelLevel.value === 'detail'
+    ? '详细标签'
+    : labelLevel.value === 'sections'
+      ? '结构与监检节点标签'
+      : '结构标签'
+)
 const chartHost = ref<HTMLDivElement>()
 const appStore = useAppStore()
 const userStore = useUserStore()
@@ -193,29 +210,6 @@ const userLabel = computed(
  * 于是同一个后台在三个页面上显示三副面孔，进来之后 admin 的分组还会消失。
  * 这一页没有 route 对象，用它自己的固定路径高亮。 */
 const menuSections = computed(() => buildAdminMenuSections('/knowledge/network'))
-
-const boundaryRows = [
-  { label: '模式层', value: '业务包、节点、资料、规则、条款、事实与 Tool' },
-  { label: '实例层', value: '当前项目和知识文件（按运行数据动态加入）' },
-  { label: '来源', value: '发布 YAML、标准条款包和知识库运行状态' },
-  { label: '边界', value: '网络只用于检索、解释与治理，不自动签发结论' }
-]
-
-const topStats = computed(() => [
-  {
-    key: 'nodes',
-    label: '节点',
-    value: graph.value?.summary.nodeCount || 0,
-    tone: 'blue' as const
-  },
-  {
-    key: 'edges',
-    label: '关系',
-    value: graph.value?.summary.edgeCount || 0,
-    tone: 'green' as const
-  },
-  { key: 'visible', label: '当前显示', value: visibleNodes.value.length, tone: 'orange' as const }
-])
 
 const rightCards = computed(() => [
   {
@@ -255,12 +249,11 @@ const typeFilteredNodes = computed(() => {
   return (graph.value?.nodes || []).filter((node) => allowed.has(node.type))
 })
 
-const visibleNodes = computed(() => {
+const searchMatchIds = computed(() => {
   const query = normalizedKeyword.value
-  if (!query) return typeFilteredNodes.value
-  const candidates = typeFilteredNodes.value
-  const matchedIds = new Set(
-    candidates
+  if (!query) return new Set<string>()
+  return new Set(
+    typeFilteredNodes.value
       .filter((node) => {
         const haystack = [
           node.id,
@@ -278,13 +271,16 @@ const visibleNodes = computed(() => {
       })
       .map((node) => node.id)
   )
+})
+
+const visibleNodes = computed(() => {
+  if (!normalizedKeyword.value) return typeFilteredNodes.value
+  const candidates = typeFilteredNodes.value
+  const matchedIds = searchMatchIds.value
   if (!matchedIds.size) return []
   const allowedIds = new Set(candidates.map((node) => node.id))
-  for (const edge of graph.value?.edges || []) {
-    if (matchedIds.has(edge.source) && allowedIds.has(edge.target)) matchedIds.add(edge.target)
-    if (matchedIds.has(edge.target) && allowedIds.has(edge.source)) matchedIds.add(edge.source)
-  }
-  return candidates.filter((node) => matchedIds.has(node.id))
+  const contextIds = graphSearchContext(matchedIds, allowedIds, graph.value?.edges || [])
+  return candidates.filter((node) => contextIds.has(node.id))
 })
 
 const visibleEdges = computed(() => {
@@ -351,7 +347,7 @@ function chartColors() {
     execution: themeColor('--el-color-primary-light-3', '#38bdf8'),
     edge: themeColor('--el-border-color', '#cbd5e1'),
     text: themeColor('--el-text-color-primary', '#1f2937'),
-    muted: themeColor('--el-text-color-secondary', '#64748b')
+    muted: themeColor('--el-text-color-regular', '#475467')
   }
 }
 
@@ -434,7 +430,12 @@ function buildChartOption(): EChartsOption {
      *
      * 颜色用次要文字色而不是写死的灰：浅色主题下写死的浅灰几乎看不见。 */
     label: {
-      show: true,
+      show: showGraphNodeLabel(
+        node.type,
+        labelLevel.value,
+        visibleNodes.value.length,
+        searchMatchIds.value.has(node.id)
+      ),
       position: 'right' as const,
       distance: LABEL_DISTANCE,
       color: colors.muted,
@@ -510,6 +511,7 @@ function buildChartOption(): EChartsOption {
     ],
     series: [
       {
+        id: 'knowledge-network',
         type: 'graph',
         /* 坐标已由 radialLayout 算好——确定性布局，打开即稳定。
            不再有「布局一直在漂、定位对不准、截图判据被动画污染」那一类问题。 */
@@ -531,7 +533,7 @@ function buildChartOption(): EChartsOption {
         edgeSymbol: ['none', 'arrow'],
         edgeSymbolSize: [0, 5],
         emphasis: {
-          focus: 'adjacency',
+          focus: 'self',
           /* 悬停态单独写一份：只改静态那份的话，鼠标一移上去标签又跳回默认位置
              和默认颜色——同一条规则要写在静态、悬停、选中三处，这轮栽过五次。
              悬停时把灰字提亮成主文字色，位置不变（跳位置会让人以为点错了）。 */
@@ -603,10 +605,56 @@ function buildChartOption(): EChartsOption {
 /** 把选中态推给图表——用 action，不重建 option，这样不会丢平移缩放。 */
 function syncSelectionToChart() {
   if (!chart) return
-  chart.dispatchAction({ type: 'unselect', seriesIndex: 0 })
+  // ECharts single selection requires explicit indices; omitting them leaves stale selectedMap entries.
+  const series = chart.getOption().series as Array<{ data?: unknown[] }> | undefined
+  const dataIndex = series?.[0]?.data?.map((_node, index) => index) || []
+  if (dataIndex.length) chart.dispatchAction({ type: 'unselect', seriesIndex: 0, dataIndex })
   if (!selectedNodeId.value) return
   const index = visibleNodes.value.findIndex((node) => node.id === selectedNodeId.value)
   if (index >= 0) chart.dispatchAction({ type: 'select', seriesIndex: 0, dataIndex: index })
+}
+
+/** Update labels only when crossing a zoom threshold, preserving the current view and nodes. */
+function syncZoomLabels() {
+  if (!chart) return
+  const option = chart.getOption() as {
+    series?: Array<{
+      zoom?: number
+      center?: [number | string, number | string]
+      data?: Array<{ id: string; label?: Record<string, unknown>; [key: string]: unknown }>
+    }>
+  }
+  const series = option.series?.[0]
+  if (!series?.data) return
+  const previousLevel = labelLevel.value
+  graphZoom.value = series.zoom || 1
+  if (previousLevel === labelLevel.value) return
+  const nodes = nodeById.value
+  chart.setOption(
+    {
+      series: [
+        {
+          id: 'knowledge-network',
+          zoom: series.zoom,
+          center: series.center,
+          data: series.data.map((datum) => ({
+            ...datum,
+            label: {
+              ...datum.label,
+              show: showGraphNodeLabel(
+                nodes.get(datum.id)?.type || '',
+                labelLevel.value,
+                visibleNodes.value.length,
+                searchMatchIds.value.has(datum.id)
+              )
+            }
+          }))
+        }
+      ]
+    },
+    { lazyUpdate: true }
+  )
+  syncSelectionToChart()
 }
 
 function renderChart(reset = false) {
@@ -625,6 +673,9 @@ function renderChart(reset = false) {
         selectedNodeId.value = String(event.data.id)
       }
     })
+    chart.on('graphroam', () => {
+      if (!interacting) syncZoomLabels()
+    })
     /* 手按下去到松开之间不重绘。globalout 也要收——鼠标拖出画布外松开时
      * 不会有 mouseup，漏掉这一路会把 interacting 永久卡在 true，
      * 那样图就再也不刷新了：一个比原问题更难查的静默故障。 */
@@ -632,6 +683,7 @@ function renderChart(reset = false) {
     const endInteraction = () => {
       if (!interacting) return
       interacting = false
+      syncZoomLabels()
       if (pendingRender) {
         pendingRender = false
         renderChart()
@@ -654,7 +706,10 @@ function renderChart(reset = false) {
    * 原先每次 setOption 都传 true，等于每次重画都把画布的平移缩放清零。
    * 而重画的触发点很多——筛选类型、搜索、切主题、选中节点——
    * 用户拖到一半只要碰上一次，图就弹回原位，看起来就是「滑动失灵」。 */
-  if (reset) chart.clear()
+  if (reset) {
+    graphZoom.value = 1
+    chart.clear()
+  }
   chart.setOption(buildChartOption(), { notMerge: reset, lazyUpdate: true })
   /* 只有重置时才 resize。容器尺寸变化由 ResizeObserver 负责——
    * 每次重绘都无脑 resize 是多余的一次重排，也多一次打断手势的机会。 */
@@ -664,6 +719,7 @@ function renderChart(reset = false) {
 
 function resetView() {
   selectedNodeId.value = ''
+  selectionClearedByFilter.value = false
   renderChart(true)
 }
 
@@ -677,6 +733,7 @@ function restoreCoreTypes() {
   )
   keyword.value = ''
   selectedNodeId.value = ''
+  selectionClearedByFilter.value = false
 }
 
 function selectRelatedNode(node: KnowledgeNetworkNode | undefined) {
@@ -707,6 +764,7 @@ async function loadGraph() {
       response.data.nodeTypes.some((item) => item.type === type)
     )
     selectedNodeId.value = `business-pack:${response.data.businessPackId}`
+    selectionClearedByFilter.value = false
     await nextTick()
     renderChart(true)
   } catch (error) {
@@ -727,6 +785,20 @@ watch(
   { deep: false }
 )
 
+watch(visibleNodes, (nodes) => {
+  const nextSelection = visibleGraphSelection(
+    selectedNodeId.value,
+    new Set(nodes.map((node) => node.id))
+  )
+  if (selectedNodeId.value && !nextSelection) {
+    selectionClearedByFilter.value = true
+    selectedNodeId.value = ''
+  }
+})
+
+watch(selectedNodeId, (id) => {
+  if (id) selectionClearedByFilter.value = false
+})
 watch(selectedNodeId, () => syncSelectionToChart())
 
 onMounted(() => {
@@ -761,14 +833,14 @@ onBeforeUnmount(() => {
     :status-tone="loadError ? 'red' : loading ? 'orange' : 'green'"
     search-placeholder="搜索知识库、标准、规则或项目"
     :user-label="userLabel"
-    :top-stats="topStats"
+    :top-stats="[]"
     :menu-title="ADMIN_MENU_TITLE"
     :menu-root="ADMIN_MENU_ROOT"
     :menu-sections="menuSections"
     :boundary-title="ADMIN_BOUNDARY_TITLE"
     :boundary-badge="ADMIN_BOUNDARY_BADGE"
     boundary-tone="green"
-    :boundary-rows="boundaryRows"
+    :boundary-rows="[]"
     right-title="网络说明"
     :right-subtitle="
       graph ? `${graph.businessPackId} · ${graph.businessPackVersion}` : '正在读取版本'
@@ -777,6 +849,8 @@ onBeforeUnmount(() => {
     workspace-mode="wide"
     right-panel-mode="drawer"
     right-toggle-label="网络信息"
+    right-collapsed-default
+    boundary-collapsed-default
     search-scope="knowledge"
     task-area="knowledge"
   >
@@ -785,11 +859,7 @@ onBeforeUnmount(() => {
         <div class="network-heading-row">
           <div>
             <h2 id="knowledge-network-heading">工业管道监督检验知识网络</h2>
-            <p>从现有业务包、规则、条款、资料类型、事实路径和 Tool 绑定实时编译。</p>
-          </div>
-          <div class="network-version-tags">
-            <ElTag effect="plain">{{ graph?.schemaVersion || '--' }}</ElTag>
-            <ElTag type="success" effect="plain">{{ graph?.businessPackVersion || '--' }}</ElTag>
+            <p>查看业务类型、资料、规则与标准条款的关系，点击节点追溯依据。</p>
           </div>
         </div>
 
@@ -845,9 +915,18 @@ onBeforeUnmount(() => {
           </div>
           <ElTag v-if="keyword" type="info" effect="plain">搜索：{{ keyword }}</ElTag>
         </div>
+        <p class="graph-reading-guide">
+          颜色表示节点类别。全景显示结构标签，放大后逐步显示细节；悬停查看全名，点击查看右侧详情。
+          <span v-if="normalizedKeyword"
+            >搜索命中 {{ searchMatchIds.size }} 个，保留其一跳关系。</span
+          >
+        </p>
 
         <div class="network-layout">
           <div ref="graphPane" class="graph-pane">
+            <div class="graph-label-status" aria-live="polite">
+              {{ labelLevelText }}<span v-if="normalizedKeyword"> · 搜索命中标签</span>
+            </div>
             <!-- 全屏：关系图在半个屏幕里根本看不清，节点一多就挤成一团。 -->
             <ElButton
               class="graph-fullscreen-btn"
@@ -869,35 +948,41 @@ onBeforeUnmount(() => {
           </div>
 
           <aside class="node-detail" aria-label="知识节点详情">
-            <ElEmpty v-if="!selectedNode" description="点击网络节点查看详情" />
+            <ElEmpty
+              v-if="!selectedNode"
+              :description="
+                selectionClearedByFilter
+                  ? '筛选后原选中节点已隐藏，请重新点选图中节点查看详情'
+                  : '点击网络节点查看详情'
+              "
+            />
             <template v-else>
               <div class="node-detail-heading">
                 <div>
                   <ElTag effect="plain">{{ selectedNode.typeLabel }}</ElTag>
-                  <ElTag v-if="selectedNode.status" type="info" effect="plain">
-                    {{ selectedNode.status }}
-                  </ElTag>
+                  <StatusTag
+                    v-if="selectedNode.status"
+                    :status="selectedNode.status"
+                    effect="plain"
+                  />
                 </div>
                 <h3>{{ selectedNode.label }}</h3>
                 <p v-if="selectedNode.description">{{ selectedNode.description }}</p>
-                <code>{{ selectedNode.id }}</code>
               </div>
 
-              <ElDescriptions
-                v-if="selectedMetadata.length"
-                class="node-metadata"
-                :column="1"
-                border
-                size="small"
-              >
-                <ElDescriptionsItem
-                  v-for="item in selectedMetadata.slice(0, 12)"
-                  :key="item.key"
-                  :label="item.key"
-                >
-                  <pre>{{ item.value }}</pre>
-                </ElDescriptionsItem>
-              </ElDescriptions>
+              <details class="node-technical-details">
+                <summary>查看技术属性</summary>
+                <code>{{ selectedNode.id }}</code>
+                <ElDescriptions class="node-metadata" :column="1" border size="small">
+                  <ElDescriptionsItem
+                    v-for="item in selectedMetadata.slice(0, 12)"
+                    :key="item.key"
+                    :label="item.key"
+                  >
+                    <pre>{{ item.value }}</pre>
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </details>
 
               <div class="relation-heading">
                 <strong>一跳关系</strong>
@@ -928,6 +1013,26 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.node-technical-details {
+  margin: 12px 0;
+}
+
+.node-technical-details summary {
+  cursor: pointer;
+  color: var(--el-color-primary);
+}
+
+.node-technical-details summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+
+.node-technical-details code {
+  display: block;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+
 .knowledge-network-page {
   display: grid;
   min-width: 0;
@@ -1017,6 +1122,27 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(290px, 340px);
   min-height: 680px;
+}
+
+.graph-reading-guide {
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.6;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.graph-label-status {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 12px;
+  padding: 4px 8px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  pointer-events: none;
+  background: var(--el-bg-color);
 }
 
 /* 全屏时铺满整屏。:fullscreen 下容器脱离原布局，

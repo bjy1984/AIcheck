@@ -1,0 +1,178 @@
+[
+  {
+    "key": "01-dashboard",
+    "route": "/fde/dashboard",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/01-dashboard.jpg"
+  },
+  {
+    "key": "02-projects",
+    "route": "/fde/projects",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/02-projects.jpg"
+  },
+  {
+    "key": "03-ocr-quality",
+    "route": "/fde/ocr-quality",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/03-ocr-quality.jpg"
+  },
+  {
+    "key": "04-ai-runs",
+    "route": "/fde/ai-runs",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/04-ai-runs.jpg"
+  },
+  {
+    "key": "05-review-runs",
+    "route": "/fde/review-runs",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/05-review-runs.jpg"
+  },
+  {
+    "key": "06-feedback",
+    "route": "/fde/feedback",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/06-feedback.jpg"
+  },
+  {
+    "key": "07-evaluation",
+    "route": "/fde/evaluation",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/07-evaluation.jpg"
+  },
+  {
+    "key": "08-business-packs",
+    "route": "/fde/business-packs",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/08-business-packs.jpg"
+  },
+  {
+    "key": "09-capability-bundles",
+    "route": "/fde/capability-bundles",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/09-capability-bundles.jpg"
+  },
+  {
+    "key": "10-releases",
+    "route": "/fde/releases",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/10-releases.jpg"
+  },
+  {
+    "key": "11-security",
+    "route": "/fde/security",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/11-security.jpg"
+  },
+  {
+    "key": "12-incidents",
+    "route": "/fde/incidents",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/12-incidents.jpg"
+  },
+  {
+    "key": "13-costs",
+    "route": "/fde/costs",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/13-costs.jpg"
+  },
+  {
+    "key": "14-acceptance",
+    "route": "/fde/acceptance",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/14-acceptance.jpg"
+  },
+  {
+    "key": "15-feedback-triage",
+    "route": "/fde-feedback-triage",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/15-feedback-triage.jpg"
+  },
+  {
+    "key": "16-blind-review",
+    "route": "/fde-blind-review",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/16-blind-review.jpg"
+  },
+  {
+    "key": "17-standards-vectorization",
+    "route": "/fde/business-packs?view=standards",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/17-standards-vectorization.jpg"
+  },
+  {
+    "key": "18-project-vectorization",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=vectorization&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/18-project-vectorization.jpg"
+  },
+  {
+    "key": "19-project-pageindex",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=pageindex&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/19-project-pageindex.jpg"
+  },
+  {
+    "key": "20-project-langgraph",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=langgraph&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/20-project-langgraph.jpg"
+  },
+  {
+    "key": "21-project-ocr-labeling",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=ocr-labeling&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/21-project-ocr-labeling.jpg"
+  },
+  {
+    "key": "21-project-ocr-labeling-content",
+    "route": "http://127.0.0.1:4176/#/fde/projects?projectId=P-2026-HDCP-001&view=ocr-labeling&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/21-project-ocr-labeling-content.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "20-project-langgraph-content",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=langgraph&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/20-project-langgraph-content.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "19-project-pageindex-content",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=pageindex&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/19-project-pageindex-content.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "17-standards-files",
+    "route": "/fde/business-packs?view=standards",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/17-standards-files.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "18-project-vectorization-content",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=vectorization&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/18-project-vectorization-content.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "04-ai-run-provenance",
+    "route": "/fde/ai-runs",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/04-ai-run-provenance.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "22-project-evaluation",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=evaluation&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/22-project-evaluation.jpg"
+  },
+  {
+    "key": "22-project-evaluation-content",
+    "route": "http://127.0.0.1:4176/#/fde/projects?projectId=P-2026-HDCP-001&view=evaluation&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/22-project-evaluation-content.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "10-release-impact",
+    "route": "/fde/releases",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/10-release-impact.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "01-dashboard-content",
+    "route": "/fde/dashboard",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/01-dashboard-content.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "02-project-overview-content",
+    "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/02-project-overview-content.jpg",
+    "section": "lower"
+  },
+  {
+    "key": "09-bundle-diff",
+    "route": "/fde/capability-bundles",
+    "file": "/Volumes/Volume/project/AIcheck/docs/verification/page-captures/fde/09-bundle-diff.jpg",
+    "section": "lower"
+  }
+]

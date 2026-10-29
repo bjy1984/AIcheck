@@ -63,6 +63,11 @@ body,
   --aicheck-warning-bg: #fff7e6;
   --aicheck-danger: #b42318;
   --aicheck-danger-bg: #fef3f2;
+  --aicheck-neutral: #52647d;
+  --aicheck-neutral-bg: #f2f4f7;
+  --aicheck-success-border: #a9d9bf;
+  --aicheck-warning-border: #ebc98d;
+  --aicheck-danger-border: #efb4ad;
   --aicheck-disabled-text: #667085;
   --aicheck-disabled-bg: #f2f4f7;
   --aicheck-disabled-border: #d0d5dd;
@@ -75,10 +80,13 @@ body,
   --el-color-primary-light-9: #eef5ff;
   --el-color-primary-dark-2: #174fa8;
   --el-color-success: #087443;
+  --el-color-success-light-8: var(--aicheck-success-border);
   --el-color-success-light-9: #ecfdf3;
   --el-color-warning: #8a4b00;
+  --el-color-warning-light-8: var(--aicheck-warning-border);
   --el-color-warning-light-9: #fff7e6;
   --el-color-danger: #b42318;
+  --el-color-danger-light-8: var(--aicheck-danger-border);
   --el-color-danger-light-9: #fef3f2;
   --el-color-info: #475467;
   --el-color-info-light-9: #f2f4f7;
@@ -139,21 +147,28 @@ body,
   :where(.pill.green, .pill-green) {
   color: var(--aicheck-success) !important;
   background: var(--aicheck-success-bg) !important;
-  border-color: #75c69d !important;
+  border-color: var(--aicheck-success-border) !important;
 }
 
 :where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
   :where(.pill.orange, .pill-orange) {
   color: var(--aicheck-warning) !important;
   background: var(--aicheck-warning-bg) !important;
-  border-color: #d97706 !important;
+  border-color: var(--aicheck-warning-border) !important;
 }
 
 :where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
   :where(.pill.red, .pill-red) {
   color: var(--aicheck-danger) !important;
   background: var(--aicheck-danger-bg) !important;
-  border-color: #d92d20 !important;
+  border-color: var(--aicheck-danger-border) !important;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.pill.gray, .pill-gray) {
+  color: var(--aicheck-neutral) !important;
+  background: var(--aicheck-neutral-bg) !important;
+  border-color: var(--aicheck-border) !important;
 }
 
 :where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)

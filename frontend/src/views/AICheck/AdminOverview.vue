@@ -1,5 +1,30 @@
 <script setup lang="ts">
 import SkillRequestRecords from './SkillRequestRecords.vue'
+import StatusTag from './components/StatusTag.vue'
+import { Download, Refresh, Search } from '@element-plus/icons-vue'
+import {
+  adminOrgTypeLabels,
+  adminOrgTypeLabel,
+  adminAuditTypeLabels,
+  adminCodeLabel,
+  filterMaterialPoints,
+  filterOrganizations,
+  filterAdminUsers,
+  reportDraftFrom
+} from './adminListPresentation'
+import {
+  adminOverviewSections,
+  missingAdminSections,
+  adminCountLabel,
+  adminValidationState,
+  confidenceValue,
+  productionTemplateLocked,
+  promptDraftFrom,
+  templatePublishMessage,
+  loadTemplatePublishCandidates,
+  adminRecordScopes,
+  adminTargetPage
+} from './adminOperationPolicy'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -177,13 +202,6 @@ const routeQueryNumber = (key: string, fallback: number) => {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
-const adminShellBoundaryRows = [
-  { label: '合同1', value: '项目管理、组织用户、权限与节点' },
-  { label: '合同2', value: '业务类型、规则流程、Prompt 模板、细项配置' },
-  { label: '合同3', value: '知识库、联调清单、审计日志' },
-  { label: '边界', value: '后台配置，不办理审查意见或报告确认' }
-] as const
-
 type PermissionConfigRow = AdminConfigOverviewPayload['permissionMatrix'][number]
 type NodeTemplateConfigRow = AdminConfigOverviewPayload['nodeTemplates'][number]
 type WorkflowConfigRow = AdminConfigOverviewPayload['workflowStateMachines'][number]
@@ -265,6 +283,10 @@ const getAdminTabFromRoute = (path: string): AdminTabKey => adminRouteTabMap[pat
 
 const activeTab = ref<AdminTabKey>(getAdminTabFromRoute(route.path))
 const projects = ref<Project[]>([])
+const overviewLoaded = ref(false)
+const overviewOmittedSections = ref<string[]>([])
+const auditLoaded = ref(false)
+const integrationLoaded = ref(false)
 const overview = ref<AdminConfigOverviewPayload>(emptyOverview())
 const integrationContract = ref<IntegrationContractPayload>(emptyIntegrationContract())
 const auditLogs = ref<AuditLogPayload['items']>([])
@@ -425,19 +447,16 @@ const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }
 
 const adminPageTitle = computed(() => adminPageTitleMap[activeTab.value].title)
 const adminPageSubtitle = computed(() => adminPageTitleMap[activeTab.value].subtitle)
-const adminPublishScope = computed<'all' | 'permission' | 'workflow' | 'node-template' | 'rule'>(
+const adminPublishOptions = computed(() => adminRecordScopes(activeTab.value))
+const adminPublishScope = ref<'permission' | 'workflow' | 'node-template' | 'rule'>('permission')
+const adminPublishAvailable = computed(() => adminPublishOptions.value.length > 0)
+watch(
+  activeTab,
   () => {
-    if (activeTab.value === 'permission') return 'permission'
-    if (activeTab.value === 'rule') return 'rule'
-    if (activeTab.value === 'material-review-point') return 'node-template'
-    if (activeTab.value === 'fine-config') return 'workflow'
-    return 'all'
-  }
-)
-const adminPublishAvailable = computed(() =>
-  ['permission', 'rule', 'material-review-point', 'prompt-template', 'fine-config'].includes(
-    activeTab.value
-  )
+    const first = adminPublishOptions.value[0]
+    if (first) adminPublishScope.value = first.value
+  },
+  { immediate: true }
 )
 
 /* 菜单来自 adminMenuTree —— 后台**只有一棵树**。
@@ -459,19 +478,6 @@ const handleAdminMenuSelect = () => {
  * 原来它们是纯展示：告诉你有 1 条配置待办，却不告诉你在哪，
  * 也不让你点——一个提醒如果不能通向处理，就只是让人焦虑。
  */
-const TOP_STAT_TABS: Record<string, AdminTabKey> = {
-  project: 'projects',
-  'pending-rule': 'rule',
-  audit: 'audit'
-}
-
-const handleTopStatJump = async (stat: { key?: string }) => {
-  const tab = stat.key ? TOP_STAT_TABS[stat.key] : undefined
-  if (!tab) return
-  await router.push(adminTabRouteMap[tab])
-  scrollAdminContentIntoView()
-}
-
 watch(
   () => route.path,
   (path, oldPath) => {
@@ -521,7 +527,7 @@ const promptTemplateLoading = ref(false)
 const promptTemplateError = ref('')
 const promptTemplateSaving = ref(false)
 const promptTemplateDialogVisible = ref(false)
-const promptTemplateDialogMode = ref<'create' | 'edit'>('create')
+const promptTemplateDialogMode = ref<'create' | 'edit' | 'view'>('create')
 const promptTemplateOperationError = ref('')
 const reportTemplates = ref<ReportTemplate[]>([])
 const reportTemplateLoading = ref(false)
@@ -537,7 +543,8 @@ const reportTemplateDialogMode = ref<'create' | 'edit' | 'view'>('create')
 const REPORT_TEMPLATE_LOCKED_STATUSES = ['production', '已发布']
 const reportTemplateLocked = (status?: string) =>
   REPORT_TEMPLATE_LOCKED_STATUSES.includes(String(status || ''))
-const reportTemplateLockedHint = '生产版本已被已生成的报告引用，不能改动；请新增一个模板版本。'
+const reportTemplateLockedHint =
+  '生产版本只读；可建立草稿，修改并发布后供后续报告使用。已生成的报告保持原样。'
 const reportTemplateOperationError = ref('')
 
 const auditFilters = reactive({
@@ -621,6 +628,84 @@ const reportTemplateFilters = reactive({
   keyword: '',
   status: ''
 })
+
+const materialPointFilters = reactive({
+  keyword: '',
+  nodeId: '',
+  materialTypeCode: '',
+  enabled: ''
+})
+const organizationFilters = reactive({ keyword: '', type: '', status: '' })
+const adminUserFilters = reactive({ keyword: '', role: '', orgId: '', status: '' })
+const materialPointRows = computed(() =>
+  filterMaterialPoints(overview.value.materialReviewPoints, materialPointFilters)
+)
+const organizationRows = computed(() =>
+  filterOrganizations(overview.value.orgUnits, organizationFilters)
+)
+const adminUserRows = computed(() => filterAdminUsers(overview.value.users, adminUserFilters))
+const materialPointNodeOptions = computed(() =>
+  Array.from(
+    new Map(
+      overview.value.materialReviewPoints.map((row) => [
+        String(row.nodeId),
+        { value: String(row.nodeId), label: `节点 ${row.nodeId} · ${row.nodeName}` }
+      ])
+    ).values()
+  ).sort((a, b) => Number(a.value) - Number(b.value))
+)
+const materialPointTypeOptions = computed(() =>
+  Array.from(
+    new Map(
+      overview.value.materialReviewPoints.map((row) => [
+        row.materialTypeCode,
+        { value: row.materialTypeCode, label: row.materialTypeName || row.materialTypeCode }
+      ])
+    ).values()
+  )
+)
+const adminUserRoleOptions = computed(() => [
+  ...new Set(overview.value.users.map((row) => row.role))
+])
+const resetMaterialPointFilters = () =>
+  Object.assign(materialPointFilters, {
+    keyword: '',
+    nodeId: '',
+    materialTypeCode: '',
+    enabled: ''
+  })
+const resetOrganizationFilters = () =>
+  Object.assign(organizationFilters, { keyword: '', type: '', status: '' })
+const resetAdminUserFilters = () =>
+  Object.assign(adminUserFilters, { keyword: '', role: '', orgId: '', status: '' })
+watch(
+  materialPointFilters,
+  () => {
+    tableStates.materialReviewPoints.page = 1
+  },
+  { flush: 'sync' }
+)
+watch(
+  organizationFilters,
+  () => {
+    tableStates.orgUnits.page = 1
+  },
+  { flush: 'sync' }
+)
+watch(
+  adminUserFilters,
+  () => {
+    tableStates.users.page = 1
+  },
+  { flush: 'sync' }
+)
+const scrollToAdminDirectory = (target: 'organizations' | 'users') => {
+  document
+    .getElementById(`admin-directory-${target}`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+const businessPackLabel = (id: string) =>
+  overview.value.businessPacks?.find((pack) => pack.id === id)?.name || id
 
 const projectWizardForm = reactive({
   businessPackId: DEFAULT_PIPELINE_BUSINESS_PACK_ID,
@@ -846,27 +931,6 @@ const roleActionOptions: Record<RoleCode, ActionCode[]> = {
   ]
 }
 
-const statusType = (status?: string) => {
-  if (!status) return 'info'
-  if (
-    status.includes('通过') ||
-    status.includes('归档') ||
-    status.includes('成功') ||
-    status.includes('启用') ||
-    status.includes('发布')
-  )
-    return 'success'
-  if (status.includes('补正') || status.includes('失败') || status.includes('停用')) return 'danger'
-  if (
-    status.includes('AI') ||
-    status.includes('待') ||
-    status.includes('审查') ||
-    status.includes('草稿')
-  )
-    return 'warning'
-  return 'info'
-}
-
 const getRequestErrorMessage = (error: unknown, fallback: string) => {
   return getAicheckErrorMessage(error, fallback)
 }
@@ -972,16 +1036,6 @@ const projectTotal = computed(() =>
 )
 const projectTableRows = computed(() => sortedRows(projects.value, tableStates.projects))
 
-const projectStats = computed(() => {
-  if (overview.value.metrics.length) return overview.value.metrics
-  return [
-    { key: 'project', label: '项目总数', value: projectTotal.value, tone: 'blue' as const },
-    { key: 'active', label: '在检项目', value: '--', tone: 'green' as const },
-    { key: 'correction', label: '补正项目', value: '--', tone: 'red' as const },
-    { key: 'todo', label: '全局待办', value: '--', tone: 'orange' as const }
-  ]
-})
-
 const businessPackRows = computed(() =>
   [...(overview.value.businessPacks || [])].sort((left, right) => {
     const leftIndex = PIPELINE_TYPE_ORDER.indexOf(left.pipelineTypeCode || '')
@@ -1044,8 +1098,42 @@ const selectedWizardBusinessPackDescription = computed(() => {
   return `${businessPackTypeLabel(pack)}：${businessPackRangeText(pack)}。节点 ${pack.nodeCount} 个、资料 ${pack.materialTypeCount} 类、规则 ${pack.ruleSetCount} 套。`
 })
 
-const pendingRuleCount = computed(
-  () => overview.value.ruleVersions.filter((item) => item.status === '待发布').length
+const overviewAvailable = computed(
+  () => overviewLoaded.value && !overviewError.value && !loading.value
+)
+const ruleDataAvailable = computed(
+  () => overviewAvailable.value && !overviewOmittedSections.value.includes('ruleVersions')
+)
+const pendingRuleCount = computed(() =>
+  ruleDataAvailable.value
+    ? overview.value.ruleVersions.filter((item) => item.status === '待发布').length
+    : null
+)
+const projectCountLabel = computed(() =>
+  adminCountLabel(
+    overview.value.metrics.find((item) => item.key === 'project')?.value == null
+      ? undefined
+      : Number(overview.value.metrics.find((item) => item.key === 'project')?.value),
+    overviewAvailable.value
+  )
+)
+const overviewCount = (count: number) => adminCountLabel(count, overviewAvailable.value)
+const businessPackCheckState = computed(() =>
+  adminValidationState({
+    loading: businessPackValidating.value,
+    error: businessPackValidationError.value,
+    ok: businessPackValidation.value?.ok ?? null,
+    successLabel: '校验通过'
+  })
+)
+const integrationCheckState = computed(() =>
+  adminValidationState({
+    loading: integrationLoading.value,
+    error: integrationError.value,
+    ok: integrationLoaded.value ? integrationContract.value.summary.blockers === 0 : null,
+    successLabel: '无阻塞项',
+    failureLabel: `${integrationContract.value.summary.blockers} 阻塞`
+  })
 )
 
 const adminUserLabel = computed(
@@ -1056,70 +1144,45 @@ const adminUserLabel = computed(
     '系统管理员'
 )
 const adminRuntimeStatus = computed(() =>
-  overviewError.value ? '数据加载异常' : pendingRuleCount.value ? '存在待发布配置' : '配置已同步'
+  overviewError.value
+    ? '数据加载异常'
+    : loading.value
+      ? '正在加载配置'
+      : !ruleDataAvailable.value
+        ? '规则状态未获取'
+        : pendingRuleCount.value
+          ? '存在待发布规则'
+          : '规则无待发布项'
 )
 const adminRuntimeStatusTone = computed(() =>
   overviewError.value
     ? ('red' as const)
-    : pendingRuleCount.value
-      ? ('orange' as const)
-      : ('green' as const)
+    : loading.value
+      ? ('blue' as const)
+      : !ruleDataAvailable.value
+        ? ('gray' as const)
+        : pendingRuleCount.value
+          ? ('orange' as const)
+          : ('green' as const)
 )
-const adminShellRightSubtitle = computed(() =>
-  overview.value.lastPublishedVersion
-    ? `最近发布：${overview.value.lastPublishedVersion}`
-    : '尚无已发布配置快照'
-)
-const adminShellRightCards = computed(() => [
-  {
-    title: '配置状态',
-    rows: [
-      { label: '规则模板', value: String(overview.value.ruleVersions.length) },
-      { label: '待发布', value: String(pendingRuleCount.value) },
-      { label: '权限角色', value: String(overview.value.permissionMatrix.length) },
-      { label: '字段映射', value: String(overview.value.fieldMappings.length) },
-      { label: '更新时间', value: overview.value.updatedAt || '--' }
-    ]
-  },
-  {
-    title: '当前范围',
-    rows: [
-      { label: '页面', value: adminPageTitle.value },
-      { label: '项目总数', value: String(projectTotal.value) },
-      { label: '组织单位', value: String(overview.value.orgUnits.length) },
-      { label: '用户账号', value: String(overview.value.users.length) }
-    ]
-  },
-  {
-    title: '职责边界',
-    note: '后台仅维护项目、账号、权限和配置；正式审查结论仍由监检人员在业务工作台完成。'
-  }
-])
-
 const adminAuditCards = computed<AuditSummaryCard[]>(() => [
   {
-    label: '当前治理对象',
-    value: '项目、组织、权限与业务类型',
-    hint: `${projectTotal.value} 个项目 · ${overview.value.users.length} 个用户`,
-    tone: 'blue'
+    label: '项目',
+    value: projectCountLabel.value,
+    hint: '查看项目状态、成员与登记资料',
+    tone: overviewAvailable.value ? 'blue' : 'gray'
   },
   {
-    label: '配置影响范围',
-    value: `${overview.value.permissionMatrix.length} 类角色矩阵`,
-    hint: `${overview.value.nodeTemplates.length} 组节点模板参与校验`,
-    tone: 'green'
+    label: '组织单位',
+    value: overviewCount(overview.value.orgUnits.length),
+    hint: '管理参与项目的单位',
+    tone: overviewAvailable.value ? 'blue' : 'gray'
   },
   {
-    label: '发布门禁',
-    value: pendingRuleCount.value ? `${pendingRuleCount.value} 项待发布` : '无待发布项',
-    hint: '发布前需完成 Diff、影响范围和审计记录',
-    tone: 'orange'
-  },
-  {
-    label: '风险关注',
-    value: `${auditPagination.total || 0} 条审计记录`,
-    hint: '重点关注权限、规则和业务类型变更',
-    tone: 'red'
+    label: '用户账号',
+    value: overviewCount(overview.value.users.length),
+    hint: '维护账号与角色授权',
+    tone: overviewAvailable.value ? 'blue' : 'gray'
   }
 ])
 
@@ -1139,9 +1202,9 @@ const auditIntegrityAlert = computed(() => {
   if (legacyCount > 0) {
     const sealed = integrity.coverageStatus === 'legacy_unverified_sealed'
     return {
-      type: sealed ? ('warning' as const) : ('error' as const),
+      type: 'warning' as const,
       title: sealed ? '后续审计链已验证，历史记录已单独封存' : '存在尚未封存的历史审计记录',
-      description: `${integrity.chainedEventCount} 条链上记录已验证；${legacyCount} 条历史记录为 legacy_unverified，不能追溯证明原始真实性。`
+      description: `${integrity.chainedEventCount} 条链上记录已验证；${legacyCount} 条历史记录未经过链校验，无法追溯证明原始真实性。`
     }
   }
   return {
@@ -1204,10 +1267,56 @@ const configTargetLabel = computed(() => {
 const configDiffRows = computed(() => latestConfigDiff.value?.changed || [])
 const publishImpactRows = computed(() => latestPublishResult.value?.impacts || [])
 const integrationSummaryItems = computed(() => [
-  { label: '字段总数', value: integrationContract.value.summary.total, tone: 'blue' },
-  { label: '已对齐', value: integrationContract.value.summary.aligned, tone: 'green' },
-  { label: '待确认', value: integrationContract.value.summary.pending, tone: 'orange' },
-  { label: '阻塞项', value: integrationContract.value.summary.blockers, tone: 'red' }
+  {
+    label: '字段总数',
+    value: adminCountLabel(
+      integrationContract.value.summary.total,
+      integrationLoaded.value && !integrationLoading.value && !integrationError.value
+    ),
+    tone:
+      integrationLoaded.value && !integrationLoading.value && !integrationError.value
+        ? 'blue'
+        : 'gray'
+  },
+  {
+    label: '已对齐',
+    value: adminCountLabel(
+      integrationContract.value.summary.aligned,
+      integrationLoaded.value && !integrationLoading.value && !integrationError.value
+    ),
+    tone:
+      integrationLoaded.value && !integrationLoading.value && !integrationError.value
+        ? 'green'
+        : 'gray'
+  },
+  {
+    label: '待确认',
+    value: adminCountLabel(
+      integrationContract.value.summary.pending,
+      integrationLoaded.value && !integrationLoading.value && !integrationError.value
+    ),
+    tone:
+      integrationLoaded.value &&
+      !integrationLoading.value &&
+      !integrationError.value &&
+      integrationContract.value.summary.pending > 0
+        ? 'orange'
+        : 'gray'
+  },
+  {
+    label: '阻塞项',
+    value: adminCountLabel(
+      integrationContract.value.summary.blockers,
+      integrationLoaded.value && !integrationLoading.value && !integrationError.value
+    ),
+    tone:
+      integrationLoaded.value &&
+      !integrationLoading.value &&
+      !integrationError.value &&
+      integrationContract.value.summary.blockers > 0
+        ? 'red'
+        : 'gray'
+  }
 ])
 const integrationModuleOptions = computed(() => [
   { label: '全部模块', value: 'all' as const },
@@ -1303,16 +1412,6 @@ const promptTemplateStatusLabel = (status?: PromptTemplate['status'] | string) =
     已停用: '已停用'
   }
   return labels[status || ''] || status || '-'
-}
-
-const promptTemplateStatusType = (
-  status?: PromptTemplate['status'] | string
-): 'primary' | 'success' | 'warning' | 'danger' | 'info' => {
-  if (!status) return 'info'
-  if (['production', 'published', 'active', '已发布', '启用'].includes(status)) return 'success'
-  if (['draft', '草稿'].includes(status)) return 'warning'
-  if (['retired', '已停用'].includes(status)) return 'info'
-  return 'info'
 }
 
 const defaultPromptOutputSchema = () =>
@@ -1508,15 +1607,6 @@ const diffChangeTagType = (
   return map[type]
 }
 
-const integrationStatusTagType = (
-  status: IntegrationContractStatus
-): 'primary' | 'success' | 'warning' | 'danger' | 'info' => {
-  if (status === '已对齐') return 'success'
-  if (status === '前端缺失' || status === '后端缺失') return 'danger'
-  if (status === '待后端确认' || status === '命名不一致') return 'warning'
-  return 'info'
-}
-
 const integrationSeverityLabel = (severity: IntegrationContractField['severity']) => {
   if (severity === 'danger') return '阻塞'
   if (severity === 'warning') return '需确认'
@@ -1562,6 +1652,7 @@ const loadAuditLogs = async () => {
       auditError.value = getRequestErrorMessage(undefined, '审计日志加载失败，筛选条件已保留。')
       return
     }
+    auditLoaded.value = true
     auditIntegrity.value = res.data.integrity
     auditLogs.value = applyPagination(auditPagination, res.data)
   } catch (error) {
@@ -1610,12 +1701,27 @@ const handlePromptTemplateSortChange = (event: { prop?: string; order?: TableSor
 }
 
 const openPromptTemplateDialog = (template?: PromptTemplate) => {
-  promptTemplateDialogMode.value = template ? 'edit' : 'create'
+  promptTemplateDialogMode.value = template
+    ? productionTemplateLocked(template.status)
+      ? 'view'
+      : 'edit'
+    : 'create'
   resetPromptTemplateForm(template)
   promptTemplateDialogVisible.value = true
 }
 
+const createPromptDraft = (template: PromptTemplate) => {
+  resetPromptTemplateForm(promptDraftFrom(template))
+  promptTemplateDialogMode.value = 'create'
+  promptTemplateDialogVisible.value = true
+}
+
 const handleSavePromptTemplate = async () => {
+  if (
+    promptTemplateDialogMode.value === 'view' ||
+    productionTemplateLocked(promptTemplateForm.status)
+  )
+    return
   const payload = buildPromptTemplatePayload()
   if (!payload) return
   promptTemplateSaving.value = true
@@ -1653,9 +1759,21 @@ const handlePublishPromptTemplate = async (template: PromptTemplate) => {
   promptTemplateSaving.value = true
   promptTemplateOperationError.value = ''
   try {
+    const productionTemplates = await loadTemplatePublishCandidates((page, pageSize) =>
+      listPromptTemplatesApi({ businessPackId: template.businessPackId, page, pageSize })
+    )
+    try {
+      await ElMessageBox.confirm(
+        templatePublishMessage('Prompt', template, productionTemplates),
+        '确认发布Prompt模板',
+        { type: 'warning', confirmButtonText: '确认发布此版本', cancelButtonText: '返回检查' }
+      )
+    } catch {
+      return
+    }
     const res = await publishPromptTemplateApi(
       template.id,
-      { reason: '后台发布 Prompt 模板。' },
+      { reason: `发布 Prompt 模板「${template.name}」${template.version}（${template.id}）。` },
       { etag: template.etag }
     )
     if (!res) {
@@ -1758,6 +1876,12 @@ const openReportTemplateDialog = (template?: ReportTemplate) => {
   reportTemplateDialogVisible.value = true
 }
 
+const openReportTemplateDraft = (template: ReportTemplate) => {
+  reportTemplateDialogMode.value = 'create'
+  resetReportTemplateForm(reportDraftFrom(template))
+  reportTemplateDialogVisible.value = true
+}
+
 const handleSaveReportTemplate = async () => {
   const payload = buildReportTemplatePayload()
   if (!payload) return
@@ -1796,9 +1920,21 @@ const handlePublishReportTemplate = async (template: ReportTemplate) => {
   reportTemplateSaving.value = true
   reportTemplateOperationError.value = ''
   try {
+    const productionTemplates = await loadTemplatePublishCandidates((page, pageSize) =>
+      listReportTemplatesApi({ businessPackId: template.businessPackId, page, pageSize })
+    )
+    try {
+      await ElMessageBox.confirm(
+        templatePublishMessage('报告', template, productionTemplates),
+        '确认发布报告模板',
+        { type: 'warning', confirmButtonText: '确认发布此版本', cancelButtonText: '返回检查' }
+      )
+    } catch {
+      return
+    }
     const res = await publishReportTemplateApi(
       template.id,
-      { reason: '后台发布报告模板。' },
+      { reason: `发布报告模板「${template.name}」${template.version}（${template.id}）。` },
       { etag: template.etag }
     )
     if (!res) {
@@ -1930,6 +2066,7 @@ const loadIntegrationContract = async () => {
       return
     }
     integrationContract.value = res.data
+    integrationLoaded.value = true
   } catch (error) {
     integrationError.value = getRequestErrorMessage(
       error,
@@ -1940,13 +2077,11 @@ const loadIntegrationContract = async () => {
   }
 }
 
-/** 当前页签是否真的要用 ruleVersions / materialReviewPoints。
- *  判据放在一处，省得下次新增页签时漏掉又变成空表。 */
-const needsHeavySections = computed(() =>
-  ['business-rule', 'material-review-point', 'node-template'].includes(activeTab.value)
-)
+let overviewRequestSequence = 0
 
 const loadData = async () => {
+  const sequence = ++overviewRequestSequence
+  const requestedTab = activeTab.value
   loading.value = true
   overviewError.value = ''
   try {
@@ -1962,36 +2097,33 @@ const loadData = async () => {
               : activeTab.value === 'report-template'
                 ? loadReportTemplates()
                 : Promise.resolve(true)
-    // 只要当前页签用得上的重数据。ruleVersions / materialReviewPoints 合计
-    // 493 KB，只有业务规则页在用；此前每个页签都在等它们传完。
-    // 注意方向：**轻量页要显式声明只要核心数据**，才会让后端省掉那两块。
-    // 第一版写反了——不需要重数据时什么都不传，后端按默认下发全部，
-    // 于是线上实测一切照旧：788 KB、5.4 秒、请求里连 sections 都没有。
-    // 「改了但没生效」在耗时上跟「没改」长得一模一样，只能靠抓请求参数分辨。
-    const heavySections = needsHeavySections.value
-      ? ['ruleVersions', 'materialReviewPoints']
-      : ['core']
     const [tabResult, configRes] = await Promise.all([
       tabRequest,
-      getAdminConfigOverviewApi(heavySections)
+      getAdminConfigOverviewApi(adminOverviewSections(requestedTab))
     ])
+    if (sequence !== overviewRequestSequence) return
     if (configRes) {
       const nextOverview = { ...configRes.data }
       nextOverview.materialReviewPoints = nextOverview.materialReviewPoints || []
-      // 兜底：这次省略了重数据，但当前页真的要显示它——补拉一次完整的。
-      // 少发数据换来的速度，代价是表格默默变空，那比慢更糟：
-      // 用户看到的是「没有规则」，而不是「还没加载」。
-      const omitted: string[] =
-        (configRes.data as { omittedSections?: string[] }).omittedSections || []
-      if (omitted.length && needsHeavySections.value) {
-        const fullRes = await getAdminConfigOverviewApi().catch(() => undefined)
-        if (fullRes) Object.assign(nextOverview, fullRes.data)
+      let omitted = (configRes.data as { omittedSections?: string[] }).omittedSections || []
+      if (missingAdminSections(requestedTab, omitted).length) {
+        const fullRes = await getAdminConfigOverviewApi()
+        if (!fullRes) throw new Error('当前页面所需配置未加载完整，请重新加载。')
+        Object.assign(nextOverview, fullRes.data)
+        omitted = (fullRes.data as { omittedSections?: string[] }).omittedSections || []
+        if (missingAdminSections(requestedTab, omitted).length) {
+          throw new Error('当前页面所需配置被省略，请重新加载。')
+        }
       }
       if (!nextOverview.businessPacks?.length) {
         const businessPackRes = await listBusinessPacksApi().catch(() => undefined)
         if (businessPackRes) nextOverview.businessPacks = businessPackRes.data
       }
+      if (sequence !== overviewRequestSequence) return
       overview.value = nextOverview
+      overviewOmittedSections.value = omitted
+      overviewLoaded.value = true
+      applyAdminTargetFromRoute()
     }
     if (tabResult === false || !configRes) {
       overviewError.value = getRequestErrorMessage(
@@ -2001,12 +2133,13 @@ const loadData = async () => {
       return
     }
   } catch (error) {
+    if (sequence !== overviewRequestSequence) return
     overviewError.value = getRequestErrorMessage(
       error,
       '管理后台基础数据加载失败，已保留上一次可用数据。'
     )
   } finally {
-    loading.value = false
+    if (sequence === overviewRequestSequence) loading.value = false
   }
 }
 
@@ -2051,7 +2184,8 @@ const handleValidateBusinessPacks = async () => {
       return
     }
     businessPackValidation.value = res.data
-    ElMessage.success(res.data.ok ? '业务类型校验通过' : '业务类型存在校验错误')
+    if (res.data.ok) ElMessage.success('业务类型校验通过')
+    else ElMessage.error('业务类型存在校验错误')
   } catch (error) {
     businessPackValidationError.value = getRequestErrorMessage(
       error,
@@ -2610,16 +2744,20 @@ const handleExportConfig = async () => {
 }
 
 const handlePublishConfig = async () => {
+  const scope = adminPublishScope.value
+  const scopeLabel = adminPublishOptions.value.find((item) => item.value === scope)?.label
+  if (!scopeLabel) return
+  const etag = overview.value.etag
   let reason = ''
   try {
     const promptResult = await ElMessageBox.prompt(
-      `将发布“${adminPageTitle.value}”相关配置。请填写发布原因，系统会先计算影响范围。`,
-      '发布配置',
+      `将登记「${scopeLabel}」的当前配置版本和审计记录。此操作不切换规则、Prompt 或报告模板的生产版本。请填写登记原因。`,
+      '登记配置版本',
       {
         confirmButtonText: '生成影响预览',
         cancelButtonText: '取消',
-        inputPlaceholder: '例如：完成权限矩阵复核，申请发布',
-        inputValidator: (value) => Boolean(value.trim()) || '必须填写发布原因'
+        inputPlaceholder: '例如：完成权限矩阵复核，登记本次配置',
+        inputValidator: (value) => Boolean(value.trim()) || '必须填写登记原因'
       }
     )
     reason = promptResult.value.trim()
@@ -2632,7 +2770,7 @@ const handlePublishConfig = async () => {
   adminActionRetry.value = null
   try {
     const previewResponse = await previewAdminConfigPublishApi({
-      scope: adminPublishScope.value,
+      scope,
       reason
     })
     const preview = previewResponse?.data
@@ -2643,11 +2781,11 @@ const handlePublishConfig = async () => {
     const warningText = impact.warnings.length ? `\n警告：${impact.warnings.join('；')}` : ''
     try {
       await ElMessageBox.confirm(
-        `将发布 ${impact.totalAffected} 项配置，关联 ${impact.linkedProjects} 个未归档项目。${warningText}\n预览有效期至 ${preview.expiresAt}。`,
-        '确认发布影响',
+        `登记范围：${scopeLabel}。\n${impact.impacts.map((item) => `${item.label}：${item.affectedCount} 项`).join('；')}。\n关联 ${impact.linkedProjects} 个未归档项目。此操作仅留存版本登记与审计，不自动切换生产版本或发送消息。${warningText}\n预览有效期至 ${preview.expiresAt}。`,
+        '确认配置版本登记',
         {
           type: impact.warnings.length ? 'warning' : 'info',
-          confirmButtonText: '确认发布',
+          confirmButtonText: '确认登记',
           cancelButtonText: '返回检查'
         }
       )
@@ -2656,25 +2794,28 @@ const handlePublishConfig = async () => {
     }
     const res = await publishAdminConfigApi(
       {
-        scope: adminPublishScope.value,
+        scope,
         reason,
         previewId: preview.previewId
       },
-      { etag: overview.value.etag }
+      { etag }
     )
     if (!res) {
       adminActionError.value = getRequestErrorMessage(
         undefined,
-        buildOperationFailureMessage('配置发布')
+        buildOperationFailureMessage('配置版本登记')
       )
       adminActionRetry.value = 'publish'
       return
     }
     latestPublishResult.value = res.data
-    ElMessage.success(`配置已发布：${res.data.version}`)
+    ElMessage.success(`配置版本已登记：${res.data.version}`)
     await Promise.all([loadAuditLogs(), loadData()])
   } catch (error) {
-    adminActionError.value = getRequestErrorMessage(error, buildOperationFailureMessage('配置发布'))
+    adminActionError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('配置版本登记')
+    )
     adminActionRetry.value = 'publish'
   } finally {
     configPublishing.value = false
@@ -2846,7 +2987,7 @@ const openFieldMappingConfig = (row?: FieldMappingConfigRow) => {
   configForm.sourceField = row?.sourceField || ''
   configForm.targetField = row?.targetField || ''
   configForm.fieldRequired = row?.required ?? true
-  configForm.confidenceThreshold = row?.confidenceThreshold || 0.85
+  configForm.confidenceThreshold = confidenceValue(row?.confidenceThreshold, 0.85)
   configForm.reason = row ? '调整字段映射。' : '新增字段映射。'
   latestConfigDiff.value = null
   configDrawerVisible.value = true
@@ -2883,7 +3024,7 @@ const openMaterialReviewPointConfig = (row?: MaterialReviewPointRow) => {
   configForm.reviewPointResponsibleParty = (row?.responsibleParty as RoleCode) || 'contractor'
   configForm.reviewPointRequiredType = row?.requiredType || '必传'
   configForm.reviewPointMappingRelation = row?.mappingRelation || 'OCR证据支撑'
-  configForm.reviewPointMinConfidence = row?.minConfidence || 0.65
+  configForm.reviewPointMinConfidence = confidenceValue(row?.minConfidence, 0.65)
   configForm.fineEnabled = row?.enabled ?? true
   configForm.reason = row ? '调整业务资料审查点。' : '新增业务资料审查点。'
   latestConfigDiff.value = null
@@ -3000,7 +3141,7 @@ const buildAdminConfigChangePayload = (): AdminConfigChangePayload => {
         responsiblePartyLabel: roleLabel(configForm.reviewPointResponsibleParty),
         requiredType: configForm.reviewPointRequiredType,
         mappingRelation: configForm.reviewPointMappingRelation,
-        minConfidence: Number(configForm.reviewPointMinConfidence) || 0.65,
+        minConfidence: confidenceValue(configForm.reviewPointMinConfidence, 0.65),
         enabled: configForm.fineEnabled
       }
     }
@@ -3015,7 +3156,7 @@ const buildAdminConfigChangePayload = (): AdminConfigChangePayload => {
       sourceField: configForm.sourceField,
       targetField: configForm.targetField,
       required: configForm.fieldRequired,
-      confidenceThreshold: Number(configForm.confidenceThreshold) || 0.85
+      confidenceThreshold: confidenceValue(configForm.confidenceThreshold, 0.85)
     }
   }
 }
@@ -3414,6 +3555,52 @@ const handleAuditPageSizeChange = (pageSize: number) => {
   loadAuditLogs()
 }
 
+let lastAdminRouteTarget = ''
+const applyAdminTargetFromRoute = () => {
+  if (activeTab.value !== 'org' || !overviewLoaded.value) return
+  const userId = typeof route.query.userId === 'string' ? route.query.userId : ''
+  const orgId = typeof route.query.orgId === 'string' ? route.query.orgId : ''
+  const key = userId ? `user:${userId}` : orgId ? `org:${orgId}` : ''
+  if (!key || key === lastAdminRouteTarget) return
+  lastAdminRouteTarget = key
+  userDialogVisible.value = false
+  orgDialogVisible.value = false
+  if (userId) {
+    resetAdminUserFilters()
+    const target = adminTargetPage(
+      sortedRows(overview.value.users, tableStates.users),
+      userId,
+      tableStates.users.pageSize
+    )
+    if (!target) {
+      userOperationError.value = `未找到用户 ${userId}，记录可能已删除或无权查看。`
+      return
+    }
+    tableStates.users.page = target.page
+    openUserDialog(target.row)
+  } else {
+    resetOrganizationFilters()
+    const target = adminTargetPage(
+      sortedRows(overview.value.orgUnits, tableStates.orgUnits),
+      orgId,
+      tableStates.orgUnits.pageSize
+    )
+    if (!target) {
+      orgOperationError.value = `未找到组织 ${orgId}，记录可能已删除或无权查看。`
+      return
+    }
+    tableStates.orgUnits.page = target.page
+    openOrgDialog(target.row)
+  }
+}
+watch(
+  () => [route.path, route.query.userId, route.query.orgId],
+  () => {
+    lastAdminRouteTarget = ''
+    if (activeTab.value === 'org' && !loading.value) applyAdminTargetFromRoute()
+  }
+)
+
 onMounted(() => {
   loadData()
 })
@@ -3430,7 +3617,7 @@ onMounted(() => {
       :refreshing="loading"
       brand-mark="管"
       title="项目与权限配置"
-      :status="adminRuntimeStatus"
+      :status="activeTab === 'rule' ? adminRuntimeStatus : undefined"
       :status-tone="adminRuntimeStatusTone"
       search-placeholder="搜索项目、用户、权限、规则"
       search-scope="admin"
@@ -3441,43 +3628,16 @@ onMounted(() => {
       right-toggle-label="配置摘要"
       right-collapsed-default
       boundary-collapsed-default
-      :top-stats="[
-        {
-          key: 'project',
-          label: '项目',
-          value: projectTotal,
-          tone: 'blue',
-          clickable: true,
-          title: '查看项目清单'
-        },
-        {
-          key: 'pending-rule',
-          label: '配置待办',
-          value: pendingRuleCount,
-          tone: 'orange',
-          clickable: true,
-          title: '查看待处理的规则配置'
-        },
-        {
-          key: 'audit',
-          label: '审计',
-          value: auditPagination.total,
-          tone: 'red',
-          clickable: true,
-          title: '查看审计日志'
-        }
-      ]"
-      @top-stat-click="handleTopStatJump"
+      :top-stats="[]"
       :menu-title="ADMIN_MENU_TITLE"
       :menu-root="ADMIN_MENU_ROOT"
       :menu-sections="adminShellMenuSections"
       :boundary-title="ADMIN_BOUNDARY_TITLE"
       :boundary-badge="ADMIN_BOUNDARY_BADGE"
       boundary-tone="green"
-      :boundary-rows="adminShellBoundaryRows"
+      :boundary-rows="[]"
       right-title="运行摘要"
-      :right-subtitle="adminShellRightSubtitle"
-      :right-cards="adminShellRightCards"
+      :right-cards="[]"
       @menu-select="handleAdminMenuSelect"
     >
       <div class="page-toolbar">
@@ -3490,36 +3650,55 @@ onMounted(() => {
             新建项目
           </ElButton>
           <ElButton
+            :icon="Download"
             v-if="activeTab === 'audit'"
             :loading="configExporting"
             @click="handleExportConfig"
           >
             导出配置包
           </ElButton>
+          <ElSelect
+            v-if="adminPublishAvailable"
+            v-model="adminPublishScope"
+            aria-label="配置版本登记范围"
+            style="width: 150px"
+          >
+            <ElOption
+              v-for="option in adminPublishOptions"
+              :key="option.value"
+              :value="option.value"
+              :label="option.label"
+            />
+          </ElSelect>
           <ElButton
             v-if="adminPublishAvailable"
             type="primary"
             :loading="configPublishing"
+            :disabled="!overviewAvailable"
             @click="handlePublishConfig"
           >
-            发布配置
+            登记配置版本
           </ElButton>
         </ElSpace>
       </div>
 
       <div v-if="latestPublishResult" class="config-panel publish-result-panel">
         <div>
-          <strong>最近发布：{{ latestPublishResult.version }}</strong>
+          <strong>已登记配置版本：{{ latestPublishResult.version }}</strong>
           <span>
-            在检项目 {{ latestPublishResult.impactSummary.linkedProjects }} 个 · 推送
-            {{ latestPublishResult.impactSummary.pushedMessages }} 条消息 · 复核待办
-            {{ latestPublishResult.impactSummary.reviewTodos }} 条
+            关联项目
+            {{ latestPublishResult.impactSummary.linkedProjects }}
+            个。生产模板及规则的启用状态不变。
           </span>
         </div>
-        <ElButton type="primary" plain @click="publishTraceVisible = true">查看联动</ElButton>
+        <ElButton type="primary" plain @click="publishTraceVisible = true">查看登记范围</ElButton>
       </div>
 
-      <AuditSummaryGrid :cards="adminAuditCards" aria-label="管理后台治理摘要" />
+      <AuditSummaryGrid
+        v-if="route.path === '/admin/overview'"
+        :cards="adminAuditCards"
+        aria-label="项目与账号概况"
+      />
 
       <div
         v-if="
@@ -3527,10 +3706,18 @@ onMounted(() => {
           adminActionError ||
           projectOperationError ||
           orgOperationError ||
-          userOperationError
+          userOperationError ||
+          (configOperationError && !configDrawerVisible)
         "
         class="error-stack"
       >
+        <ElAlert
+          v-if="configOperationError && !configDrawerVisible"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="configOperationError"
+        />
         <div v-if="overviewError" class="local-error">
           <ElAlert type="error" show-icon :closable="false" :title="overviewError" />
           <ElButton type="primary" plain :loading="loading" @click="loadData">重新加载</ElButton>
@@ -3569,23 +3756,6 @@ onMounted(() => {
           :title="userOperationError"
         />
       </div>
-
-      <details class="secondary-summary-collapse">
-        <summary>
-          <span>配置统计明细</span>
-          <small>摘要卡已展示核心指标，展开查看完整配置计数</small>
-        </summary>
-        <div class="metric-grid">
-          <div
-            v-for="stat in projectStats"
-            :key="stat.key"
-            :class="`metric-card metric-card--${stat.tone}`"
-          >
-            <span>{{ stat.label }}</span>
-            <strong>{{ stat.value }}</strong>
-          </div>
-        </div>
-      </details>
 
       <ElTabs v-model="activeTab" class="admin-tabs">
         <ElTabPane label="项目管理" name="projects">
@@ -3626,6 +3796,7 @@ onMounted(() => {
                   </ElSelect>
                   <ElSpace wrap>
                     <ElButton
+                      :icon="Search"
                       type="primary"
                       plain
                       :loading="projectsLoading"
@@ -3636,7 +3807,9 @@ onMounted(() => {
                     <ElButton :disabled="projectsLoading" @click="handleProjectReset"
                       >重置</ElButton
                     >
-                    <ElButton :loading="projectsLoading" @click="loadProjects">刷新</ElButton>
+                    <ElButton :icon="Refresh" :loading="projectsLoading" @click="loadProjects"
+                      >刷新</ElButton
+                    >
                   </ElSpace>
                 </div>
                 <ElTable
@@ -3678,7 +3851,7 @@ onMounted(() => {
                   />
                   <ElTableColumn prop="status" label="状态" width="130" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                      <StatusTag :status="row.status" effect="light">{{ row.status }}</StatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn prop="todoCount" label="待办" width="76" sortable="custom" />
@@ -3718,7 +3891,7 @@ onMounted(() => {
                         <small>{{ row.code || '未设置项目编号' }}</small>
                         <strong>{{ row.name }}</strong>
                       </div>
-                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                      <StatusTag :status="row.status" effect="light">{{ row.status }}</StatusTag>
                     </header>
                     <dl>
                       <div>
@@ -3777,9 +3950,17 @@ onMounted(() => {
         </ElTabPane>
 
         <ElTabPane label="组织用户" name="org">
+          <nav class="admin-directory-links" aria-label="组织与用户快速定位">
+            <ElButton @click="scrollToAdminDirectory('organizations')"
+              >组织单位（{{ overview.orgUnits.length }}）</ElButton
+            >
+            <ElButton @click="scrollToAdminDirectory('users')"
+              >用户与角色（{{ overview.users.length }}）</ElButton
+            >
+          </nav>
           <ElRow :gutter="16" class="admin-stack-row">
             <ElCol :span="24" class="admin-stack-col">
-              <ElCard shadow="never" class="panel">
+              <ElCard id="admin-directory-organizations" shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>组织单位</span>
@@ -3791,11 +3972,50 @@ onMounted(() => {
                     </ElSpace>
                   </div>
                 </template>
+                <div class="admin-list-filters" role="search" aria-label="组织筛选">
+                  <ElInput
+                    v-model="organizationFilters.keyword"
+                    clearable
+                    aria-label="搜索全部组织"
+                    placeholder="搜索组织名称、联系人或编号"
+                  />
+                  <ElSelect
+                    v-model="organizationFilters.type"
+                    clearable
+                    aria-label="组织类型"
+                    placeholder="全部组织类型"
+                  >
+                    <ElOption
+                      v-for="(label, value) in adminOrgTypeLabels"
+                      :key="value"
+                      :label="label"
+                      :value="value"
+                    />
+                  </ElSelect>
+                  <ElSelect
+                    v-model="organizationFilters.status"
+                    clearable
+                    aria-label="组织状态"
+                    placeholder="全部状态"
+                  >
+                    <ElOption
+                      v-for="status in ['启用', '停用', '待授权']"
+                      :key="status"
+                      :label="status"
+                      :value="status"
+                    />
+                  </ElSelect>
+                  <ElButton @click="resetOrganizationFilters">重置</ElButton>
+                </div>
+                <p class="admin-filter-summary" role="status"
+                  >全部 {{ overview.orgUnits.length }} 个组织中，符合条件
+                  {{ organizationRows.length }} 个</p
+                >
                 <ElTable
-                  :data="tableRows(overview.orgUnits, tableStates.orgUnits)"
+                  :data="tableRows(organizationRows, tableStates.orgUnits)"
                   border
-                  height="420"
-                  empty-text="暂无组织单位"
+                  max-height="420"
+                  empty-text="没有符合条件的组织，请调整或重置筛选"
                   @sort-change="handleTableSortChange('orgUnits', $event)"
                 >
                   <ElTableColumn
@@ -3805,17 +4025,19 @@ onMounted(() => {
                     show-overflow-tooltip
                     sortable="custom"
                   />
-                  <ElTableColumn prop="type" label="类型" width="96" sortable="custom" />
+                  <ElTableColumn prop="type" label="类型" width="136" sortable="custom">
+                    <template #default="{ row }">{{ adminOrgTypeLabel(row.type) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="contactName" label="联系人" width="92" sortable="custom" />
                   <ElTableColumn prop="projectCount" label="项目" width="72" sortable="custom" />
-                  <ElTableColumn prop="status" label="状态" width="88" sortable="custom">
+                  <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
+                      <StatusTag :status="row.status" size="small" effect="plain">
                         {{ row.status }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="操作" width="176" fixed="right">
+                  <ElTableColumn label="操作" width="210" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openOrgDialog(row)">编辑</ElButton>
                       <!-- 成员与邀请（0817 第 4、5 条）。
@@ -3855,14 +4077,14 @@ onMounted(() => {
                   background
                   :page-sizes="tablePageSizes"
                   layout="total, sizes, prev, pager, next, jumper"
-                  :total="overview.orgUnits.length"
+                  :total="organizationRows.length"
                   @size-change="resetTablePage('orgUnits')"
                 />
               </ElCard>
             </ElCol>
 
             <ElCol :span="24" class="admin-stack-col">
-              <ElCard shadow="never" class="panel">
+              <ElCard id="admin-directory-users" shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>用户与角色</span>
@@ -3874,15 +4096,72 @@ onMounted(() => {
                     </ElSpace>
                   </div>
                 </template>
+                <div
+                  class="admin-list-filters admin-list-filters--wide"
+                  role="search"
+                  aria-label="用户筛选"
+                >
+                  <ElInput
+                    v-model="adminUserFilters.keyword"
+                    clearable
+                    aria-label="搜索全部用户"
+                    placeholder="搜索姓名、用户名、组织或手机号"
+                  />
+                  <ElSelect
+                    v-model="adminUserFilters.role"
+                    clearable
+                    aria-label="用户角色"
+                    placeholder="全部角色"
+                  >
+                    <ElOption
+                      v-for="role in adminUserRoleOptions"
+                      :key="role"
+                      :label="roleLabel(role)"
+                      :value="role"
+                    />
+                  </ElSelect>
+                  <ElSelect
+                    v-model="adminUserFilters.orgId"
+                    clearable
+                    filterable
+                    aria-label="所属组织筛选"
+                    placeholder="全部组织"
+                  >
+                    <ElOption
+                      v-for="org in overview.orgUnits"
+                      :key="org.id"
+                      :label="org.name"
+                      :value="org.id"
+                    />
+                  </ElSelect>
+                  <ElSelect
+                    v-model="adminUserFilters.status"
+                    clearable
+                    aria-label="用户状态"
+                    placeholder="全部状态"
+                  >
+                    <ElOption
+                      v-for="status in ['启用', '停用']"
+                      :key="status"
+                      :label="status"
+                      :value="status"
+                    />
+                  </ElSelect>
+                  <ElButton @click="resetAdminUserFilters">重置</ElButton>
+                </div>
+                <p class="admin-filter-summary" role="status"
+                  >全部 {{ overview.users.length }} 个用户中，符合条件
+                  {{ adminUserRows.length }} 个</p
+                >
                 <ElTable
-                  :data="tableRows(overview.users, tableStates.users)"
+                  :data="tableRows(adminUserRows, tableStates.users)"
                   border
-                  height="460"
-                  empty-text="暂无用户账号"
+                  max-height="460"
+                  empty-text="没有符合条件的用户，请调整或重置筛选"
                   @sort-change="handleTableSortChange('users', $event)"
                 >
                   <ElTableColumn prop="username" label="用户名" width="110" sortable="custom" />
-                  <ElTableColumn prop="name" label="姓名" width="96" sortable="custom" />
+                  <ElTableColumn prop="name" label="姓名" min-width="130" sortable="custom" />
                   <ElTableColumn
                     prop="orgName"
                     label="所属组织"
@@ -3890,17 +4169,17 @@ onMounted(() => {
                     show-overflow-tooltip
                     sortable="custom"
                   />
-                  <ElTableColumn prop="role" label="角色" width="100" sortable="custom">
+                  <ElTableColumn prop="role" label="角色" width="148" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag size="small" effect="plain">{{ roleLabel(row.role) }}</ElTag>
+                      <span class="admin-role-label">{{ roleLabel(row.role) }}</span>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn prop="mobile" label="手机号" width="130" sortable="custom" />
-                  <ElTableColumn prop="status" label="状态" width="88" sortable="custom">
+                  <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
+                      <StatusTag :status="row.status" size="small" effect="plain">
                         {{ row.status }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn
@@ -3930,7 +4209,7 @@ onMounted(() => {
                   background
                   :page-sizes="tablePageSizes"
                   layout="total, sizes, prev, pager, next, jumper"
-                  :total="overview.users.length"
+                  :total="adminUserRows.length"
                   @size-change="resetTablePage('users')"
                 />
               </ElCard>
@@ -3946,11 +4225,8 @@ onMounted(() => {
                   <div class="panel-header">
                     <span>业务类型列表</span>
                     <ElSpace>
-                      <ElTag
-                        :type="businessPackValidation?.ok === false ? 'danger' : 'success'"
-                        effect="plain"
-                      >
-                        {{ businessPackValidation?.ok === false ? '存在错误' : '可用' }}
+                      <ElTag :type="businessPackCheckState.type" effect="plain">
+                        {{ businessPackCheckState.label }}
                       </ElTag>
                       <ElButton
                         type="primary"
@@ -3974,34 +4250,43 @@ onMounted(() => {
                 />
                 <ElTable
                   :data="tableRows(businessPackRows, tableStates.businessPacks)"
+                  class="admin-readable-table"
                   border
-                  height="380"
+                  max-height="520"
                   empty-text="暂无压力管道业务类型"
                   @sort-change="handleTableSortChange('businessPacks', $event)"
                 >
                   <ElTableColumn
                     prop="pipelineTypeCode"
                     label="类型代号"
-                    width="120"
-                    show-overflow-tooltip
+                    width="110"
                     sortable="custom"
                   />
                   <ElTableColumn
                     prop="__businessPackName"
                     label="名称"
                     min-width="160"
-                    show-overflow-tooltip
                     sortable="custom"
                   >
                     <template #default="{ row }">
                       {{ row.pipelineTypeName || row.name }}
                     </template>
                   </ElTableColumn>
+                  <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
+                    <template #default="{ row }">
+                      <StatusTag
+                        :status="businessPackStatusLabel(row.status)"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ businessPackStatusLabel(row.status) }}
+                      </StatusTag>
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn
                     prop="__businessPackRange"
                     label="常见分级/范围"
-                    min-width="360"
-                    show-overflow-tooltip
+                    min-width="250"
                     sortable="custom"
                   >
                     <template #default="{ row }">
@@ -4011,10 +4296,10 @@ onMounted(() => {
                   <ElTableColumn
                     prop="projectType"
                     label="项目属性"
-                    min-width="150"
+                    min-width="130"
                     sortable="custom"
                   />
-                  <ElTableColumn prop="version" label="版本" width="120" sortable="custom" />
+                  <ElTableColumn prop="version" label="版本" width="110" sortable="custom" />
                   <ElTableColumn prop="nodeCount" label="节点" width="72" sortable="custom" />
                   <ElTableColumn
                     prop="materialTypeCount"
@@ -4023,17 +4308,6 @@ onMounted(() => {
                     sortable="custom"
                   />
                   <ElTableColumn prop="ruleSetCount" label="规则" width="72" sortable="custom" />
-                  <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
-                    <template #default="{ row }">
-                      <ElTag
-                        :type="statusType(businessPackStatusLabel(row.status))"
-                        size="small"
-                        effect="plain"
-                      >
-                        {{ businessPackStatusLabel(row.status) }}
-                      </ElTag>
-                    </template>
-                  </ElTableColumn>
                 </ElTable>
                 <ElPagination
                   v-model:current-page="tableStates.businessPacks.page"
@@ -4113,11 +4387,7 @@ onMounted(() => {
                   </ElTableColumn>
                   <ElTableColumn prop="readonly" label="只读" width="76" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag
-                        :type="row.readonly ? 'warning' : 'success'"
-                        size="small"
-                        effect="plain"
-                      >
+                      <ElTag type="info" size="small" effect="plain">
                         {{ row.readonly ? '是' : '否' }}
                       </ElTag>
                     </template>
@@ -4168,11 +4438,11 @@ onMounted(() => {
                   <ElTableColumn prop="version" label="版本" width="130" sortable="custom" />
                   <ElTableColumn prop="nodeCount" label="节点" width="70" sortable="custom" />
                   <ElTableColumn prop="requiredCount" label="资料项" width="84" sortable="custom" />
-                  <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
+                  <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
+                      <StatusTag :status="row.status" size="small" effect="plain">
                         {{ row.status }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
@@ -4200,63 +4470,61 @@ onMounted(() => {
         </ElTabPane>
 
         <ElTabPane label="AI业务规则与流程" name="rule">
-          <ElRow :gutter="16">
-            <ElCol :xl="13" :lg="13" :md="24" :sm="24" :xs="24">
+          <ElRow :gutter="16" class="admin-stack-row">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>AI业务规则版本</span>
-                    <ElTag :type="pendingRuleCount ? 'warning' : 'success'" effect="plain">
-                      {{ pendingRuleCount ? `${pendingRuleCount} 待发布` : '全部发布' }}
+                    <ElTag
+                      :type="
+                        pendingRuleCount == null ? 'info' : pendingRuleCount ? 'warning' : 'success'
+                      "
+                      effect="plain"
+                    >
+                      {{
+                        pendingRuleCount == null
+                          ? '规则状态未获取'
+                          : pendingRuleCount
+                            ? `${pendingRuleCount} 待发布`
+                            : '无待发布规则'
+                      }}
                     </ElTag>
                   </div>
                 </template>
                 <ElTable
+                  class="admin-readable-table"
                   :data="tableRows(overview.ruleVersions, tableStates.ruleVersions)"
                   border
-                  height="320"
+                  max-height="520"
                   empty-text="暂无AI业务规则版本"
                   @sort-change="handleTableSortChange('ruleVersions', $event)"
                 >
-                  <ElTableColumn
-                    prop="name"
-                    label="规则名称"
-                    min-width="180"
-                    show-overflow-tooltip
-                    sortable="custom"
-                  />
-                  <ElTableColumn
-                    prop="version"
-                    label="版本"
-                    min-width="160"
-                    show-overflow-tooltip
-                    sortable="custom"
-                  />
+                  <ElTableColumn prop="name" label="规则名称" min-width="180" sortable="custom" />
+                  <ElTableColumn prop="version" label="版本" min-width="130" sortable="custom" />
                   <ElTableColumn
                     prop="promptVersion"
                     label="Prompt"
-                    min-width="170"
-                    show-overflow-tooltip
+                    min-width="150"
                     sortable="custom"
                   />
                   <ElTableColumn
                     prop="outputSchemaVersion"
                     label="输出结构"
                     min-width="130"
-                    show-overflow-tooltip
                     sortable="custom"
                   />
-                  <ElTableColumn prop="nodeIds" label="节点" min-width="130" sortable="custom">
+                  <ElTableColumn prop="nodeIds" label="节点" min-width="90" sortable="custom">
                     <template #default="{ row }">{{ row.nodeIds.join('、') }}</template>
                   </ElTableColumn>
-                  <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
+                  <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
+                      <StatusTag :status="row.status" size="small" effect="plain">
                         {{ row.status }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
+                  <ElTableColumn prop="updatedAt" label="更新时间" width="150" sortable="custom" />
                   <ElTableColumn label="操作" width="112" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openRuleVersionDetail(row)">
@@ -4281,37 +4549,34 @@ onMounted(() => {
               </ElCard>
             </ElCol>
 
-            <ElCol :xl="11" :lg="11" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>流程状态机</span>
-                    <ElTag type="success" effect="plain">启用</ElTag>
+                    <ElTag type="info" effect="plain"
+                      >{{ overviewCount(overview.workflowStateMachines.length) }} 个配置</ElTag
+                    >
                   </div>
                 </template>
                 <ElTable
+                  class="admin-readable-table"
                   :data="
                     tableRows(overview.workflowStateMachines, tableStates.workflowStateMachines)
                   "
                   border
-                  height="320"
+                  max-height="520"
                   @sort-change="handleTableSortChange('workflowStateMachines', $event)"
                 >
-                  <ElTableColumn
-                    prop="name"
-                    label="流程"
-                    min-width="170"
-                    show-overflow-tooltip
-                    sortable="custom"
-                  />
+                  <ElTableColumn prop="name" label="流程" min-width="150" sortable="custom" />
                   <ElTableColumn prop="version" label="版本" width="140" sortable="custom" />
                   <ElTableColumn prop="states" label="状态数" width="84" sortable="custom" />
                   <ElTableColumn prop="transitions" label="流转" width="70" sortable="custom" />
-                  <ElTableColumn prop="status" label="状态" width="86" sortable="custom">
+                  <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
+                      <StatusTag :status="row.status" size="small" effect="plain">
                         {{ row.status }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn label="操作" width="84" fixed="right">
@@ -4355,11 +4620,69 @@ onMounted(() => {
                 </ElSpace>
               </div>
             </template>
+            <div
+              class="admin-list-filters admin-list-filters--wide"
+              role="search"
+              aria-label="审查点筛选"
+            >
+              <ElInput
+                v-model="materialPointFilters.keyword"
+                clearable
+                aria-label="搜索全部审查点"
+                placeholder="搜索审查点、资料、证据或规则编号"
+              />
+              <ElSelect
+                v-model="materialPointFilters.nodeId"
+                clearable
+                filterable
+                aria-label="审查节点"
+                placeholder="全部节点"
+              >
+                <ElOption
+                  v-for="item in materialPointNodeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+              <ElSelect
+                v-model="materialPointFilters.materialTypeCode"
+                clearable
+                filterable
+                aria-label="资料类型筛选"
+                placeholder="全部资料类型"
+              >
+                <ElOption
+                  v-for="item in materialPointTypeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+              <ElSelect
+                v-model="materialPointFilters.enabled"
+                clearable
+                aria-label="审查点状态"
+                placeholder="全部状态"
+              >
+                <ElOption label="启用" value="true" />
+                <ElOption label="停用" value="false" />
+              </ElSelect>
+              <ElButton @click="resetMaterialPointFilters">重置</ElButton>
+            </div>
+            <p class="admin-filter-summary" role="status"
+              >在全部 {{ overview.materialReviewPoints.length }} 项中搜索，符合条件
+              {{ materialPointRows.length }} 项</p
+            >
+            <p class="admin-table-hint"
+              >审查内容直接换行显示；可横向滚动查看其余字段，或打开编辑核对完整内容。</p
+            >
             <ElTable
-              :data="tableRows(overview.materialReviewPoints, tableStates.materialReviewPoints)"
+              :data="tableRows(materialPointRows, tableStates.materialReviewPoints)"
+              class="admin-readable-table"
               border
-              height="520"
-              empty-text="暂无业务资料审查点"
+              max-height="520"
+              empty-text="没有符合条件的审查点，请调整或重置筛选"
               @sort-change="handleTableSortChange('materialReviewPoints', $event)"
             >
               <ElTableColumn prop="nodeId" label="节点" width="78" sortable="custom" />
@@ -4367,16 +4690,9 @@ onMounted(() => {
                 prop="reviewContent"
                 label="审查点"
                 min-width="190"
-                show-overflow-tooltip
                 sortable="custom"
               />
-              <ElTableColumn
-                prop="fileContent"
-                label="审查内容"
-                min-width="260"
-                show-overflow-tooltip
-                sortable="custom"
-              >
+              <ElTableColumn prop="fileContent" label="审查内容" min-width="260" sortable="custom">
                 <template #default="{ row }">
                   {{ materialReviewPointAuditContent(row) }}
                 </template>
@@ -4385,7 +4701,6 @@ onMounted(() => {
                 prop="materialTypeName"
                 label="资料类型"
                 min-width="190"
-                show-overflow-tooltip
                 sortable="custom"
               >
                 <template #default="{ row }">
@@ -4395,12 +4710,7 @@ onMounted(() => {
                   </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn
-                prop="evidenceItemText"
-                label="OCR证据项"
-                min-width="260"
-                show-overflow-tooltip
-              />
+              <ElTableColumn prop="evidenceItemText" label="OCR证据项" min-width="260" />
               <ElTableColumn prop="responsibleParty" label="责任方" width="110" sortable="custom">
                 <template #default="{ row }">{{
                   responsiblePartyLabel(row.responsibleParty)
@@ -4418,11 +4728,11 @@ onMounted(() => {
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="minConfidence" label="阈值" width="86" sortable="custom" />
-              <ElTableColumn prop="enabled" label="状态" width="84" sortable="custom">
+              <ElTableColumn prop="enabled" label="状态" width="96" sortable="custom">
                 <template #default="{ row }">
-                  <ElTag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
+                  <StatusTag :status="row.enabled ? '启用' : '停用'" size="small" effect="plain">
                     {{ row.enabled ? '启用' : '停用' }}
-                  </ElTag>
+                  </StatusTag>
                 </template>
               </ElTableColumn>
               <ElTableColumn label="操作" width="132" fixed="right">
@@ -4443,7 +4753,7 @@ onMounted(() => {
               background
               :page-sizes="tablePageSizes"
               layout="total, sizes, prev, pager, next, jumper"
-              :total="overview.materialReviewPoints.length"
+              :total="materialPointRows.length"
               @size-change="resetTablePage('materialReviewPoints')"
             />
           </ElCard>
@@ -4507,84 +4817,90 @@ onMounted(() => {
               >
                 筛选
               </ElButton>
-              <ElButton :loading="promptTemplateLoading" @click="loadPromptTemplates"
+              <ElButton
+                :icon="Refresh"
+                :loading="promptTemplateLoading"
+                @click="loadPromptTemplates"
                 >刷新</ElButton
               >
             </div>
             <ElTable
+              class="admin-readable-table"
               :data="sortedRows(promptTemplates, tableStates.promptTemplates)"
               border
-              height="430"
+              max-height="520"
               empty-text="暂无 Prompt 模板"
               @sort-change="handlePromptTemplateSortChange"
             >
-              <ElTableColumn
-                prop="name"
-                label="模板名称"
-                min-width="220"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn
-                prop="promptKey"
-                label="Prompt Key"
-                min-width="150"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn prop="version" label="版本" width="110" sortable="custom" />
-              <ElTableColumn prop="status" label="状态" width="100" sortable="custom">
+              <ElTableColumn prop="name" label="模板名称" min-width="210" sortable="custom">
                 <template #default="{ row }">
-                  <ElTag :type="promptTemplateStatusType(row.status)" size="small" effect="plain">
+                  <div class="stacked-cell">
+                    <span>{{ row.name }}</span>
+                    <small>Key：{{ row.promptKey }}</small>
+                    <small>更新：{{ row.updatedAt || '—' }}</small>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="version" label="版本" min-width="155" sortable="custom">
+                <template #default="{ row }">
+                  <div class="stacked-cell">
+                    <span>{{ row.version }}</span>
+                    <small>Prompt：{{ row.promptVersionId || '—' }}</small>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
+                <template #default="{ row }">
+                  <StatusTag :status="row.status" size="small" effect="plain">
                     {{ promptTemplateStatusLabel(row.status) }}
-                  </ElTag>
+                  </StatusTag>
                 </template>
               </ElTableColumn>
               <ElTableColumn
                 prop="businessPackId"
-                label="业务包"
-                min-width="190"
-                show-overflow-tooltip
+                label="业务类型"
+                min-width="135"
                 sortable="custom"
-              />
-              <ElTableColumn
-                prop="agentId"
-                label="Agent"
-                min-width="170"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn
-                prop="promptVersionId"
-                label="Prompt 版本"
-                min-width="170"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
+              >
+                <template #default="{ row }"
+                  ><span :title="row.businessPackId">{{
+                    businessPackLabel(row.businessPackId)
+                  }}</span></template
+                >
+              </ElTableColumn>
+              <ElTableColumn prop="agentId" label="Agent" min-width="145" sortable="custom">
+                <template #default="{ row }"
+                  ><span :title="row.agentId">{{ adminCodeLabel(row.agentId) }}</span></template
+                >
+              </ElTableColumn>
               <ElTableColumn label="操作" width="180" fixed="right">
                 <template #default="{ row }">
-                  <ElButton link type="primary" @click="openPromptTemplateDialog(row)">
-                    编辑
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="success"
-                    :disabled="['production', '已发布'].includes(row.status)"
-                    :loading="promptTemplateSaving"
-                    @click="handlePublishPromptTemplate(row)"
-                  >
-                    发布
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="danger"
-                    :disabled="['production', '已发布'].includes(row.status)"
-                    :loading="promptTemplateSaving"
-                    @click="handleDeletePromptTemplate(row)"
-                  >
-                    删除
-                  </ElButton>
+                  <div class="admin-table-actions">
+                    <ElButton link type="primary" @click="openPromptTemplateDialog(row)">
+                      {{ productionTemplateLocked(row.status) ? '查看' : '编辑' }}
+                    </ElButton>
+                    <ElButton link type="primary" @click="createPromptDraft(row)"
+                      >创建草稿</ElButton
+                    >
+                    <ElButton
+                      link
+                      type="success"
+                      :disabled="['production', '已发布'].includes(row.status)"
+                      :loading="promptTemplateSaving"
+                      @click="handlePublishPromptTemplate(row)"
+                    >
+                      发布
+                    </ElButton>
+                    <ElButton
+                      link
+                      type="danger"
+                      :disabled="['production', '已发布'].includes(row.status)"
+                      :loading="promptTemplateSaving"
+                      @click="handleDeletePromptTemplate(row)"
+                    >
+                      删除
+                    </ElButton>
+                  </div>
                 </template>
               </ElTableColumn>
             </ElTable>
@@ -4660,87 +4976,107 @@ onMounted(() => {
               >
                 筛选
               </ElButton>
-              <ElButton :loading="reportTemplateLoading" @click="loadReportTemplates">
+              <ElButton
+                :icon="Refresh"
+                :loading="reportTemplateLoading"
+                @click="loadReportTemplates"
+              >
                 刷新
               </ElButton>
             </div>
             <ElTable
+              class="admin-readable-table"
               :data="sortedRows(reportTemplates, tableStates.reportTemplates)"
               border
-              height="430"
+              max-height="520"
               empty-text="暂无报告模板"
               @sort-change="handleReportTemplateSortChange"
             >
-              <ElTableColumn
-                prop="name"
-                label="模板名称"
-                min-width="230"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn prop="version" label="版本" width="110" sortable="custom" />
-              <ElTableColumn prop="status" label="状态" width="100" sortable="custom">
+              <ElTableColumn prop="name" label="模板名称" min-width="210" sortable="custom">
                 <template #default="{ row }">
-                  <ElTag :type="promptTemplateStatusType(row.status)" size="small" effect="plain">
+                  <div class="stacked-cell">
+                    <span>{{ row.name }}</span>
+                    <small>更新：{{ row.updatedAt || '—' }}</small>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="version" label="版本" min-width="110" sortable="custom" />
+              <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
+                <template #default="{ row }">
+                  <StatusTag :status="row.status" size="small" effect="plain">
                     {{ promptTemplateStatusLabel(row.status) }}
-                  </ElTag>
+                  </StatusTag>
                 </template>
               </ElTableColumn>
               <ElTableColumn
                 prop="businessPackId"
-                label="业务包"
-                min-width="210"
-                show-overflow-tooltip
+                label="业务类型"
+                min-width="135"
                 sortable="custom"
-              />
-              <ElTableColumn label="章节" width="90">
+                ><template #default="{ row }"
+                  ><span :title="row.businessPackId">{{
+                    businessPackLabel(row.businessPackId)
+                  }}</span></template
+                ></ElTableColumn
+              >
+              <ElTableColumn label="章节" width="70">
                 <template #default="{ row }">{{ row.sections?.length || 0 }} 项</template>
               </ElTableColumn>
-              <ElTableColumn label="导出类型" min-width="230" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.exportTypes?.join('、') || '-' }}</template>
+              <ElTableColumn label="导出类型" min-width="140">
+                <template #default="{ row }">{{
+                  row.exportTypes?.map(adminCodeLabel).join('、') || '—'
+                }}</template>
               </ElTableColumn>
-              <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
               <ElTableColumn label="操作" width="180" fixed="right">
                 <template #default="{ row }">
-                  <!-- 生产版本不可改，但得让人看得到内容、且知道为什么点不动。
+                  <div class="admin-table-actions">
+                    <!-- 生产版本不可改，但得让人看得到内容、且知道为什么点不动。
                        原来三个按钮一起灰掉、不给任何说明，管理员只能当它坏了。 -->
-                  <ElButton link type="primary" @click="openReportTemplateDialog(row)">
-                    {{ reportTemplateLocked(row.status) ? '查看' : '编辑' }}
-                  </ElButton>
-                  <ElTooltip
-                    :disabled="!reportTemplateLocked(row.status)"
-                    :content="reportTemplateLockedHint"
-                    placement="top"
-                  >
-                    <span>
-                      <ElButton
-                        link
-                        type="success"
-                        :disabled="reportTemplateLocked(row.status)"
-                        :loading="reportTemplateSaving"
-                        @click="handlePublishReportTemplate(row)"
-                      >
-                        发布
-                      </ElButton>
-                    </span>
-                  </ElTooltip>
-                  <ElTooltip
-                    :disabled="!reportTemplateLocked(row.status)"
-                    :content="reportTemplateLockedHint"
-                    placement="top"
-                  >
-                    <span>
-                      <ElButton
-                        link
-                        type="danger"
-                        :disabled="reportTemplateLocked(row.status)"
-                        :loading="reportTemplateSaving"
-                        @click="handleDeleteReportTemplate(row)"
-                      >
-                        删除
-                      </ElButton>
-                    </span>
-                  </ElTooltip>
+                    <ElButton link type="primary" @click="openReportTemplateDialog(row)">
+                      {{ reportTemplateLocked(row.status) ? '查看' : '编辑' }}
+                    </ElButton>
+                    <ElButton
+                      v-if="reportTemplateLocked(row.status)"
+                      link
+                      type="primary"
+                      @click="openReportTemplateDraft(row)"
+                      >建立草稿</ElButton
+                    >
+                    <ElTooltip
+                      :disabled="!reportTemplateLocked(row.status)"
+                      :content="reportTemplateLockedHint"
+                      placement="top"
+                    >
+                      <span>
+                        <ElButton
+                          link
+                          type="success"
+                          :disabled="reportTemplateLocked(row.status)"
+                          :loading="reportTemplateSaving"
+                          @click="handlePublishReportTemplate(row)"
+                        >
+                          发布
+                        </ElButton>
+                      </span>
+                    </ElTooltip>
+                    <ElTooltip
+                      :disabled="!reportTemplateLocked(row.status)"
+                      :content="reportTemplateLockedHint"
+                      placement="top"
+                    >
+                      <span>
+                        <ElButton
+                          link
+                          type="danger"
+                          :disabled="reportTemplateLocked(row.status)"
+                          :loading="reportTemplateSaving"
+                          @click="handleDeleteReportTemplate(row)"
+                        >
+                          删除
+                        </ElButton>
+                      </span>
+                    </ElTooltip>
+                  </div>
                 </template>
               </ElTableColumn>
             </ElTable>
@@ -4759,8 +5095,9 @@ onMounted(() => {
         </ElTabPane>
 
         <ElTabPane label="细项配置" name="fine-config">
-          <ElRow :gutter="16">
-            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+          <p class="admin-table-hint">窄屏下可横向滚动表格查看全部字段。</p>
+          <ElRow :gutter="16" class="admin-stack-row fine-config-grid">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -4773,7 +5110,7 @@ onMounted(() => {
                 <ElTable
                   :data="tableRows(overview.todoRules, tableStates.todoRules)"
                   border
-                  height="300"
+                  max-height="360"
                   @sort-change="handleTableSortChange('todoRules', $event)"
                 >
                   <ElTableColumn
@@ -4794,14 +5131,18 @@ onMounted(() => {
                     <template #default="{ row }">{{ roleLabel(row.assigneeRole) }}</template>
                   </ElTableColumn>
                   <ElTableColumn prop="deadlineHours" label="时限/h" width="82" sortable="custom" />
-                  <ElTableColumn prop="enabled" label="状态" width="84" sortable="custom">
+                  <ElTableColumn prop="enabled" label="状态" width="96" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
+                      <StatusTag
+                        :status="row.enabled ? '启用' : '停用'"
+                        size="small"
+                        effect="plain"
+                      >
                         {{ row.enabled ? '启用' : '停用' }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="操作" width="84" fixed="right">
+                  <ElTableColumn label="操作" width="84">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openTodoRuleConfig(row)">编辑</ElButton>
                     </template>
@@ -4820,7 +5161,7 @@ onMounted(() => {
               </ElCard>
             </ElCol>
 
-            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -4838,7 +5179,7 @@ onMounted(() => {
                 <ElTable
                   :data="tableRows(overview.messageTemplates, tableStates.messageTemplates)"
                   border
-                  height="300"
+                  max-height="360"
                   @sort-change="handleTableSortChange('messageTemplates', $event)"
                 >
                   <ElTableColumn
@@ -4856,15 +5197,19 @@ onMounted(() => {
                     show-overflow-tooltip
                     sortable="custom"
                   />
-                  <ElTableColumn prop="enabled" label="状态" width="84" sortable="custom">
+                  <ElTableColumn prop="enabled" label="状态" width="96" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
+                      <StatusTag
+                        :status="row.enabled ? '启用' : '停用'"
+                        size="small"
+                        effect="plain"
+                      >
                         {{ row.enabled ? '启用' : '停用' }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
-                  <ElTableColumn label="操作" width="84" fixed="right">
+                  <ElTableColumn label="操作" width="84">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openMessageTemplateConfig(row)"
                         >编辑</ElButton
@@ -4885,7 +5230,7 @@ onMounted(() => {
               </ElCard>
             </ElCol>
 
-            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -4898,7 +5243,7 @@ onMounted(() => {
                 <ElTable
                   :data="tableRows(overview.toolSources, tableStates.toolSources)"
                   border
-                  height="300"
+                  max-height="360"
                   @sort-change="handleTableSortChange('toolSources', $event)"
                 >
                   <ElTableColumn
@@ -4908,7 +5253,11 @@ onMounted(() => {
                     show-overflow-tooltip
                     sortable="custom"
                   />
-                  <ElTableColumn prop="toolType" label="类型" width="120" sortable="custom" />
+                  <ElTableColumn prop="toolType" label="类型" width="120" sortable="custom"
+                    ><template #default="{ row }">{{
+                      adminCodeLabel(row.toolType)
+                    }}</template></ElTableColumn
+                  >
                   <ElTableColumn
                     prop="endpoint"
                     label="地址"
@@ -4916,15 +5265,19 @@ onMounted(() => {
                     show-overflow-tooltip
                     sortable="custom"
                   />
-                  <ElTableColumn prop="authMode" label="鉴权" width="88" sortable="custom" />
-                  <ElTableColumn prop="status" label="状态" width="84" sortable="custom">
+                  <ElTableColumn prop="authMode" label="鉴权" width="110" sortable="custom"
+                    ><template #default="{ row }">{{
+                      adminCodeLabel(row.authMode)
+                    }}</template></ElTableColumn
+                  >
+                  <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
+                      <StatusTag :status="row.status" size="small" effect="plain">
                         {{ row.status }}
-                      </ElTag>
+                      </StatusTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="操作" width="84" fixed="right">
+                  <ElTableColumn label="操作" width="84">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openToolSourceConfig(row)"
                         >编辑</ElButton
@@ -4945,7 +5298,7 @@ onMounted(() => {
               </ElCard>
             </ElCol>
 
-            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -4958,7 +5311,7 @@ onMounted(() => {
                 <ElTable
                   :data="tableRows(overview.fieldMappings, tableStates.fieldMappings)"
                   border
-                  height="300"
+                  max-height="360"
                   @sort-change="handleTableSortChange('fieldMappings', $event)"
                 >
                   <ElTableColumn prop="nodeId" label="节点" width="72" sortable="custom" />
@@ -4996,7 +5349,7 @@ onMounted(() => {
                     width="76"
                     sortable="custom"
                   />
-                  <ElTableColumn label="操作" width="84" fixed="right">
+                  <ElTableColumn label="操作" width="84">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openFieldMappingConfig(row)"
                         >编辑</ElButton
@@ -5024,15 +5377,8 @@ onMounted(() => {
             <template #header>
               <div class="panel-header">
                 <span>真实联调字段差异清单</span>
-                <ElTag
-                  :type="integrationContract.summary.blockers ? 'danger' : 'success'"
-                  effect="plain"
-                >
-                  {{
-                    integrationContract.summary.blockers
-                      ? `${integrationContract.summary.blockers} 阻塞`
-                      : '可推进'
-                  }}
+                <ElTag :type="integrationCheckState.type" effect="plain">
+                  {{ integrationCheckState.label }}
                 </ElTag>
               </div>
             </template>
@@ -5085,7 +5431,10 @@ onMounted(() => {
                   :value="item.value"
                 />
               </ElSelect>
-              <ElButton :loading="integrationLoading" @click="loadIntegrationContract"
+              <ElButton
+                :icon="Refresh"
+                :loading="integrationLoading"
+                @click="loadIntegrationContract"
                 >刷新</ElButton
               >
               <span class="integration-generated-at">
@@ -5122,18 +5471,40 @@ onMounted(() => {
               :data="tableRows(integrationRows, tableStates.integration)"
               border
               height="430"
-              class="integration-contract-table"
+              class="integration-contract-table admin-readable-table"
               empty-text="当前筛选下没有字段差异"
               @sort-change="handleTableSortChange('integration', $event)"
             >
-              <ElTableColumn prop="moduleLabel" label="模块" width="130" sortable="custom" />
               <ElTableColumn
-                prop="__endpoint"
-                label="接口"
-                min-width="260"
-                show-overflow-tooltip
+                prop="moduleLabel"
+                label="模块 / 负责人"
+                min-width="120"
                 sortable="custom"
               >
+                <template #default="{ row }">
+                  <div class="stacked-cell">
+                    <span>{{ row.moduleLabel }}</span>
+                    <small>负责人：{{ row.owner || '—' }}</small>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="status" label="状态 / 级别" width="138" sortable="custom">
+                <template #default="{ row }">
+                  <div class="stacked-cell admin-contract-status">
+                    <StatusTag :status="row.status" size="small" effect="plain">
+                      {{ row.status }}
+                    </StatusTag>
+                    <ElTag
+                      :type="integrationSeverityTagType(row.severity)"
+                      size="small"
+                      effect="plain"
+                    >
+                      {{ integrationSeverityLabel(row.severity) }}
+                    </ElTag>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="__endpoint" label="接口" min-width="220" sortable="custom">
                 <template #default="{ row }">
                   <span class="method-pill">{{ row.method }}</span>
                   <span>{{ row.endpoint }}</span>
@@ -5141,19 +5512,16 @@ onMounted(() => {
               </ElTableColumn>
               <ElTableColumn
                 prop="frontendField"
-                label="前端字段"
-                min-width="180"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn
-                prop="backendField"
-                label="后端字段"
-                min-width="180"
-                show-overflow-tooltip
+                label="字段对应"
+                min-width="210"
                 sortable="custom"
               >
-                <template #default="{ row }">{{ row.backendField || '-' }}</template>
+                <template #default="{ row }">
+                  <div class="stacked-cell">
+                    <span>前端：{{ row.frontendField }}</span>
+                    <span>后端：{{ row.backendField || '—' }}</span>
+                  </div>
+                </template>
               </ElTableColumn>
               <ElTableColumn prop="required" label="必填" width="74" sortable="custom">
                 <template #default="{ row }">
@@ -5162,32 +5530,7 @@ onMounted(() => {
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn prop="status" label="状态" width="118" sortable="custom">
-                <template #default="{ row }">
-                  <ElTag :type="integrationStatusTagType(row.status)" size="small" effect="plain">
-                    {{ row.status }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="severity" label="级别" width="88" sortable="custom">
-                <template #default="{ row }">
-                  <ElTag
-                    :type="integrationSeverityTagType(row.severity)"
-                    size="small"
-                    effect="plain"
-                  >
-                    {{ integrationSeverityLabel(row.severity) }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="owner" label="负责人" width="116" sortable="custom" />
-              <ElTableColumn
-                prop="note"
-                label="说明"
-                min-width="260"
-                show-overflow-tooltip
-                sortable="custom"
-              />
+              <ElTableColumn prop="note" label="说明" min-width="210" sortable="custom" />
             </ElTable>
             <ElPagination
               v-model:current-page="tableStates.integration.page"
@@ -5234,13 +5577,12 @@ onMounted(() => {
                 <ElOption label="失败" value="失败" />
               </ElSelect>
               <ElSelect v-model="auditFilters.objectType" clearable placeholder="对象类型">
-                <ElOption label="AdminConfig" value="AdminConfig" />
-                <ElOption label="AdminConfigExport" value="AdminConfigExport" />
-                <ElOption label="PromptTemplate" value="PromptTemplate" />
-                <ElOption label="ProjectMember" value="ProjectMember" />
-                <ElOption label="RuleTemplate" value="RuleTemplate" />
-                <ElOption label="ReportVersion" value="ReportVersion" />
-                <ElOption label="MessageItem" value="MessageItem" />
+                <ElOption
+                  v-for="(label, value) in adminAuditTypeLabels"
+                  :key="value"
+                  :label="label"
+                  :value="value"
+                />
               </ElSelect>
               <ElButton type="primary" :loading="auditLoading" @click="handleFilterAudit"
                 >筛选</ElButton
@@ -5269,7 +5611,11 @@ onMounted(() => {
                 show-overflow-tooltip
                 sortable="custom"
               />
-              <ElTableColumn prop="objectType" label="对象类型" width="130" sortable="custom" />
+              <ElTableColumn prop="objectType" label="对象类型" width="144" sortable="custom"
+                ><template #default="{ row }">{{
+                  adminCodeLabel(row.objectType)
+                }}</template></ElTableColumn
+              >
               <ElTableColumn
                 prop="objectId"
                 label="对象 ID"
@@ -5279,9 +5625,9 @@ onMounted(() => {
               />
               <ElTableColumn prop="result" label="结果" width="88" sortable="custom">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.result)" size="small" effect="plain">
+                  <StatusTag :status="row.result" size="small" effect="plain">
                     {{ row.result }}
-                  </ElTag>
+                  </StatusTag>
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="createdAt" label="时间" width="170" sortable="custom" />
@@ -6164,10 +6510,27 @@ onMounted(() => {
 
       <ElDrawer
         v-model="promptTemplateDialogVisible"
-        :title="promptTemplateDialogMode === 'create' ? '新增 Prompt 模板' : '编辑 Prompt 模板'"
+        :title="
+          promptTemplateDialogMode === 'create'
+            ? '新增 Prompt 模板'
+            : promptTemplateDialogMode === 'view'
+              ? '查看 Prompt 模板（生产版本，只读）'
+              : '编辑 Prompt 模板'
+        "
         size="min(900px, 94vw)"
       >
-        <ElForm label-position="top" class="prompt-template-form">
+        <ElForm
+          label-position="top"
+          class="prompt-template-form"
+          :disabled="promptTemplateDialogMode === 'view'"
+        >
+          <ElAlert
+            v-if="promptTemplateDialogMode === 'view'"
+            type="warning"
+            show-icon
+            :closable="false"
+            title="生产版本只读。请从列表创建草稿，修改后再发布替代版本。"
+          />
           <ElAlert
             type="info"
             show-icon
@@ -6204,7 +6567,12 @@ onMounted(() => {
               <ElFormItem label="状态">
                 <ElSelect v-model="promptTemplateForm.status">
                   <ElOption label="草稿" value="draft" />
-                  <ElOption label="生产" value="production" />
+                  <ElOption
+                    v-if="promptTemplateDialogMode === 'view'"
+                    label="生产"
+                    value="production"
+                    disabled
+                  />
                   <ElOption label="已停用" value="retired" />
                 </ElSelect>
               </ElFormItem>
@@ -6280,6 +6648,7 @@ onMounted(() => {
         <div class="drawer-footer">
           <ElButton @click="promptTemplateDialogVisible = false">取消</ElButton>
           <ElButton
+            v-if="promptTemplateDialogMode !== 'view'"
             type="primary"
             :loading="promptTemplateSaving"
             @click="handleSavePromptTemplate"
@@ -6319,7 +6688,7 @@ onMounted(() => {
             type="info"
             show-icon
             :closable="false"
-            title="发布后将替换同一业务包的生产模板；已生成报告保留当时的模板快照。"
+            title="保存不会替换生产版本。草稿可在列表中单独发布，供后续报告使用；已生成报告保持原样。"
           />
           <div v-if="reportTemplateOperationError" class="local-error local-error--compact">
             <ElAlert
@@ -6453,34 +6822,29 @@ onMounted(() => {
         </template>
       </ElDialog>
 
-      <ElDialog v-model="publishTraceVisible" title="发布联动追溯" width="min(760px, 94vw)">
-        <ElEmpty v-if="!latestPublishResult" description="暂无发布结果" />
+      <ElDialog v-model="publishTraceVisible" title="配置版本登记记录" width="min(760px, 94vw)">
+        <ElEmpty v-if="!latestPublishResult" description="暂无登记记录" />
         <template v-else>
           <ElDescriptions :column="2" border>
-            <ElDescriptionsItem label="发布版本">
+            <ElDescriptionsItem label="登记版本">
               {{ latestPublishResult.version }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="发布状态">
-              {{ latestPublishResult.status }}
-            </ElDescriptionsItem>
+            <ElDescriptionsItem label="登记状态"> 已登记 </ElDescriptionsItem>
             <ElDescriptionsItem label="审计编号">
               {{ latestPublishResult.auditLogId }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="发布时间">
+            <ElDescriptionsItem label="登记时间">
               {{ latestPublishResult.publishedAt }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="影响配置">
+            <ElDescriptionsItem label="登记配置">
               {{ latestPublishResult.impactSummary.totalAffected }} 项
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="在检项目">
+            <ElDescriptionsItem label="关联项目">
               {{ latestPublishResult.impactSummary.linkedProjects }} 个
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="工作台消息">
-              {{ latestPublishResult.impactSummary.pushedMessages }} 条
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="复核待办">
-              {{ latestPublishResult.impactSummary.reviewTodos }} 条
-            </ElDescriptionsItem>
+            <ElDescriptionsItem label="执行效果" :span="2"
+              >仅登记版本与审计；不会切换生产版本或发送消息。</ElDescriptionsItem
+            >
           </ElDescriptions>
           <ElTable
             :data="tableRows(publishImpactRows, tableStates.publishImpact)"
@@ -6489,17 +6853,17 @@ onMounted(() => {
             @sort-change="handleTableSortChange('publishImpact', $event)"
           >
             <ElTableColumn prop="label" label="配置域" width="118" sortable="custom" />
-            <ElTableColumn prop="affectedCount" label="影响项" width="86" sortable="custom" />
-            <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
+            <ElTableColumn prop="affectedCount" label="登记项" width="86" sortable="custom" />
+            <ElTableColumn prop="status" label="状态" width="150" sortable="custom">
               <template #default="{ row }">
-                <ElTag :type="row.status === '需复核' ? 'warning' : 'success'" effect="plain">
-                  {{ row.status }}
-                </ElTag>
+                <StatusTag :status="row.status" effect="plain">
+                  {{ row.status === '需复核' ? '登记后需复核' : '已登记' }}
+                </StatusTag>
               </template>
             </ElTableColumn>
             <ElTableColumn
               prop="trace"
-              label="联动追溯"
+              label="登记说明"
               min-width="320"
               show-overflow-tooltip
               sortable="custom"
@@ -6537,9 +6901,9 @@ onMounted(() => {
                 selectedRuleVersion.version
               }}</ElDescriptionsItem>
               <ElDescriptionsItem label="状态">
-                <ElTag :type="statusType(selectedRuleVersion.status)" effect="light">
+                <StatusTag :status="selectedRuleVersion.status" effect="light">
                   {{ selectedRuleVersion.status }}
-                </ElTag>
+                </StatusTag>
               </ElDescriptionsItem>
               <ElDescriptionsItem label="Prompt 版本">
                 {{ selectedRuleVersion.promptVersion }}
@@ -6715,9 +7079,9 @@ onMounted(() => {
                 formatProjectRegion(projectDetail.project.region)
               }}</ElDescriptionsItem>
               <ElDescriptionsItem label="状态">
-                <ElTag :type="statusType(projectDetail.project.status)" effect="light">
+                <StatusTag :status="projectDetail.project.status" effect="light">
                   {{ projectDetail.project.status }}
-                </ElTag>
+                </StatusTag>
               </ElDescriptionsItem>
               <ElDescriptionsItem label="当前节点">{{
                 projectDetail.project.currentNodeId
@@ -6805,9 +7169,9 @@ onMounted(() => {
                 show-overflow-tooltip
                 sortable="custom"
               />
-              <ElTableColumn prop="status" label="状态" width="100" sortable="custom">
+              <ElTableColumn prop="status" label="状态" width="112" sortable="custom">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                  <StatusTag :status="row.status" effect="light">{{ row.status }}</StatusTag>
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="fileSize" label="大小" width="100" sortable="custom">
@@ -7011,7 +7375,6 @@ onMounted(() => {
   background: var(--aicheck-surface, #fff);
   border: 1px solid var(--aicheck-border, #d4deeb);
   border-radius: 8px;
-  box-shadow: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
 }
 
 .secondary-summary-collapse summary {
@@ -7054,6 +7417,10 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.collapsed-governance-summary {
+  padding: 0 14px;
+}
+
 .secondary-summary-collapse .metric-grid {
   padding: 0 14px 14px;
   margin-bottom: 0;
@@ -7065,7 +7432,6 @@ onMounted(() => {
   background: var(--aicheck-surface, #fff);
   border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 8px;
-  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
 }
 
 .metric-card span {
@@ -7080,34 +7446,47 @@ onMounted(() => {
   line-height: 32px;
 }
 
-.metric-card--blue {
-  background: var(--aicheck-surface-soft, #f8fbff);
-  border-color: #cbdcf8;
+.metric-card--blue strong {
+  color: var(--aicheck-primary, #1f66d8);
 }
 
-.metric-card--green {
-  background: #f8fdf9;
-  border-color: #cfe8d7;
+.metric-card--green strong {
+  color: var(--aicheck-success, #087443);
 }
 
-.metric-card--orange {
-  background: #fffaf0;
-  border-color: #f0dfb8;
+.metric-card--orange strong {
+  color: var(--aicheck-warning, #8a4b00);
 }
 
-.metric-card--red {
-  background: #fff7f7;
-  border-color: #efc8c8;
+.metric-card--red strong {
+  color: var(--aicheck-danger, #b42318);
 }
 
-.metric-card--gray {
-  background: var(--aicheck-surface-muted, #f2f6fb);
-  border-color: #d7dde8;
+.metric-card--gray strong {
+  color: var(--aicheck-text-muted, #52647d);
+}
+
+.secondary-summary-collapse .metric-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .panel {
   margin-bottom: 16px;
   border-radius: 8px;
+}
+
+.panel :deep(.el-table--border) {
+  --el-table-border-color: var(--aicheck-border-soft, #e5ecf6);
+}
+
+.panel :deep(.el-table__body td.el-table__cell) {
+  border-right: 0;
+}
+
+.panel :deep(.el-table__header th.el-table__cell) {
+  border-right: 0;
 }
 
 .admin-page--expanded :deep(.el-tabs__content) {
@@ -7228,6 +7607,42 @@ onMounted(() => {
   margin-top: 12px;
 }
 
+.admin-readable-table :deep(.el-table__body .cell) {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.55;
+}
+
+.admin-readable-table :deep(.el-table__row td) {
+  vertical-align: top;
+}
+
+.admin-readable-table .stacked-cell {
+  gap: 5px;
+}
+
+.admin-readable-table .stacked-cell small {
+  line-height: 1.5;
+}
+
+.admin-table-actions {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 10px 14px;
+  align-items: start;
+  justify-content: start;
+}
+
+.admin-table-actions :deep(.el-button) {
+  margin-left: 0;
+}
+
+.admin-contract-status {
+  align-items: flex-start;
+}
+
 .stacked-cell {
   display: flex;
   min-width: 0;
@@ -7340,28 +7755,28 @@ onMounted(() => {
 }
 
 .integration-summary-card {
-  background: #f8fafc;
-  border-color: #d7dde8;
+  background: var(--aicheck-surface, #fff);
+  border-color: var(--aicheck-border-soft, #e5ecf6);
 }
 
-.integration-summary-card--blue {
-  background: #f8fbff;
-  border-color: #cbdcf8;
+.integration-summary-card--blue strong {
+  color: var(--aicheck-primary, #1f66d8);
 }
 
-.integration-summary-card--green {
-  background: #f8fdf9;
-  border-color: #cfe8d7;
+.integration-summary-card--green strong {
+  color: var(--aicheck-success, #087443);
 }
 
-.integration-summary-card--orange {
-  background: #fffaf0;
-  border-color: #f0dfb8;
+.integration-summary-card--orange strong {
+  color: var(--aicheck-warning, #8a4b00);
 }
 
-.integration-summary-card--red {
-  background: #fff7f7;
-  border-color: #efc8c8;
+.integration-summary-card--red strong {
+  color: var(--aicheck-danger, #b42318);
+}
+
+.integration-summary-card--gray strong {
+  color: var(--aicheck-text-muted, #52647d);
 }
 
 .integration-summary-card span,
@@ -7377,7 +7792,6 @@ onMounted(() => {
   margin-top: 6px;
   font-size: 24px;
   line-height: 28px;
-  color: #1f2937;
 }
 
 .integration-filter-bar {
@@ -7588,7 +8002,58 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.admin-directory-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.admin-list-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(130px, 1fr)) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-list-filters--wide {
+  grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(140px, 1fr)) minmax(112px, 0.7fr) auto;
+}
+
+.admin-filter-summary,
+.admin-table-hint {
+  margin: 10px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular);
+}
+
+.admin-role-label {
+  white-space: normal;
+  word-break: keep-all;
+}
+
+@media (width <= 1280px) {
+  .admin-list-filters,
+  .admin-list-filters--wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-list-filters > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (width <= 768px) {
+  .admin-list-filters,
+  .admin-list-filters--wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-directory-links .el-button {
+    margin-left: 0;
+  }
+
   .admin-page {
     padding: 0;
   }

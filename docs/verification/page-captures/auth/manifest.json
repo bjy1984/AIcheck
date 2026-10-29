@@ -1,0 +1,70 @@
+{
+  "routeCount": 4,
+  "captureCount": 4,
+  "captures": [
+    {
+      "route": "/login",
+      "title": "登入",
+      "file": "login.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "只檢視表單；未建立帳號、輸入新密碼或授權。",
+        "加入項目使用隔離測試連結，改密使用mustChangePassword示例狀態，授權使用本機示例payload；全部未提交。"
+      ]
+    },
+    {
+      "route": "/join/:token",
+      "title": "加入項目",
+      "file": "join.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "只檢視表單；未建立帳號、輸入新密碼或授權。",
+        "加入項目使用隔離測試連結，改密使用mustChangePassword示例狀態，授權使用本機示例payload；全部未提交。"
+      ]
+    },
+    {
+      "route": "/change-password",
+      "title": "首次登入改密",
+      "file": "change-password.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "只檢視表單；未建立帳號、輸入新密碼或授權。",
+        "加入項目使用隔離測試連結，改密使用mustChangePassword示例狀態，授權使用本機示例payload；全部未提交。"
+      ]
+    },
+    {
+      "route": "/skill-authorize/:payload",
+      "title": "授權頁",
+      "file": "skill-authorize.jpg",
+      "status": "pass",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "issues": [],
+      "limitations": [
+        "只檢視表單；未建立帳號、輸入新密碼或授權。",
+        "加入項目使用隔離測試連結，改密使用mustChangePassword示例狀態，授權使用本機示例payload；全部未提交。"
+      ]
+    }
+  ]
+}

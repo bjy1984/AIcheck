@@ -8,7 +8,7 @@ import {
   ElTimelineItem
 } from 'element-plus'
 
-type StaticShellTone = 'blue' | 'green' | 'orange' | 'red'
+type StaticShellTone = 'blue' | 'green' | 'orange' | 'red' | 'gray'
 
 type StaticShellRightCard = {
   title: string
@@ -38,13 +38,15 @@ const toneColor: Record<StaticShellTone, string> = {
   blue: 'var(--aicheck-primary, #1f66d8)',
   green: 'var(--aicheck-success, #087443)',
   orange: 'var(--aicheck-warning, #8a4b00)',
-  red: 'var(--aicheck-danger, #b42318)'
+  red: 'var(--aicheck-danger, #b42318)',
+  gray: 'var(--aicheck-neutral, #52647d)'
 }
 
 const tagType = (tone?: StaticShellTone) => {
   if (tone === 'green') return 'success'
   if (tone === 'orange') return 'warning'
   if (tone === 'red') return 'danger'
+  if (tone === 'gray') return 'info'
   return 'primary'
 }
 </script>
@@ -111,9 +113,7 @@ const tagType = (tone?: StaticShellTone) => {
   margin-top: 12px;
   overflow: hidden;
   background: var(--aicheck-surface, #fff);
-  border: 1px solid var(--aicheck-border, #d4deeb);
-  border-radius: 8px;
-  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+  border-top: 1px solid var(--aicheck-border-soft, #e5ecf6);
 }
 
 .right-card h3 {
@@ -121,8 +121,7 @@ const tagType = (tone?: StaticShellTone) => {
   margin: 0;
   font-size: 16px;
   line-height: 1.3;
-  background: var(--aicheck-surface-soft, #f8fbff);
-  border-bottom: 1px solid var(--aicheck-border-soft, #e5ecf6);
+  background: transparent;
 }
 
 .right-card .body {

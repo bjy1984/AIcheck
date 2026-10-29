@@ -42,7 +42,7 @@ assert.ok(/class="ndt-uploaded-files"/.test(panel), '要有展开后的文件清
 
 // 文件行同时显示两种状态
 assert.ok(
-  /\{\{ file\.fileStatus \}\} · OCR \{\{ file\.currentOcrStatus \}\}/.test(panel),
+  /\{\{ file\.fileStatus \}\} · 资料处理：\{\{ file\.currentOcrStatus \}\}/.test(panel),
   '上传状态与 OCR 状态是两件事，要分开显示'
 )
 

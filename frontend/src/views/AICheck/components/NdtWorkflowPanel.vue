@@ -29,7 +29,7 @@ import type {
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
-import { documentBusinessStatus, documentPipelineStatus } from '@/utils/documentPipelineStatus'
+import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
 import {
   canRetryDocumentUpload,
   canSubmitNdtDocumentUpload,
@@ -37,7 +37,6 @@ import {
   ndtEditBlockedReason,
   ndtSubmitBlockedReason
 } from '@/utils/documentUploadActions'
-import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import {
   NDT_ATOMIC_MATERIALS,
   NDT_NODE_IDS,
@@ -163,17 +162,6 @@ watch(
 const selectedRectificationId = computed(
   () => rectificationForm.rectificationId || defaultFeedback.value?.id || ''
 )
-const ndtMetricCards = computed<AuditSummaryCard[]>(() => [
-  { label: '底片编号', value: props.films.length, hint: '已登记影像索引', tone: 'blue' },
-  { label: '检测记录', value: props.records.length, hint: '已导入检测台账', tone: 'blue' },
-  { label: '检测报告', value: props.reports.length, hint: '当前报告版本', tone: 'green' },
-  {
-    label: '待补正',
-    value: openFeedback.value.length,
-    hint: openFeedback.value.length ? '需按监检意见处理' : '暂无待处理反馈',
-    tone: openFeedback.value.length ? 'orange' : 'gray'
-  }
-])
 const atomicProjectFiles = computed(() =>
   props.projectFiles.filter((file) => file.materialCategory === '无损检测资料')
 )
@@ -228,68 +216,6 @@ const atomicFileRows = computed(() =>
     }
   })
 )
-const ndtAssetRows = computed(() => {
-  const reportFileIds = new Set(props.reports.map((report) => report.fileId))
-  return [
-    ...props.films.map((film) => ({
-      id: film.id,
-      assetType: '底片编号',
-      name: film.filmNo,
-      relation: film.weldNo,
-      method: film.method,
-      documentNo: film.reportNo || film.entrustNo || '-',
-      standardCode: film.standardCode || '-',
-      operator: [film.evaluatorName, film.reviewerName].filter(Boolean).join(' / ') || '-',
-      status: film.status,
-      updatedAt: film.testDate || '-',
-      detailId: ''
-    })),
-    ...props.records.map((record) => ({
-      id: record.id,
-      assetType: '检测记录',
-      name: record.recordNo,
-      relation: record.weldNo,
-      method: record.method,
-      documentNo: record.reportNo || record.entrustNo || '-',
-      standardCode: record.standardCode || '-',
-      operator: [record.evaluatorName, record.reviewerName].filter(Boolean).join(' / ') || '-',
-      status: record.sampleStatus,
-      updatedAt: record.importedAt,
-      detailId: ''
-    })),
-    ...props.reports.map((report) => ({
-      id: report.id,
-      assetType: '检测报告',
-      name: report.reportNo,
-      relation: report.relatedFilmIds.length
-        ? `${report.relatedFilmIds.length} 个底片`
-        : '未关联底片',
-      method: report.method,
-      documentNo: report.reportNo || report.entrustNo || '-',
-      standardCode: report.standardCode || '-',
-      operator: [report.evaluatorName, report.reviewerName].filter(Boolean).join(' / ') || '-',
-      status: report.status,
-      updatedAt: report.uploadedAt,
-      detailId: report.id
-    })),
-    ...props.projectFiles
-      .filter((file) => !reportFileIds.has(file.id))
-      .map((file) => ({
-        id: file.id,
-        assetType: file.materialCategory || '项目文件',
-        name: file.fileName,
-        relation: file.currentVersionId,
-        method: '-',
-        documentNo: file.currentVersionId,
-        standardCode: file.embeddingModel || '-',
-        operator: file.uploaderName || '-',
-        status: documentBusinessStatus(file),
-        updatedAt: file.updatedAt,
-        detailId: ''
-      }))
-  ]
-})
-
 const handleMaterialUpload = (material: NdtAtomicMaterial) => emit('uploadMaterial', material)
 
 const openBindingDialog = (row: (typeof atomicFileRows.value)[number]) => {
@@ -477,11 +403,20 @@ const handleRectifyNdt = async (rectificationId?: string) => {
               >集中管理检测方案、底片、记录、报告和补正资料，并逐项提交监检审核。</div
             >
           </div>
-          <ElTag type="primary" effect="plain"> {{ ndtAssetRows.length }} 项资料 </ElTag>
         </div>
       </template>
 
-      <AuditSummaryGrid class="ndt-metrics" :cards="ndtMetricCards" aria-label="无损检测资料摘要" />
+      <dl class="ndt-registered-counts" aria-label="已登记检测资料">
+        <div
+          ><dt>已登记底片</dt><dd>{{ films.length }}</dd></div
+        >
+        <div
+          ><dt>已导入记录</dt><dd>{{ records.length }}</dd></div
+        >
+        <div
+          ><dt>检测报告</dt><dd>{{ reports.length }}</dd></div
+        >
+      </dl>
 
       <section class="ndt-checklist">
         <div class="ndt-section-head">
@@ -506,6 +441,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
                 v-if="row.uploadedCount"
                 link
                 type="primary"
+                :aria-expanded="expandedMaterialCodes.includes(row.code)"
                 @click="toggleMaterialFiles(row.code)"
               >
                 {{ row.uploadedCount }} 项{{
@@ -524,8 +460,49 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           </ElTableColumn>
         </ElTable>
 
-        <!-- 展开的已传文件清单。放表下方而不是 expand 列：
-             这张表只有五行，独立区块比每行塞一个展开箭头更好读。 -->
+        <ul class="ndt-mobile-checklist" aria-label="资料类型与上传">
+          <li v-for="material in ndtMaterialChecklist" :key="material.code">
+            <strong>{{ material.name }}</strong>
+            <details class="ndt-material-rules">
+              <summary>适用业务规则</summary>
+              <p>{{ material.group }}</p>
+            </details>
+            <div class="ndt-mobile-actions">
+              <ElButton
+                v-if="material.uploadedCount"
+                link
+                type="primary"
+                :aria-expanded="expandedMaterialCodes.includes(material.code)"
+                @click="toggleMaterialFiles(material.code)"
+              >
+                {{ expandedMaterialCodes.includes(material.code) ? '收起' : '查看' }}已上传
+                {{ material.uploadedCount }} 份
+              </ElButton>
+              <span v-else class="ndt-empty-count">尚未上传</span>
+              <ElButton
+                plain
+                type="primary"
+                :loading="loading"
+                :aria-label="`上传${material.name}`"
+                @click="handleMaterialUpload(material)"
+                >上传文件</ElButton
+              >
+            </div>
+            <ul
+              v-if="expandedMaterialCodes.includes(material.code) && material.files.length"
+              class="ndt-mobile-files"
+            >
+              <li v-for="file in material.files" :key="file.id">
+                <ElButton link type="primary" @click="emit('viewMaterialFile', file.id)">
+                  {{ file.fileName }}
+                </ElButton>
+                <small>{{ file.fileStatus }} · 资料处理：{{ file.currentOcrStatus }}</small>
+              </li>
+            </ul>
+          </li>
+        </ul>
+
+        <!-- 桌面集中展示已展开类型的文件；窄版在所属类型下直接展示。 -->
         <div
           v-for="material in ndtMaterialChecklist.filter(
             (item) => expandedMaterialCodes.includes(item.code) && item.files.length
@@ -544,7 +521,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
               </ElButton>
               <!-- 上传状态和识别状态是两件事：文件已上传但 OCR 还在排队，
                    跟文件根本没传上去，处置完全不同。 -->
-              <small>{{ file.fileStatus }} · OCR {{ file.currentOcrStatus }}</small>
+              <small>{{ file.fileStatus }} · 资料处理：{{ file.currentOcrStatus }}</small>
             </li>
           </ul>
         </div>
@@ -581,7 +558,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
         >
           {{ submitError }}
         </ElAlert>
-        <ElTable :data="atomicFileRows" border height="360">
+        <ElTable :data="atomicFileRows" border max-height="360">
           <ElTableColumn type="index" label="序号" width="72" />
           <ElTableColumn prop="fileName" label="文件名称" min-width="220" show-overflow-tooltip />
           <ElTableColumn
@@ -673,7 +650,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
         </div>
       </template>
 
-      <ElTable v-if="feedback.length" :data="feedback" border height="220">
+      <ElTable v-if="feedback.length" :data="feedback" border max-height="220">
         <ElTableColumn prop="id" label="反馈编号" width="130" />
         <ElTableColumn prop="title" label="反馈事项" min-width="190" show-overflow-tooltip />
         <ElTableColumn prop="description" label="问题说明" min-width="260" show-overflow-tooltip />
@@ -847,10 +824,35 @@ const handleRectifyNdt = async (rectificationId?: string) => {
   color: #52617a;
 }
 
-.ndt-metrics {
-  --audit-summary-columns: 4;
+.ndt-registered-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding: 0 0 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-size: 13px;
+  line-height: 1.5;
+}
 
-  margin-bottom: 14px;
+.ndt-registered-counts div {
+  display: flex;
+  gap: 8px;
+}
+
+.ndt-registered-counts dt {
+  color: #52617a;
+}
+
+.ndt-registered-counts dd {
+  margin: 0;
+  color: #1f2937;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ndt-mobile-checklist {
+  display: none;
 }
 
 .section-title {
@@ -979,7 +981,91 @@ const handleRectifyNdt = async (rectificationId?: string) => {
 }
 
 @media (width <= 768px) {
-  .ndt-metrics,
+  .ndt-checklist-table {
+    display: none;
+  }
+
+  .ndt-uploaded-files {
+    display: none;
+  }
+
+  .ndt-mobile-checklist {
+    display: grid;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .ndt-mobile-checklist > li {
+    display: grid;
+    gap: 6px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+
+  .ndt-mobile-checklist > li:first-child {
+    padding-top: 0;
+  }
+
+  .ndt-mobile-checklist strong,
+  .ndt-material-rules p {
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+
+  .ndt-material-rules summary {
+    display: list-item;
+    width: fit-content;
+    min-height: 44px;
+    padding: 10px 0;
+    color: #335d9d;
+    cursor: pointer;
+  }
+
+  .ndt-material-rules summary:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 3px;
+  }
+
+  .ndt-material-rules p {
+    margin: 0 0 8px;
+    color: #52617a;
+    font-size: 13px;
+  }
+
+  .ndt-mobile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .ndt-mobile-files {
+    display: grid;
+    gap: 8px;
+    padding: 0;
+    margin: 6px 0 0;
+    list-style: none;
+  }
+
+  .ndt-mobile-files li {
+    display: grid;
+    gap: 4px;
+  }
+
+  .ndt-mobile-files :deep(.el-button) {
+    justify-content: flex-start;
+    white-space: normal;
+    text-align: left;
+  }
+
+  .ndt-mobile-files :deep(.el-button > span),
+  .ndt-mobile-files small {
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+
   .ndt-section-head,
   .rectify-form {
     grid-template-columns: 1fr;

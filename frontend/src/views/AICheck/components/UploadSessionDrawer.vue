@@ -72,6 +72,9 @@ watch(
     v-model="visible"
     :title="title || '上传项目文件'"
     size="min(560px, 94vw)"
+    :show-close="!loading"
+    :close-on-click-modal="!loading"
+    :close-on-press-escape="!loading"
     append-to-body
   >
     <div class="drawer-body">
@@ -113,7 +116,9 @@ watch(
       <UploadFilePicker v-model="selectedFiles" :disabled="loading" />
 
       <div class="drawer-actions">
-        <ElButton @click="visible = false">取消</ElButton>
+        <ElButton :disabled="loading" @click="visible = false">{{
+          loading ? '上传中，请等待完成' : '取消'
+        }}</ElButton>
         <ElButton
           type="primary"
           :loading="loading"
@@ -147,6 +152,7 @@ watch(
 
 .atomic-target {
   display: grid;
+  min-width: 0;
   gap: 10px;
   padding: 12px;
   color: #344054;
@@ -157,6 +163,7 @@ watch(
 
 .atomic-target > div {
   display: grid;
+  min-width: 0;
   gap: 6px;
 }
 
@@ -167,13 +174,26 @@ watch(
 
 .node-options {
   display: grid;
+  min-width: 0;
   gap: 8px;
 }
 
 .node-options :deep(.el-checkbox) {
+  min-width: 0;
   height: auto;
   margin-right: 0;
+  align-items: flex-start;
   line-height: 1.5;
+}
+
+.node-options :deep(.el-checkbox__input) {
+  margin-top: 3px;
+}
+
+.node-options :deep(.el-checkbox__label) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .target-category span {

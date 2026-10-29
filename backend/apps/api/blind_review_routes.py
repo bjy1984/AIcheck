@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Header, Request
 
-from apps.api.routes import fde_error_unless_allowed, idempotent, request_actor_name
+from apps.api.routes import (
+    document_read_error, fde_error_unless_allowed, idempotent, request_actor_name,
+    request_tenant_id, tenant_id_for_record,
+)
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import flush_state, repo
@@ -64,6 +68,50 @@ def fde_blind_review_tasks(request: Request, status: str | None = None, reveal: 
         },
         request,
     )
+
+
+@blind_review_router.get("/fde/blind-review/tasks/{task_id}/materials")
+def fde_blind_review_materials(request: Request, task_id: str):
+    """Only source-file metadata from the sampled run; never return review conclusions."""
+    _, role_error = fde_error_unless_allowed(request, "fde:feedback:view")
+    if role_error:
+        return role_error
+    task = repo.find_one("blind_review_tasks", task_id)
+    if not task:
+        return fail(errors.NOT_FOUND, request)
+    run = repo.find_one("ai_runs", task.get("aiRunId"))
+    snapshot = (run or {}).get("inputDocumentVersionIds")
+    scope_source = "run_snapshot"
+    if not run or run.get("projectId") != task.get("projectId") or str(run.get("nodeId")) != str(task.get("nodeId")) or not isinstance(snapshot, list):
+        snapshot = []
+        scope_source = "unavailable"
+    materials = []
+    unavailable_count = 0
+    for version_id in dict.fromkeys(str(value) for value in snapshot if value):
+        version = repo.find_one("versions", version_id)
+        document = repo.find_one("documents", (version or {}).get("documentId"))
+        if (not version or not document
+                or tenant_id_for_record(version) != request_tenant_id(request)
+                or document_read_error(request, str(task.get("projectId")), document) is not None):
+            unavailable_count += 1
+            continue
+        project_id = quote(str(task["projectId"]), safe="")
+        document_id = quote(str(document["id"]), safe="")
+        materials.append({
+            "documentId": document["id"],
+            "documentVersionId": version["id"],
+            "fileName": version.get("fileName") or document.get("fileName") or version["id"],
+            "fileType": version.get("fileType") or document.get("fileType"),
+            "originalUrl": f"/api/projects/{project_id}/documents/{document_id}/original?versionId={quote(version_id, safe='')}&disposition=inline",
+            "downloadUrl": f"/api/projects/{project_id}/documents/{document_id}/original?versionId={quote(version_id, safe='')}&disposition=attachment",
+        })
+    return ok({
+        "taskId": task_id,
+        "scopeSource": scope_source,
+        "materials": materials,
+        "unavailableCount": unavailable_count,
+        "unavailableReason": "该任务缺少当时的资料版本快照，无法确认盲审依据，请联系管理员核实后重新抽样。" if scope_source == "unavailable" else "",
+    }, request)
 
 
 @blind_review_router.post("/fde/blind-review/tasks/{task_id}/decision")

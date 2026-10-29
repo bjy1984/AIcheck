@@ -5,6 +5,13 @@ assert.equal(ocrReadinessLabel('incomplete'), '部分完成')
 assert.equal(ocrReadinessLabel('ready'), '已完成')
 assert.equal(ocrReadinessAlert({ status: 'ready' }), undefined)
 assert.equal(ocrReadinessAlert(undefined), undefined)
+assert.equal(
+  ocrReadinessAlert({
+    status: 'inconsistent',
+    blockingReasons: [{ code: 'OCR_STATUS_WITHOUT_PARSE_RESULT', message: 'missing parse result' }]
+  })?.description,
+  '文件标记为已识别，但缺少可追溯的识别结果，请重新识别后核对。'
+)
 assert.ok(ocrReadinessAlert({ status: 'incomplete' }))
 assert.equal(
   ocrReadinessAlert({

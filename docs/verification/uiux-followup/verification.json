@@ -1,0 +1,30 @@
+{
+  "checkedAtUtc": "2026-10-29T05:09:39.442586+00:00",
+  "clientTimezone": "America/Los_Angeles",
+  "build": "frontend/dist-uiux-followup-final",
+  "buildIndexSha256": "7215eb53f40e096cd965fa0751d429c7f1b602b74dded41887410a0a73d1b859",
+  "checks": {
+    "unitTestFiles": 126,
+    "unitFailures": 0,
+    "typecheckExitCode": 0,
+    "productionBuildExitCode": 0,
+    "operabilityFiles": 626,
+    "operabilityFindings": 0
+  },
+  "visualReview": "complete",
+  "deployment": "not deployed",
+  "visualReviewCompletedAtUtc": "2026-10-29T05:21:50.878445+00:00",
+  "routeCount": 44,
+  "finalCaptureCount": 79,
+  "beforeCaptureCount": 10,
+  "captureCount": 89,
+  "groups": {
+    "admin": 28,
+    "knowledge": 16,
+    "fde": 21,
+    "workflows": 14
+  },
+  "gallerySearchAndFilter": "passed via CUA",
+  "sourceScope": "local workspace, no commit or deployment",
+  "remainingDataAndServiceIssues": "documented in README.md"
+}

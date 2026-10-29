@@ -12,6 +12,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElMessageBox,
   ElSkeleton,
   ElTabPane,
   ElTabs,
@@ -33,6 +34,7 @@ const props = defineProps<{
   loading: boolean
   saving?: boolean
   issue?: string
+  saveIssue?: string
 }>()
 
 const emit = defineEmits<{
@@ -76,7 +78,7 @@ const resetEditor = () => {
 }
 
 watch(
-  () => props.detail?.report?.etag,
+  () => [props.detail?.report?.id, props.detail?.report?.etag],
   () => {
     isEditing.value = false
     resetEditor()
@@ -89,7 +91,32 @@ const startEdit = () => {
   isEditing.value = true
 }
 
-const cancelEdit = () => {
+const hasUnsavedChanges = computed(
+  () =>
+    isEditing.value &&
+    (Boolean(saveRemark.value.trim()) ||
+      JSON.stringify(editableSections.value) !==
+        JSON.stringify((props.detail?.sections || []).map(toEditableSection)))
+)
+const confirmDiscard = async () => {
+  if (props.saving) return false
+  if (!hasUnsavedChanges.value) return true
+  try {
+    await ElMessageBox.confirm('报告内容尚未保存。离开将放弃本次修改，是否继续？', '保留报告草稿', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning'
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+const beforeClose = async (done: () => void) => {
+  if (await confirmDiscard()) done()
+}
+const cancelEdit = async () => {
+  if (!(await confirmDiscard())) return
   resetEditor()
   isEditing.value = false
 }
@@ -154,7 +181,13 @@ const evidenceOptionLabel = (evidence: EvidenceLink) =>
 </script>
 
 <template>
-  <ElDrawer v-model="visible" title="报告复核详情" size="680px" class="report-detail-drawer">
+  <ElDrawer
+    v-model="visible"
+    title="报告复核详情"
+    size="680px"
+    class="report-detail-drawer"
+    :before-close="beforeClose"
+  >
     <ElSkeleton v-if="loading" :rows="8" animated />
 
     <ElAlert
@@ -172,6 +205,7 @@ const evidenceOptionLabel = (evidence: EvidenceLink) =>
     </ElAlert>
 
     <template v-else-if="detail && report">
+      <ElAlert v-if="saveIssue" :title="saveIssue" type="error" show-icon :closable="false" />
       <div class="report-head">
         <div>
           <span>报告编号</span>

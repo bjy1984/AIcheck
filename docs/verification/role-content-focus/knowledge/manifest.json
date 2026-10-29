@@ -1,0 +1,203 @@
+{
+  "group": "knowledge",
+  "build": "dist-role-content-focus",
+  "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+  "environment": "production build + real API + isolated in-memory demo data",
+  "captures": [
+    {
+      "route": "/knowledge/overview",
+      "file": "01-overview.jpg",
+      "title": "知識庫總覽",
+      "reviewNote": "知識庫文件數、可用狀態與來源列表直接呈現，原始索引數量預設收合。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:44:59.288Z"
+    },
+    {
+      "route": "/knowledge/overview",
+      "file": "01b-index-counts.jpg",
+      "title": "知識庫總覽：索引記錄",
+      "reviewNote": "主動展開後可比較切片與向量記錄並查看索引版本，真實零值保持可辨。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:16.183Z"
+    },
+    {
+      "route": "/knowledge/sources?pageSize=6",
+      "file": "02-sources.jpg",
+      "title": "標準規範庫",
+      "reviewNote": "標準文件、更新時間、處理狀態與版本/重建操作保留，移除重複原始數量。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:27.491Z"
+    },
+    {
+      "route": "/knowledge/files",
+      "file": "03-files.jpg",
+      "title": "項目文件知識庫",
+      "reviewNote": "項目文件、分類及處理狀態直接呈現，可定位失敗文件並查看詳情。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:48.864Z"
+    },
+    {
+      "route": "/knowledge/tasks",
+      "file": "04-tasks.jpg",
+      "title": "OCR／向量任務中心",
+      "reviewNote": "處理任務、失敗提示、進度與重試入口保留，支援日常失敗恢復。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:58.948Z"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "05-rules.jpg",
+      "title": "監檢業務判斷規則管理",
+      "reviewNote": "規則名稱、節點、標準依據與發布狀態保留，支援規則內容維護。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:09.058Z"
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "file": "06-retrieval.jpg",
+      "title": "知識檢索測試",
+      "reviewNote": "專用驗證頁保留問題、範圍、Top K 與依據節點；未執行檢索時結果區明確提示下一步。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:18.778Z"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "07-network.jpg",
+      "title": "知識網絡",
+      "reviewNote": "預設顯示業務節點名稱、關係及網絡圖，內部 ID 與技術屬性保持收合。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:44:41.029Z"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "07b-network-properties.jpg",
+      "title": "知識網絡：技術屬性",
+      "reviewNote": "主動展開後可查看內部節點 ID 與屬性，支援關係排障而不干擾預設畫面。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:44:50.960Z"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "file": "08-reasoning.jpg",
+      "title": "推理鏈路歷史日誌",
+      "reviewNote": "主動進入的專業日誌頁保留查詢、上下文與推理記錄，支援歷史追溯。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:38.122Z"
+    },
+    {
+      "route": "/knowledge/compare",
+      "file": "09-compare.jpg",
+      "title": "多 LLM 回饋對比",
+      "reviewNote": "專用模型比較頁保留對比條件與歷史結果，配置檢驗目的明確。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:47.767Z"
+    },
+    {
+      "route": "/knowledge/config",
+      "file": "10-config.jpg",
+      "title": "知識庫配置",
+      "reviewNote": "索引診斷預設收合，專業配置表單直接可見，保留必要數值與策略說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:01.774Z"
+    },
+    {
+      "route": "/knowledge/config",
+      "file": "10b-index-diagnostics.jpg",
+      "title": "知識庫配置：索引診斷",
+      "reviewNote": "展開後可查看治理摘要與診斷數據；它們集中在配置頁，不再重複出現在日常頁。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:15.154Z"
+    }
+  ]
+}

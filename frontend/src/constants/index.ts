@@ -36,7 +36,16 @@ export const NO_RESET_WHITE_LIST = [
   'Root',
   // skill 网页授权页：没登录的人先被送去登录，登录时 resetRouter() 会删掉不在这里的路由，
   // 回跳授权页就落到 404（2026-10-28 生产上实测踩到）。
-  'SkillAuthorize'
+  'SkillAuthorize',
+  // 登录/退出只移除角色动态路由；常驻页及其空路径子路由必须一并保留。
+  'ProjectRegistration',
+  'FdeStandardsVectorizationRedirect',
+  'FdeFeedbackTriageLayout',
+  'FdeFeedbackTriage',
+  'FdeBlindReviewLayout',
+  'FdeBlindReview',
+  'FdeStaticDeepLink',
+  'FdeStaticDeepLinkPage'
 ]
 
 /**

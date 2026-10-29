@@ -116,7 +116,6 @@ import {
   canSubmitFinalConclusion
 } from '@/views/AIReviewB/finalConclusion'
 import type { ReturnCorrectionRequest } from '@/views/AIReviewB/returnCorrection'
-import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 import { createSessionWithAuthorizationRecovery } from '@/views/AIReviewB/reviewSessionRecovery'
 import { mergeProjectAnalysisResultsIntoConversation } from './projectAnalysisConversation'
 
@@ -367,6 +366,7 @@ watch(
   () => {
     activePane.value = workstationMode ? 'overview' : 'assistant'
     reviewContextGeneration.value++
+    sending.value = false
     reviewDocumentSelection.value = null
     evidenceReturnFocus = undefined
     evidenceDialogVisible.value = false
@@ -541,14 +541,11 @@ const executionSummary = computed(() => {
     return latest?.title || latest?.eventType || '正在启动 AI 复核流程…'
   }
   const execution = latestAssistantExecution.value
-  if (execution?.mode === 'llm_agent') {
-    const model = [execution.provider, execution.model].filter(Boolean).join(' / ') || '真实模型'
-    return execution.toolCallCount
-      ? `${model}，已调用 ${execution.toolCallCount} 个工具`
-      : `${model} 已完成回答`
+  if (execution?.mode === 'llm_agent') return '本轮回复已完成，请结合原文核验。'
+  if (execution?.mode === 'deterministic_command') return '本次操作已完成。'
+  if (execution?.mode === 'deterministic_fallback') {
+    return '本次未生成完整回答，请重新提问或结合原文人工核验。'
   }
-  if (execution?.mode === 'deterministic_command') return '本地受控命令已完成，未调用模型'
-  if (execution?.mode === 'deterministic_fallback') return '模型链路未完成，已返回确定性上下文摘要'
   if (messages.value.at(-1)?.role === 'assistant') return 'AI 复核助手已完成本次回复'
   return latestExecutionEvents.value[0]?.title || '本次处理已完成'
 })
@@ -729,21 +726,10 @@ const blockReferences = (block: ReviewBContentBlock) => {
 }
 
 const messageExecutionLabel = (message: ReviewBMessage) => {
-  const execution = message.execution
-  if (!execution || message.role !== 'assistant') return ''
-  if (execution.mode === 'llm_agent') {
-    const model = [execution.provider, execution.model].filter(Boolean).join(' / ') || '真实模型'
-    const tools = execution.toolCallCount ? ` · ${execution.toolCallCount} 次工具调用` : ''
-    return `${model} · Agent${tools}`
-  }
-  if (execution.mode === 'deterministic_command') return '本地受控命令 · 未调用模型'
-  if (execution.mode === 'deterministic_fallback') return '确定性降级 · 模型回答未完成'
-  return execution.modelCalled ? '模型调用已完成' : '未调用模型'
-}
-
-const messageTokenUsageLabel = (message: ReviewBMessage) => {
   if (message.role !== 'assistant') return ''
-  return formatReviewTokenUsage(message.execution?.usage)
+  return message.execution?.mode === 'deterministic_fallback'
+    ? '本次未生成完整回答，请重新提问或结合原文人工核验。'
+    : ''
 }
 
 const mergeMessages = (incoming: ReviewBMessage[]) => {
@@ -1378,7 +1364,11 @@ const applyStreamingDeltas = (messageId: string) => {
 }
 
 /** 后台执行模式下等待占位 assistant 消息终态；完成消息会重新分配 sequence，因此始终取全量快照。 */
-const waitForAssistantCompletion = async (sessionId: string, messageId: string) => {
+const waitForAssistantCompletion = async (
+  sessionId: string,
+  messageId: string,
+  isCurrentContext: () => boolean = () => session.value?.id === sessionId
+) => {
   const deadline = Date.now() + 6 * 60 * 1000
   for (;;) {
     const current = messages.value.find((item) => item.id === messageId)
@@ -1388,9 +1378,10 @@ const waitForAssistantCompletion = async (sessionId: string, messageId: string) 
       return
     }
     await new Promise((resolve) => window.setTimeout(resolve, 800))
-    if (session.value?.id !== sessionId) return
+    if (!isCurrentContext()) return
     try {
       const res = await listReviewBMessagesApi(sessionId, 0)
+      if (!isCurrentContext()) return
       mergeMessages(res.data.messages)
       applyStreamingDeltas(messageId)
       await scrollTimelineToEnd()
@@ -1408,6 +1399,10 @@ const sendMessage = async (preset?: string) => {
   const text = (preset || composer.value).trim()
   if (!text || !session.value?.id || sending.value) return
   const sessionId = session.value.id
+  const sessionEtag = session.value.etag
+  const generation = reviewContextGeneration.value
+  const isCurrentContext = () =>
+    generation === reviewContextGeneration.value && session.value?.id === sessionId
   sending.value = true
   executionStarted.value = true
   // **不要**在发送时自动展开。展开态渲染的是全量轨迹，收起态才是那三行滚动预览；
@@ -1443,9 +1438,11 @@ const sendMessage = async (preset?: string) => {
   await scrollTimelineToEnd(true)
 
   try {
+    if (!isCurrentContext()) return
     const res = await sendReviewBMessageApi(sessionId, text, {
-      etag: session.value.etag
+      etag: sessionEtag
     })
+    if (!isCurrentContext()) return
     // 换成服务端的真实记录：先摘掉占位，再合并，避免同一句显示两遍
     messages.value = messages.value.filter((item) => item.id !== pendingId)
     mergeMessages([res.data.userMessage, res.data.assistantMessage])
@@ -1453,22 +1450,28 @@ const sendMessage = async (preset?: string) => {
       ? { ...workspace.value, session: res.data.session }
       : undefined
     await scrollTimelineToEnd(true)
+    if (!isCurrentContext()) return
     if (res.data.status === 'accepted' || res.data.assistantMessage?.status === 'running') {
       // 后台执行：请求已受理，等待 Agent 执行完成或被停止。
-      await waitForAssistantCompletion(sessionId, res.data.assistantMessage.id)
+      await waitForAssistantCompletion(sessionId, res.data.assistantMessage.id, isCurrentContext)
     }
+    if (!isCurrentContext()) return
     await Promise.all([loadSessionData(false), refreshLiveState()])
+    if (!isCurrentContext()) return
     // 过程看完了，镜头对准结果的第一行——不是滚到最底看结论的尾巴
     await scrollToLatestAnswer()
   } catch (error) {
+    if (!isCurrentContext()) return
     // 发失败了就把占位摘掉，并把原话还回输入框——
     // 让用户重新打一遍自己刚写的东西，是最不该有的惩罚。
     messages.value = messages.value.filter((item) => item.id !== pendingId)
     if (!preset && !composer.value) composer.value = text
     ElMessage.error(getAicheckErrorMessage(error, 'AI 辅助消息发送失败。'))
   } finally {
-    stopLiveAgentTrace()
-    sending.value = false
+    if (isCurrentContext()) {
+      stopLiveAgentTrace()
+      sending.value = false
+    }
     // 不再强制收起：用户中途点开是想看全过程，
     // 执行一结束就替他合上，等于把他刚打开的东西关掉。
   }
@@ -2173,7 +2176,7 @@ onBeforeUnmount(() => {
               <div>
                 <strong>AI 复核助手已就绪</strong>
                 <p>
-                  已加载当前节点的固定规则、资料就绪状态和历史 ReviewRun。选择右侧“发起{{
+                  已加载当前节点的固定规则、资料就绪状态和历史审查任务。选择右侧“发起{{
                     startReviewMode === 'formal' ? '正式复核' : '缺项预审'
                   }}”可启动当前可用流程，也可以先检索证据或查看标准条款。
                 </p>
@@ -2215,11 +2218,9 @@ onBeforeUnmount(() => {
                     @open-reference="openMessageReference"
                   />
 
-                  <!-- 推理过程：默认折叠成一行。展开后可读，但不占据视线。
-                       监检要的是结论，不是模型的自言自语；而「凭什么」这个问题
-                       随时可能被问到，所以留着能展开。 -->
+                  <!-- 嵌入监检工作台保留结论、依据与原文；内部推理不混入业务回复。 -->
                   <details
-                    v-else-if="block.type === 'reasoning'"
+                    v-else-if="block.type === 'reasoning' && !props.embedded"
                     class="reasoning-block"
                     :data-length="blockReasoningLength(block)"
                   >
@@ -2350,7 +2351,7 @@ onBeforeUnmount(() => {
                       >
                     </div>
                     <p>审查跑完后，还需要你看过分析和原文，才能确认最终结论。</p>
-                    <details class="judgment-record">
+                    <details v-if="!props.embedded" class="judgment-record">
                       <summary>查看任务记录</summary>
                       <p>任务编号：{{ block.reviewRunId || '未记录' }}</p>
                       <p>当前步骤：{{ block.currentStep || '未记录' }}</p>
@@ -2373,16 +2374,10 @@ onBeforeUnmount(() => {
                   v-if="messageExecutionLabel(message)"
                   :class="[
                     'message-execution-meta',
-                    {
-                      'is-agent': message.execution?.mode === 'llm_agent',
-                      'is-fallback': message.execution?.mode === 'deterministic_fallback'
-                    }
+                    { 'is-fallback': message.execution?.mode === 'deterministic_fallback' }
                   ]"
                 >
                   {{ messageExecutionLabel(message) }}
-                </p>
-                <p v-if="messageTokenUsageLabel(message)" class="message-token-usage">
-                  {{ messageTokenUsageLabel(message) }}
                 </p>
               </div>
             </article>

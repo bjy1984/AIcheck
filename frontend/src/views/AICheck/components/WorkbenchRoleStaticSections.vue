@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import {
+  ElAlert,
   ElButton,
   ElCard,
   ElDescriptions,
@@ -29,6 +30,7 @@ import type {
   Project,
   ProjectTreeNode,
   ReportVersion,
+  RectificationItem,
   RoleCode,
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
@@ -57,6 +59,7 @@ import {
   inferMaterialCategory
 } from '../contractorMaterialCategories'
 import { CONTRACTOR_MATERIAL_GUIDE_COLUMNS } from '../contractorMaterialGuide'
+import { ownerActivityItems } from '../workbenchTruth'
 
 type ReviewChainStep = {
   title: string
@@ -103,6 +106,14 @@ const props = defineProps<{
   project?: Project
   node?: ProjectTreeNode
   packageData?: NodePackagePayload
+  projectRectifications?: RectificationItem[]
+  projectNodes?: ProjectTreeNode[]
+  rectificationIssue?: string
+  rectificationLoading?: boolean
+  rectificationLoaded?: boolean
+  reportArchiveLoading?: boolean
+  reportArchiveLoaded?: boolean
+  reportArchiveIssue?: string
   readOnly?: boolean
   actionLoading?: boolean
   uploadError?: string
@@ -119,6 +130,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  'retry-rectifications': []
+  'retry-report-archive': []
   upload: [materialCategory?: string]
   bind: []
   rectify: [rectificationId?: string]
@@ -137,12 +150,24 @@ const emit = defineEmits<{
 
 const bindings = computed(() => props.packageData?.bindings || [])
 const projectFiles = computed(() => props.packageData?.projectFiles || [])
-const rectifications = computed(() => props.packageData?.rectifications || [])
+const rectifications = computed(
+  () => props.projectRectifications ?? props.packageData?.rectifications ?? []
+)
 const requirements = computed(() => props.packageData?.requirements || [])
 const extractedFields = computed(() => props.packageData?.extractedFields || [])
 const latestAiRun = computed(() => props.packageData?.aiRuns[0])
-const latestReport = computed(() => props.reports[0])
-const latestArchive = computed(() => props.archiveItems[0])
+const reportArchiveUnavailable = computed(
+  () => props.reportArchiveLoading || props.reportArchiveIssue || !props.reportArchiveLoaded
+)
+const reportArchiveEmptyLabel = computed(() =>
+  props.reportArchiveLoading
+    ? '正在加载'
+    : props.reportArchiveIssue
+      ? '暂不可用，请重试'
+      : !props.reportArchiveLoaded
+        ? '待加载'
+        : '当前无可查看记录'
+)
 const correctionFeedback = computed(() =>
   props.ndtFeedback.find((item) => item.status === '待反馈')
 )
@@ -231,52 +256,37 @@ const boundProgress = computed(() => {
   return `${progress.done}/${progress.total}`
 })
 
-const visibleMetrics = computed(() => {
-  if (props.metrics.length) return props.metrics.slice(0, 5)
-  return [
-    { key: 'files', label: '过程文件', value: bindings.value.length || '-' },
-    { key: 'steps', label: '核验步骤', value: props.reviewSteps.length || '-' },
-    { key: 'confidence', label: '置信度', value: props.aiConfidence },
-    { key: 'reports', label: '报告版本', value: props.reports.length || '-' },
-    { key: 'archive', label: '归档资料', value: props.archiveItems.length || '-' }
-  ]
-})
-
 const ownerMetricCards = computed<AuditSummaryCard[]>(() =>
-  visibleMetrics.value.slice(0, 4).map((metric) => ({
+  (props.metrics.some((metric) => ['progress', 'report', 'archive'].includes(metric.key))
+    ? props.metrics.filter((metric) => ['progress', 'report', 'archive'].includes(metric.key))
+    : [
+        { key: 'progress', label: '总体进度', value: '—' },
+        { key: 'report', label: '报告版本', value: '—' },
+        { key: 'archive', label: '归档资料', value: '—' }
+      ]
+  ).map((metric) => ({
     label: metric.label,
-    value: metric.value,
-    hint: '授权项目只读数据',
-    tone: metric.tone || 'blue'
+    value:
+      metric.key === 'report'
+        ? reportArchiveUnavailable.value
+          ? '—'
+          : props.reports.length
+        : metric.key === 'archive'
+          ? reportArchiveUnavailable.value
+            ? '—'
+            : props.archiveItems.length
+          : metric.value,
+    hint:
+      ['report', 'archive'].includes(metric.key) && reportArchiveUnavailable.value
+        ? reportArchiveEmptyLabel.value
+        : '当前授权可见范围',
+    tone: 'blue'
   }))
 )
 
-const ownerTimelineItems = [
-  {
-    timestamp: '06-20',
-    title: '首批资料上传',
-    description: '施工方完成材料与焊接资料初次提交。',
-    type: 'success' as const
-  },
-  {
-    timestamp: '06-23',
-    title: '检测资料提交',
-    description: '无损检测机构提交检测记录与报告。',
-    type: 'success' as const
-  },
-  {
-    timestamp: '06-25',
-    title: '监检退回材料补正',
-    description: '材料节点存在炉批号差异说明缺失。',
-    type: 'danger' as const
-  },
-  {
-    timestamp: '06-30',
-    title: '预计报告确认',
-    description: '当前报告草稿处于监检复核中。',
-    type: 'warning' as const
-  }
-]
+const ownerTimelineItems = computed(() =>
+  ownerActivityItems(props.project, props.reports, props.archiveItems)
+)
 
 const processRows = computed(() =>
   bindings.value.slice(0, 5).map((binding, index) => ({
@@ -297,20 +307,37 @@ const processRows = computed(() =>
 )
 
 const ownerNodeRows = computed(() => {
-  const node = props.node
-  if (!node) return []
-  return [
-    {
-      group: node.groupName || '--',
-      node: currentNodeLabel.value,
-      fileStatus: node.status,
-      reviewStatus: node.status === '需补正' ? '退回补正' : node.status,
-      files: node.fileCount ?? bindings.value.length,
-      warnings: node.status === '需补正' ? 1 : 0,
-      updatedAt: props.project?.updatedAt || '--'
-    }
-  ]
+  const nodes = props.projectNodes || (props.node ? [props.node] : [])
+  return nodes.map((node) => ({
+    group: node.groupName || '--',
+    node: `${node.nodeId}. ${node.name}`,
+    fileStatus: node.status,
+    reviewStatus: node.status === '需补正' ? '退回补正' : node.status,
+    files: node.fileCount ?? '—',
+    warnings: ['需补正', '补正中'].includes(node.status) ? '需补正' : '未标记补正',
+    updatedAt: props.project?.updatedAt || '--'
+  }))
 })
+
+const correctionFileCount = computed(
+  () => contractorFileRows.value.filter((file) => file.status === '需补正').length
+)
+const pendingRectificationCount = computed(
+  () => rectifications.value.filter((item) => item.status === '待反馈').length
+)
+const showCorrectionFiles = async () => {
+  contractorStatusFilter.value = '需补正'
+  contractorKeyword.value = ''
+  contractorNodeFilter.value = null
+  contractorUsageFilter.value = '全部用途'
+  contractorMaterialFilter.value = '全部资料类别'
+  contractorProcessingFilter.value = '全部'
+  contractorPage.value = 1
+  await nextTick()
+  document
+    .getElementById('contractor-file-list')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const mapContractorFileStatus = (
   file: NodePackagePayload['projectFiles'][number]
@@ -429,13 +456,13 @@ const contractorFeedbackRows = computed(() => {
           id: rectification.id,
           rectificationId: rectification.id,
           nodeId: rectification.nodeId,
-          node: `${rectification.nodeId}. ${props.node?.name || '审核环节'}`,
+          node: `${rectification.nodeId}. ${props.projectNodes?.find((node) => node.nodeId === rectification.nodeId)?.name || '审核环节'}`,
           issue: '监检退回补正',
           requirement: rectification.comment || '请按监检意见补充资料。',
           result: rectification.status,
           sourceStatus: rectification.status,
           status: rectification.status === '待反馈' ? '待处理' : rectification.status,
-          linkedFiles: linkedBindings.length,
+          linkedFiles: rectification.bindingIds?.length ?? linkedBindings.length,
           feedbackAt: rectification.createdAt,
           dueAt: '未设置截止日期',
           createdAt: rectification.createdAt
@@ -720,8 +747,21 @@ const getPillClass = (value?: string): AuditStatusTone => {
 <template>
   <div class="role-static-sections">
     <template v-if="role === 'contractor'">
+      <ElAlert
+        v-if="rectificationIssue"
+        type="error"
+        :closable="false"
+        title="项目补正清单加载失败"
+      >
+        <p>{{ rectificationIssue }}</p>
+        <ElButton @click="emit('retry-rectifications')">重试补正清单</ElButton>
+      </ElAlert>
+      <p v-else-if="rectificationLoading" role="status">正在更新全项目补正清单…</p>
       <ContractorStatusCards
         :cards="contractorWorkbenchModel.summaryCards"
+        :feedback-unavailable="
+          Boolean(!rectificationLoaded || rectificationLoading || rectificationIssue)
+        "
         :active-key="activeContractorSummaryKey"
         @select="handleContractorSummarySelect"
       />
@@ -737,6 +777,8 @@ const getPillClass = (value?: string): AuditStatusTone => {
         />
         <ContractorFeedbackPanel
           :items="contractorFeedbackRows"
+          :loading="rectificationLoading || (!rectificationLoaded && !rectificationIssue)"
+          :issue="rectificationIssue"
           :read-only="readOnly"
           @view="requestViewRectification"
           @upload="requestCorrectionUpload"
@@ -744,6 +786,28 @@ const getPillClass = (value?: string): AuditStatusTone => {
           @rectify="requestRectify"
         />
       </div>
+      <ElAlert
+        v-if="
+          rectificationLoaded && !rectificationLoading && !rectificationIssue && correctionFileCount
+        "
+        class="correction-scope-note"
+        type="info"
+        :closable="false"
+        title="补正意见与需补正文件分别统计"
+      >
+        <p
+          >当前有 {{ correctionFileCount }} 份文件标记为需补正，{{
+            pendingRectificationCount
+          }}
+          条可查看的待处理补正意见。一个意见可能关联多份文件。</p
+        >
+        <p v-if="!pendingRectificationCount"
+          >尚无可查看的待处理意见，请先核对文件关联信息；若缺少具体要求，请联系监检人员确认。</p
+        >
+        <ElButton @click="showCorrectionFiles"
+          >查看需补正文件（{{ correctionFileCount }}）</ElButton
+        >
+      </ElAlert>
       <ElCard class="role-section-card contractor-section-card" shadow="never">
         <template #header>
           <div class="card-head">
@@ -1222,10 +1286,9 @@ const getPillClass = (value?: string): AuditStatusTone => {
         <template #header>
           <div class="card-head">
             <div>
-              <h2>一、项目基础信息</h2>
-              <div class="sub">集中查看授权项目的核心指标，不提供业务办理入口</div>
+              <h2>项目概况</h2>
+              <div class="sub">项目进度、报告和归档资料</div>
             </div>
-            <AuditStatusTag tone="green" round>只读模式</AuditStatusTag>
           </div>
         </template>
         <AuditSummaryGrid
@@ -1233,123 +1296,67 @@ const getPillClass = (value?: string): AuditStatusTone => {
           :cards="ownerMetricCards"
           aria-label="建设单位项目基础指标"
         />
+        <ElDescriptions :column="3" size="small" class="owner-organizations">
+          <ElDescriptionsItem label="建设单位">{{
+            project?.ownerOrgName || '—'
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="施工单位">{{
+            project?.contractorOrgName || '—'
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="监检机构">{{
+            project?.inspectionOrgName || '—'
+          }}</ElDescriptionsItem>
+        </ElDescriptions>
       </ElCard>
 
       <ElCard class="role-section-card role-section-card--table" shadow="never">
         <template #header>
           <div class="card-head">
             <div>
-              <h2>二、节点状态总览</h2>
-              <div class="sub">展示授权可见的节点资料摘要，不提供办理入口</div>
+              <h2>节点进展</h2>
+              <div class="sub">查看各节点的资料提交与审查状态</div>
             </div>
           </div>
         </template>
         <ElTable :data="ownerNodeRows" row-key="node" empty-text="当前没有可查看的节点">
           <ElTableColumn prop="group" label="业务大类" min-width="132" show-overflow-tooltip />
           <ElTableColumn prop="node" label="检测节点" min-width="190" show-overflow-tooltip />
-          <ElTableColumn label="资料状态" width="112">
+          <ElTableColumn label="审查状态" width="128">
             <template #default="{ row }">
               <AuditStatusTag :tone="getPillClass(row.fileStatus)" round>
-                {{ row.fileStatus }}
+                {{ row.reviewStatus }}
               </AuditStatusTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="reviewStatus" label="审查状态" width="116" />
-          <ElTableColumn prop="files" label="挂载资料数" width="110" align="center" />
-          <ElTableColumn prop="warnings" label="异常数量" width="96" align="center" />
-          <ElTableColumn
-            prop="updatedAt"
-            label="最近更新时间"
-            min-width="170"
-            show-overflow-tooltip
-          />
+          <ElTableColumn prop="files" label="资料数量" width="120" align="center" />
         </ElTable>
       </ElCard>
 
-      <ElCard class="role-section-card role-section-card--table" shadow="never">
+      <ElCard class="role-section-card" shadow="never">
         <template #header>
-          <div class="card-head">
-            <div>
-              <h2>三、业务审查链路只读摘要</h2>
-              <div class="sub">建设方仅查看状态和摘要，不显示办理按钮</div>
-            </div>
-          </div>
+          <div class="card-head"><h2>最近更新</h2></div>
         </template>
-        <ElTable :data="reviewSteps" row-key="title" empty-text="当前没有审查链路记录">
-          <ElTableColumn label="检测节点" min-width="176" show-overflow-tooltip>
-            <template #default>{{ currentNodeLabel }}</template>
-          </ElTableColumn>
-          <ElTableColumn prop="title" label="审查对象" min-width="150" show-overflow-tooltip />
-          <ElTableColumn prop="desc" label="业务链路摘要" min-width="280" show-overflow-tooltip />
-          <ElTableColumn label="建议/状态" width="112">
-            <template #default="{ row }">
-              <AuditStatusTag :tone="getPillClass(row.result)" round>
-                {{ row.result }}
-              </AuditStatusTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="人工确认" min-width="150">
-            <template #default="{ row }">
-              {{ row.result.includes('需') ? '已退回责任单位' : '待监检确认' }}
-            </template>
-          </ElTableColumn>
-        </ElTable>
+        <ElTimeline class="owner-timeline">
+          <ElTimelineItem
+            v-for="item in ownerTimelineItems"
+            :key="`${item.timestamp}-${item.title}`"
+            :timestamp="item.timestamp"
+            :type="item.type"
+            placement="top"
+          >
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.description }}</p>
+          </ElTimelineItem>
+        </ElTimeline>
+        <ElEmpty
+          v-if="!ownerTimelineItems.length"
+          description="当前没有可查看的更新记录"
+          :image-size="64"
+        />
       </ElCard>
-
-      <div class="split">
-        <ElCard class="role-section-card" shadow="never">
-          <template #header>
-            <div class="card-head"><h2>四、关键时间线</h2></div>
-          </template>
-          <ElTimeline class="owner-timeline">
-            <ElTimelineItem
-              v-for="item in ownerTimelineItems"
-              :key="`${item.timestamp}-${item.title}`"
-              :timestamp="item.timestamp"
-              :type="item.type"
-              placement="top"
-            >
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.description }}</p>
-            </ElTimelineItem>
-          </ElTimeline>
-        </ElCard>
-        <ElCard class="role-section-card" shadow="never">
-          <template #header>
-            <div class="card-head"><h2>五、报告与归档状态</h2></div>
-          </template>
-          <ElDescriptions class="owner-status-descriptions" :column="1" size="small">
-            <ElDescriptionsItem label="监检报告">
-              <span class="owner-status-row">
-                <span>{{ latestReport?.title || '工业管道施工监督检验报告 V0.8' }}</span>
-                <AuditStatusTag :tone="getPillClass(latestReport?.status || '复核中')" round>
-                  {{ latestReport?.status || '复核中' }}
-                </AuditStatusTag>
-              </span>
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="过程资料包">
-              <span class="owner-status-row">
-                <span>{{ latestArchive?.name || '待报告确认后生成归档包' }}</span>
-                <AuditStatusTag :tone="getPillClass(latestArchive?.status || '待生成')" round>
-                  {{ latestArchive?.status || '待生成' }}
-                </AuditStatusTag>
-              </span>
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="最近异常">
-              <span class="owner-status-row">
-                <span>材料节点需补正、现场抽查照片需补正</span>
-                <AuditStatusTag tone="red" round>2 项</AuditStatusTag>
-              </span>
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="查看权限">
-              <span class="owner-status-row">
-                <span>仅可查看授权项目资料摘要和报告预览</span>
-                <AuditStatusTag tone="green" round>只读</AuditStatusTag>
-              </span>
-            </ElDescriptionsItem>
-          </ElDescriptions>
-        </ElCard>
-      </div>
+      <ElAlert v-if="reportArchiveIssue" type="error" :closable="false" :title="reportArchiveIssue">
+        <ElButton @click="emit('retry-report-archive')">重试报告与归档</ElButton>
+      </ElAlert>
     </template>
 
     <template v-else-if="role === 'inspection'">
@@ -1574,6 +1581,12 @@ const getPillClass = (value?: string): AuditStatusTone => {
   margin-bottom: 14px;
 }
 
+@media (width <= 900px) {
+  .contractor-task-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .role-section-card .card-head {
   border-bottom: 0;
 }
@@ -1582,6 +1595,10 @@ const getPillClass = (value?: string): AuditStatusTone => {
   --audit-summary-columns: 3;
 
   margin-bottom: 0;
+}
+
+.correction-scope-note {
+  margin-bottom: 16px;
 }
 
 .owner-timeline {

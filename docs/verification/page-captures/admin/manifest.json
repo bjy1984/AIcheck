@@ -1,0 +1,229 @@
+{
+  "origin": "http://127.0.0.1:4177",
+  "viewport": {
+    "devicePixelRatio": 2,
+    "height": 748,
+    "width": 1470
+  },
+  "source": "production build + isolated in-memory repository demo API",
+  "captureMethod": "CUA Chrome screenshots; JPEG; no viewport override",
+  "limitations": [
+    "Read-only browsing; no business mutation submitted",
+    "Repository demo data; no external services or database",
+    "Current desktop viewport only; fullPage screenshots do not expand inner scroll containers"
+  ],
+  "captures": [
+    {
+      "route": "/admin/overview",
+      "title": "项目管理（overview 別名）",
+      "file": "01-overview.jpg",
+      "status": "reviewed",
+      "issues": [
+        "1470×748 視窗下頁首摘要佔較多高度，首屏僅完整看見 2 筆項目；需捲動查看其餘項目。",
+        "頂部產品標題截斷為「项目与权…」。"
+      ],
+      "limitations": [
+        "overview 與 projects 指向同一內容"
+      ]
+    },
+    {
+      "route": "/admin/projects",
+      "title": "项目管理",
+      "file": "02-projects.jpg",
+      "status": "reviewed",
+      "issues": [
+        "與 overview 相同，首屏摘要密度高；表格施工單位名稱出現省略，操作區換行。"
+      ],
+      "limitations": [
+        "未開啟新增、編輯、歸檔操作"
+      ]
+    },
+    {
+      "route": "/admin/org",
+      "title": "组织单位",
+      "file": "03-org-organizations.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "組織類型直接顯示 owner、contractor、ndt、inspection 等內部代碼，與中文介面不一致。",
+        "組織名稱欄佔比過大，操作按鈕換行；5 筆資料首個固定表格視窗僅見 4 筆。"
+      ],
+      "limitations": [
+        "導航會自動捲到內容區；此圖是組織區塊，使用者區另圖"
+      ]
+    },
+    {
+      "route": "/admin/org",
+      "title": "用户与角色（下方區塊）",
+      "file": "03b-org-users.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "角色欄較窄，系統管理員與 FDE 工程師標籤被省略；FDE 姓名換成兩行。",
+        "本區塊未見使用者搜尋或篩選入口。"
+      ],
+      "limitations": [
+        "僅查看清單，未編輯角色"
+      ]
+    },
+    {
+      "route": "/admin/business-packs",
+      "title": "业务类型管理",
+      "file": "04-business-packs.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "業務類型表格右側欄位超出首屏，需橫向捲動；首屏未見捲軸。"
+      ],
+      "limitations": [
+        "未點重新校驗；未檢查狀態正確保留中性呈現"
+      ]
+    },
+    {
+      "route": "/admin/permission",
+      "title": "角色权限矩阵",
+      "file": "05-permission-matrix.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "多數角色動作只顯示前幾項，再以 +17／+21 等數字折疊，列表不能直接讀取完整權限。"
+      ],
+      "limitations": [
+        "未進編輯或提交版本登記"
+      ]
+    },
+    {
+      "route": "/admin/permission",
+      "title": "节点模板（下方區塊）",
+      "file": "05b-permission-nodes.jpg",
+      "status": "reviewed",
+      "issues": [
+        "單筆節點模板仍使用很高的固定表格區，空白較多。"
+      ],
+      "limitations": [
+        "未編輯已發布節點模板"
+      ]
+    },
+    {
+      "route": "/admin/rules",
+      "title": "AI业务规则与流程",
+      "file": "06-rules.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "規則清單只佔半欄，規則名稱、版本及 Prompt 多處省略，辨認版本需要進詳情。",
+        "側欄仍顯示「发布」小標籤，頁首動作已改為「登记配置版本」，名稱層級仍可再統一。"
+      ],
+      "limitations": [
+        "實際顯示規則列與 1 項待發布；未發布或登記"
+      ]
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "业务资料审查点",
+      "file": "07-material-review-points.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "168 項審查點未見本頁搜尋、節點或資料類型篩選，定位需逐頁查找。",
+        "審查點、審查內容與 OCR 證據多欄省略，需額外查看完整文字。"
+      ],
+      "limitations": [
+        "未新增、編輯或刪除審查點"
+      ]
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 模板管理",
+      "file": "08-prompt-templates.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "業務包與 Agent 欄仍是長技術 ID 且被省略。",
+        "單筆模板占用大面積固定空表格區。"
+      ],
+      "limitations": [
+        "正式模板已顯示查看／建立草稿，發布與刪除禁用；未提交"
+      ]
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "查看生产 Prompt（唯讀抽屜）",
+      "file": "08b-prompt-production-readonly.jpg",
+      "status": "reviewed",
+      "issues": [],
+      "limitations": [
+        "確認欄位禁用、唯讀說明可見，僅查看上半部；沒有提交或建立草稿"
+      ]
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "报告模板管理",
+      "file": "09-report-templates.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "導出類型直接顯示 report、archive-package，業務包亦顯示內部 ID。",
+        "正式版列表缺少像 Prompt 一樣的建立草稿入口，仍僅查看／禁用發布與刪除。"
+      ],
+      "limitations": [
+        "僅查看列表，未發布或新增報告模板"
+      ]
+    },
+    {
+      "route": "/admin/fine-config",
+      "title": "细项配置（待辦與消息）",
+      "file": "10-fine-config-top.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "兩欄布局令待辦規則表格時限等右側欄位狹窄或被固定操作區遮住，需橫向捲動。"
+      ],
+      "limitations": [
+        "未修改任何配置"
+      ]
+    },
+    {
+      "route": "/admin/fine-config",
+      "title": "工具源與欄位映射（下方區塊）",
+      "file": "10b-fine-config-tools-fields.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "欄位映射的目標欄位值被固定操作欄遮住；閾值等欄位不在目前可見寬度內。"
+      ],
+      "limitations": [
+        "未測試編輯提交；已保存下方兩區塊"
+      ]
+    },
+    {
+      "route": "/admin/integration",
+      "title": "联调清单",
+      "file": "11-integration.jpg",
+      "status": "reviewed",
+      "issues": [
+        "右側負責人等欄位超出可見寬度，需要橫向捲動。"
+      ],
+      "limitations": [
+        "隔離 demo 返回 6 個已對齊欄位；未據此驗證外部服務契約"
+      ]
+    },
+    {
+      "route": "/admin/skill-requests",
+      "title": "Skill 请求记录",
+      "file": "12-skill-requests.jpg",
+      "status": "reviewed",
+      "issues": [],
+      "limitations": [
+        "Demo 無請求記錄；已確認空狀態，未驗證有資料的詳情或分頁。"
+      ]
+    },
+    {
+      "route": "/admin/audit",
+      "title": "审计日志",
+      "file": "13-audit.jpg",
+      "status": "reviewed_with_issues",
+      "issues": [
+        "對象類型仍顯示 Authentication、ReviewOpinion，歷史驗證說明直接使用 legacy_unverified。",
+        "目前僅 2 筆記錄仍佔用高固定表格區，分頁位於視窗下緣。"
+      ],
+      "limitations": [
+        "隔離 demo 含一筆登入與一筆歷史記錄；歷史未封存警示有明確顯示，未執行匯出或修改。"
+      ]
+    }
+  ],
+  "capturedAt": "2026-10-29T02:26:38.640Z",
+  "routeCount": 13,
+  "screenshotCount": 17,
+  "visualReview": "Every saved screenshot was emitted and visually reviewed."
+}

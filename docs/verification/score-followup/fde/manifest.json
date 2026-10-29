@@ -1,0 +1,160 @@
+{
+  "group": "fde",
+  "build": "dist-score-followup",
+  "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+  "environment": "production build + real API + isolated in-memory demo data; read-only score-feedback-extras (1 existing record + 20 labelled display-only copies)",
+  "scope": "FDE feedback list readability, legacy value presentation, native details keyboard interaction, 21-row reachability and mobile shared toolbar",
+  "checks": {
+    "totalRows": 21,
+    "dateFilter": "all",
+    "stateFilter": "all",
+    "keyboardLongComment": {
+      "key": "Enter",
+      "open": true,
+      "fullTextLength": 287,
+      "focusVisible": true
+    },
+    "rawValuesRetained": [
+      "edited",
+      "prompt_error"
+    ],
+    "mobile": {
+      "width": 390,
+      "documentWidth": 390,
+      "workColumnWidth": 312,
+      "controlMinHeight": 44,
+      "toolbarClientWidth": 358,
+      "toolbarScrollWidth": 358,
+      "navigationButtonWidth": 83,
+      "taskButtonWidth": 110,
+      "accountButtonWidth": 145.890625,
+      "navigationKeyboardOpen": true,
+      "accountMenuOpen": true,
+      "taskCenterOpen": true
+    },
+    "lastReachableRecord": "AIFB-SCORE-DISPLAY-20"
+  },
+  "remainingFindings": [],
+  "captures": [
+    {
+      "file": "01-desktop-1280.jpg",
+      "title": "反饋歸因 · 桌面工作列",
+      "reviewNote": "21筆隔離示例可按列閱讀；原始短說明完整，分類與歸檔不再遮擋內容。",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:06:58.440Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ]
+    },
+    {
+      "file": "02-keyboard-expanded-1280.jpg",
+      "title": "反饋歸因 · 鍵盤展開長評論",
+      "reviewNote": "Enter 展開287字全文，summary 保留可見鍵盤焦點；文字無固定欄遮擋。",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:07:16.896Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ]
+    },
+    {
+      "file": "03-medium-900.jpg",
+      "title": "反饋歸因 · 中窄版與原始分類",
+      "reviewNote": "900px 列內容與歸因欄均可讀；鍵盤展開追溯資訊可見 edited、prompt_error 原始值。",
+      "viewport": {
+        "width": 900,
+        "height": 900
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:07:33.255Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ]
+    },
+    {
+      "file": "04-mobile-390.jpg",
+      "title": "反饋歸因 · 手機完整工具列",
+      "reviewNote": "390px 工具列自然換行，導航、任務中心和帳號完整可見；工作列單欄，所有主要控制44px高。",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:11:32.233Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ]
+    },
+    {
+      "file": "05-mobile-long-comment.jpg",
+      "title": "反饋歸因 · 手機長文鍵盤閱讀",
+      "reviewNote": "手機以 Enter 展開287字原文，保留可見焦點且段落自然換行。",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:12:35.716Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ]
+    },
+    {
+      "file": "06-mobile-last-record.jpg",
+      "title": "反饋歸因 · 長清單最後一筆",
+      "reviewNote": "21筆列表最後一筆可由鍵盤定位並展開原始分類；保留顯示測試20編號，沒有提交歸檔。",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reviewed": true,
+      "capturedAt": "2026-10-29T09:12:48.923Z",
+      "route": "/fde-feedback-triage",
+      "actualRoute": "/fde-feedback-triage",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "status": "verified",
+      "limitations": [
+        "僅隔離展示資料；未提交歸檔、加入評測或訓練用途。",
+        "已驗桌面/手機閱讀與指定入口，未執行全面VoiceOver或正式資料流程驗收。"
+      ]
+    }
+  ]
+}

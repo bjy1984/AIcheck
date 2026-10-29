@@ -1,0 +1,359 @@
+{
+  "environment": "production build + isolated in-memory real API",
+  "routeCount": 16,
+  "captureCount": 22,
+  "captures": [
+    {
+      "file": "01-dashboard.jpg",
+      "route": "/fde/dashboard",
+      "title": "治理總覽",
+      "reviewNote": "總覽、阻斷列表與側欄省略提示可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-optimization",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/projects",
+      "title": "項目審計",
+      "file": "02-projects.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "項目、節點與能力狀態呈現完整。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/ocr-quality",
+      "title": "OCR品質",
+      "file": "03-ocr-quality.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "服務未接入的警告可見；診斷文案仍有重複術語，列為低優先待整理。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/ai-runs",
+      "title": "AI執行追蹤",
+      "file": "04-ai-runs.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "執行列表與溯源明細可讀，實際回傳1筆示例執行記錄。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/review-runs",
+      "title": "審查編排",
+      "file": "05-review-runs.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "審查任務空狀態清楚提示需要真實審查任務。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/feedback",
+      "title": "回饋樣本",
+      "file": "06-feedback.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "治理狀態與優先處理提示中文化；寬表其餘欄位需橫向捲動。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/evaluation",
+      "title": "評估報告明細",
+      "file": "07-evaluation-details.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "缺少樣本數與比例顯示未提供，空樣本徽標顯示暫無樣本結果，不再用失敗0暗示充分評估。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-release",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/evaluation",
+      "title": "評估實驗室",
+      "file": "07-evaluation.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "評估集與狀態中文化；缺少樣本數顯示未提供。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-release",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/business-packs",
+      "title": "業務包治理",
+      "file": "08-business-packs.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "業務類型選擇、門禁與規範頁入口可讀。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "file": "09-bundle-diff.jpg",
+      "route": "/fde/capability-bundles",
+      "title": "能力組合差異",
+      "reviewNote": "組件名稱中文化；缺少基線明示未提供。",
+      "reviewed": true,
+      "status": "verified",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-optimization",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "file": "09-capability-bundles.jpg",
+      "route": "/fde/capability-bundles",
+      "title": "能力組合",
+      "reviewNote": "風險與狀態中文化，保留可核對版本。",
+      "reviewed": true,
+      "status": "verified",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-optimization",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "file": "10-releases.jpg",
+      "route": "/fde/releases",
+      "title": "發布治理",
+      "reviewNote": "發布狀態完整顯示中文；審查任務數標籤與數值相符。",
+      "reviewed": true,
+      "status": "verified",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-optimization",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/security",
+      "title": "資料安全",
+      "file": "11-security.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "安全授權清單與原文申請表格可讀。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/incidents",
+      "title": "事故復盤",
+      "file": "12-incidents.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "事故級別為中、狀態為監控中，均以中文完整呈現。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-release",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/costs",
+      "title": "成本預算",
+      "file": "13-costs.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "成本摘要與預算調整入口可讀，未提交變更。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/acceptance",
+      "title": "客戶驗收",
+      "file": "14-acceptance.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "驗收摘要與1筆示例報告可讀，已接受狀態中文呈現。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde-feedback-triage",
+      "title": "回饋歸因",
+      "file": "15-feedback-triage.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "獨立歸因路由正常顯示，不再404。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde-blind-review",
+      "title": "獨立盲審",
+      "file": "16-blind-review.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "獨立路由正常顯示抽樣入口與暫無待判任務提示，不再404。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "file": "17-standards-rows.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範檔案狀態",
+      "reviewNote": "零切片檔案水印狀態為未檢測，避免誤判正常；寬表其餘欄位需橫向捲動。",
+      "reviewed": true,
+      "status": "verified",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-optimization",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "file": "17-standards.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範索引總覽",
+      "reviewNote": "62個未建索引檔案列為需處理，未誤判可用。",
+      "reviewed": true,
+      "status": "verified",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-optimization",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=evaluation&nodeId=24",
+      "title": "項目評估門禁",
+      "file": "22-project-evaluation-content.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "門禁表改為單欄，缺少比例顯示未提供、狀態未知，處理建議仍可見。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    },
+    {
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=evaluation&nodeId=24",
+      "title": "項目評估總覽",
+      "file": "22-project-evaluation.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "缺少評估資料會阻止可發布判斷。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-uiux-final",
+      "limitations": [
+        "隔離記憶體示例與真實API；未連線正式資料庫或外部AI/OCR服務。"
+      ]
+    }
+  ]
+}

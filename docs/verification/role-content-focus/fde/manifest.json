@@ -1,0 +1,430 @@
+{
+  "group": "fde",
+  "build": "dist-role-content-focus",
+  "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+  "environment": "production build + real API + isolated in-memory demo data; readonly role-content-extras pending blind-review fixture",
+  "captures": [
+    {
+      "file": "01-dashboard.jpg",
+      "title": "FDE 治理總覽",
+      "reviewNote": "全局計數僅總覽保留，阻斷中心與處理入口優先，無重複職責說教。",
+      "route": "/fde/dashboard",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/dashboard",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:44:50.922Z"
+    },
+    {
+      "file": "01b-blocker-focus.jpg",
+      "title": "阻斷中心定位",
+      "reviewNote": "點擊阻斷計數後定位至可處理事項，按嚴重程度顯示修復入口。",
+      "route": "/fde/dashboard",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/dashboard",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:45:13.431Z"
+    },
+    {
+      "file": "02-projects.jpg",
+      "title": "項目審計",
+      "reviewNote": "保留項目、節點與能力處理清單，移除頂部全局計數與無關摘要入口。",
+      "route": "/fde/projects",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:45:52.801Z"
+    },
+    {
+      "file": "03-ocr-quality.jpg",
+      "title": "OCR 品質",
+      "reviewNote": "保留 OCR 當前修復任務、在線測試與標注入口；專業診斷資料按需展開。",
+      "route": "/fde/ocr-quality",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離環境未配置 OCR 服務；未執行外部 OCR。"
+      ],
+      "actualRoute": "/fde/ocr-quality",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:08.435Z"
+    },
+    {
+      "file": "03b-ocr-summary.jpg",
+      "title": "OCR 專屬診斷摘要",
+      "reviewNote": "只呈現 OCR 任務、標注、評測及綜合分；沒有評測時明示暫無評測。",
+      "route": "/fde/ocr-quality",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/ocr-quality",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:21.393Z"
+    },
+    {
+      "file": "04-ai-runs.jpg",
+      "title": "AI 執行追蹤",
+      "reviewNote": "保留不可變運行、溯源及診斷操作；實測四類審計詳情各僅一組，OCR 摘要切頁後不殘留。",
+      "route": "/fde/ai-runs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/ai-runs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:35.634Z"
+    },
+    {
+      "file": "05-review-runs.jpg",
+      "title": "審查編排",
+      "reviewNote": "保留當前任務、判斷、品質、溯源與修復入口；從 OCR 摘要經 AI Run 切換至此不自動開啟抽屜。",
+      "route": "/fde/review-runs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離資料無審查編排任務，驗證空態與入口。"
+      ],
+      "actualRoute": "/fde/review-runs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:52.884Z"
+    },
+    {
+      "file": "05b-review-summary.jpg",
+      "title": "審查編排專屬摘要",
+      "reviewNote": "摘要僅顯示當前審查任務、流程節點、校驗與事件，不顯示 OCR 或全局資料。",
+      "route": "/fde/review-runs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/review-runs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:47:07.063Z"
+    },
+    {
+      "file": "06-feedback.jpg",
+      "title": "人工反饋與樣本池",
+      "reviewNote": "反饋、根因與評估用途工作維持完整，頂部無其他領域的統計與摘要。",
+      "route": "/fde/feedback",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/feedback",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:47:37.082Z"
+    },
+    {
+      "file": "07-evaluation.jpg",
+      "title": "評估實驗室",
+      "reviewNote": "評估門禁、基準集與回放保留在專頁，沒有跨領域全局數字。",
+      "route": "/fde/evaluation",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/evaluation",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:47:51.279Z"
+    },
+    {
+      "file": "08-business-packs.jpg",
+      "title": "業務類型工廠",
+      "reviewNote": "業務類型版本、專案使用與發布流程保留，去掉不相關摘要。",
+      "route": "/fde/business-packs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/business-packs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:48:13.088Z"
+    },
+    {
+      "file": "09-capability-bundles.jpg",
+      "title": "能力版本組合",
+      "reviewNote": "版本組合、候選與驗證入口保留於對應頁，頂部不再展示無關全局資料。",
+      "route": "/fde/capability-bundles",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/capability-bundles",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:48:27.258Z"
+    },
+    {
+      "file": "10-releases.jpg",
+      "title": "發布治理",
+      "reviewNote": "保留候選版本、驗證門禁與灰度發布操作，移除跨領域摘要。",
+      "route": "/fde/releases",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/releases",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:48:41.462Z"
+    },
+    {
+      "file": "11-security.jpg",
+      "title": "資料安全與脫敏",
+      "reviewNote": "脫敏配置與原文審批保留於安全專頁，無 OCR/全局摘要干擾。",
+      "route": "/fde/security",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/security",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:49:00.707Z"
+    },
+    {
+      "file": "12-incidents.jpg",
+      "title": "事故復盤",
+      "reviewNote": "事故狀態、來源執行與證據鏈仍保留；無其他專頁的全局數字。",
+      "route": "/fde/incidents",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/incidents",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:49:22.479Z"
+    },
+    {
+      "file": "13-costs.jpg",
+      "title": "成本預算",
+      "reviewNote": "FDE 必需的實際用量、費用與預算治理完整保留；無 OCR/審查摘要。",
+      "route": "/fde/costs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/costs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:49:43.971Z"
+    },
+    {
+      "file": "14-acceptance.jpg",
+      "title": "客戶驗收",
+      "reviewNote": "驗收證據、確認狀態與報告保留；無無關全局摘要干擾。",
+      "route": "/fde/acceptance",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/acceptance",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:00.754Z"
+    },
+    {
+      "file": "15-feedback-triage.jpg",
+      "title": "反饋歸因",
+      "reviewNote": "主表直接呈現可處理反饋；全量品質統計移至抽屜。選擇全部時間與狀態顯示既有隔離資料。",
+      "route": "/fde-feedback-triage",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "舊版 demo 的 edited / prompt_error 枚舉按原值顯示，未更改資料。"
+      ],
+      "actualRoute": "/fde-feedback-triage",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:31.112Z"
+    },
+    {
+      "file": "15b-triage-references.jpg",
+      "title": "反饋追溯編號",
+      "reviewNote": "行內展開後可查看完整反饋 ID，未刪除審計資料。",
+      "route": "/fde-feedback-triage",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde-feedback-triage",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:46.650Z"
+    },
+    {
+      "file": "15c-triage-quality.jpg",
+      "title": "反饋品質詳情",
+      "reviewNote": "完整保留八項品質統計，明示全量範圍不隨清單時間篩選變化；未暴露內部檔名。",
+      "route": "/fde-feedback-triage",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde-feedback-triage",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:59.881Z"
+    },
+    {
+      "file": "16-blind-review.jpg",
+      "title": "盲審抽樣（隔離測試資料）",
+      "reviewNote": "首屏聚焦待判任務、原始資料與獨立判定；品質指標及內部編號按需查看。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "未判任務使用明示隔離 fixture，未生成或提交結論。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:51:14.593Z"
+    },
+    {
+      "file": "16b-blind-references.jpg",
+      "title": "盲審追溯編號（隔離測試資料）",
+      "reviewNote": "任務與批次 ID 默認收合，展開可見完整編號，審計資訊未刪除。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離未判任務。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:51:28.904Z"
+    },
+    {
+      "file": "16c-blind-quality.jpg",
+      "title": "盲審品質詳情",
+      "reviewNote": "品質統計按需查看，樣本數 0 如實保留；指數提示需進一步複核，未直接歸罪個人。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "沒有已判樣本，未驗證非零差異結果。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:51:39.844Z"
+    },
+    {
+      "file": "17-task-center-empty.jpg",
+      "title": "FDE 任務中心（空態）",
+      "reviewNote": "FDE 任務中心按角色範圍顯示無任務，空態清楚；未造執行資料。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "目前隔離環境 FDE 任務中心為 0 項，無法以正值任務截圖驗證執行詳情。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:52:15.083Z"
+    }
+  ]
+}

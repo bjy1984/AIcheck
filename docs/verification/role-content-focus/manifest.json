@@ -1,0 +1,1491 @@
+{
+  "environment": "production build + real API + isolated in-memory demo data",
+  "routeCount": 44,
+  "captureCount": 68,
+  "coverage": [
+    {
+      "route": "/admin/overview",
+      "files": [
+        "admin/01-overview.jpg"
+      ]
+    },
+    {
+      "route": "/admin/projects",
+      "files": [
+        "admin/02-projects.jpg"
+      ]
+    },
+    {
+      "route": "/admin/org",
+      "files": [
+        "admin/03-org.jpg"
+      ]
+    },
+    {
+      "route": "/admin/business-packs",
+      "files": [
+        "admin/04-business-packs.jpg"
+      ]
+    },
+    {
+      "route": "/admin/permission",
+      "files": [
+        "admin/05-permission.jpg"
+      ]
+    },
+    {
+      "route": "/admin/rules",
+      "files": [
+        "admin/06-rules.jpg"
+      ]
+    },
+    {
+      "route": "/admin/material-review-points",
+      "files": [
+        "admin/07-material-review-points.jpg"
+      ]
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "files": [
+        "admin/08-prompt-templates.jpg"
+      ]
+    },
+    {
+      "route": "/admin/report-templates",
+      "files": [
+        "admin/09-report-templates.jpg"
+      ]
+    },
+    {
+      "route": "/admin/fine-config",
+      "files": [
+        "admin/10-fine-config.jpg"
+      ]
+    },
+    {
+      "route": "/admin/integration",
+      "files": [
+        "admin/11-integration.jpg"
+      ]
+    },
+    {
+      "route": "/admin/skill-requests",
+      "files": [
+        "admin/12-skill-requests.jpg"
+      ]
+    },
+    {
+      "route": "/admin/audit",
+      "files": [
+        "admin/13-audit.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/overview",
+      "files": [
+        "knowledge/01-overview.jpg",
+        "knowledge/01b-index-counts.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/sources",
+      "files": [
+        "knowledge/02-sources.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/files",
+      "files": [
+        "knowledge/03-files.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/tasks",
+      "files": [
+        "knowledge/04-tasks.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/rules",
+      "files": [
+        "knowledge/05-rules.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "files": [
+        "knowledge/06-retrieval.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/network",
+      "files": [
+        "knowledge/07-network.jpg",
+        "knowledge/07b-network-properties.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "files": [
+        "knowledge/08-reasoning.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/compare",
+      "files": [
+        "knowledge/09-compare.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/config",
+      "files": [
+        "knowledge/10-config.jpg",
+        "knowledge/10b-index-diagnostics.jpg"
+      ]
+    },
+    {
+      "route": "/fde/dashboard",
+      "files": [
+        "fde/01-dashboard.jpg",
+        "fde/01b-blocker-focus.jpg"
+      ]
+    },
+    {
+      "route": "/fde/projects",
+      "files": [
+        "fde/02-projects.jpg"
+      ]
+    },
+    {
+      "route": "/fde/ocr-quality",
+      "files": [
+        "fde/03-ocr-quality.jpg",
+        "fde/03b-ocr-summary.jpg"
+      ]
+    },
+    {
+      "route": "/fde/ai-runs",
+      "files": [
+        "fde/04-ai-runs.jpg"
+      ]
+    },
+    {
+      "route": "/fde/review-runs",
+      "files": [
+        "fde/05-review-runs.jpg",
+        "fde/05b-review-summary.jpg"
+      ]
+    },
+    {
+      "route": "/fde/feedback",
+      "files": [
+        "fde/06-feedback.jpg"
+      ]
+    },
+    {
+      "route": "/fde/evaluation",
+      "files": [
+        "fde/07-evaluation.jpg"
+      ]
+    },
+    {
+      "route": "/fde/business-packs",
+      "files": [
+        "fde/08-business-packs.jpg"
+      ]
+    },
+    {
+      "route": "/fde/capability-bundles",
+      "files": [
+        "fde/09-capability-bundles.jpg"
+      ]
+    },
+    {
+      "route": "/fde/releases",
+      "files": [
+        "fde/10-releases.jpg"
+      ]
+    },
+    {
+      "route": "/fde/security",
+      "files": [
+        "fde/11-security.jpg"
+      ]
+    },
+    {
+      "route": "/fde/incidents",
+      "files": [
+        "fde/12-incidents.jpg"
+      ]
+    },
+    {
+      "route": "/fde/costs",
+      "files": [
+        "fde/13-costs.jpg"
+      ]
+    },
+    {
+      "route": "/fde/acceptance",
+      "files": [
+        "fde/14-acceptance.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/generic",
+      "files": [
+        "workflows/05-generic-owner.jpg",
+        "workflows/05b-generic-owner-findings.jpg",
+        "workflows/05c-generic-owner-tasks.jpg",
+        "workflows/05d-generic-contractor.jpg",
+        "workflows/05e-generic-inspection.jpg",
+        "workflows/05f-generic-inspection-detail.jpg",
+        "workflows/05g-generic-navigation-900.jpg",
+        "workflows/05h-generic-admin.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/inspection",
+      "files": [
+        "workflows/01-inspection-assistant.jpg",
+        "workflows/01-inspection-file-verification.jpg",
+        "workflows/01-inspection.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/contractor",
+      "files": [
+        "workflows/02-contractor-file-details.jpg",
+        "workflows/02-contractor.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/ndt",
+      "files": [
+        "workflows/03-ndt-feedback.jpg",
+        "workflows/03-ndt.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/owner",
+      "files": [
+        "workflows/04-owner-file-details.jpg",
+        "workflows/04-owner-reports-collapsed-materials.jpg",
+        "workflows/04-owner.jpg"
+      ]
+    },
+    {
+      "route": "/fde-feedback-triage",
+      "files": [
+        "fde/15-feedback-triage.jpg",
+        "fde/15b-triage-references.jpg",
+        "fde/15c-triage-quality.jpg"
+      ]
+    },
+    {
+      "route": "/fde-blind-review",
+      "files": [
+        "fde/16-blind-review.jpg",
+        "fde/16b-blind-references.jpg",
+        "fde/16c-blind-quality.jpg",
+        "fde/17-task-center-empty.jpg"
+      ]
+    }
+  ],
+  "captures": [
+    {
+      "route": "/admin/overview",
+      "file": "admin/01-overview.jpg",
+      "title": "管理總覽",
+      "reviewNote": "首屏集中項目、組織與帳號概況及項目清單，無跨頁配置統計。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:40.061Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/projects",
+      "file": "admin/02-projects.jpg",
+      "title": "項目管理",
+      "reviewNote": "項目列表與維護操作置於首屏，無重複全局統計或摘要抽屜。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:51.708Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/org",
+      "file": "admin/03-org.jpg",
+      "title": "組織使用者",
+      "reviewNote": "組織與帳號維護、搜尋和授權內容保留，無跨頁摘要干擾。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:06.252Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/business-packs",
+      "file": "admin/04-business-packs.jpg",
+      "title": "業務類型管理",
+      "reviewNote": "業務類型、適用範圍與配置入口直接呈現，冗餘全局統計已移除。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:14.187Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/permission",
+      "file": "admin/05-permission.jpg",
+      "title": "權限與節點",
+      "reviewNote": "角色權限矩陣與配置入口保留，頁面內容集中於授權任務。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:23.396Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/rules",
+      "file": "admin/06-rules.jpg",
+      "title": "AI 業務規則與流程",
+      "reviewNote": "待發布狀態只在規則頁提示，規則版本、詳情與差異操作保留。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:31.396Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "file": "admin/07-material-review-points.jpg",
+      "title": "業務資料審查點",
+      "reviewNote": "資料類型、審查點與維護操作清晰，沒有無關全局工程摘要。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:41.186Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "file": "admin/08-prompt-templates.jpg",
+      "title": "Prompt 模板管理",
+      "reviewNote": "專用模板頁保留必要版本、狀態與發布操作，支援配置任務。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:50.799Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/report-templates",
+      "file": "admin/09-report-templates.jpg",
+      "title": "報告模板管理",
+      "reviewNote": "報告模板版本、狀態、章節與發布操作保留，列表集中於模板維護。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:57.184Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/fine-config",
+      "file": "admin/10-fine-config.jpg",
+      "title": "細項配置",
+      "reviewNote": "待辦規則、消息模板與欄位映射保留，配置狀態、角色與維護操作直接呈現。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:06.017Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/integration",
+      "file": "admin/11-integration.jpg",
+      "title": "聯調清單",
+      "reviewNote": "專用聯調頁保留接口契約、欄位對應與阻塞項，支援管理員核對與排障。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:13.402Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/skill-requests",
+      "file": "admin/12-skill-requests.jpg",
+      "title": "Skill 請求記錄",
+      "reviewNote": "專用請求記錄頁保留提交時間、平台、請求文字與節點查詢，清楚顯示暫無記錄。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:21.969Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/audit",
+      "file": "admin/13-audit.jpg",
+      "title": "審計日誌",
+      "reviewNote": "審計完整性狀態與事件查詢直接呈現，必要稽核資訊保留於本頁。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:29.207Z",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/knowledge/overview",
+      "file": "knowledge/01-overview.jpg",
+      "title": "知識庫總覽",
+      "reviewNote": "知識庫文件數、可用狀態與來源列表直接呈現，原始索引數量預設收合。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:44:59.288Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/overview",
+      "file": "knowledge/01b-index-counts.jpg",
+      "title": "知識庫總覽：索引記錄",
+      "reviewNote": "主動展開後可比較切片與向量記錄並查看索引版本，真實零值保持可辨。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:16.183Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/sources?pageSize=6",
+      "file": "knowledge/02-sources.jpg",
+      "title": "標準規範庫",
+      "reviewNote": "標準文件、更新時間、處理狀態與版本/重建操作保留，移除重複原始數量。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:27.491Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/files",
+      "file": "knowledge/03-files.jpg",
+      "title": "項目文件知識庫",
+      "reviewNote": "項目文件、分類及處理狀態直接呈現，可定位失敗文件並查看詳情。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:48.864Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/tasks",
+      "file": "knowledge/04-tasks.jpg",
+      "title": "OCR／向量任務中心",
+      "reviewNote": "處理任務、失敗提示、進度與重試入口保留，支援日常失敗恢復。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:45:58.948Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "knowledge/05-rules.jpg",
+      "title": "監檢業務判斷規則管理",
+      "reviewNote": "規則名稱、節點、標準依據與發布狀態保留，支援規則內容維護。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:09.058Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "file": "knowledge/06-retrieval.jpg",
+      "title": "知識檢索測試",
+      "reviewNote": "專用驗證頁保留問題、範圍、Top K 與依據節點；未執行檢索時結果區明確提示下一步。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:18.778Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "knowledge/07-network.jpg",
+      "title": "知識網絡",
+      "reviewNote": "預設顯示業務節點名稱、關係及網絡圖，內部 ID 與技術屬性保持收合。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:44:41.029Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "knowledge/07b-network-properties.jpg",
+      "title": "知識網絡：技術屬性",
+      "reviewNote": "主動展開後可查看內部節點 ID 與屬性，支援關係排障而不干擾預設畫面。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:44:50.960Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "file": "knowledge/08-reasoning.jpg",
+      "title": "推理鏈路歷史日誌",
+      "reviewNote": "主動進入的專業日誌頁保留查詢、上下文與推理記錄，支援歷史追溯。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:38.122Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/compare",
+      "file": "knowledge/09-compare.jpg",
+      "title": "多 LLM 回饋對比",
+      "reviewNote": "專用模型比較頁保留對比條件與歷史結果，配置檢驗目的明確。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:46:47.767Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/config",
+      "file": "knowledge/10-config.jpg",
+      "title": "知識庫配置",
+      "reviewNote": "索引診斷預設收合，專業配置表單直接可見，保留必要數值與策略說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:01.774Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/config",
+      "file": "knowledge/10b-index-diagnostics.jpg",
+      "title": "知識庫配置：索引診斷",
+      "reviewNote": "展開後可查看治理摘要與診斷數據；它們集中在配置頁，不再重複出現在日常頁。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:15.154Z",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "file": "fde/01-dashboard.jpg",
+      "title": "FDE 治理總覽",
+      "reviewNote": "全局計數僅總覽保留，阻斷中心與處理入口優先，無重複職責說教。",
+      "route": "/fde/dashboard",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/dashboard",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:44:50.922Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/01b-blocker-focus.jpg",
+      "title": "阻斷中心定位",
+      "reviewNote": "點擊阻斷計數後定位至可處理事項，按嚴重程度顯示修復入口。",
+      "route": "/fde/dashboard",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/dashboard",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:45:13.431Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/02-projects.jpg",
+      "title": "項目審計",
+      "reviewNote": "保留項目、節點與能力處理清單，移除頂部全局計數與無關摘要入口。",
+      "route": "/fde/projects",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:45:52.801Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/03-ocr-quality.jpg",
+      "title": "OCR 品質",
+      "reviewNote": "保留 OCR 當前修復任務、在線測試與標注入口；專業診斷資料按需展開。",
+      "route": "/fde/ocr-quality",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離環境未配置 OCR 服務；未執行外部 OCR。"
+      ],
+      "actualRoute": "/fde/ocr-quality",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:08.435Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/03b-ocr-summary.jpg",
+      "title": "OCR 專屬診斷摘要",
+      "reviewNote": "只呈現 OCR 任務、標注、評測及綜合分；沒有評測時明示暫無評測。",
+      "route": "/fde/ocr-quality",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/ocr-quality",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:21.393Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/04-ai-runs.jpg",
+      "title": "AI 執行追蹤",
+      "reviewNote": "保留不可變運行、溯源及診斷操作；實測四類審計詳情各僅一組，OCR 摘要切頁後不殘留。",
+      "route": "/fde/ai-runs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/ai-runs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:35.634Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/05-review-runs.jpg",
+      "title": "審查編排",
+      "reviewNote": "保留當前任務、判斷、品質、溯源與修復入口；從 OCR 摘要經 AI Run 切換至此不自動開啟抽屜。",
+      "route": "/fde/review-runs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離資料無審查編排任務，驗證空態與入口。"
+      ],
+      "actualRoute": "/fde/review-runs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:46:52.884Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/05b-review-summary.jpg",
+      "title": "審查編排專屬摘要",
+      "reviewNote": "摘要僅顯示當前審查任務、流程節點、校驗與事件，不顯示 OCR 或全局資料。",
+      "route": "/fde/review-runs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/review-runs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:47:07.063Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/06-feedback.jpg",
+      "title": "人工反饋與樣本池",
+      "reviewNote": "反饋、根因與評估用途工作維持完整，頂部無其他領域的統計與摘要。",
+      "route": "/fde/feedback",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/feedback",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:47:37.082Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/07-evaluation.jpg",
+      "title": "評估實驗室",
+      "reviewNote": "評估門禁、基準集與回放保留在專頁，沒有跨領域全局數字。",
+      "route": "/fde/evaluation",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/evaluation",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:47:51.279Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/08-business-packs.jpg",
+      "title": "業務類型工廠",
+      "reviewNote": "業務類型版本、專案使用與發布流程保留，去掉不相關摘要。",
+      "route": "/fde/business-packs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/business-packs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:48:13.088Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/09-capability-bundles.jpg",
+      "title": "能力版本組合",
+      "reviewNote": "版本組合、候選與驗證入口保留於對應頁，頂部不再展示無關全局資料。",
+      "route": "/fde/capability-bundles",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/capability-bundles",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:48:27.258Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/10-releases.jpg",
+      "title": "發布治理",
+      "reviewNote": "保留候選版本、驗證門禁與灰度發布操作，移除跨領域摘要。",
+      "route": "/fde/releases",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/releases",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:48:41.462Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/11-security.jpg",
+      "title": "資料安全與脫敏",
+      "reviewNote": "脫敏配置與原文審批保留於安全專頁，無 OCR/全局摘要干擾。",
+      "route": "/fde/security",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/security",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:49:00.707Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/12-incidents.jpg",
+      "title": "事故復盤",
+      "reviewNote": "事故狀態、來源執行與證據鏈仍保留；無其他專頁的全局數字。",
+      "route": "/fde/incidents",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/incidents",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:49:22.479Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/13-costs.jpg",
+      "title": "成本預算",
+      "reviewNote": "FDE 必需的實際用量、費用與預算治理完整保留；無 OCR/審查摘要。",
+      "route": "/fde/costs",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/costs",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:49:43.971Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/14-acceptance.jpg",
+      "title": "客戶驗收",
+      "reviewNote": "驗收證據、確認狀態與報告保留；無無關全局摘要干擾。",
+      "route": "/fde/acceptance",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde/acceptance",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:00.754Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/15-feedback-triage.jpg",
+      "title": "反饋歸因",
+      "reviewNote": "主表直接呈現可處理反饋；全量品質統計移至抽屜。選擇全部時間與狀態顯示既有隔離資料。",
+      "route": "/fde-feedback-triage",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "舊版 demo 的 edited / prompt_error 枚舉按原值顯示，未更改資料。"
+      ],
+      "actualRoute": "/fde-feedback-triage",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:31.112Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/15b-triage-references.jpg",
+      "title": "反饋追溯編號",
+      "reviewNote": "行內展開後可查看完整反饋 ID，未刪除審計資料。",
+      "route": "/fde-feedback-triage",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde-feedback-triage",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:46.650Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/15c-triage-quality.jpg",
+      "title": "反饋品質詳情",
+      "reviewNote": "完整保留八項品質統計，明示全量範圍不隨清單時間篩選變化；未暴露內部檔名。",
+      "route": "/fde-feedback-triage",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [],
+      "actualRoute": "/fde-feedback-triage",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:50:59.881Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/16-blind-review.jpg",
+      "title": "盲審抽樣（隔離測試資料）",
+      "reviewNote": "首屏聚焦待判任務、原始資料與獨立判定；品質指標及內部編號按需查看。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "未判任務使用明示隔離 fixture，未生成或提交結論。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:51:14.593Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/16b-blind-references.jpg",
+      "title": "盲審追溯編號（隔離測試資料）",
+      "reviewNote": "任務與批次 ID 默認收合，展開可見完整編號，審計資訊未刪除。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離未判任務。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:51:28.904Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/16c-blind-quality.jpg",
+      "title": "盲審品質詳情",
+      "reviewNote": "品質統計按需查看，樣本數 0 如實保留；指數提示需進一步複核，未直接歸罪個人。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "沒有已判樣本，未驗證非零差異結果。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:51:39.844Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/17-task-center-empty.jpg",
+      "title": "FDE 任務中心（空態）",
+      "reviewNote": "FDE 任務中心按角色範圍顯示無任務，空態清楚；未造執行資料。",
+      "route": "/fde-blind-review",
+      "build": "dist-role-content-focus",
+      "status": "verified",
+      "reviewed": true,
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "目前隔離環境 FDE 任務中心為 0 項，無法以正值任務截圖驗證執行詳情。"
+      ],
+      "actualRoute": "/fde-blind-review",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "capturedAt": "2026-10-29T07:52:15.083Z",
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢助手與記錄",
+      "file": "workflows/01-inspection-assistant.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "保留證據、標準條款及人工操作，歡迎詞已使用「歷史審查任務」，沒有模型、Token 或效能資訊。此節點無歷史對話，完成回覆與串流由回歸測試覆蓋，未觸發正式審查。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢文件核驗詳情",
+      "file": "workflows/01-inspection-file-verification.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "保留字段、頁碼、證據引用，缺少識別來源以可操作的人話提示。示例無真實原文，沒有把資料狀態當作核驗通過。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/inspection",
+      "title": "監檢工作台",
+      "file": "workflows/01-inspection.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "首頁聚焦需處理節點及人工結論，沒有模型、Token 或效能資訊。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方文件詳情",
+      "file": "workflows/02-contractor-file-details.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "預設文件資訊，保留版本、上傳與資料處理狀態，沒有 OCR 字段／表格／印章核驗頁籤。示例無真實原文，已停用預覽下載。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工資料工作台",
+      "file": "workflows/02-contractor.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "首頁保留上傳、待提交及監檢意見，需補正文件與意見數分開，沒有工程指標。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測補正詳情",
+      "file": "workflows/03-ndt-feedback.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "保留補正事項、期限、需補充的編號頁、關聯報告、底片與疑點，沒有工程執行資訊。未提交或變更補正資料。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測資料工作台",
+      "file": "workflows/03-ndt.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "摘要保留上傳、待提交/補正、監檢反饋及底片/紀錄/報告數。示例沒有資料庫已上傳文件，展開文件處理標籤由回歸測試覆蓋。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方文件詳情",
+      "file": "workflows/04-owner-file-details.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "展開節點資料後仍可進入原文詳情；預設文件資訊，只保留版本、上傳與資料處理狀態，沒有字段/表格/印章核驗頁籤。示例無真實原文，畫面已提示。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方報告與收合資料",
+      "file": "workflows/04-owner-reports-collapsed-materials.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "報告／歸檔與查看下載操作在節點資料之前；節點資料原生 details 預設收合，示例報告清單為真實空值。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方項目概況",
+      "file": "workflows/04-owner.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "只保留進度、報告、歸檔與責任單位；節點表呈現單一審查狀態及資料數，不再出現 AI/OCR 指標與工程側欄。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 建設單位",
+      "file": "workflows/05-generic-owner.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "首頁聚焦項目狀態與節點資料進度，沒有置信度、內部節點碼、重複統計卡或工程資訊側欄。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 建設單位發現詳情",
+      "file": "workflows/05b-generic-owner-findings.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "業主詳情保留發現狀態、引用缺失提示及人工意見，沒有置信度、規則碼、證據ID或審查操作。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "limitations": [
+        "該條示例引用沒有可讀原文，已顯示缺失提示。"
+      ],
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 建設單位任務中心",
+      "file": "workflows/05c-generic-owner-tasks.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "保留4項任務的進度、時間、錯誤與詳情；資料處理使用業務名稱，工程診斷、模型、成本、心跳及內部ID不顯示。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "limitations": [
+        "固定歷史示例時間造成很長的耗時，只驗證格式，不作效能結論。"
+      ],
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 施工單位",
+      "file": "workflows/05d-generic-contractor.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "施工角色聚焦授權項目、資料要求及補充意見；不顯示置信度、內部編碼或工程摘要。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "limitations": [
+        "此施工示例項目沒有發現記錄，未把空清單當作詳情驗證。"
+      ],
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 監檢人員",
+      "file": "workflows/05e-generic-inspection.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "首頁聚焦節點與資料；監檢保留編碼、置信度、引用資料及待確認入口。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 監檢規則與證據",
+      "file": "workflows/05f-generic-inspection-detail.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "監檢規則引用按需展開；狀態標籤完整。引用無法取得時顯示真實缺失提示，不補造原文或人工意見。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "limitations": [
+        "本地示例引用缺少原文，未將缺失狀態視為原文成功載入。"
+      ],
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 900px 導航",
+      "file": "workflows/05g-generic-navigation-900.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "窄版導航只提供當前角色工作入口，不含空摘要、平台邊界或工程說明。",
+      "viewport": {
+        "width": 900,
+        "height": 900
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用工作台 · 管理員",
+      "file": "workflows/05h-generic-admin.jpg",
+      "reviewed": true,
+      "status": "verified",
+      "reviewNote": "管理員保留必要核驗入口與內部編碼，移除重複工程說明與空摘要；帳戶名稱不重複角色標籤。",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "build": "dist-role-content-focus",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    }
+  ]
+}

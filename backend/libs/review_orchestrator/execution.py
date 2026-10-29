@@ -1982,7 +1982,10 @@ def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
     )
     if exact:
         return repo.clone(exact)
-    return repo.clone(candidates[0] if candidates else templates[0])
+    # A draft, retired template, or another business pack must never become an
+    # implicit production override. None preserves the business pack's built-in
+    # prompt until an eligible template is explicitly published.
+    return repo.clone(candidates[0]) if candidates else None
 
 
 def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:

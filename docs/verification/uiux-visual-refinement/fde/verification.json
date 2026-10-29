@@ -1,0 +1,85 @@
+{
+  "build": "dist-uiux-visual-refinement",
+  "capturedIndexSha256": "9a47e9119fa99cda8e3815bca457c164407a2c9277da553c7cd3bfef72c25ba5",
+  "routes": 16,
+  "screenshots": 20,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "allVisuallyReviewed": true,
+  "browserInteractions": [
+    {
+      "name": "任務圖條跳轉",
+      "status": "passed",
+      "evidence": [
+        "01b-task-status.jpg",
+        "04-ai-runs.jpg"
+      ],
+      "detail": "點擊 AI 任務綠色已完成圖條，實際跳至 /fde/ai-runs；唯一 AIRUN-24-20260625-01 狀態完成，與圖表已完成 1 件一致。"
+    },
+    {
+      "name": "OCR 品質統計可達與口徑切換",
+      "status": "passed",
+      "evidence": [
+        "03b-ocr-quality-empty.jpg",
+        "03c-ocr-field-empty.jpg"
+      ],
+      "detail": "更多工具→品質統計可到達新增圖表元件；品質標記→缺失必填字段切換後，選中狀態及口徑說明同步改變。實際 API 的兩個陣列皆空，正確呈現空態。"
+    },
+    {
+      "name": "向量實測維度",
+      "status": "passed",
+      "evidence": [
+        "02b-vector-quality.jpg"
+      ],
+      "detail": "從項目審計資料向量化入口可到達；五維資料為14/15、22.1/25、25/30、20/20、7.14/10，以實際得分/滿分顯示。"
+    },
+    {
+      "name": "審查空任務",
+      "status": "passed",
+      "evidence": [
+        "05-review-runs.jpg"
+      ],
+      "detail": "無審查任務時顯示空態及觸發方式，不建立假耗時圖。"
+    },
+    {
+      "name": "瀏覽器錯誤",
+      "status": "passed",
+      "detail": "完成所有 FDE 頁面後，專用 tab console error 記錄為空。"
+    }
+  ],
+  "automatedChecks": [
+    {
+      "name": "後端狀態分類回歸",
+      "status": "passed",
+      "tests": 65,
+      "log": "../backend-tests.txt",
+      "detail": "包含完成、已完成、未知、未完成、排隊、失敗、待人工等映射及既有 FDE 整體測試。"
+    },
+    {
+      "name": "正值 OCR 與缺值耗時實際 option 渲染",
+      "status": "passed",
+      "testFile": "frontend/src/views/AICheck/fdeChartRendering.test.ts",
+      "log": "../chart-rendering-tests.txt",
+      "detail": "使用 production 元件實際 computed option；合成品質標記2/7降序為7/2，缺欄1/4降序為4/1，ECharts SVG 保留數字標籤且切換口徑不混算；實際 timeline option 的0ms保持0，缺值保持null並標未取得耗時，無80ms補值。"
+    },
+    {
+      "name": "數值誠實性 helper",
+      "status": "passed",
+      "testFile": "frontend/src/views/AICheck/fdeVisualData.test.ts",
+      "detail": "分數單位明確、缺維度不補造、缺值計數標未取得、空陣列與未知區別。"
+    }
+  ],
+  "limitations": [
+    "瀏覽器使用 production 建置、真實 API 與隔離記憶體資料；未接正式資料庫、模型或外部 OCR。",
+    "此 API 樣本未提供正值品質標記/缺欄陣列，未把合成資料注入產品。正值圖以 production option + ECharts SSR 驗證，並非瀏覽器正值資料截圖。",
+    "目前無審查任務，耗時缺值/真實零分支以 production option SSR 與邏輯測試驗證，未聲稱已完成真實模型流程端到端驗證。",
+    "向量瀏覽器樣本有完整維度；缺失維度與分數分支以 helper 測試驗證。",
+    "本次只執行讀取、導航、展開與切換；未提交發布、預算變更、權限修改或事故結案。"
+  ],
+  "verifiedAt": "2026-10-29T06:52:43.223Z",
+  "environmentNotes": [
+    "最終重拍時隔離 API 進程曾中止；由 root 重啟後所有受影響畫面已重新載入與重拍，最終圖集不含連線異常畫面。"
+  ]
+}

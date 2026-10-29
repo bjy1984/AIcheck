@@ -1,0 +1,71 @@
+{
+  "group": "ndt",
+  "build": "dist-score-followup",
+  "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+  "environment": "production build + real API + isolated in-memory demo data",
+  "captures": [
+    {
+      "route": "/workbench/ndt",
+      "file": "01-library-1280.jpg",
+      "title": "檢測資料庫 · 桌面",
+      "reviewNote": "上層三項工作摘要及下層登記數緊湊呈現；22種資料的類型、規則與上傳入口保留，登記數與上傳文件數分開。",
+      "limitations": [
+        "本隔離資料有底片2筆、記錄1筆、報告2筆，但已上傳原子資料文件為0；未驗證正數已上傳文件的手機展開渲染。"
+      ],
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "capturedAt": "2026-10-29T09:06:55.416Z"
+    },
+    {
+      "route": "/workbench/ndt",
+      "file": "02-library-390.jpg",
+      "title": "檢測資料庫 · 手機首屏",
+      "reviewNote": "手機摘要改為三行，登記計數緊湊排列；資料清單切換為單欄，頁面390px無橫向溢出。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:07:14.163Z"
+    },
+    {
+      "route": "/workbench/ndt",
+      "file": "03-rules-390.jpg",
+      "title": "檢測資料庫 · 手機規則與操作",
+      "reviewNote": "Enter可展開適用業務規則且焦點輪廓可見；完整資料類型、零值狀態及上傳按鈕在同一列組中可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:07:31.129Z"
+    },
+    {
+      "route": "/workbench/ndt",
+      "file": "04-upload-drawer-390.jpg",
+      "title": "檢測資料庫 · 手機上傳入口",
+      "reviewNote": "長業務規則換為兩行且完整位於卡片內；點文字可勾選及取消。對應資料類型、預選規則、選檔和取消入口可見，未上傳或提交文件。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-score-followup",
+      "buildIndexSha256": "45c13961527271792d009a59bddce05e42c5fc8d5fe48147f2caa476f86fbd7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturedAt": "2026-10-29T09:08:46.037Z"
+    }
+  ]
+}

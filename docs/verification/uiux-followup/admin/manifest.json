@@ -1,0 +1,441 @@
+{
+  "group": "admin",
+  "build": "dist-uiux-followup-final",
+  "captures": [
+    {
+      "route": "/admin/material-review-points",
+      "title": "修前：空結果殘留 OCR 提示",
+      "file": "before-material-no-results.jpg",
+      "reviewed": true,
+      "reviewNote": "點擊第一列 OCR 長文本後搜尋不存在字詞，清單為 0 筆；舊提示停留在頁面左上角。",
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "limitations": [
+        "修前 dist-uiux-release；隔離示例資料。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release"
+    },
+    {
+      "route": "/admin/overview",
+      "title": "管理總覽／項目管理",
+      "file": "final-01-overview.jpg",
+      "reviewed": true,
+      "reviewNote": "最終版重載後5個項目載入；overview共用項目管理內容，主操作與治理摘要可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/org",
+      "title": "組織使用者",
+      "file": "final-03-org-organizations.jpg",
+      "reviewed": true,
+      "reviewNote": "5個組織清單、中文類型與篩選可讀，名稱和操作沒有重疊。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/org",
+      "title": "組織搜尋",
+      "file": "final-03b-org-search.jpg",
+      "reviewed": true,
+      "reviewNote": "在全部5個組織中搜尋粤检，命中1筆且可重置。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/org",
+      "title": "使用者搜尋",
+      "file": "final-03c-user-search.jpg",
+      "reviewed": true,
+      "reviewNote": "7位使用者搜尋ndt命中1位，與組織條件獨立；完整角色與操作可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/projects",
+      "title": "項目管理",
+      "file": "final-02-projects.jpg",
+      "reviewed": true,
+      "reviewNote": "最終版5個項目清單、搜尋篩選與分頁正常；既有操作可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "長施工單位採省略提示，未執行註冊審核或歸檔刪除。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/business-packs",
+      "title": "業務類型管理",
+      "file": "final-04-business-packs.jpg",
+      "reviewed": true,
+      "reviewNote": "3種業務類型狀態鄰近名稱，分級範圍完整換行；項目屬性、版本與數量可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/permission",
+      "title": "權限與節點",
+      "file": "final-05-permission.jpg",
+      "reviewed": true,
+      "reviewNote": "6種角色的範圍、權限摘要、唯讀狀態及編輯入口可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "只讀巡檢，沒有變更權限。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "AI業務規則與流程",
+      "file": "final-06-rules.jpg",
+      "reviewed": true,
+      "reviewNote": "規則主表全寬，名稱、長版本、Prompt、節點、狀態及操作完整換行可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "規則詳情",
+      "file": "final-06b-rule-detail.jpg",
+      "reviewed": true,
+      "reviewNote": "詳情抽屜正常顯示規則Key、Prompt、版本、節點與描述；完整內容可核對。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "流程狀態機",
+      "file": "final-06c-workflow-state-machine.jpg",
+      "reviewed": true,
+      "reviewNote": "流程表位於規則下方，獨立全寬，名稱、版本、7個狀態、6項流轉與操作可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "業務資料審查點",
+      "file": "final-07-material-review-points.jpg",
+      "reviewed": true,
+      "reviewNote": "168筆清單載入，審查內容與證據文字直接換行；點擊原先溢出文字不產生浮層。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "全部欄位仍需橫向捲動，已提供提示。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "審查點零結果回歸",
+      "file": "final-07b-material-no-results.jpg",
+      "reviewed": true,
+      "reviewNote": "重走修前觸發步驟後為0筆，沒有左上角殘留提示；顯示調整或重置搜尋的說明。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "審查點末頁資料搜尋",
+      "file": "final-07c-material-tail-search.jpg",
+      "reviewed": true,
+      "reviewNote": "重置恢復168筆後搜尋pmi_report，命中節點16/21兩筆。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "右側其餘欄位可橫向捲動查閱。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 模板管理",
+      "file": "final-08-prompt-templates.jpg",
+      "reviewed": true,
+      "reviewNote": "模板名稱、Key、更新時間、版本、狀態、Agent與四個操作均可見；正式版發布/刪除保持停用。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 衍生草稿",
+      "file": "final-08b-prompt-draft.jpg",
+      "reviewed": true,
+      "reviewNote": "新增草稿保留原正文和關聯版本，模板版本為2026.06-draft、狀態草稿。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "未保存、發布或刪除；取消後原模板仍1筆。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "報告模板管理",
+      "file": "final-09-report-templates.jpg",
+      "reviewed": true,
+      "reviewNote": "名稱、版本、狀態、業務類型、章節、導出類型與操作皆可讀；長內容換行而非省略。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "報告衍生草稿",
+      "file": "final-09b-report-draft.jpg",
+      "reviewed": true,
+      "reviewNote": "工程報告草稿保留4章節、3種導出和業務包版本，版本2026.06-draft、狀態草稿；取消和保存入口可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "只開啟後取消，沒有保存或發布；原正式模板仍3筆。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/fine-config",
+      "title": "細項配置",
+      "file": "final-10-fine-config.jpg",
+      "reviewed": true,
+      "reviewNote": "待辦規則與消息模板維持全寬單欄，狀態及編輯入口可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/fine-config",
+      "title": "工具源與字段映射",
+      "file": "final-10b-fine-config-mappings.jpg",
+      "reviewed": true,
+      "reviewNote": "工具類型和鑑權已中文化；來源、目標字段及編輯按鈕分離可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/integration",
+      "title": "聯調清單",
+      "file": "final-11-integration.jpg",
+      "reviewed": true,
+      "reviewNote": "6項契約全部已對齊，模組摘要、條件選擇及狀態清楚。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/integration",
+      "title": "契約欄位詳閱",
+      "file": "final-11b-integration-fields.jpg",
+      "reviewed": true,
+      "reviewNote": "狀態前移；完整路徑、前後端字段、必填、負責人及說明在同一表格換行可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/skill-requests",
+      "title": "Skill 請求記錄",
+      "file": "final-12-skill-requests.jpg",
+      "reviewed": true,
+      "reviewNote": "資料為0筆時顯示暫無請求記錄，保留搜尋和刷新；沒有載入錯誤。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/audit",
+      "title": "審計日誌",
+      "file": "final-13-audit.jpg",
+      "reviewed": true,
+      "reviewNote": "1筆實際日誌、物件中文名稱與歷史未封存提示可讀，篩選入口正常。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "報告模板1280寬度",
+      "file": "final-09c-report-1280.jpg",
+      "reviewed": true,
+      "reviewNote": "較窄桌面可同時辨識3個報告、版本、狀態、業務類型及兩欄操作；導出文字換行。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "表格仍可橫向捲動查閱超出寬度的欄位。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 模板1280寬度",
+      "file": "final-08c-prompt-1280.jpg",
+      "reviewed": true,
+      "reviewNote": "較窄桌面模板名稱、識別碼、版本、狀態與操作仍可讀。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "完整Agent欄位可用底部橫向捲軸查閱。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/integration",
+      "title": "聯調契約1280寬度",
+      "file": "final-11c-integration-1280.jpg",
+      "reviewed": true,
+      "reviewNote": "狀態、接口與欄位對應在較窄桌面保持換行；說明可讀，無操作覆蓋。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "超過視窗寬度時仍可橫向捲動表格。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "規則900寬度",
+      "file": "final-06d-rules-900.jpg",
+      "reviewed": true,
+      "reviewNote": "窄視窗改用收合側欄；規則維持單欄與完整換行，詳情/差異操作可見。",
+      "viewport": {
+        "height": 720,
+        "width": 900
+      },
+      "limitations": [
+        "較寬規則表須橫向捲動查閱狀態/時間等欄位。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "流程狀態機900寬度",
+      "file": "final-06e-workflow-900.jpg",
+      "reviewed": true,
+      "reviewNote": "下方流程表在900寬度完整顯示名稱、版本、狀態數、流轉與編輯，沒有雙欄擠壓。",
+      "viewport": {
+        "height": 720,
+        "width": 900
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    }
+  ],
+  "viewportRestored": true,
+  "environment": "Chrome CUA；admin登入且未勾選記住我；隔離記憶體示例資料與真實API，未提交保存、發布、刪除或權限變更。",
+  "coverage": {
+    "expectedMainRoutes": 13,
+    "verifiedMainRoutes": 13,
+    "finalCaptureCount": 28
+  }
+}

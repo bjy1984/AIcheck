@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChatDotRound, DocumentChecked, Tickets } from '@element-plus/icons-vue'
+import { ChatDotRound, Clock, Tickets } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import type {
   ContractorStatusCardKey,
@@ -9,6 +9,7 @@ import type {
 const props = defineProps<{
   cards: ContractorWorkbenchModel['summaryCards']
   activeKey?: ContractorStatusCardKey | null
+  feedbackUnavailable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -18,11 +19,18 @@ const emit = defineEmits<{
 const iconByKey = {
   feedback: ChatDotRound,
   pending: Tickets,
-  reviewing: DocumentChecked
+  reviewing: Clock
 }
 
 const cardsWithIcons = computed(() =>
-  props.cards.map((card) => ({ ...card, icon: iconByKey[card.key] }))
+  props.cards.map((card) => ({
+    ...card,
+    tone:
+      card.count === 0 || (card.key === 'feedback' && props.feedbackUnavailable)
+        ? 'gray'
+        : card.tone,
+    icon: iconByKey[card.key]
+  }))
 )
 </script>
 
@@ -38,14 +46,18 @@ const cardsWithIcons = computed(() =>
         { 'is-active': activeKey === card.key }
       ]"
       :aria-pressed="activeKey === card.key"
-      :aria-label="`${card.label} ${card.count} 项`"
+      :aria-label="
+        card.key === 'feedback' && feedbackUnavailable
+          ? '待处理意见数量暂不可用'
+          : `${card.label} ${card.count} 项`
+      "
       @click="emit('select', card.key)"
     >
       <span class="contractor-status-icon" aria-hidden="true">
         <component :is="card.icon" />
       </span>
       <span class="contractor-status-label">{{ card.label }}</span>
-      <strong>{{ card.count }}</strong>
+      <strong>{{ card.key === 'feedback' && feedbackUnavailable ? '—' : card.count }}</strong>
     </button>
   </section>
 </template>
@@ -71,7 +83,7 @@ const cardsWithIcons = computed(() =>
   background: #fff;
   border: 1px solid #dfe6f1;
   border-radius: 8px;
-  box-shadow: 0 5px 14px rgb(15 23 42 / 4%);
+  box-shadow: none;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
@@ -80,12 +92,11 @@ const cardsWithIcons = computed(() =>
 
 .contractor-status-card:hover {
   border-color: #9ebcff;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgb(47 111 237 / 10%);
+  background: var(--aicheck-hover-bg, #f6faff);
 }
 
 .contractor-status-card:focus-visible {
-  outline: 3px solid rgb(47 111 237 / 24%);
+  outline: 2px solid #2f6fed;
   outline-offset: 2px;
 }
 
@@ -110,13 +121,18 @@ const cardsWithIcons = computed(() =>
 }
 
 .contractor-status-card.is-orange .contractor-status-icon {
-  color: #f79009;
-  background: #fff5e7;
+  color: var(--aicheck-warning, #8a4b00);
+  background: var(--aicheck-warning-bg, #fff7e6);
 }
 
 .contractor-status-card.is-green .contractor-status-icon {
-  color: #12a66a;
-  background: #eaf8f1;
+  color: var(--aicheck-success, #087443);
+  background: var(--aicheck-success-bg, #ecfdf3);
+}
+
+.contractor-status-card.is-gray .contractor-status-icon {
+  color: var(--aicheck-neutral, #52647d);
+  background: var(--aicheck-neutral-bg, #f2f4f7);
 }
 
 .contractor-status-label {
@@ -132,11 +148,28 @@ const cardsWithIcons = computed(() =>
 
 @media (width <= 767px) {
   .contractor-status-cards {
-    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .contractor-status-card {
-    min-height: 64px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    min-height: 80px;
+    padding: 12px 10px;
+  }
+
+  .contractor-status-icon {
+    display: none;
+  }
+
+  .contractor-status-label {
+    font-size: 14px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  .contractor-status-card strong {
+    font-size: 24px;
   }
 }
 </style>

@@ -24,6 +24,7 @@ import type {
   RoleCode
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+import { latestReportVersion } from '../workbenchTruth'
 
 const props = withDefaults(
   defineProps<{
@@ -84,7 +85,9 @@ const panelTitle = computed(() => {
   if (props.mode === 'archive') return '签发归档'
   return '报告与归档'
 })
-const latestReport = computed(() => props.reports[0])
+const latestReport = computed(() => latestReportVersion(props.reports))
+const archiveTypeLabel = (type: ArchiveItem['type']) =>
+  ({ document: '资料文件', report: '报告', evidence: '证据资料' })[type] || '待核对'
 const canReadonlyDownload = computed(() => actionSet.value.has('archive:download'))
 const canExport = (report: ReportVersion) =>
   props.role === 'inspection' &&
@@ -307,7 +310,9 @@ const handleGenerate = () => {
       <div class="section-title">归档资料</div>
       <ElTable :data="archiveItems" border height="170" class="archive-items-table">
         <ElTableColumn prop="name" label="名称" min-width="180" show-overflow-tooltip />
-        <ElTableColumn prop="type" label="类型" width="78" />
+        <ElTableColumn prop="type" label="类型" width="100">
+          <template #default="{ row }">{{ archiveTypeLabel(row.type) }}</template>
+        </ElTableColumn>
         <ElTableColumn prop="nodeId" label="节点" width="74" />
         <ElTableColumn prop="updatedAt" label="更新时间" width="150" />
         <ElTableColumn label="操作" width="120" fixed="right">

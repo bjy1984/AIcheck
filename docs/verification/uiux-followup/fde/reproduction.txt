@@ -1,0 +1,2 @@
+真实 API 诊断输入：API 服务未配置 OCR 服务地址（AICHECK_OCR_BASE_URL）。
+修前格式化输出：API 服务未配置 OCR 文字识别 服务地址（OCR 文字识别 服务地址（OCR 文字识别 服务地址））。

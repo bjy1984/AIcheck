@@ -1,0 +1,401 @@
+{
+  "captures": [
+    {
+      "file": "01-overview.jpg",
+      "route": "/admin/overview",
+      "title": "管理總覽／項目管理",
+      "status": "pass",
+      "reviewed": true,
+      "reviewNote": "overview 路由共用項目管理內容；主操作、統計未知狀態與項目列表可讀。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "02-projects.jpg",
+      "route": "/admin/projects",
+      "title": "項目管理",
+      "status": "pass",
+      "reviewed": true,
+      "reviewNote": "五個項目清單與分頁可見；長施工單位採省略提示，沒有操作欄重疊。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "03-org-organizations.jpg",
+      "route": "/admin/org",
+      "title": "組織清單",
+      "status": "pass",
+      "reviewed": true,
+      "reviewNote": "五個組織可搜尋、類型與狀態可篩選；中文組織類型完整顯示。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "03b-org-users.jpg",
+      "route": "/admin/org",
+      "title": "使用者清單",
+      "status": "pass",
+      "reviewed": true,
+      "reviewNote": "七位使用者的完整角色名稱、搜尋與組合篩選可見。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "04-business-packs.jpg",
+      "route": "/admin/business-packs",
+      "title": "業務類型管理",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "reviewNote": "三種類型的主要欄位與校驗入口可見；完整欄位仍需橫向捲動。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "05-permission.jpg",
+      "route": "/admin/permission",
+      "title": "權限與節點",
+      "status": "pass",
+      "reviewed": true,
+      "reviewNote": "角色權限矩陣與編輯入口可讀，折疊權限標記不遮住操作。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "06-rules.jpg",
+      "route": "/admin/rules",
+      "title": "AI 業務規則與流程",
+      "status": "pass_with_observations",
+      "reviewed": true,
+      "reviewNote": "規則與狀態機清單可見；規則表仍為雙欄，長版本／Prompt 編號需要提示或詳情。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "07-material-review-points.jpg",
+      "route": "/admin/material-review-points",
+      "title": "業務資料審查點",
+      "status": "pass",
+      "reviewed": true,
+      "reviewNote": "全量168筆搜尋、節點／資料／狀態篩選與資料閱讀提示可見。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "07b-material-tail-search.jpg",
+      "route": "/admin/material-review-points",
+      "title": "全量審查點搜尋",
+      "status": "pass",
+      "reviewed": true,
+      "reviewNote": "pmi_report 搜尋跨全部168筆，畫面返回兩筆，證明不是只在當頁搜尋。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-optimization"
+    },
+    {
+      "file": "08-prompt-templates.jpg",
+      "title": "Prompt 模板管理",
+      "route": "/admin/prompt-templates",
+      "reviewed": true,
+      "reviewNote": "模板內容與完整操作狀態可讀，正式版限制明確。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。",
+        "清單有保留識別碼與完整字段；較寬表格需橫向捲動。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "09-report-templates.jpg",
+      "title": "報告模板管理",
+      "route": "/admin/report-templates",
+      "reviewed": true,
+      "reviewNote": "正式模板提供建立草稿；狀態、業務類型和導出類型可辨識。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。",
+        "清單有保留識別碼與完整字段；較寬表格需橫向捲動。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "09b-report-create-draft.jpg",
+      "title": "正式報告派生草稿",
+      "route": "/admin/report-templates",
+      "reviewed": true,
+      "reviewNote": "從工程正式模板開啟草稿表單，版本自帶draft，章節保留；未保存或發布。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "10-fine-config.jpg",
+      "title": "細項配置：待辦與消息",
+      "route": "/admin/fine-config",
+      "reviewed": true,
+      "reviewNote": "四組配置採單欄；待辦規則與消息模板正常字級，操作欄沒有覆蓋資料。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "10b-fine-config-mappings.jpg",
+      "title": "細項配置：工具與字段",
+      "route": "/admin/fine-config",
+      "reviewed": true,
+      "reviewNote": "工具、鑑權使用中文，字段映射完整可讀；各組表格不再被雙欄壓縮。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "11-integration.jpg",
+      "title": "聯調清單",
+      "route": "/admin/integration",
+      "reviewed": true,
+      "reviewNote": "六項字段契約清單與篩選器可見；長接口與說明可透過表格捲動查看。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "12-skill-requests.jpg",
+      "title": "Skill 請求記錄",
+      "route": "/admin/skill-requests",
+      "reviewed": true,
+      "reviewNote": "無請求時呈現明確空狀態與查詢入口，身份來源說明可見。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "13-audit.jpg",
+      "title": "審計日誌",
+      "route": "/admin/audit",
+      "reviewed": true,
+      "reviewNote": "審計對象類型中文化；計數與當前查詢範圍一致。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "07c-material-no-results.jpg",
+      "title": "審查點無搜尋結果",
+      "route": "/admin/material-review-points",
+      "reviewed": true,
+      "reviewNote": "不存在的搜尋詞返回0筆並顯示調整或重置篩選提示，不誤顯全量資料消失。",
+      "status": "pass_with_observations",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final",
+      "issues": [
+        "先前表格文字提示在篩到0筆後仍停留於左上角；切換路由後消失，已回報主代理確認。"
+      ]
+    },
+    {
+      "file": "03c-org-search.jpg",
+      "title": "組織搜尋",
+      "route": "/admin/org",
+      "reviewed": true,
+      "reviewNote": "輸入粤檢相關名稱（粤检）後5個組織中定位到1個，中文無損檢測類型完整。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "03d-user-search.jpg",
+      "title": "使用者搜尋",
+      "route": "/admin/org",
+      "reviewed": true,
+      "reviewNote": "ndt搜尋從7個使用者中定位到1位，角色及所屬組織可讀；組織和使用者搜尋彼此獨立。",
+      "status": "pass",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "10c-fine-config-1280.jpg",
+      "title": "細項配置 1280px",
+      "route": "/admin/fine-config",
+      "reviewed": true,
+      "reviewNote": "1280px下保持單欄、正常字級與完整操作，寬表格捲動提示仍可見。",
+      "status": "pass",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "10d-fine-config-900.jpg",
+      "title": "細項配置 900px",
+      "route": "/admin/fine-config",
+      "reviewed": true,
+      "reviewNote": "900px頁首、摘要與導覽換行正常；表格閱讀確認見10e內容補圖。",
+      "status": "pass",
+      "viewport": {
+        "height": 720,
+        "width": 900
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "03e-org-900.jpg",
+      "title": "組織搜尋 900px",
+      "route": "/admin/org",
+      "reviewed": true,
+      "reviewNote": "900px搜尋與篩選換行呈現，組織結果、中文類型與操作按鈕完整可見。",
+      "status": "pass",
+      "viewport": {
+        "height": 720,
+        "width": 900
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    },
+    {
+      "file": "10e-fine-config-900-content.jpg",
+      "title": "細項配置 900px：表格",
+      "route": "/admin/fine-config",
+      "reviewed": true,
+      "reviewNote": "900px實際表格欄位與編輯按鈕可完整閱讀，單欄避免內容被壓縮到左右兩側。",
+      "status": "pass",
+      "viewport": {
+        "height": 720,
+        "width": 900
+      },
+      "limitations": [
+        "隔離記憶體示例資料與真實 API；未提交業務寫入。"
+      ],
+      "build": "dist-uiux-final"
+    }
+  ],
+  "environment": "Production UI + isolated in-memory real API",
+  "routeCount": 13,
+  "captureCount": 24,
+  "responsiveVerified": [
+    "1280×720 細項配置",
+    "900×720 細項配置內容與組織篩選"
+  ],
+  "viewportRestored": true
+}

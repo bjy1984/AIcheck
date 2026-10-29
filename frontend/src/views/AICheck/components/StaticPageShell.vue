@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   ElAvatar,
   ElBadge,
@@ -29,7 +29,7 @@ import GlobalCommandPalette from './GlobalCommandPalette.vue'
 import OperationTaskDrawer from './OperationTaskDrawer.vue'
 import StaticShellRightPanel from './StaticShellRightPanel.vue'
 
-type StaticShellTone = 'blue' | 'green' | 'orange' | 'red'
+type StaticShellTone = 'blue' | 'green' | 'orange' | 'red' | 'gray'
 
 type StaticShellMenuItem = {
   index: string
@@ -39,6 +39,7 @@ type StaticShellMenuItem = {
   tone?: StaticShellTone
   active?: boolean
   route?: string
+  icon?: string
   projectId?: string
   subpage?: string
 }
@@ -151,6 +152,16 @@ const boundaryOpen = ref(!props.boundaryCollapsedDefault)
 const commandPaletteRef = ref<InstanceType<typeof GlobalCommandPalette> | null>(null)
 const taskDrawerRef = ref<InstanceType<typeof OperationTaskDrawer> | null>(null)
 const rightPanelIsDrawer = computed(() => props.rightPanelMode === 'drawer')
+const hasRightPanel = computed(() => props.rightCards.length > 0)
+watch(
+  () => route.path,
+  () => {
+    rightPanelOpen.value = false
+  }
+)
+watch(hasRightPanel, (hasPanel) => {
+  if (!hasPanel) rightPanelOpen.value = false
+})
 const getSectionIdentity = (section: StaticShellMenuSection) => section.id || section.title
 const getSectionIndex = (section: StaticShellMenuSection) =>
   `section-${getSectionIdentity(section)}`
@@ -191,10 +202,60 @@ const elementTone = (tone: StaticShellTone = 'blue') => {
     blue: 'primary',
     green: 'success',
     orange: 'warning',
-    red: 'danger'
+    red: 'danger',
+    gray: 'info'
   } as const
   return typeMap[tone]
 }
+
+const navigationIcons: Record<string, string> = {
+  overview: 'vi-ep:data-analysis',
+  dashboard: 'vi-ep:data-analysis',
+  projects: 'vi-ep:folder-opened',
+  org: 'vi-ep:user',
+  permission: 'vi-ep:lock',
+  'business-packs': 'vi-ep:box',
+  rules: 'vi-ep:document-checked',
+  'material-review-points': 'vi-ep:aim',
+  'prompt-templates': 'vi-ep:chat-line-square',
+  'report-templates': 'vi-ep:document',
+  'fine-config': 'vi-ep:operation',
+  integration: 'vi-ep:connection',
+  'skill-requests': 'vi-ep:tickets',
+  audit: 'vi-ep:document-checked',
+  sources: 'vi-ep:collection',
+  files: 'vi-ep:folder-opened',
+  tasks: 'vi-ep:list',
+  retrieval: 'vi-ep:search',
+  network: 'vi-ep:share',
+  reasoning: 'vi-ep:connection',
+  compare: 'vi-ep:sort',
+  config: 'vi-ep:setting',
+  'ocr-quality': 'vi-ep:document-checked',
+  'ai-runs': 'vi-ep:cpu',
+  'review-runs': 'vi-ep:connection',
+  feedback: 'vi-ep:chat-dot-round',
+  evaluation: 'vi-ep:data-analysis',
+  'capability-bundles': 'vi-ep:box',
+  releases: 'vi-ep:upload',
+  security: 'vi-ep:lock',
+  incidents: 'vi-ep:warning',
+  costs: 'vi-ep:wallet',
+  acceptance: 'vi-ep:document-checked',
+  'fde-feedback-triage': 'vi-ep:chat-dot-round',
+  'fde-blind-review': 'vi-ep:view',
+  inspection: 'vi-ep:document-checked',
+  contractor: 'vi-ep:folder-opened',
+  ndt: 'vi-ep:aim',
+  owner: 'vi-ep:office-building',
+  generic: 'vi-ep:list',
+  requirements: 'vi-ep:list',
+  findings: 'vi-ep:aim',
+  evidence: 'vi-ep:link',
+  human: 'vi-ep:user'
+}
+const navigationIcon = (item: StaticShellMenuItem) =>
+  item.icon || navigationIcons[item.route?.split('/').pop() || item.subpage || ''] || 'vi-ep:folder'
 
 const staticMenuActiveIndex = computed(() => {
   for (const section of props.menuSections) {
@@ -312,8 +373,8 @@ onBeforeUnmount(() => {
       'aicheck-static-viewport',
       `shell-${workspaceMode || 'default'}`,
       {
-        'right-drawer-mode': rightPanelIsDrawer,
-        'right-panel-open': rightPanelIsDrawer && rightPanelOpen
+        'right-drawer-mode': rightPanelIsDrawer || !hasRightPanel,
+        'right-panel-open': hasRightPanel && rightPanelIsDrawer && rightPanelOpen
       }
     ]"
   >
@@ -346,7 +407,8 @@ onBeforeUnmount(() => {
           :title="`${searchPlaceholder}（⌘K）`"
           @click="commandPaletteRef?.open()"
         >
-          <span>{{ searchPlaceholder }}</span
+          <Icon icon="vi-ep:search" :size="16" aria-hidden="true" />
+          <span class="global-search-label">{{ searchPlaceholder }}</span
           ><kbd>⌘K</kbd>
         </ElButton>
         <div class="top-actions">
@@ -358,7 +420,7 @@ onBeforeUnmount(() => {
             :aria-expanded="navigationOpen"
             @click="navigationOpen = true"
           >
-            <Icon icon="vi-ep:menu" :size="17" />
+            <Icon icon="vi-ep:menu" :size="17" aria-hidden="true" />
             <span>导航</span>
           </ElButton>
           <ElBadge
@@ -367,7 +429,7 @@ onBeforeUnmount(() => {
             class="top-stat-badge"
             :value="stat.value"
             :hidden="stat.value === undefined"
-            :type="elementTone(stat.tone || 'red')"
+            :type="elementTone(stat.tone || 'gray')"
           >
             <ElButton
               v-if="stat.clickable"
@@ -383,7 +445,7 @@ onBeforeUnmount(() => {
             </span>
           </ElBadge>
           <ElButton
-            v-if="rightPanelIsDrawer"
+            v-if="hasRightPanel && rightPanelIsDrawer"
             ref="rightPanelTriggerRef"
             class="right-panel-trigger"
             plain
@@ -391,15 +453,17 @@ onBeforeUnmount(() => {
             :aria-expanded="rightPanelOpen"
             @click="openRightPanel"
           >
-            {{ rightToggleLabel || rightTitle }}
+            <Icon icon="vi-ep:info-filled" :size="16" aria-hidden="true" />
+            <span>{{ rightToggleLabel || rightTitle }}</span>
           </ElButton>
           <ElButton class="task-center-trigger" plain @click="taskDrawerRef?.open()">
-            任务中心
+            <Icon icon="vi-ep:list" :size="16" aria-hidden="true" />
+            <span>任务中心</span>
           </ElButton>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
             <ElButton class="user" text aria-label="打开用户菜单">
               <ElAvatar class="avatar" :size="32">{{ userInitial }}</ElAvatar>
-              <span>{{ userLabel }}</span>
+              <span class="user-label">{{ userLabel }}</span>
               <Icon class="user-caret" icon="vi-ep:arrow-down" :size="12" />
             </ElButton>
             <template #dropdown>
@@ -433,7 +497,12 @@ onBeforeUnmount(() => {
                 :aria-current="isPeerNavItemActive(item) ? 'page' : undefined"
                 @click="handlePeerNavSelect(item)"
               >
-                <span class="peer-nav-marker" aria-hidden="true"></span>
+                <Icon
+                  class="navigation-icon"
+                  :icon="navigationIcon(item)"
+                  :size="16"
+                  aria-hidden="true"
+                />
                 <span class="peer-nav-label">
                   <span>{{ item.label }}</span>
                   <small v-if="item.hint">{{ item.hint }}</small>
@@ -452,7 +521,11 @@ onBeforeUnmount(() => {
                 :placeholder="menuSearchPlaceholder"
                 :aria-label="menuSearchPlaceholder"
                 clearable
-              />
+              >
+                <template #prefix
+                  ><Icon icon="vi-ep:search" :size="16" aria-hidden="true"
+                /></template>
+              </ElInput>
               <ElCollapse
                 v-if="menuFilters?.length"
                 v-model="treeFilterPanels"
@@ -523,7 +596,9 @@ onBeforeUnmount(() => {
                           <Icon icon="vi-ep:arrow-down" :size="12" />
                         </span>
                         <span class="tree-group-title">{{ section.title }}</span>
-                        <span class="tree-group-status">{{ section.meta }}</span>
+                        <span v-if="section.meta" class="tree-group-status" :title="section.meta">{{
+                          section.meta
+                        }}</span>
                       </span>
                       <span v-if="section.chips?.length" class="tree-group-chips">
                         <AuditStatusTag
@@ -556,7 +631,12 @@ onBeforeUnmount(() => {
                     :aria-label="item.hint ? `${item.label}，${item.hint}` : item.label"
                     :aria-current="item.active || item.route === route.path ? 'page' : undefined"
                   >
-                    <span class="tree-node-marker" aria-hidden="true"></span>
+                    <Icon
+                      class="navigation-icon"
+                      :icon="navigationIcon(item)"
+                      :size="16"
+                      aria-hidden="true"
+                    />
                     <span class="tree-label-wrap">
                       <span class="tree-label">{{ item.label }}</span>
                       <span v-if="item.hint" class="sr-only">{{ item.hint }}</span>
@@ -576,7 +656,7 @@ onBeforeUnmount(() => {
             </ElMenu>
           </section>
 
-          <section :class="['node-files', { collapsed: !boundaryOpen }]">
+          <section v-if="boundaryRows.length" :class="['node-files', { collapsed: !boundaryOpen }]">
             <ElCollapse v-model="boundaryPanels" class="boundary-collapse">
               <ElCollapseItem name="boundary">
                 <template #title>
@@ -613,7 +693,7 @@ onBeforeUnmount(() => {
         </main>
 
         <aside
-          v-if="!rightPanelIsDrawer"
+          v-if="hasRightPanel && !rightPanelIsDrawer"
           id="static-right-panel"
           class="right"
           role="complementary"
@@ -655,7 +735,12 @@ onBeforeUnmount(() => {
               :aria-current="isPeerNavItemActive(item) ? 'page' : undefined"
               @click="handlePeerNavSelect(item)"
             >
-              <span class="peer-nav-marker" aria-hidden="true"></span>
+              <Icon
+                class="navigation-icon"
+                :icon="navigationIcon(item)"
+                :size="16"
+                aria-hidden="true"
+              />
               <span class="peer-nav-label">
                 <span>{{ item.label }}</span>
                 <small v-if="item.hint">{{ item.hint }}</small>
@@ -674,7 +759,11 @@ onBeforeUnmount(() => {
               :placeholder="menuSearchPlaceholder"
               :aria-label="menuSearchPlaceholder"
               clearable
-            />
+            >
+              <template #prefix
+                ><Icon icon="vi-ep:search" :size="16" aria-hidden="true"
+              /></template>
+            </ElInput>
             <ElRadioGroup
               v-if="menuFilters?.length"
               v-model="menuFilterModel"
@@ -724,7 +813,12 @@ onBeforeUnmount(() => {
                 :key="getItemIndex(section, item)"
                 :index="getItemIndex(section, item)"
               >
-                <span class="tree-node-marker" aria-hidden="true"></span>
+                <Icon
+                  class="navigation-icon"
+                  :icon="navigationIcon(item)"
+                  :size="16"
+                  aria-hidden="true"
+                />
                 <span class="tree-label">{{ item.label }}</span>
                 <AuditStatusTag v-if="item.badge" class="pill" :tone="item.tone || 'blue'" round>
                   {{ item.badge }}
@@ -733,7 +827,7 @@ onBeforeUnmount(() => {
             </ElSubMenu>
           </ElMenu>
 
-          <ElCollapse v-model="boundaryPanels" class="mobile-boundary">
+          <ElCollapse v-if="boundaryRows.length" v-model="boundaryPanels" class="mobile-boundary">
             <ElCollapseItem name="boundary">
               <template #title>
                 <span class="mobile-boundary-title">
@@ -753,7 +847,7 @@ onBeforeUnmount(() => {
         </nav>
       </ElDrawer>
       <ElDrawer
-        v-if="rightPanelIsDrawer"
+        v-if="hasRightPanel && rightPanelIsDrawer"
         v-model="rightPanelOpen"
         class="static-shell-right-drawer"
         modal-class="static-shell-right-overlay"
@@ -905,7 +999,7 @@ onBeforeUnmount(() => {
   padding: 0 20px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
+  box-shadow: none;
   grid-template-columns: minmax(220px, 360px) minmax(150px, 340px) minmax(0, max-content);
   gap: 14px;
   align-items: center;
@@ -994,7 +1088,21 @@ onBeforeUnmount(() => {
   justify-self: center;
 }
 
-.global-search :deep(span) {
+.global-search :deep(> span) {
+  gap: 8px;
+}
+
+.global-search-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.global-search .el-icon {
+  flex-shrink: 0;
+}
+
+.global-search :deep(> span) {
   display: flex;
   justify-content: flex-start;
   width: 100%;
@@ -1325,7 +1433,7 @@ onBeforeUnmount(() => {
   --el-button-hover-bg-color: #f5f9ff;
 
   display: grid;
-  grid-template-columns: 6px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 5px;
   align-items: center;
   width: 100%;
@@ -1361,15 +1469,14 @@ onBeforeUnmount(() => {
   background: #f5f9ff;
   border-color: #bdd4f6;
   outline: 0;
-  transform: translateY(-1px);
-  box-shadow: 0 7px 18px rgb(37 99 235 / 8%);
+  box-shadow: none;
 }
 
 .peer-nav-item.active {
   color: var(--blue-2);
-  background: linear-gradient(180deg, #eff6ff, #e8f1ff);
+  background: var(--blue-soft);
   border-color: #a9c8ff;
-  box-shadow: inset 3px 0 0 var(--blue);
+  box-shadow: none;
 }
 
 .peer-nav-marker {
@@ -1672,10 +1779,10 @@ onBeforeUnmount(() => {
   width: 100%;
   min-width: 0;
   padding: 7px;
-  background: linear-gradient(180deg, rgb(255 255 255 / 96%), rgb(248 251 255 / 96%));
-  border: 1px solid var(--line-soft);
-  border-radius: 9px;
-  box-shadow: var(--shadow-xs);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -1684,9 +1791,7 @@ onBeforeUnmount(() => {
 }
 
 .tree-section-menu :deep(> .el-sub-menu__title:hover) .tree-group-wrap {
-  border-color: #c9dcfb;
-  transform: translateY(-1px);
-  box-shadow: 0 12px 26px rgb(30 93 180 / 9%);
+  background: var(--panel);
 }
 
 .tree-root,
@@ -1697,10 +1802,10 @@ onBeforeUnmount(() => {
 .tree-root {
   min-height: 40px;
   padding: 0 10px;
-  color: #1e3a5f;
-  background: #eef5ff;
-  border: 1px solid #c7d8ef;
-  box-shadow: var(--shadow-xs);
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .tree-root > span:first-child,
@@ -1781,9 +1886,7 @@ onBeforeUnmount(() => {
 }
 
 .tree-group-status {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   max-width: 84px;
   min-height: 22px;
   padding: 2px 6px;
@@ -1849,7 +1952,7 @@ onBeforeUnmount(() => {
 
 .tree-node {
   position: relative;
-  grid-template-columns: 7px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   min-height: 32px;
   padding: 5px 12px;
   margin: 0;
@@ -1945,23 +2048,25 @@ onBeforeUnmount(() => {
      像在抖。菜单是用来瞄准点击的，位移只会让目标更难点中。 */
 }
 
-/* 选中态要一眼看出「我在这」：左侧一道实心色条 + 更实的底色 + 更重的字重。
-   原来只有 3px 内阴影加浅渐变，和悬浮态几乎分不开。 */
+/* 选中态用蓝色细框、底色和字重共同标识当前位置。 */
 .tree-node.active,
 .tree-node.is-active {
   font-weight: 700;
   color: #10315f;
-  background: linear-gradient(180deg, #e8f1ff, #dfebff);
-  border-color: #b3cdf6;
-  box-shadow:
-    inset 4px 0 0 var(--blue),
-    0 6px 14px rgb(37 99 235 / 12%);
+  background: var(--blue-soft);
+  border-color: var(--blue);
+  box-shadow: none;
 }
 
-.tree-node.active > span:first-child,
-.tree-node.is-active > span:first-child {
-  background: linear-gradient(180deg, #3f7df0, #1f66d8);
-  box-shadow: 0 0 0 4px rgb(63 125 240 / 12%);
+.navigation-icon {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.tree-node.active .navigation-icon,
+.tree-node.is-active .navigation-icon,
+.peer-nav-item.active .navigation-icon {
+  color: var(--blue);
 }
 
 .tree-label {
@@ -2152,9 +2257,15 @@ onBeforeUnmount(() => {
 
 .mobile-static-menu :deep(.el-menu-item) {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 8px;
   margin: 2px 0;
+}
+
+.mobile-static-menu :deep(.el-menu-item .navigation-icon) {
+  width: 16px;
+  height: 16px;
+  margin-right: 0;
 }
 
 .mobile-static-menu :deep(.el-menu-item.is-active) {
@@ -2373,15 +2484,37 @@ onBeforeUnmount(() => {
   .top-actions {
     max-width: 100%;
     padding-bottom: 2px;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    white-space: nowrap;
+    overflow: visible;
+    flex-wrap: wrap;
+    white-space: normal;
     justify-content: flex-start;
-    scrollbar-width: none;
   }
 
-  .top-actions::-webkit-scrollbar {
-    display: none;
+  .top-actions > .el-button,
+  .top-stat-badge {
+    flex-shrink: 0;
+  }
+
+  .top-actions > .el-button {
+    max-width: 100%;
+    margin-left: 0;
+    white-space: normal;
+  }
+
+  .user-menu,
+  .user,
+  .user :deep(> span) {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .user {
+    height: auto;
+  }
+
+  .user-label {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .brand {

@@ -34,7 +34,8 @@ assert.equal(canSubmitNdtDocumentUpload('草稿', '上传中'), false)
 assert.equal(canSubmitNdtDocumentUpload('草稿', '失败重新上传'), false)
 
 assert.equal(getStatusTagType('上传成功'), 'success')
-assert.equal(getStatusTagType('上传中'), 'warning')
+// Uploading is active processing, not an action-required warning.
+assert.equal(getStatusTagType('上传中'), 'primary')
 assert.equal(getStatusTagType('失败重新上传'), 'danger')
 
 // ── 识别失败 ≠ 上传失败 ────────────────────────────────────────────

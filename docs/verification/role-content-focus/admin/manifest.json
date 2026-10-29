@@ -1,0 +1,203 @@
+{
+  "group": "admin",
+  "build": "dist-role-content-focus",
+  "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+  "environment": "production build + real API + isolated in-memory demo data",
+  "captures": [
+    {
+      "route": "/admin/overview",
+      "file": "01-overview.jpg",
+      "title": "管理總覽",
+      "reviewNote": "首屏集中項目、組織與帳號概況及項目清單，無跨頁配置統計。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:40.061Z"
+    },
+    {
+      "route": "/admin/projects",
+      "file": "02-projects.jpg",
+      "title": "項目管理",
+      "reviewNote": "項目列表與維護操作置於首屏，無重複全局統計或摘要抽屜。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:47:51.708Z"
+    },
+    {
+      "route": "/admin/org",
+      "file": "03-org.jpg",
+      "title": "組織使用者",
+      "reviewNote": "組織與帳號維護、搜尋和授權內容保留，無跨頁摘要干擾。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:06.252Z"
+    },
+    {
+      "route": "/admin/business-packs",
+      "file": "04-business-packs.jpg",
+      "title": "業務類型管理",
+      "reviewNote": "業務類型、適用範圍與配置入口直接呈現，冗餘全局統計已移除。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:14.187Z"
+    },
+    {
+      "route": "/admin/permission",
+      "file": "05-permission.jpg",
+      "title": "權限與節點",
+      "reviewNote": "角色權限矩陣與配置入口保留，頁面內容集中於授權任務。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:23.396Z"
+    },
+    {
+      "route": "/admin/rules",
+      "file": "06-rules.jpg",
+      "title": "AI 業務規則與流程",
+      "reviewNote": "待發布狀態只在規則頁提示，規則版本、詳情與差異操作保留。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:31.396Z"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "file": "07-material-review-points.jpg",
+      "title": "業務資料審查點",
+      "reviewNote": "資料類型、審查點與維護操作清晰，沒有無關全局工程摘要。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:41.186Z"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "file": "08-prompt-templates.jpg",
+      "title": "Prompt 模板管理",
+      "reviewNote": "專用模板頁保留必要版本、狀態與發布操作，支援配置任務。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:50.799Z"
+    },
+    {
+      "route": "/admin/report-templates",
+      "file": "09-report-templates.jpg",
+      "title": "報告模板管理",
+      "reviewNote": "報告模板版本、狀態、章節與發布操作保留，列表集中於模板維護。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:48:57.184Z"
+    },
+    {
+      "route": "/admin/fine-config",
+      "file": "10-fine-config.jpg",
+      "title": "細項配置",
+      "reviewNote": "待辦規則、消息模板與欄位映射保留，配置狀態、角色與維護操作直接呈現。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:06.017Z"
+    },
+    {
+      "route": "/admin/integration",
+      "file": "11-integration.jpg",
+      "title": "聯調清單",
+      "reviewNote": "專用聯調頁保留接口契約、欄位對應與阻塞項，支援管理員核對與排障。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:13.402Z"
+    },
+    {
+      "route": "/admin/skill-requests",
+      "file": "12-skill-requests.jpg",
+      "title": "Skill 請求記錄",
+      "reviewNote": "專用請求記錄頁保留提交時間、平台、請求文字與節點查詢，清楚顯示暫無記錄。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:21.969Z"
+    },
+    {
+      "route": "/admin/audit",
+      "file": "13-audit.jpg",
+      "title": "審計日誌",
+      "reviewNote": "審計完整性狀態與事件查詢直接呈現，必要稽核資訊保留於本頁。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-role-content-focus",
+      "buildIndexSha256": "577bb1f6ea99ee9b78a6fd5a994c5767ce42c940ef845851079c9ef4b92bb79e",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "capturedAt": "2026-10-29T07:49:29.207Z"
+    }
+  ]
+}

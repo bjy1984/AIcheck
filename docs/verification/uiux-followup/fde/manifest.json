@@ -1,0 +1,381 @@
+{
+  "group": "fde",
+  "build": "dist-uiux-followup-final",
+  "captures": [
+    {
+      "file": "before-standards.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "修前：規範狀態與問題欄被擠出畫面",
+      "reviewNote": "1280px僅見檔名、切片、PageIndex、水印與固定操作；狀態與問題不在可見區。",
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "file": "before-capability.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "修前：無任務仍顯示正常",
+      "reviewNote": "OCR無任務顯示正常，圖表固定給36分。",
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "file": "before-ocr-diagnosis.jpg",
+      "route": "/fde/ocr-quality",
+      "title": "修前：OCR診斷重複翻譯",
+      "reviewNote": "OCR術語層層展開，配置識別碼消失。",
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    {
+      "file": "01-dashboard.jpg",
+      "route": "/fde/dashboard",
+      "title": "治理總覽",
+      "reviewNote": "主要操作與阻斷摘要可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "02-projects.jpg",
+      "route": "/fde/projects",
+      "title": "項目審計",
+      "reviewNote": "項目選擇、節點與資料摘要正常載入。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "02b-capability-status.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "真實能力狀態",
+      "reviewNote": "固定健康分已移除，顯示實際完成數、索引與門禁。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "02c-capability-actions.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "能力處理清單",
+      "reviewNote": "無任務顯示待核對；狀態、數量與處理提示完整可見。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "03-ocr-quality.jpg",
+      "route": "/fde/ocr-quality",
+      "title": "OCR 品質",
+      "reviewNote": "診斷不重複翻譯，環境變數識別碼保留，服務警告可見。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "04-ai-runs.jpg",
+      "route": "/fde/ai-runs",
+      "title": "AI 運行",
+      "reviewNote": "資料與主要操作可讀；空任務明確說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "05-review-runs.jpg",
+      "route": "/fde/review-runs",
+      "title": "審查編排",
+      "reviewNote": "資料與主要操作可讀；空任務明確說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "06-feedback.jpg",
+      "route": "/fde/feedback",
+      "title": "人工回饋",
+      "reviewNote": "主要狀態與操作完整；缺失評估資料維持未提供。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "07-evaluation.jpg",
+      "route": "/fde/evaluation",
+      "title": "評估與驗證",
+      "reviewNote": "主要狀態與操作完整；缺失評估資料維持未提供。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "08-business-packs.jpg",
+      "route": "/fde/business-packs",
+      "title": "業務類型工廠",
+      "reviewNote": "主要狀態與操作完整；缺失評估資料維持未提供。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "08b-standards-content.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範狀態與問題",
+      "reviewNote": "1280px同屏顯示檔名、索引、狀態、問題與操作。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "08c-standards-detail.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範文件詳情",
+      "reviewNote": "清單收起的索引版本與完整來源仍可於既有詳情查看。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "08d-standards-900.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "900px 規範資料卡片",
+      "reviewNote": "窄版切換卡片，檔名、狀態、問題和查看按鈕均可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 900,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "09-capability-bundles.jpg",
+      "route": "/fde/capability-bundles",
+      "title": "能力組合",
+      "reviewNote": "主要狀態與操作可見，未執行發布或權限變更。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "10-releases.jpg",
+      "route": "/fde/releases",
+      "title": "發布治理",
+      "reviewNote": "主要狀態與操作可見，未執行發布或權限變更。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "11-security.jpg",
+      "route": "/fde/security",
+      "title": "安全治理",
+      "reviewNote": "主要狀態與操作可見，未執行發布或權限變更。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "12-incidents.jpg",
+      "route": "/fde/incidents",
+      "title": "事故復盤",
+      "reviewNote": "主要內容、狀態與操作可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "13-costs.jpg",
+      "route": "/fde/costs",
+      "title": "成本預算",
+      "reviewNote": "主要內容、狀態與操作可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "14-acceptance.jpg",
+      "route": "/fde/acceptance",
+      "title": "客戶驗收",
+      "reviewNote": "主要內容、狀態與操作可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "15-feedback-triage.jpg",
+      "route": "/fde-feedback-triage",
+      "title": "回饋歸因",
+      "reviewNote": "獨立入口可用，空結果與篩選範圍清楚。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "16-blind-review.jpg",
+      "route": "/fde-blind-review",
+      "title": "獨立盲審",
+      "reviewNote": "抽樣範圍、返回入口與空任務說明可見，沒有執行抽樣寫入。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    }
+  ]
+}

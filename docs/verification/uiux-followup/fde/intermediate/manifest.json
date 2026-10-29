@@ -1,0 +1,164 @@
+{
+  "captures": [
+    {
+      "file": "03-ocr-quality.jpg",
+      "route": "/fde/ocr-quality",
+      "title": "OCR 品質",
+      "reviewNote": "服務警告保留，診斷可讀且保留 AICHECK_OCR_BASE_URL。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "03b-ocr-diagnosis.jpg",
+      "route": "/fde/ocr-quality",
+      "title": "OCR 診斷明細",
+      "reviewNote": "診斷原句與環境變數保持完整，沒有重複術語。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "01-dashboard.jpg",
+      "route": "/fde/dashboard",
+      "title": "治理總覽",
+      "reviewNote": "主操作、資料狀態與阻斷摘要可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "02-projects.jpg",
+      "route": "/fde/projects",
+      "title": "項目審計",
+      "reviewNote": "項目、節點與資料摘要正常載入。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "02b-capability-status.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "真實能力狀態",
+      "reviewNote": "移除固定健康分，顯示任務完成、索引與門禁計數。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "02c-capability-actions.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "能力處理清單",
+      "reviewNote": "全寬清單同時顯示狀態、實際計數與待核對提示，無任務不標正常。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "04-ai-runs.jpg",
+      "route": "/fde/ai-runs",
+      "title": "AI 運行",
+      "reviewNote": "頁面資料、主要操作與狀態可讀；空資料保留說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "05-review-runs.jpg",
+      "route": "/fde/review-runs",
+      "title": "審查編排",
+      "reviewNote": "頁面資料、主要操作與狀態可讀；空資料保留說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "06-feedback.jpg",
+      "route": "/fde/feedback",
+      "title": "人審回饋",
+      "reviewNote": "頁面資料、主要操作與狀態可讀；空資料保留說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    },
+    {
+      "file": "08b-standards-content.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範狀態與問題",
+      "reviewNote": "1280px同屏顯示完整檔名、索引計數、狀態、問題與查看操作。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ]
+    }
+  ]
+}

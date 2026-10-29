@@ -1,0 +1,400 @@
+{
+  "area": "knowledge",
+  "captures": [
+    {
+      "route": "/knowledge/network",
+      "title": "關係網路：篩選後隱藏選取殘留",
+      "file": "before-network-filter-selection.jpg",
+      "reviewed": true,
+      "reviewNote": "搜尋焊工後只顯示 4 個節點，右側仍顯示已不在圖中的工業管道；已重現。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release"
+    },
+    {
+      "route": "/knowledge/rules",
+      "title": "業務規則：寬表遮擋",
+      "file": "before-rules-wide-table.jpg",
+      "reviewed": true,
+      "reviewNote": "容器 1088 px，表格 1570 px；固定操作遮擋右側依據，見證與時間需水平捲動。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release"
+    },
+    {
+      "route": "/knowledge/config",
+      "title": "設定與審計：結果欄不可見",
+      "file": "before-config-audit.jpg",
+      "reviewed": true,
+      "reviewNote": "容器 611 px，表格 860 px；結果欄超出初始可見範圍。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "title": "審查歷史：建議欄不可見",
+      "file": "before-reasoning-wide-table.jpg",
+      "reviewed": true,
+      "reviewNote": "容器 1088 px，表格 1586 px；狀態被固定操作擠壓，建議與時間離開初始視窗。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "final-network.jpg",
+      "reviewNote": "全圖259節點/294關係，初始工業管道詳情與選取外框一致，漸進標籤及圖例保留。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "final-network-filter-cleared.jpg",
+      "reviewNote": "搜尋焊工命中3個、保留4節點4關係；不在結果中的工業管道詳情及選取清除，顯示重新點選指引。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "final-network-reset-no-selection.jpg",
+      "reviewNote": "清空搜尋恢復259節點，工業管道舊黑色外框已消失，右側仍未選取；沒有自動跳選。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "final-network-visible-selection-retained.jpg",
+      "reviewNote": "搜尋焊工後點選焊接（粘接），再改搜焊；右側詳情保留相同節點，未跳至其他命中。可見選取資料狀態另由真實 ECharts 測試驗證。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "final-rules.jpg",
+      "reviewNote": "69條規則載入，監檢項目/分類、狀態、依據摘要及操作同屏；無水平溢出。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "業務判斷規則管理",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "final-rules-expanded.jpg",
+      "reviewNote": "規則展開並向下捲讀後，完整內容末段、版本與更新時間保留可讀。工作見證正文另見final-rules-expanded-witness.jpg。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "長依據需要垂直捲讀；未執行發布或回滾。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "業務判斷規則管理",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "final-rules-expanded-witness.jpg",
+      "reviewNote": "展開後的工作見證完整保留，垂直捲動可讀取詳細核查內容。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "長依據需在表格內垂直捲讀；版本與時間另見final-rules-expanded.jpg。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "業務判斷規則管理",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/config",
+      "file": "final-config.jpg",
+      "reviewNote": "審計表時間、人員、中文操作對象與結果同屏，設定表單保持清楚分組。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識庫配置",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "file": "final-reasoning.jpg",
+      "reviewNote": "歷史列表主題、狀態、完整建議、完成時間與詳情入口同屏，無水平溢出。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "推理鏈路歷史",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "file": "final-reasoning-detail.jpg",
+      "reviewNote": "模型、規則版本、Prompt版本與對話資訊仍可在詳情中查閱。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "推理鏈路歷史",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/overview",
+      "file": "final-overview.jpg",
+      "reviewNote": "知識庫總覽保留精簡治理摘要、來源/索引/引用品質卡片與主要維護入口。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識庫總覽",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/sources",
+      "file": "final-sources.jpg",
+      "reviewNote": "62個標準規範正常載入，搜尋、處理狀態篩選、檔名與維護入口可見。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未重跑PDF預覽；沿用前輪Chrome真實渲染證據。",
+        "本機隔離 demo API；Chrome 1470×748。",
+        "既有多欄表仍需水平捲動查看低頻欄位；本輪未調整此表。"
+      ],
+      "title": "標準規範庫",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/files",
+      "file": "final-files.jpg",
+      "reviewNote": "項目文件知識庫顯示搜尋、項目/節點/狀態篩選與檔案維護入口，資料與操作正常載入。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "既有多欄表仍需水平捲動查看低頻欄位；本輪未調整此表。",
+        "原文缺檔回退沿用前輪獨立證據，未宣稱修復缺失檔案。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "項目文件知識庫",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/tasks",
+      "file": "final-tasks.jpg",
+      "reviewNote": "任務中心清楚顯示任務類型、來源與狀態；失敗任務有錯誤資訊及詳情入口。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未執行重試或重建任務。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "OCR/向量任務中心",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "file": "final-retrieval.jpg",
+      "reviewNote": "檢索測試顯示問題輸入、Top K、資料篩選與檢索入口，空結果及PageIndex區分清楚。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未提交外部模型或檢索請求。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識檢索測試",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    },
+    {
+      "route": "/knowledge/compare",
+      "file": "final-compare.jpg",
+      "reviewNote": "對比輸入、模型選擇、執行入口與1條歷史紀錄可見；結果區明確提示執行或選取歷史後顯示。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未執行外部模型對比。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "多 LLM 反饋對比",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final"
+    }
+  ],
+  "coverage": {
+    "expectedRoutes": 10,
+    "verifiedRoutes": 10,
+    "verifiedRoutePaths": [
+      "/knowledge/compare",
+      "/knowledge/config",
+      "/knowledge/files",
+      "/knowledge/network",
+      "/knowledge/overview",
+      "/knowledge/reasoning",
+      "/knowledge/retrieval",
+      "/knowledge/rules",
+      "/knowledge/sources",
+      "/knowledge/tasks"
+    ],
+    "finalCaptures": 16,
+    "beforeCaptures": 4
+  },
+  "verificationBuild": "dist-uiux-followup-final",
+  "checks": {
+    "unitTestFiles": 126,
+    "unitFailures": 0,
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "staticScannedFiles": 626,
+    "staticFindings": 0
+  },
+  "tableMeasurements": [
+    {
+      "route": "/knowledge/rules",
+      "before": {
+        "containerWidth": 1088,
+        "contentWidth": 1570
+      },
+      "final": {
+        "containerWidth": 1088,
+        "contentWidth": 1088
+      }
+    },
+    {
+      "route": "/knowledge/config",
+      "before": {
+        "containerWidth": 611,
+        "contentWidth": 860
+      },
+      "final": {
+        "containerWidth": 706,
+        "contentWidth": 706
+      }
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "before": {
+        "containerWidth": 1088,
+        "contentWidth": 1586
+      },
+      "final": {
+        "containerWidth": 1088,
+        "contentWidth": 1088
+      }
+    }
+  ]
+}

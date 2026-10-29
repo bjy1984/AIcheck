@@ -80,16 +80,18 @@ assert.ok(
   '占位宽没有按截断后的文字算'
 )
 
-/* 每个节点都要有名字。
- *
- * 原先只有 business_pack / domain_module 显示标签，其余十几种类型在图上
- * 就是一个个纯色块——**看得见有东西，但不知道是什么**，只能逐个悬停去问。
- * 那是「圆里塞不下字」时代的妥协；文字挪到圆外面之后更没有理由保留。 */
+/* 默认全图有259个节点，标签按缩放和搜索渐进显示。
+ * 隐藏的只是文字，节点及全名仍保留；hover/select继续展示标签。 */
 assert.ok(
-  /label: \{\s*show: true,\s*position: 'right'/.test(sfc),
-  '还在按类型决定显不显示标签——图上会剩下一片无名色点'
+  /show: showGraphNodeLabel\(/.test(sfc),
+  '默认标签必须遵守缩放与搜索层级，避免全景文字重叠'
 )
-assert.ok(!/LABELLED_TYPES/.test(sfc), '标签白名单要去掉，不是改一下成员')
+assert.ok(
+  /echarts\.use\(\[LabelLayout\]\)/.test(sfc),
+  '模块化ECharts必须注册LabelLayout，hideOverlap才能生效'
+)
+assert.ok(/chart\.on\('graphroam'/.test(sfc), '缩放后应更新标签层级')
+assert.ok(/颜色表示节点类别/.test(sfc), '必须解释图例和渐进标签')
 
 /* 符号固定像素（nodeScaleRatio 0）。隔离页实测：1 会把全景的 13 倍
    堆叠比锁死在所有缩放级别（放大到头也散不开——0818 线上实拍）；

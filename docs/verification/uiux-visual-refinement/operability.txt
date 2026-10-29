@@ -1,0 +1,8 @@
+$ node scripts/audit-operability.mjs
+{
+  "schemaVersion": "aicheck-operability-static-audit@1",
+  "generatedAt": "2026-10-29T06:52:12.272Z",
+  "scannedFiles": 637,
+  "passed": true,
+  "findings": []
+}

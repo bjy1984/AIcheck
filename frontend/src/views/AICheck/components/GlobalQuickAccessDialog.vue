@@ -19,6 +19,7 @@ const props = defineProps<{
   modelValue: boolean
   activeTab: 'search' | 'todos' | 'messages'
   keyword: string
+  searchScope?: string
   searchResults: SearchResult[]
   todos: TodoItem[]
   messages: MessageItem[]
@@ -63,6 +64,22 @@ const searchKeyword = computed({
 })
 
 const unreadCount = computed(() => props.messages.filter((item) => !item.read).length)
+const searchTypeLabels: Record<SearchResult['type'], string> = {
+  project: '项目',
+  node: '审核环节',
+  document: '资料',
+  report: '报告',
+  standard: '标准',
+  rule: '规则',
+  user: '用户',
+  organization: '组织',
+  audit_event: '操作记录',
+  knowledge_file: '知识文件',
+  knowledge_task: '知识任务',
+  review_run: '审查任务',
+  ocr_run: '资料识别任务',
+  incident: '异常事件'
+}
 const searchInputRef = ref<InputInstance>()
 
 const focusSearchInput = async () => {
@@ -75,28 +92,37 @@ const focusSearchInput = async () => {
 <template>
   <ElDialog
     v-model="visible"
-    title="全局入口"
+    title="项目快捷入口"
     width="min(920px, 94vw)"
     append-to-body
     @opened="focusSearchInput"
   >
     <ElTabs v-model="tab" class="quick-tabs">
       <ElTabPane label="搜索" name="search">
+        <p>搜索范围：{{ searchScope || '当前项目' }}。可搜索本项目的节点、资料及报告。</p>
         <div class="search-bar">
           <ElInput
             ref="searchInputRef"
             v-model="searchKeyword"
             clearable
-            placeholder="输入项目、节点、资料、报告或规则关键词"
+            placeholder="输入当前项目、节点、资料或报告关键词"
             @keyup.enter="emit('search')"
           />
           <ElButton type="primary" :loading="loading" @click="emit('search')">搜索</ElButton>
         </div>
 
-        <ElTable v-if="searchResults.length" :data="searchResults" border height="360">
+        <ElTable
+          v-if="searchResults.length"
+          class="search-results-table"
+          :data="searchResults"
+          border
+          max-height="360"
+        >
           <ElTableColumn label="类型" width="96">
             <template #default="{ row }">
-              <ElTag size="small" effect="plain">{{ row.type }}</ElTag>
+              <ElTag size="small" effect="plain">{{
+                searchTypeLabels[row.type as SearchResult['type']] || row.type
+              }}</ElTag>
             </template>
           </ElTableColumn>
           <ElTableColumn prop="title" label="结果" min-width="210" show-overflow-tooltip />
@@ -112,6 +138,26 @@ const focusSearchInput = async () => {
             </template>
           </ElTableColumn>
         </ElTable>
+        <ul v-if="searchResults.length" class="search-results-mobile" aria-label="搜索结果">
+          <li v-for="result in searchResults" :key="`${result.type}:${result.id}`">
+            <ElTag size="small" effect="plain">{{
+              searchTypeLabels[result.type] || result.type
+            }}</ElTag>
+            <h3>{{ result.title }}</h3>
+            <p v-if="result.description">{{ result.description }}</p>
+            <p v-if="result.highlights.length" class="search-result-matches">
+              命中：{{ result.highlights.join(' / ') }}
+            </p>
+            <ElButton
+              type="primary"
+              plain
+              :aria-label="`定位：${result.title}`"
+              @click="emit('locateResult', result)"
+            >
+              定位
+            </ElButton>
+          </li>
+        </ul>
         <ElEmpty v-else description="暂无搜索结果" />
       </ElTabPane>
 
@@ -244,6 +290,10 @@ const focusSearchInput = async () => {
   min-height: 460px;
 }
 
+.search-results-mobile {
+  display: none;
+}
+
 /* 待办标题是链接，但要保持表格行的排版：左对齐、可换行、不被按钮样式撑高 */
 .todo-title-link {
   height: auto;
@@ -271,6 +321,50 @@ const focusSearchInput = async () => {
 
 /* stylelint-disable-next-line order/order -- responsive overrides must follow base rules */
 @media (width <= 768px) {
+  .quick-tabs {
+    min-height: 0;
+  }
+
+  .search-results-table {
+    display: none;
+  }
+
+  .search-results-mobile {
+    display: grid;
+    gap: 12px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .search-results-mobile li {
+    min-width: 0;
+    padding: 12px;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+  }
+
+  .search-results-mobile h3 {
+    margin: 10px 0 8px;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .search-results-mobile p {
+    margin: 8px 0;
+    line-height: 1.6;
+  }
+
+  .search-result-matches {
+    color: var(--el-text-color-secondary);
+  }
+
+  .search-results-mobile :deep(.el-button),
+  .search-bar :deep(.el-button) {
+    min-height: 44px;
+  }
+
   .search-bar,
   .message-toolbar {
     align-items: stretch;

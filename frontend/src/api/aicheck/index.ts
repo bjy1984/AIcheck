@@ -4692,6 +4692,12 @@ export const listKnowledgeTasksApi = (params?: {
   return request.get({ url: '/api/knowledge/tasks', params })
 }
 
+export const getKnowledgeTaskApi = (
+  taskId: string
+): Promise<IResponse<{ task: KnowledgeTask }>> => {
+  return request.get({ url: `/api/knowledge/tasks/${encodeURIComponent(taskId)}` })
+}
+
 export const retryKnowledgeTaskApi = (
   taskId: string,
   payload?: { reason?: string },

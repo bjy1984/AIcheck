@@ -1,0 +1,1894 @@
+{
+  "environment": "production build + real API + isolated in-memory demo data",
+  "routeCount": 44,
+  "captureCount": 89,
+  "coverage": [
+    {
+      "route": "/admin/overview",
+      "files": [
+        "admin/final-01-overview.jpg"
+      ]
+    },
+    {
+      "route": "/admin/projects",
+      "files": [
+        "admin/final-02-projects.jpg"
+      ]
+    },
+    {
+      "route": "/admin/org",
+      "files": [
+        "admin/final-03-org-organizations.jpg",
+        "admin/final-03b-org-search.jpg",
+        "admin/final-03c-user-search.jpg"
+      ]
+    },
+    {
+      "route": "/admin/business-packs",
+      "files": [
+        "admin/final-04-business-packs.jpg"
+      ]
+    },
+    {
+      "route": "/admin/permission",
+      "files": [
+        "admin/final-05-permission.jpg"
+      ]
+    },
+    {
+      "route": "/admin/rules",
+      "files": [
+        "admin/final-06-rules.jpg",
+        "admin/final-06b-rule-detail.jpg",
+        "admin/final-06c-workflow-state-machine.jpg",
+        "admin/final-06d-rules-900.jpg",
+        "admin/final-06e-workflow-900.jpg"
+      ]
+    },
+    {
+      "route": "/admin/material-review-points",
+      "files": [
+        "admin/final-07-material-review-points.jpg",
+        "admin/final-07b-material-no-results.jpg",
+        "admin/final-07c-material-tail-search.jpg"
+      ]
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "files": [
+        "admin/final-08-prompt-templates.jpg",
+        "admin/final-08b-prompt-draft.jpg",
+        "admin/final-08c-prompt-1280.jpg"
+      ]
+    },
+    {
+      "route": "/admin/report-templates",
+      "files": [
+        "admin/final-09-report-templates.jpg",
+        "admin/final-09b-report-draft.jpg",
+        "admin/final-09c-report-1280.jpg"
+      ]
+    },
+    {
+      "route": "/admin/fine-config",
+      "files": [
+        "admin/final-10-fine-config.jpg",
+        "admin/final-10b-fine-config-mappings.jpg"
+      ]
+    },
+    {
+      "route": "/admin/integration",
+      "files": [
+        "admin/final-11-integration.jpg",
+        "admin/final-11b-integration-fields.jpg",
+        "admin/final-11c-integration-1280.jpg"
+      ]
+    },
+    {
+      "route": "/admin/skill-requests",
+      "files": [
+        "admin/final-12-skill-requests.jpg"
+      ]
+    },
+    {
+      "route": "/admin/audit",
+      "files": [
+        "admin/final-13-audit.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/overview",
+      "files": [
+        "knowledge/final-overview.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/sources",
+      "files": [
+        "knowledge/final-sources.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/files",
+      "files": [
+        "knowledge/final-files.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/tasks",
+      "files": [
+        "knowledge/final-tasks.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/rules",
+      "files": [
+        "knowledge/final-rules.jpg",
+        "knowledge/final-rules-expanded.jpg",
+        "knowledge/final-rules-expanded-witness.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "files": [
+        "knowledge/final-retrieval.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/network",
+      "files": [
+        "knowledge/final-network.jpg",
+        "knowledge/final-network-filter-cleared.jpg",
+        "knowledge/final-network-reset-no-selection.jpg",
+        "knowledge/final-network-visible-selection-retained.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "files": [
+        "knowledge/final-reasoning.jpg",
+        "knowledge/final-reasoning-detail.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/compare",
+      "files": [
+        "knowledge/final-compare.jpg"
+      ]
+    },
+    {
+      "route": "/knowledge/config",
+      "files": [
+        "knowledge/final-config.jpg"
+      ]
+    },
+    {
+      "route": "/fde/dashboard",
+      "files": [
+        "fde/01-dashboard.jpg"
+      ]
+    },
+    {
+      "route": "/fde/projects",
+      "files": [
+        "fde/02-projects.jpg",
+        "fde/02b-capability-status.jpg",
+        "fde/02c-capability-actions.jpg"
+      ]
+    },
+    {
+      "route": "/fde/ocr-quality",
+      "files": [
+        "fde/03-ocr-quality.jpg"
+      ]
+    },
+    {
+      "route": "/fde/ai-runs",
+      "files": [
+        "fde/04-ai-runs.jpg"
+      ]
+    },
+    {
+      "route": "/fde/review-runs",
+      "files": [
+        "fde/05-review-runs.jpg"
+      ]
+    },
+    {
+      "route": "/fde/feedback",
+      "files": [
+        "fde/06-feedback.jpg"
+      ]
+    },
+    {
+      "route": "/fde/evaluation",
+      "files": [
+        "fde/07-evaluation.jpg"
+      ]
+    },
+    {
+      "route": "/fde/business-packs",
+      "files": [
+        "fde/08-business-packs.jpg",
+        "fde/08b-standards-content.jpg",
+        "fde/08c-standards-detail.jpg",
+        "fde/08d-standards-900.jpg"
+      ]
+    },
+    {
+      "route": "/fde/capability-bundles",
+      "files": [
+        "fde/09-capability-bundles.jpg"
+      ]
+    },
+    {
+      "route": "/fde/releases",
+      "files": [
+        "fde/10-releases.jpg"
+      ]
+    },
+    {
+      "route": "/fde/security",
+      "files": [
+        "fde/11-security.jpg"
+      ]
+    },
+    {
+      "route": "/fde/incidents",
+      "files": [
+        "fde/12-incidents.jpg"
+      ]
+    },
+    {
+      "route": "/fde/costs",
+      "files": [
+        "fde/13-costs.jpg"
+      ]
+    },
+    {
+      "route": "/fde/acceptance",
+      "files": [
+        "fde/14-acceptance.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/generic",
+      "files": [
+        "workflows/05-generic.jpg",
+        "workflows/05b-generic-selected-accepted.jpg",
+        "workflows/05c-generic-pending-clears-detail.jpg",
+        "workflows/05d-generic-selected-no-evidence.jpg",
+        "workflows/05e-generic-evidence-clears-detail.jpg",
+        "workflows/05f-generic-all-navigation.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/inspection",
+      "files": [
+        "workflows/01-inspection.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/contractor",
+      "files": [
+        "workflows/02-contractor.jpg",
+        "workflows/02b-contractor-corrections.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/ndt",
+      "files": [
+        "workflows/03-ndt.jpg"
+      ]
+    },
+    {
+      "route": "/workbench/owner",
+      "files": [
+        "workflows/04-owner.jpg",
+        "workflows/04b-owner-archive-types.jpg",
+        "workflows/04c-owner-latest-archive.jpg",
+        "workflows/04d-owner-activity.jpg"
+      ]
+    },
+    {
+      "route": "/fde-feedback-triage",
+      "files": [
+        "fde/15-feedback-triage.jpg"
+      ]
+    },
+    {
+      "route": "/fde-blind-review",
+      "files": [
+        "fde/16-blind-review.jpg"
+      ]
+    }
+  ],
+  "captures": [
+    {
+      "route": "/admin/overview",
+      "title": "管理總覽／項目管理",
+      "file": "admin/final-01-overview.jpg",
+      "reviewed": true,
+      "reviewNote": "最終版重載後5個項目載入；overview共用項目管理內容，主操作與治理摘要可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/org",
+      "title": "組織使用者",
+      "file": "admin/final-03-org-organizations.jpg",
+      "reviewed": true,
+      "reviewNote": "5個組織清單、中文類型與篩選可讀，名稱和操作沒有重疊。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/org",
+      "title": "組織搜尋",
+      "file": "admin/final-03b-org-search.jpg",
+      "reviewed": true,
+      "reviewNote": "在全部5個組織中搜尋粤检，命中1筆且可重置。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/org",
+      "title": "使用者搜尋",
+      "file": "admin/final-03c-user-search.jpg",
+      "reviewed": true,
+      "reviewNote": "7位使用者搜尋ndt命中1位，與組織條件獨立；完整角色與操作可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/projects",
+      "title": "項目管理",
+      "file": "admin/final-02-projects.jpg",
+      "reviewed": true,
+      "reviewNote": "最終版5個項目清單、搜尋篩選與分頁正常；既有操作可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "長施工單位採省略提示，未執行註冊審核或歸檔刪除。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/business-packs",
+      "title": "業務類型管理",
+      "file": "admin/final-04-business-packs.jpg",
+      "reviewed": true,
+      "reviewNote": "3種業務類型狀態鄰近名稱，分級範圍完整換行；項目屬性、版本與數量可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/permission",
+      "title": "權限與節點",
+      "file": "admin/final-05-permission.jpg",
+      "reviewed": true,
+      "reviewNote": "6種角色的範圍、權限摘要、唯讀狀態及編輯入口可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "只讀巡檢，沒有變更權限。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "AI業務規則與流程",
+      "file": "admin/final-06-rules.jpg",
+      "reviewed": true,
+      "reviewNote": "規則主表全寬，名稱、長版本、Prompt、節點、狀態及操作完整換行可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "規則詳情",
+      "file": "admin/final-06b-rule-detail.jpg",
+      "reviewed": true,
+      "reviewNote": "詳情抽屜正常顯示規則Key、Prompt、版本、節點與描述；完整內容可核對。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "流程狀態機",
+      "file": "admin/final-06c-workflow-state-machine.jpg",
+      "reviewed": true,
+      "reviewNote": "流程表位於規則下方，獨立全寬，名稱、版本、7個狀態、6項流轉與操作可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "業務資料審查點",
+      "file": "admin/final-07-material-review-points.jpg",
+      "reviewed": true,
+      "reviewNote": "168筆清單載入，審查內容與證據文字直接換行；點擊原先溢出文字不產生浮層。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "全部欄位仍需橫向捲動，已提供提示。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "審查點零結果回歸",
+      "file": "admin/final-07b-material-no-results.jpg",
+      "reviewed": true,
+      "reviewNote": "重走修前觸發步驟後為0筆，沒有左上角殘留提示；顯示調整或重置搜尋的說明。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "審查點末頁資料搜尋",
+      "file": "admin/final-07c-material-tail-search.jpg",
+      "reviewed": true,
+      "reviewNote": "重置恢復168筆後搜尋pmi_report，命中節點16/21兩筆。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "右側其餘欄位可橫向捲動查閱。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 模板管理",
+      "file": "admin/final-08-prompt-templates.jpg",
+      "reviewed": true,
+      "reviewNote": "模板名稱、Key、更新時間、版本、狀態、Agent與四個操作均可見；正式版發布/刪除保持停用。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 衍生草稿",
+      "file": "admin/final-08b-prompt-draft.jpg",
+      "reviewed": true,
+      "reviewNote": "新增草稿保留原正文和關聯版本，模板版本為2026.06-draft、狀態草稿。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "未保存、發布或刪除；取消後原模板仍1筆。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "報告模板管理",
+      "file": "admin/final-09-report-templates.jpg",
+      "reviewed": true,
+      "reviewNote": "名稱、版本、狀態、業務類型、章節、導出類型與操作皆可讀；長內容換行而非省略。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "報告衍生草稿",
+      "file": "admin/final-09b-report-draft.jpg",
+      "reviewed": true,
+      "reviewNote": "工程報告草稿保留4章節、3種導出和業務包版本，版本2026.06-draft、狀態草稿；取消和保存入口可見。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [
+        "只開啟後取消，沒有保存或發布；原正式模板仍3筆。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/fine-config",
+      "title": "細項配置",
+      "file": "admin/final-10-fine-config.jpg",
+      "reviewed": true,
+      "reviewNote": "待辦規則與消息模板維持全寬單欄，狀態及編輯入口可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/fine-config",
+      "title": "工具源與字段映射",
+      "file": "admin/final-10b-fine-config-mappings.jpg",
+      "reviewed": true,
+      "reviewNote": "工具類型和鑑權已中文化；來源、目標字段及編輯按鈕分離可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/integration",
+      "title": "聯調清單",
+      "file": "admin/final-11-integration.jpg",
+      "reviewed": true,
+      "reviewNote": "6項契約全部已對齊，模組摘要、條件選擇及狀態清楚。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/integration",
+      "title": "契約欄位詳閱",
+      "file": "admin/final-11b-integration-fields.jpg",
+      "reviewed": true,
+      "reviewNote": "狀態前移；完整路徑、前後端字段、必填、負責人及說明在同一表格換行可讀。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/skill-requests",
+      "title": "Skill 請求記錄",
+      "file": "admin/final-12-skill-requests.jpg",
+      "reviewed": true,
+      "reviewNote": "資料為0筆時顯示暫無請求記錄，保留搜尋和刷新；沒有載入錯誤。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/audit",
+      "title": "審計日誌",
+      "file": "admin/final-13-audit.jpg",
+      "reviewed": true,
+      "reviewNote": "1筆實際日誌、物件中文名稱與歷史未封存提示可讀，篩選入口正常。",
+      "viewport": {
+        "height": 692,
+        "width": 1470
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/report-templates",
+      "title": "報告模板1280寬度",
+      "file": "admin/final-09c-report-1280.jpg",
+      "reviewed": true,
+      "reviewNote": "較窄桌面可同時辨識3個報告、版本、狀態、業務類型及兩欄操作；導出文字換行。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "表格仍可橫向捲動查閱超出寬度的欄位。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/prompt-templates",
+      "title": "Prompt 模板1280寬度",
+      "file": "admin/final-08c-prompt-1280.jpg",
+      "reviewed": true,
+      "reviewNote": "較窄桌面模板名稱、識別碼、版本、狀態與操作仍可讀。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "完整Agent欄位可用底部橫向捲軸查閱。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/integration",
+      "title": "聯調契約1280寬度",
+      "file": "admin/final-11c-integration-1280.jpg",
+      "reviewed": true,
+      "reviewNote": "狀態、接口與欄位對應在較窄桌面保持換行；說明可讀，無操作覆蓋。",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "limitations": [
+        "超過視窗寬度時仍可橫向捲動表格。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "規則900寬度",
+      "file": "admin/final-06d-rules-900.jpg",
+      "reviewed": true,
+      "reviewNote": "窄視窗改用收合側欄；規則維持單欄與完整換行，詳情/差異操作可見。",
+      "viewport": {
+        "height": 720,
+        "width": 900
+      },
+      "limitations": [
+        "較寬規則表須橫向捲動查閱狀態/時間等欄位。"
+      ],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/admin/rules",
+      "title": "流程狀態機900寬度",
+      "file": "admin/final-06e-workflow-900.jpg",
+      "reviewed": true,
+      "reviewNote": "下方流程表在900寬度完整顯示名稱、版本、狀態數、流轉與編輯，沒有雙欄擠壓。",
+      "viewport": {
+        "height": 720,
+        "width": 900
+      },
+      "limitations": [],
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "knowledge/final-network.jpg",
+      "reviewNote": "全圖259節點/294關係，初始工業管道詳情與選取外框一致，漸進標籤及圖例保留。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "knowledge/final-network-filter-cleared.jpg",
+      "reviewNote": "搜尋焊工命中3個、保留4節點4關係；不在結果中的工業管道詳情及選取清除，顯示重新點選指引。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "knowledge/final-network-reset-no-selection.jpg",
+      "reviewNote": "清空搜尋恢復259節點，工業管道舊黑色外框已消失，右側仍未選取；沒有自動跳選。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/network",
+      "file": "knowledge/final-network-visible-selection-retained.jpg",
+      "reviewNote": "搜尋焊工後點選焊接（粘接），再改搜焊；右側詳情保留相同節點，未跳至其他命中。可見選取資料狀態另由真實 ECharts 測試驗證。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識網路",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "knowledge/final-rules.jpg",
+      "reviewNote": "69條規則載入，監檢項目/分類、狀態、依據摘要及操作同屏；無水平溢出。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "業務判斷規則管理",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "knowledge/final-rules-expanded.jpg",
+      "reviewNote": "規則展開並向下捲讀後，完整內容末段、版本與更新時間保留可讀。工作見證正文另見final-rules-expanded-witness.jpg。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "長依據需要垂直捲讀；未執行發布或回滾。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "業務判斷規則管理",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/rules",
+      "file": "knowledge/final-rules-expanded-witness.jpg",
+      "reviewNote": "展開後的工作見證完整保留，垂直捲動可讀取詳細核查內容。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "長依據需在表格內垂直捲讀；版本與時間另見final-rules-expanded.jpg。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "業務判斷規則管理",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/config",
+      "file": "knowledge/final-config.jpg",
+      "reviewNote": "審計表時間、人員、中文操作對象與結果同屏，設定表單保持清楚分組。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識庫配置",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "file": "knowledge/final-reasoning.jpg",
+      "reviewNote": "歷史列表主題、狀態、完整建議、完成時間與詳情入口同屏，無水平溢出。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "推理鏈路歷史",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "file": "knowledge/final-reasoning-detail.jpg",
+      "reviewNote": "模型、規則版本、Prompt版本與對話資訊仍可在詳情中查閱。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "推理鏈路歷史",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/overview",
+      "file": "knowledge/final-overview.jpg",
+      "reviewNote": "知識庫總覽保留精簡治理摘要、來源/索引/引用品質卡片與主要維護入口。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識庫總覽",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/sources",
+      "file": "knowledge/final-sources.jpg",
+      "reviewNote": "62個標準規範正常載入，搜尋、處理狀態篩選、檔名與維護入口可見。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未重跑PDF預覽；沿用前輪Chrome真實渲染證據。",
+        "本機隔離 demo API；Chrome 1470×748。",
+        "既有多欄表仍需水平捲動查看低頻欄位；本輪未調整此表。"
+      ],
+      "title": "標準規範庫",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/files",
+      "file": "knowledge/final-files.jpg",
+      "reviewNote": "項目文件知識庫顯示搜尋、項目/節點/狀態篩選與檔案維護入口，資料與操作正常載入。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "既有多欄表仍需水平捲動查看低頻欄位；本輪未調整此表。",
+        "原文缺檔回退沿用前輪獨立證據，未宣稱修復缺失檔案。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "項目文件知識庫",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/tasks",
+      "file": "knowledge/final-tasks.jpg",
+      "reviewNote": "任務中心清楚顯示任務類型、來源與狀態；失敗任務有錯誤資訊及詳情入口。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未執行重試或重建任務。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "OCR/向量任務中心",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/retrieval",
+      "file": "knowledge/final-retrieval.jpg",
+      "reviewNote": "檢索測試顯示問題輸入、Top K、資料篩選與檢索入口，空結果及PageIndex區分清楚。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未提交外部模型或檢索請求。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "知識檢索測試",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/compare",
+      "file": "knowledge/final-compare.jpg",
+      "reviewNote": "對比輸入、模型選擇、執行入口與1條歷史紀錄可見；結果區明確提示執行或選取歷史後顯示。",
+      "viewport": {
+        "height": 748,
+        "width": 1470
+      },
+      "limitations": [
+        "本輪未執行外部模型對比。",
+        "本機隔離 demo API；Chrome 1470×748。"
+      ],
+      "title": "多 LLM 反饋對比",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "file": "fde/01-dashboard.jpg",
+      "route": "/fde/dashboard",
+      "title": "治理總覽",
+      "reviewNote": "主要操作與阻斷摘要可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/02-projects.jpg",
+      "route": "/fde/projects",
+      "title": "項目審計",
+      "reviewNote": "項目選擇、節點與資料摘要正常載入。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/02b-capability-status.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "真實能力狀態",
+      "reviewNote": "固定健康分已移除，顯示實際完成數、索引與門禁。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/02c-capability-actions.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "能力處理清單",
+      "reviewNote": "無任務顯示待核對；狀態、數量與處理提示完整可見。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/03-ocr-quality.jpg",
+      "route": "/fde/ocr-quality",
+      "title": "OCR 品質",
+      "reviewNote": "診斷不重複翻譯，環境變數識別碼保留，服務警告可見。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/04-ai-runs.jpg",
+      "route": "/fde/ai-runs",
+      "title": "AI 運行",
+      "reviewNote": "資料與主要操作可讀；空任務明確說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/05-review-runs.jpg",
+      "route": "/fde/review-runs",
+      "title": "審查編排",
+      "reviewNote": "資料與主要操作可讀；空任務明確說明。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/06-feedback.jpg",
+      "route": "/fde/feedback",
+      "title": "人工回饋",
+      "reviewNote": "主要狀態與操作完整；缺失評估資料維持未提供。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/07-evaluation.jpg",
+      "route": "/fde/evaluation",
+      "title": "評估與驗證",
+      "reviewNote": "主要狀態與操作完整；缺失評估資料維持未提供。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/08-business-packs.jpg",
+      "route": "/fde/business-packs",
+      "title": "業務類型工廠",
+      "reviewNote": "主要狀態與操作完整；缺失評估資料維持未提供。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/08b-standards-content.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範狀態與問題",
+      "reviewNote": "1280px同屏顯示檔名、索引、狀態、問題與操作。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/08c-standards-detail.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "規範文件詳情",
+      "reviewNote": "清單收起的索引版本與完整來源仍可於既有詳情查看。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/08d-standards-900.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "900px 規範資料卡片",
+      "reviewNote": "窄版切換卡片，檔名、狀態、問題和查看按鈕均可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 900,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/09-capability-bundles.jpg",
+      "route": "/fde/capability-bundles",
+      "title": "能力組合",
+      "reviewNote": "主要狀態與操作可見，未執行發布或權限變更。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/10-releases.jpg",
+      "route": "/fde/releases",
+      "title": "發布治理",
+      "reviewNote": "主要狀態與操作可見，未執行發布或權限變更。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/11-security.jpg",
+      "route": "/fde/security",
+      "title": "安全治理",
+      "reviewNote": "主要狀態與操作可見，未執行發布或權限變更。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/12-incidents.jpg",
+      "route": "/fde/incidents",
+      "title": "事故復盤",
+      "reviewNote": "主要內容、狀態與操作可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/13-costs.jpg",
+      "route": "/fde/costs",
+      "title": "成本預算",
+      "reviewNote": "主要內容、狀態與操作可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/14-acceptance.jpg",
+      "route": "/fde/acceptance",
+      "title": "客戶驗收",
+      "reviewNote": "主要內容、狀態與操作可讀。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/15-feedback-triage.jpg",
+      "route": "/fde-feedback-triage",
+      "title": "回饋歸因",
+      "reviewNote": "獨立入口可用，空結果與篩選範圍清楚。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/16-blind-review.jpg",
+      "route": "/fde-blind-review",
+      "title": "獨立盲審",
+      "reviewNote": "抽樣範圍、返回入口與空任務說明可見，沒有執行抽樣寫入。",
+      "reviewed": true,
+      "status": "verified",
+      "build": "dist-uiux-followup-final",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "limitations": [
+        "production建置＋真實API與隔離記憶體資料；未接正式DB、模型或外部OCR。"
+      ],
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "route": "/workbench/inspection?projectId=P-2026-HDCP-001&view=list",
+      "title": "監檢工作台",
+      "file": "workflows/01-inspection.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "完整工作台、需處理節點與已提交資料分區可讀；等待載入完成後截圖，無殘留loading遮罩。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方工作台",
+      "file": "workflows/02-contractor.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "真實顯示待處理意見0、待提交1、審核中1；補正文件與可見意見口徑分開解釋。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/contractor",
+      "title": "施工方需補正文件篩選",
+      "file": "workflows/02b-contractor-corrections.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "點擊補正入口實際選中需補正，列表顯示1／3份文件，只列鋼管質量證明書；狀態與操作同列可見。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/ndt",
+      "title": "無損檢測工作台",
+      "file": "workflows/03-ndt.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "等待真實資料載入後顯示2份底片索引、1份記錄、2份報告及1項待補正，與已上傳文件0分開呈現。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方工作台",
+      "file": "workflows/04-owner.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "只讀邊界明確，6個授權節點，報告版本0、歸檔資料2；沒有虛構可查看報告。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方歸檔類型中文與欄寬",
+      "file": "workflows/04b-owner-archive-types.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "類型欄完整顯示「報告」「證據資料」，沒有raw report/evidence或英文拆行；名稱、日期及操作可讀。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方最新歸檔摘要",
+      "file": "workflows/04c-owner-latest-archive.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "最近歸檔正確顯示時間較晚的「節點24證據定位包.zip」，沒有錯取先傳入的較舊報告；報告空態仍如實顯示。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/owner",
+      "title": "建設方實際活動與主區摘要",
+      "file": "workflows/04d-owner-activity.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "09:45證據包、09:40報告、09:30項目更新依實際時間排列；主區過程資料包與最新歸檔摘要一致。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "示例授權報告清單為空；非空報告排序以實際元件computed回歸覆蓋，歸檔排序有真實畫面驗證。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "通用資料審查工作台",
+      "file": "workflows/05-generic.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "最終版完整總覽正常載入；隔離示例共3筆發現，其中2筆待確認，已採納記錄不被誤算為待確認。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "已採納發現篩選前詳情",
+      "file": "workflows/05b-generic-selected-accepted.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "全部發現中開啟已採納示例，可清楚辨識它的已採納狀態和隔離用途，為排除測試建立可見前置狀態。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "待確認篩選移除已採納詳情",
+      "file": "workflows/05c-generic-pending-clears-detail.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "從待確認入口切換後僅列2筆待確認發現，已採納詳情移除（heading count=0），側欄同步高亮人工確認。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "無證據發現篩選前詳情",
+      "file": "workflows/05d-generic-selected-no-evidence.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "先開啟尚未關聯證據的示例，0筆證據及待人工確認狀態明確，為第二個排除測試建立前置狀態。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "證據篩選移除無證據詳情與同步導航",
+      "file": "workflows/05e-generic-evidence-clears-detail.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "下拉改成有關聯證據後只列2筆有引用發現，無證據詳情移除（heading count=0），側欄同步高亮證據鏈路。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "全部發現篩選同步導航",
+      "file": "workflows/05f-generic-all-navigation.jpg",
+      "status": "verified",
+      "reviewed": true,
+      "reviewNote": "下拉回全部發現後顯示3筆、側欄高亮AI發現；恢復可見的原選取可呈現詳情，不會展示被當前篩選排除的內容。",
+      "limitations": [
+        "隔離記憶體示例與真實API；未執行業務寫入、LLM或外部服務。",
+        "workflow-filter-extras僅在隔離服務新增兩筆明示示例，沿用既有tenant/project/node；未修改產品seed或擴大授權。",
+        "EV-CA-001缺少對應node evidence關聯，保留暫不可查看提示；業務包名稱仍依後端manifest，未猜測改名。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-followup-final",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/admin/material-review-points",
+      "title": "修前：空結果殘留 OCR 提示",
+      "file": "admin/before-material-no-results.jpg",
+      "reviewed": true,
+      "reviewNote": "點擊第一列 OCR 長文本後搜尋不存在字詞，清單為 0 筆；舊提示停留在頁面左上角。",
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "limitations": [
+        "修前 dist-uiux-release；隔離示例資料。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "group": "admin",
+      "groupLabel": "管理"
+    },
+    {
+      "route": "/knowledge/network",
+      "title": "關係網路：篩選後隱藏選取殘留",
+      "file": "knowledge/before-network-filter-selection.jpg",
+      "reviewed": true,
+      "reviewNote": "搜尋焊工後只顯示 4 個節點，右側仍顯示已不在圖中的工業管道；已重現。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/rules",
+      "title": "業務規則：寬表遮擋",
+      "file": "knowledge/before-rules-wide-table.jpg",
+      "reviewed": true,
+      "reviewNote": "容器 1088 px，表格 1570 px；固定操作遮擋右側依據，見證與時間需水平捲動。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/config",
+      "title": "設定與審計：結果欄不可見",
+      "file": "knowledge/before-config-audit.jpg",
+      "reviewed": true,
+      "reviewNote": "容器 611 px，表格 860 px；結果欄超出初始可見範圍。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "route": "/knowledge/reasoning",
+      "title": "審查歷史：建議欄不可見",
+      "file": "knowledge/before-reasoning-wide-table.jpg",
+      "reviewed": true,
+      "reviewNote": "容器 1088 px，表格 1586 px；狀態被固定操作擠壓，建議與時間離開初始視窗。",
+      "viewport": {
+        "width": 1470,
+        "height": 748
+      },
+      "limitations": [
+        "修前證據，不計入本輪修後路由覆蓋。",
+        "本機隔離 demo API。"
+      ],
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "group": "knowledge",
+      "groupLabel": "知識庫"
+    },
+    {
+      "file": "fde/before-standards.jpg",
+      "route": "/fde/business-packs?view=standards",
+      "title": "修前：規範狀態與問題欄被擠出畫面",
+      "reviewNote": "1280px僅見檔名、切片、PageIndex、水印與固定操作；狀態與問題不在可見區。",
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/before-capability.jpg",
+      "route": "/fde/projects?projectId=P-2026-HDCP-001&view=overview&nodeId=24",
+      "title": "修前：無任務仍顯示正常",
+      "reviewNote": "OCR無任務顯示正常，圖表固定給36分。",
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "file": "fde/before-ocr-diagnosis.jpg",
+      "route": "/fde/ocr-quality",
+      "title": "修前：OCR診斷重複翻譯",
+      "reviewNote": "OCR術語層層展開，配置識別碼消失。",
+      "status": "before-confirmed",
+      "build": "dist-uiux-release",
+      "reviewed": true,
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "group": "fde",
+      "groupLabel": "FDE"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "修前：待確認篩選殘留已採納詳情",
+      "file": "workflows/before-generic-stale-selection.jpg",
+      "status": "before-confirmed",
+      "reviewed": true,
+      "reviewNote": "待人工確認篩選只列出2筆待確認發現，下面仍顯示已採納發現詳情，目視確認錯誤。",
+      "limitations": [
+        "隔離記憶體示例，同既有tenant/project/node；未修改產品seed或授權。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-release",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    },
+    {
+      "route": "/workbench/generic",
+      "title": "修前：證據篩選殘留無證據詳情",
+      "file": "workflows/before-generic-stale-evidence.jpg",
+      "status": "before-confirmed",
+      "reviewed": true,
+      "reviewNote": "有關聯證據篩選只列出2筆有證據發現，下面仍顯示無證據發現詳情，目視確認錯誤。",
+      "limitations": [
+        "隔離記憶體示例，同既有tenant/project/node；未修改產品seed或授權。"
+      ],
+      "viewport": {
+        "width": 1470,
+        "height": 692
+      },
+      "build": "dist-uiux-release",
+      "group": "workflows",
+      "groupLabel": "工作台"
+    }
+  ]
+}

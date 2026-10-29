@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
+import { ref } from 'vue'
+import { useNodeReviewDraft } from './useNodeReviewDraft'
 import {
   buildWorkbenchAiPresentation,
   canShowWorkbenchAiConclusion
@@ -25,6 +26,5 @@ assert.equal(
   true
 )
 
-const workbench = readFileSync(new URL('./Workbench.vue', import.meta.url), 'utf8')
-assert.match(workbench, /const reviewOpinion = ref\(''\)/)
-assert.doesNotMatch(workbench, /ref\('资料、证据链与规则要求一致，同意通过。'\)/)
+const draft = useNodeReviewDraft(ref('P'), ref(1))
+assert.equal(draft.reviewOpinion.value, '', '人工意见必须由用户填写，不能预填同意通过')

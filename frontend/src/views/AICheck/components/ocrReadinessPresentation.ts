@@ -54,8 +54,12 @@ export const ocrReadinessAlert = (readiness?: Readiness) => {
     failed: 'OCR 处理失败，请重新识别。'
   }
   if (!fallbacks[status]) return undefined
+  const knownReasons: Record<string, string> = {
+    OCR_STATUS_WITHOUT_PARSE_RESULT: '文件标记为已识别，但缺少可追溯的识别结果，请重新识别后核对。',
+    OCR_PARSE_RESULT_FAILED: '最近一次文字识别未成功完成，请重新识别。'
+  }
   return {
     title: `OCR ${ocrReadinessLabel(status)}`,
-    description: reasons[0]?.message || fallbacks[status]
+    description: knownReasons[reasons[0]?.code || ''] || reasons[0]?.message || fallbacks[status]
   }
 }

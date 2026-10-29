@@ -37,18 +37,15 @@ import {
   Guide,
   MagicStick,
   Search,
+  Upload,
   View
 } from '@element-plus/icons-vue'
 import {
   archiveReportApi,
   bindDocumentsToNodeApi,
-  bindInspectionDocumentsApi,
   completeTodoApi,
-  completeDocumentUploadSessionApi,
   completeNdtReportUploadSessionApi,
   createNdtFilmApi,
-  createDocumentUploadSessionApi,
-  createInspectionAttachmentUploadSessionApi,
   createNdtReportUploadSessionApi,
   deleteProjectDocumentApi,
   getArchivePackageApi,
@@ -96,7 +93,6 @@ import {
   replaceNdtAtomicMaterialBindingsApi,
   submitNdtAtomicMaterialApi,
   submitNdtRectificationApi,
-  submitInspectionDocumentBindingsApi,
   submitNodePackageApi,
   submitRectificationApi,
   submitReviewHumanInputResponseApi,
@@ -152,7 +148,6 @@ import type {
   Project,
   ProjectTreeNode,
   ReportVersion,
-  ReviewOpinion,
   RoleCode,
   SearchResult,
   TodoItem,
@@ -204,14 +199,23 @@ type EvidenceConfirmationRow = {
   evidence?: EvidenceLink
 }
 import { friendlyModelAlias, materialTypeLabels } from './components/auditLabels'
-import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
-import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
+import { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
+import AuditStatusTag from './components/AuditStatusTag.vue'
+import StatusTag from './components/StatusTag.vue'
+import { getStatusTone } from './components/status'
+import {
+  auditItemsMatchStatus,
+  aggregateStatusKey,
+  type InspectionStatusFilter
+} from './inspectionStatusOverview'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
 import AutoReviewControl from './components/AutoReviewControl.vue'
 import ProjectAnalysisControl from './components/ProjectAnalysisControl.vue'
 import BatchRecheckPanel from './components/BatchRecheckPanel.vue'
 import NodeReviewTimeline from './components/NodeReviewTimeline.vue'
 import { useBatchRecheck } from './useBatchRecheck'
+import { useNodeReviewDraft } from './useNodeReviewDraft'
+import { useProjectRectifications } from './useProjectRectifications'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
 import EvidenceLocatorDialog from './components/EvidenceLocatorDialog.vue'
@@ -237,16 +241,12 @@ import WorkbenchNodeMaterialsCard from './components/WorkbenchNodeMaterialsCard.
 import WorkbenchNodeStatusStrip from './components/WorkbenchNodeStatusStrip.vue'
 import { useWorkbenchReviewActions } from './useWorkbenchReviewActions'
 import { AI_RESULT_TO_OPINION, useAiFindingFeedback } from './aiFindingFeedback'
-import RoleContextPanel from './components/RoleContextPanel.vue'
 import SubmissionBatchDialog from './components/SubmissionBatchDialog.vue'
 import SubmissionDetailDrawer from './components/SubmissionDetailDrawer.vue'
 import SubmissionHistoryDrawer from './components/SubmissionHistoryDrawer.vue'
 import UploadSessionDrawer from './components/UploadSessionDrawer.vue'
 import { NDT_NODE_IDS, type NdtAtomicMaterial } from '@/utils/ndtAtomicMaterials'
-import WorkbenchActionBar from './components/WorkbenchActionBar.vue'
 import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSections.vue'
-import WorkbenchRightStaticDetails from './components/WorkbenchRightStaticDetails.vue'
-import WorkbenchSidePanel from './components/WorkbenchSidePanel.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
@@ -266,7 +266,7 @@ import {
   submittedFileCountLabel,
   workbenchRolePresentation
 } from './workbenchRolePresentation'
-import { buildCorrectionUploadBindingPayload } from './contractorCorrectionUpload'
+import { useWorkbenchUploadSession } from './useWorkbenchUploadSession'
 import {
   nodeRunFindingViews,
   buildWorkbenchAiHistory,
@@ -380,6 +380,10 @@ const treeGroups = ref<ProjectTreePayload['groups']>([])
 const nodePackage = ref<NodePackagePayload>()
 const reports = ref<ReportVersion[]>([])
 const archiveItems = ref<ArchiveItem[]>([])
+const reportArchiveLoading = ref(false)
+const reportArchiveLoaded = ref(false)
+const reportArchiveIssue = ref('')
+const reportArchiveRequest = { current: 0 }
 const ndtFilms = ref<NdtFilm[]>([])
 const ndtRecords = ref<NdtRecord[]>([])
 const ndtReports = ref<NdtReport[]>([])
@@ -430,6 +434,7 @@ const inspectionDetailLoading = ref(false)
 const reportDetailVisible = ref(false)
 const reportDetailLoading = ref(false)
 const reportDetailError = ref('')
+const reportSaveError = ref('')
 const ndtDetailVisible = ref(false)
 const ndtDetailLoading = ref(false)
 const ndtDetailMode = ref<'report' | 'feedback'>('report')
@@ -463,11 +468,14 @@ const recentReadOnlyExportTasks = ref<ExportTask[]>([])
 const activeReportDetailId = ref('')
 const activeArchiveItemId = ref('')
 const activeExportTaskId = ref('')
-const reviewResult = ref<ReviewOpinion['result']>('满足要求')
-const reviewOpinion = ref('')
-const correctionReason = ref('')
-const selectedReviewEvidenceIds = ref<string[]>([])
-const draftRequiresEvidenceSelection = ref(false)
+const {
+  reviewResult,
+  reviewOpinion,
+  correctionReason,
+  selectedReviewEvidenceIds,
+  draftRequiresEvidenceSelection
+} = useNodeReviewDraft(activeProjectId, activeNodeId)
+const correctionPreferredBindingIds = ref<string[]>([])
 const latestSubmissionIds = ref<Record<number, string>>({})
 const pipelinePollTimer = ref<number>()
 const pipelinePolling = ref(false)
@@ -525,6 +533,26 @@ const role = computed<RoleCode>(() => {
   if (path.includes('/owner')) return 'owner'
   return 'inspection'
 })
+
+const {
+  projectRectifications,
+  projectRectificationIssue,
+  projectRectificationLoading,
+  projectRectificationLoaded,
+  loadProjectRectifications
+} = useProjectRectifications(activeProjectId, role)
+watch(
+  [activeProjectId, role],
+  () => {
+    reportArchiveRequest.current++
+    reports.value = []
+    archiveItems.value = []
+    reportArchiveLoaded.value = false
+    reportArchiveLoading.value = false
+    reportArchiveIssue.value = ''
+  },
+  { flush: 'sync' }
+)
 
 const currentRoleConfig = computed(() => roleConfig[role.value])
 const currentProject = computed(() => {
@@ -606,7 +634,11 @@ const extractedFieldCountByVersion = computed(() => {
   }
   return counts
 })
-const rectifications = computed(() => nodePackage.value?.rectifications || [])
+const rectifications = computed(() =>
+  role.value === 'contractor'
+    ? projectRectifications.value
+    : nodePackage.value?.rectifications || []
+)
 const activeRectification = computed(() =>
   rectifications.value.find((item) => item.id === activeRectificationId.value)
 )
@@ -1044,6 +1076,23 @@ const handleInspectionNodeTableSort = ({
  * 计数写在开关上——关着的时候也得知道有几个在等，否则筛选本身就成了新的隐藏。
  */
 const inspectionOnlyAttentionNodes = ref(true)
+const inspectionAuditStatusFilter = ref<InspectionStatusFilter | null>(null)
+const inspectionAuditSummaryTotal = computed(() =>
+  inspectionAuditStatusSummaryRows.value.reduce((total, row) => total + row.value, 0)
+)
+const selectInspectionStatus = async (status: InspectionStatusFilter | null) => {
+  inspectionAuditStatusFilter.value = status
+  inspectionOnlyAttentionNodes.value = false
+  inspectionNodePage.value = 1
+  await nextTick()
+  document
+    .getElementById('inspection-overview-nodes')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+const changeInspectionAttentionFilter = () => {
+  inspectionAuditStatusFilter.value = null
+  inspectionNodePage.value = 1
+}
 
 /* 需处理的「审计项」数——与需处理的「节点」数是两个单位。
  * 一个节点可能有两项需要处理，两个数字不相等是正常的；并排显示时必须写清楚
@@ -1090,6 +1139,15 @@ const inspectionProjectNodeRows = computed(() => {
 })
 
 const inspectionVisibleNodeRows = computed(() => {
+  const status = inspectionAuditStatusFilter.value
+  if (status) {
+    return inspectionProjectNodeRows.value.filter((row) =>
+      auditItemsMatchStatus(
+        inspectionAuditOverviewNodeMap.value.get(row.node.nodeId)?.items,
+        status
+      )
+    )
+  }
   if (!inspectionOnlyAttentionNodes.value) return inspectionProjectNodeRows.value
   const filtered = inspectionProjectNodeRows.value.filter((row) =>
     nodeNeedsAttention(inspectionAuditOverviewNodeMap.value.get(row.node.nodeId)?.items)
@@ -1134,7 +1192,7 @@ const topbarStatus = computed(() => {
 })
 const pageHeadline = computed(() => {
   const headlines: Record<RoleCode, string> = {
-    inspection: 'AI 业务审查链路',
+    inspection: '资料审查与待办',
     contractor: '施工资料工作台',
     ndt: '检测资料库与补正反馈',
     owner: '建设方项目概况',
@@ -1146,10 +1204,10 @@ const pageHeadline = computed(() => {
 const currentWorkbenchPresentation = computed(() => workbenchRolePresentation(role.value))
 const pageIntro = computed(() => {
   const intros: Record<RoleCode, string> = {
-    inspection: '当前节点资料、AI 业务核验链路、人工审查意见和报告归档动作在同一工作区完成。',
+    inspection: '查看待办与节点资料，核对审查依据，完成审查意见及报告。',
     contractor: currentWorkbenchPresentation.value.intro,
     ndt: '无损检测单位在资料库中上传、核对并逐份提交检测资料，同时处理监检反馈。',
-    owner: '只读查看项目进展、节点资料状态、异常提醒、报告状态和归档资料。',
+    owner: '查看项目进展、需补正节点、报告和归档资料。',
     admin: '后台只维护配置、权限、流程和审计，不替代工作台业务办理。',
     fde: 'FDE 只管理 AI 能力、评估、发布和治理，不替代业务人员作出正式结论。'
   }
@@ -1167,6 +1225,19 @@ const currentNodeLabel = computed(() => {
   if (!selectedNode.value) return '未选择节点'
   return `${selectedNode.value.nodeId}. ${selectedNode.value.name}`
 })
+const workbenchLocationLabel = computed(() => {
+  if (role.value === 'contractor') return '项目文件库'
+  if (role.value === 'ndt') return '无损检测资料库'
+  if (activeWorkbenchSection.value === 'overview') return '项目总览'
+  return currentNodeLabel.value
+})
+const showBreadcrumbNodeType = computed(
+  () =>
+    role.value !== 'contractor' &&
+    role.value !== 'ndt' &&
+    activeWorkbenchSection.value === 'node' &&
+    Boolean(selectedNode.value?.inspectionType)
+)
 const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
   if (role.value === 'contractor') {
     const projectFileCount = nodePackage.value?.projectFiles.length || bindings.value.length
@@ -1266,6 +1337,9 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
     }
   ]
 })
+const ndtSubmissionSummary = computed(() =>
+  workbenchAuditCards.value.filter((card) => card.label !== '办理对象')
+)
 const overviewFileMaterialTypeLabels = materialTypeLabels
 const getOverviewFileMaterialCategory = (file: {
   materialCategory?: string | null
@@ -1904,7 +1978,7 @@ const reviewChainSteps = computed(() => {
     {
       title: role.value === 'contractor' ? '关联环节完整性' : '关键字段一致性',
       desc: fieldNames
-        ? `已提取 ${fieldNames} 等字段，低置信度和需人工确认项保留在右侧证据链中。`
+        ? `已提取 ${fieldNames} 等字段。字段提取或复核不代表一致性或关联环节完整性已通过，仍需结合证据核验。`
         : '当前节点暂未返回结构化字段，需等待 OCR 或人工补录后继续核验。',
       tags: extractedFields.value
         .slice(0, 2)
@@ -1913,7 +1987,7 @@ const reviewChainSteps = computed(() => {
         ['低置信度', '置信度未知'].includes(field.reviewStatus)
       )
         ? '需人工确认'
-        : '通过'
+        : '待核验'
     },
     {
       title: role.value === 'owner' ? '只读边界核验' : '业务规则适配',
@@ -1927,35 +2001,7 @@ const reviewChainSteps = computed(() => {
     }
   ]
 })
-const getPillClass = (value?: string): AuditStatusTone => {
-  if (!value) return 'blue'
-  if (
-    value.includes('通过') ||
-    value.includes('满足') ||
-    value.includes('归档') ||
-    value.includes('只读')
-  ) {
-    return 'green'
-  }
-  if (
-    value.includes('补正') ||
-    value.includes('失败') ||
-    value.includes('禁止') ||
-    value.includes('风险')
-  ) {
-    return 'red'
-  }
-  if (
-    value.includes('待') ||
-    value.includes('AI') ||
-    value.includes('草稿') ||
-    value.includes('复核') ||
-    value.includes('确认')
-  ) {
-    return 'orange'
-  }
-  return 'blue'
-}
+const getPillClass = getStatusTone
 const hasAction = (action: ActionCode) => availableActions.value.includes(action)
 
 const getErrorMessage = (error: unknown) => {
@@ -2370,20 +2416,39 @@ const loadInspectionDetails = async (nodeId = activeNodeId.value) => {
 
 const loadReportArchive = async () => {
   if (!activeProjectId.value) return
-  const loaded = await loadRoleScopedReportArchive(role.value, {
-    reports: async () => {
-      const response = await listOwnerReportsApi(activeProjectId.value)
-      if (!response) throw new Error('报告资料加载失败。')
-      return response.data
-    },
-    archiveItems: async () => {
-      const response = await listProjectArchiveApi(activeProjectId.value)
-      if (!response) throw new Error('归档资料加载失败。')
-      return response.data.items
-    }
-  })
-  reports.value = loaded.reports
-  archiveItems.value = loaded.archiveItems
+  const projectId = activeProjectId.value
+  const generation = ++reportArchiveRequest.current
+  const isCurrent = () =>
+    generation === reportArchiveRequest.current && projectId === activeProjectId.value
+  reportArchiveLoading.value = true
+  reportArchiveIssue.value = ''
+  try {
+    const loaded = await loadRoleScopedReportArchive(role.value, {
+      reports: async () => {
+        const response = await listOwnerReportsApi(projectId)
+        if (!response) throw new Error('报告资料加载失败。')
+        return response.data
+      },
+      archiveItems: async () => {
+        const response = await listProjectArchiveApi(projectId)
+        if (!response) throw new Error('归档资料加载失败。')
+        return response.data.items
+      }
+    })
+    if (!isCurrent()) return
+    reports.value = loaded.reports
+    archiveItems.value = loaded.archiveItems
+    reportArchiveLoaded.value = true
+  } catch (error) {
+    if (!isCurrent()) return
+    reportArchiveIssue.value = getErrorMessage(error)
+    reportArchiveLoaded.value = false
+    reports.value = []
+    archiveItems.value = []
+    throw error
+  } finally {
+    if (isCurrent()) reportArchiveLoading.value = false
+  }
 }
 
 const loadNdtData = async () => {
@@ -2513,17 +2578,38 @@ const handleReadAllQuickMessages = async () => {
 
 const handleLocateQuickResult = async (result: SearchResult) => {
   const params = new URLSearchParams(result.route.split('?')[1] || '')
-  const targetProjectId = params.get('projectId')
-  const targetNodeId = Number(params.get('nodeId') || result.id)
-  if (targetProjectId && targetProjectId !== activeProjectId.value) {
-    activeProjectId.value = targetProjectId
-    await loadProjectBundle()
+  const targetProjectId = params.get('projectId') || (result.type === 'project' ? result.id : '')
+  try {
+    if (targetProjectId && targetProjectId !== activeProjectId.value) {
+      activeProjectId.value = targetProjectId
+      await loadProjectBundle({ preserveSelection: false })
+    }
+    if (result.type === 'node') {
+      const nodeId = Number(params.get('nodeId') || result.id)
+      const node = projectTreeNodes.value.find((item) => item.nodeId === nodeId)
+      if (!node) throw new Error('当前项目中未找到该节点，请刷新搜索结果。')
+      if (role.value === 'contractor') {
+        activeNodeId.value = nodeId
+        await loadNodePackage(nodeId)
+        activeWorkbenchSection.value = 'overview'
+        await nextTick()
+        await staticSectionsRef.value?.focusContractorNode?.({ id: nodeId, name: node.name })
+      } else await handleNodeSelect(node)
+    } else if (result.type === 'document') {
+      if (!(await handleOpenFileDetail(params.get('documentId') || result.id))) return
+    } else if (result.type === 'report') {
+      if (!(await handleOpenReportDetail(params.get('reportId') || result.id))) return
+    } else if (result.type === 'project') {
+      activeWorkbenchSection.value = 'overview'
+    } else {
+      if (!result.route.startsWith('/') || !router.resolve(result.route).matched.length)
+        throw new Error('此结果暂时没有可打开的详情入口，请查看所属资料列表。')
+      await router.push(result.route)
+    }
+    quickAccessVisible.value = false
+  } catch (error) {
+    ElMessage.warning(getAicheckErrorMessage(error, '定位失败，请刷新搜索结果后重试。'))
   }
-  if (result.type === 'node' && Number.isFinite(targetNodeId) && targetNodeId > 0) {
-    await loadNodePackage(targetNodeId)
-  }
-  quickAccessVisible.value = false
-  ElMessage.success('已定位到相关业务对象')
 }
 
 /** 待办点了要能去处理它，而不只是标记完成。
@@ -2597,6 +2683,8 @@ const handleOpenQuickTodo = async (todo: TodoItem) => {
 
 const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
   if (!activeProjectId.value) return
+  const preserveSelection =
+    options.preserveSelection ?? context.value?.project.id === activeProjectId.value
   if (!options.silent) loading.value = true
   try {
     if (!options.silent) pageIssue.value = undefined
@@ -2622,11 +2710,9 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
     }
     context.value = contextRes.data
     treeGroups.value = treeRes.data.groups
-    const requestedNodeId = options.preserveSelection
-      ? activeNodeId.value
-      : contextRes.data.currentNodeId
+    const requestedNodeId = preserveSelection ? activeNodeId.value : contextRes.data.currentNodeId
     const loadableNodeId = resolveLoadableProjectNodeId(requestedNodeId, treeRes.data.groups)
-    if (!options.preserveSelection) {
+    if (!preserveSelection) {
       activeNodeId.value = loadableNodeId || 0
       activeWorkbenchSection.value =
         loadableNodeId &&
@@ -2655,6 +2741,7 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
       secondary = loadNdtData()
     } else {
       secondary = Promise.all([
+        loadProjectRectifications(),
         loadReportArchive(),
         loadNdtData(),
         loadInspectionAuditOverview(),
@@ -3039,8 +3126,6 @@ const ensureWritableProject = () => {
   return true
 }
 
-const bindingIds = () => bindings.value.map((item) => item.id)
-
 const openBusinessUrl = (label: string, url?: string) => {
   if (!url) {
     ElMessage.warning(`${label}暂不可用`)
@@ -3090,19 +3175,32 @@ const handleStandardTreeNodeClick = (data: StandardReferenceTreeNode) => {
   })
 }
 
+const fileDetailRequest = { current: 0 }
 const handleOpenFileDetail = async (documentId: string) => {
   if (!activeProjectId.value || !documentId) return
+  const projectId = activeProjectId.value
+  const token = ++fileDetailRequest.current
+  const isCurrent = () =>
+    token === fileDetailRequest.current &&
+    activeProjectId.value === projectId &&
+    fileDetailVisible.value
   fileDetailVisible.value = true
+  fileDetail.value = undefined
   fileDetailLoading.value = true
   try {
     const res = await getDocumentDetailApi(activeProjectId.value, documentId)
+    if (!isCurrent()) return false
     if (!res) {
       showActionError('文件详情加载失败，请刷新资料列表后重试。')
       return
     }
     fileDetail.value = res.data
+    return true
+  } catch (error) {
+    if (isCurrent()) showActionError('文件详情加载失败，请重试。', error)
+    return false
   } finally {
-    fileDetailLoading.value = false
+    if (isCurrent()) fileDetailLoading.value = false
   }
 }
 
@@ -3240,165 +3338,34 @@ const presentUploadCompletion = (
   return presentation
 }
 
-const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: number[] }) => {
-  if (!ensureWritableProject()) return
-  if (!files.length) {
-    ElMessage.warning('请选择至少一个本地文件')
-    return
-  }
-  actionLoading.value = true
-  uploadDrawerError.value = ''
-  let correctionFileUploaded = false
-  let uploadedCorrectionDocumentId = ''
-  try {
-    if (uploadDrawerReplaceTarget.value && files.length !== 1) {
-      // 替换是一对一的：选多个文件却只替换一份，剩下的会被静默丢弃。
-      showUploadDrawerError('替换资料时只能选择一个文件。')
-      return
-    }
-    const uploadFiles = files.map((file) => ({
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: inferUploadFileType(file),
-      ...(uploadDrawerReplaceTarget.value
-        ? { replaceDocumentId: uploadDrawerReplaceTarget.value.documentId }
-        : {}),
-      ...(uploadDrawerMaterialCategory.value
-        ? { materialCategory: uploadDrawerMaterialCategory.value }
-        : {}),
-      ...(uploadDrawerAtomicMaterial.value
-        ? {
-            materialTypeCode: uploadDrawerAtomicMaterial.value.code,
-            materialTypeName: uploadDrawerAtomicMaterial.value.name,
-            nodeIds: metadata?.nodeIds || uploadDrawerAtomicMaterial.value.defaultNodeIds
-          }
-        : {})
-    }))
-    const res =
-      uploadDrawerMode.value === 'inspection'
-        ? await createInspectionAttachmentUploadSessionApi(
-            activeProjectId.value,
-            activeNodeId.value,
-            uploadFiles,
-            { etag: currentProject.value?.etag }
-          )
-        : await createDocumentUploadSessionApi(activeProjectId.value, uploadFiles, {
-            etag: currentProject.value?.etag
-          })
-    if (!res) {
-      showUploadDrawerError('上传会话创建失败，请检查文件类型、大小和当前项目权限。')
-      return
-    }
-    if (res.data.uploadUrls.length !== files.length) {
-      throw new Error('上传会话返回的文件数量与本地选择不一致，请重新选择文件。')
-    }
-    await Promise.all(
-      files.map((file, index) => uploadFileToSignedUrl(res.data.uploadUrls[index], file))
-    )
-    const completeRes = await completeDocumentUploadSessionApi(
-      activeProjectId.value,
-      res.data.uploadSessionId,
-      res.data.uploadUrls.map((target, index) => ({
-        documentVersionId: target.documentVersionId,
-        fileSize: files[index]?.size
-      })),
-      {
-        etag: currentProject.value?.etag,
-        idempotencyKey: `document-upload-complete-${res.data.uploadSessionId}`
-      }
-    )
-    if (!completeRes) {
-      throw new Error('上传完成确认失败，请刷新项目文件库后重试。')
-    }
-    correctionFileUploaded = Boolean(uploadDrawerRectificationTarget.value)
-    uploadedCorrectionDocumentId = correctionFileUploaded
-      ? String(res.data.uploadUrls[0]?.documentId || '')
-      : ''
-    if (uploadDrawerMode.value === 'inspection') {
-      const bindRes = await bindInspectionDocumentsApi(
-        activeProjectId.value,
-        activeNodeId.value,
-        res.data.uploadUrls.map((target) => ({
-          documentId: target.documentId,
-          documentVersionId: target.documentVersionId,
-          usage: '监检资料'
-        })),
-        {
-          etag: currentProject.value?.etag,
-          idempotencyKey: `inspection-upload-bind-${res.data.uploadSessionId}`
-        }
-      )
-      const bindingIds = bindRes?.data.affectedIds || []
-      if (bindingIds.length !== files.length) {
-        throw new Error('监检文件已上传，但未生成完整的节点挂载关系。')
-      }
-      const submitRes = await submitInspectionDocumentBindingsApi(
-        activeProjectId.value,
-        activeNodeId.value,
-        {
-          bindingIds,
-          batchName: `R${String(activeNodeId.value).padStart(2, '0')} 监检资料`,
-          submitterComment: '监检人员上传并提交现场或评价证据。'
-        },
-        {
-          etag: currentProject.value?.etag,
-          idempotencyKey: `inspection-upload-submit-${res.data.uploadSessionId}`
-        }
-      )
-      if (!submitRes || submitRes.data.bindingIds?.length !== bindingIds.length) {
-        throw new Error('监检文件已挂载，但提交快照未包含全部文件。')
-      }
-      presentUploadCompletion(completeRes.data)
-      uploadDrawerVisible.value = false
-      await Promise.all([
-        loadProjectBundle(),
-        loadInspectionAuditWorkspace(activeNodeId.value),
-        loadSubmissionHistory()
-      ])
-      return
-    }
-    if (uploadDrawerRectificationTarget.value) {
-      const target = uploadDrawerRectificationTarget.value
-      const bindRes = await bindDocumentsToNodeApi(
-        activeProjectId.value,
-        buildCorrectionUploadBindingPayload(target, res.data.uploadUrls),
-        { etag: currentProject.value?.etag }
-      )
-      const correctionBindingIds = bindRes?.data.affectedIds || []
-      if (correctionBindingIds.length !== files.length) {
-        throw new Error('补正资料已上传但尚未关联补正意见，请使用“关联已有文件”继续办理。')
-      }
-      presentUploadCompletion(completeRes.data)
-      uploadDrawerVisible.value = false
-      await loadProjectBundle()
-      activeRectificationId.value = target.rectificationId
-      rectificationDialogMode.value = 'submit'
-      rectificationDialogVisible.value = true
-      return
-    }
-    const presentation = presentUploadCompletion(completeRes.data)
-    uploadDrawerVisible.value = false
-    await loadProjectBundle()
-    return presentation
-  } catch (error) {
-    if (correctionFileUploaded) {
-      const message = getAicheckErrorMessage(
-        error,
-        '补正资料已上传但尚未关联补正意见，请使用“关联已有文件”继续办理。'
-      )
-      uploadDrawerVisible.value = false
-      await loadProjectBundle()
-      bindDialogDocumentId.value = uploadedCorrectionDocumentId
-      bindDialogError.value = message
-      bindDialogVisible.value = true
-      ElMessage.warning(message)
-    } else {
-      showUploadDrawerError('文件上传失败，请检查对象存储、网络连接和当前项目权限。', error)
-    }
-  } finally {
-    actionLoading.value = false
-  }
-}
+const { handleCreateUploadSession } = useWorkbenchUploadSession({
+  activeProjectId,
+  activeNodeId,
+  currentProject,
+  actionLoading,
+  uploadDrawerError,
+  uploadDrawerReplaceTarget,
+  uploadDrawerMaterialCategory,
+  uploadDrawerAtomicMaterial,
+  uploadDrawerMode,
+  uploadDrawerRectificationTarget,
+  uploadDrawerVisible,
+  correctionPreferredBindingIds,
+  activeRectificationId,
+  rectificationDialogMode,
+  rectificationDialogVisible,
+  bindDialogDocumentId,
+  bindDialogError,
+  bindDialogVisible,
+  ensureWritableProject,
+  inferUploadFileType,
+  showUploadDrawerError,
+  uploadFileToSignedUrl,
+  presentUploadCompletion,
+  loadProjectBundle,
+  loadNodePackage,
+  loadSubmissionHistory: () => loadSubmissionHistory()
+})
 
 const handleInlineContractorUpload = async (files: File[]) => {
   if (!ensureWritableProject()) return
@@ -3867,35 +3834,6 @@ const handleBindDocuments = async (payload: {
   }
 }
 
-const handleSaveDraft = async () => {
-  if (!ensureWritableNode()) return
-  actionLoading.value = true
-  try {
-    const res = await saveSubmissionDraftApi(
-      activeProjectId.value,
-      {
-        nodeId: activeNodeId.value,
-        nodeIds: [activeNodeId.value],
-        bindingIds: bindingIds(),
-        batchName: selectedNode.value
-          ? `节点 ${selectedNode.value.nodeId} ${selectedNode.value.name} 提交草稿`
-          : undefined,
-        remark: '由工作台保存的节点资料提交草稿。'
-      },
-      { etag: currentProject.value?.etag }
-    )
-    if (!res) {
-      showActionError('提交草稿保存失败，请检查节点资料和当前项目状态。')
-      return
-    }
-    ElMessage.success('提交草稿已保存')
-    await loadSubmissionHistory()
-    await openDraftDetail(res.data.draftId)
-  } finally {
-    actionLoading.value = false
-  }
-}
-
 const openDraftDetail = async (draftId: string) => {
   if (!activeProjectId.value || !draftId) return
   submissionDetailVisible.value = true
@@ -3946,12 +3884,6 @@ const loadSubmissionHistory = async () => {
   }
 }
 
-const handleOpenSubmissionHistory = async () => {
-  if (!activeProjectId.value) return
-  submissionHistoryVisible.value = true
-  await loadSubmissionHistory()
-}
-
 const handleRestoreSubmissionDraft = async (draftId: string) => {
   if (!activeProjectId.value || !draftId) return
   submissionHistoryLoading.value = true
@@ -3973,13 +3905,6 @@ const handleRestoreSubmissionDraft = async (draftId: string) => {
   } finally {
     submissionHistoryLoading.value = false
   }
-}
-
-const handleOpenSubmissionDialog = () => {
-  if (!ensureWritableNode()) return
-  restoredSubmissionDraft.value = undefined
-  submissionDialogError.value = ''
-  submissionDialogVisible.value = true
 }
 
 const handleSaveDraftFromDialog = async (payload: {
@@ -4070,15 +3995,34 @@ const handleSubmitBatch = async (payload: {
   }
 }
 
-const handleOpenRectificationDialog = (rectificationId?: string) => {
-  if (!ensureWritableNode()) return
+const prepareRectification = async (rectificationId?: string) => {
+  const item = rectifications.value.find((entry) => entry.id === rectificationId)
+  if (rectificationId && !item) {
+    ElMessage.warning('补正意见尚未加载，请刷新清单后重试。')
+    return false
+  }
+  if (
+    item &&
+    (activeNodeId.value !== item.nodeId || nodePackage.value?.node.nodeId !== item.nodeId)
+  ) {
+    activeNodeId.value = item.nodeId
+    await loadNodePackage(item.nodeId)
+  }
+  if (item && nodePackage.value?.node.nodeId !== item.nodeId) {
+    ElMessage.warning('补正节点加载失败，请重试。')
+    return false
+  }
   activeRectificationId.value = rectificationId || ''
+  correctionPreferredBindingIds.value = []
+  return true
+}
+const handleOpenRectificationDialog = async (rectificationId?: string) => {
+  if (!(await prepareRectification(rectificationId)) || !ensureWritableNode()) return
   rectificationDialogMode.value = 'submit'
   rectificationDialogVisible.value = true
 }
-
-const handleViewRectification = (rectificationId: string) => {
-  activeRectificationId.value = rectificationId
+const handleViewRectification = async (rectificationId: string) => {
+  if (!(await prepareRectification(rectificationId))) return
   rectificationDialogMode.value = 'view'
   rectificationDialogVisible.value = true
 }
@@ -4185,6 +4129,11 @@ const handleSubmitRectification = async (payload: {
   rectificationId?: string
 }) => {
   if (!ensureWritableNode()) return
+  if (!payload.bindingIds.length) {
+    ElMessage.warning('请选择本次补正反馈的资料')
+    return
+  }
+  if (activeRectification.value && activeRectification.value.nodeId !== activeNodeId.value) return
   if (!payload.comment) {
     ElMessage.warning('请填写补正反馈说明')
     return
@@ -4195,7 +4144,7 @@ const handleSubmitRectification = async (payload: {
       activeProjectId.value,
       {
         nodeId: activeNodeId.value,
-        bindingIds: payload.bindingIds.length ? payload.bindingIds : bindingIds(),
+        bindingIds: payload.bindingIds,
         comment: payload.comment,
         rectificationId: payload.rectificationId || activeRectificationId.value || undefined
       },
@@ -4301,30 +4250,30 @@ const handleSaveReviewOpinion = async () => {
     ElMessage.warning('请填写人工审查意见')
     return
   }
+  const projectId = activeProjectId.value
+  const nodeId = activeNodeId.value
+  const draft = {
+    result: reviewResult.value,
+    opinion: reviewOpinion.value.trim(),
+    evidenceLinkIds: [...selectedReviewEvidenceIds.value]
+  }
+  const etag = currentProject.value?.etag
+  const isCurrent = () => activeProjectId.value === projectId && activeNodeId.value === nodeId
   const aiSuggested =
     latestAiRun.value && !latestAiReviewDisplay.value.failed
       ? String(latestAiRun.value.suggestion?.result || '')
       : ''
   const aiMapped = aiSuggested ? AI_RESULT_TO_OPINION[aiSuggested] : undefined
   const overrideReason =
-    aiMapped && aiMapped !== reviewResult.value
-      ? await askAiOverrideReason(aiSuggested, reviewResult.value)
+    aiMapped && aiMapped !== draft.result
+      ? await askAiOverrideReason(aiSuggested, draft.result)
       : undefined
-  if (aiMapped && aiMapped !== reviewResult.value && !overrideReason) return
+  if (aiMapped && aiMapped !== draft.result && !overrideReason) return
+  if (!isCurrent()) return
   actionLoading.value = true
   try {
-    const res = await saveReviewOpinionApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      {
-        result: reviewResult.value,
-        opinion: reviewOpinion.value.trim(),
-        evidenceLinkIds: selectedReviewEvidenceIds.value
-      },
-      {
-        etag: currentProject.value?.etag
-      }
-    )
+    const res = await saveReviewOpinionApi(projectId, nodeId, draft, { etag })
+    if (!isCurrent()) return
     if (!res) {
       showActionError('审查意见保存失败，请检查审查意见和当前节点状态。')
       return
@@ -4332,8 +4281,7 @@ const handleSaveReviewOpinion = async () => {
     actionBlocker.value = undefined
     draftRequiresEvidenceSelection.value = false
     ElMessage.success('审查意见已保存')
-    if (overrideReason)
-      await recordAiOpinionOverride(overrideReason, aiSuggested, reviewResult.value)
+    if (overrideReason) await recordAiOpinionOverride(overrideReason, aiSuggested, draft.result)
     await loadProjectBundle()
   } finally {
     actionLoading.value = false
@@ -4573,6 +4521,10 @@ const handlePreviewReport = (reportId: string) => {
 
 const handleOpenReportDetail = async (reportId: string) => {
   if (!activeProjectId.value) return
+  const projectId = activeProjectId.value
+  const isCurrent = () =>
+    activeProjectId.value === projectId && activeReportDetailId.value === reportId
+  reportSaveError.value = ''
   activeReportDetailId.value = reportId
   reportDetailVisible.value = true
   reportDetailLoading.value = true
@@ -4580,16 +4532,19 @@ const handleOpenReportDetail = async (reportId: string) => {
   reportDetail.value = undefined
   try {
     const res = await getReportDetailApi(activeProjectId.value, reportId)
+    if (!isCurrent()) return false
     if (!res) {
       showReportDetailError('报告详情加载失败，请刷新报告列表后重试。')
       return
     }
     reportDetailError.value = ''
     reportDetail.value = res.data
+    return true
   } catch (error) {
+    if (!isCurrent()) return false
     showReportDetailError('报告详情加载失败，请刷新报告列表后重试。', error)
   } finally {
-    reportDetailLoading.value = false
+    if (isCurrent()) reportDetailLoading.value = false
   }
 }
 
@@ -4654,20 +4609,29 @@ const handleRetryReportDetail = () => {
 const handleSaveReportDetail = async (payload: { sections: ReportSection[]; remark?: string }) => {
   if (!activeProjectId.value || !reportDetail.value?.report) return
   actionLoading.value = true
+  reportSaveError.value = ''
   const reportId = reportDetail.value.report.id
+  const projectId = activeProjectId.value
+  const detail = reportDetail.value
+  const isCurrent = () =>
+    activeProjectId.value === projectId && activeReportDetailId.value === reportId
   try {
-    const res = await updateReportApi(activeProjectId.value, reportId, payload, {
+    const res = await updateReportApi(projectId, reportId, payload, {
       etag: reportDetail.value.report.etag
     })
+    if (!isCurrent()) return
     if (!res) {
-      showReportDetailError('报告保存失败，请检查章节内容和证据引用。')
+      reportSaveError.value = '报告保存失败，已保留编辑内容。请检查章节内容和证据引用后重试。'
       return
     }
     ElMessage.success('报告内容已保存')
-    await handleOpenReportDetail(reportId)
-    await loadReportArchive()
+    reportDetail.value = { ...detail, report: res.data.report, sections: payload.sections }
+    await loadReportArchive().catch(() =>
+      ElMessage.warning('报告已保存，列表更新失败，请稍后刷新。')
+    )
   } catch (error) {
-    showReportDetailError('报告保存失败，请检查章节内容和证据引用。', error)
+    if (!isCurrent()) return
+    reportSaveError.value = getAicheckErrorMessage(error, '报告保存失败，已保留编辑内容，请重试。')
   } finally {
     actionLoading.value = false
   }
@@ -5005,6 +4969,19 @@ watch(
   }
 )
 
+watch(activeProjectId, () => {
+  inspectionAuditStatusFilter.value = null
+  inspectionOnlyAttentionNodes.value = true
+  inspectionNodePage.value = 1
+})
+watch(inspectionVisibleNodeRows, () => {
+  const lastPage = Math.max(
+    1,
+    Math.ceil(inspectionVisibleNodeRows.value.length / inspectionNodePageSize.value)
+  )
+  inspectionNodePage.value = Math.min(inspectionNodePage.value, lastPage)
+})
+
 watch(
   () => activeNodeId.value,
   () => {
@@ -5064,18 +5041,19 @@ watch(
 )
 
 watch(
-  () => activeNodeId.value,
+  () => [activeProjectId.value, activeNodeId.value],
   () => {
     actionBlocker.value = undefined
     ndtReadiness.value = undefined
-    selectedReviewEvidenceIds.value = []
-    draftRequiresEvidenceSelection.value = false
-  }
+    pendingCorrectionFinding.value = undefined
+  },
+  { flush: 'sync' }
 )
 
 watch(
   () => confirmedEvidenceLinks.value.map((item) => item.id).join('|'),
   () => {
+    if (nodePackage.value?.node.nodeId !== activeNodeId.value) return
     const allowed = confirmedEvidenceIds.value
     selectedReviewEvidenceIds.value = selectedReviewEvidenceIds.value.filter((id) =>
       allowed.has(id)
@@ -5204,7 +5182,7 @@ onBeforeUnmount(() => {
       ]"
     >
       <a class="skip-main" href="#aicheck-workbench-main">跳到主内容</a>
-      <header class="topbar">
+      <header class="topbar" :class="{ 'is-business-topbar': role !== 'inspection' }">
         <div class="brand">
           <div class="brand-mark">盾</div>
           <ElSelect
@@ -5222,9 +5200,7 @@ onBeforeUnmount(() => {
               :value="project.id"
             />
           </ElSelect>
-          <div :class="['top-status', `pill-${getPillClass(topbarStatus)}`]">
-            {{ topbarStatus }}
-          </div>
+          <StatusTag :status="topbarStatus" effect="plain" />
         </div>
         <div class="global-search-cluster">
           <ElButton
@@ -5427,7 +5403,7 @@ onBeforeUnmount(() => {
             class="inspection-review-list-region"
           >
             <WorkbenchStateBanner
-              v-if="readonlyIssue"
+              v-if="readonlyIssue && role !== 'owner'"
               class="readonly-banner"
               :type="readonlyIssue.type"
               :title="readonlyIssue.title"
@@ -5442,24 +5418,8 @@ onBeforeUnmount(() => {
                   separator="/"
                 >
                   <ElBreadcrumbItem>当前位置：{{ currentRoleConfig.title }}</ElBreadcrumbItem>
-                  <ElBreadcrumbItem>
-                    {{
-                      role === 'contractor'
-                        ? '项目文件库'
-                        : role === 'ndt'
-                          ? '无损检测资料库'
-                          : role === 'inspection' && activeWorkbenchSection === 'overview'
-                            ? '项目总览'
-                            : currentNodeLabel
-                    }}
-                  </ElBreadcrumbItem>
-                  <ElBreadcrumbItem
-                    v-if="
-                      role !== 'contractor' &&
-                      role !== 'ndt' &&
-                      !(role === 'inspection' && activeWorkbenchSection === 'overview')
-                    "
-                  >
+                  <ElBreadcrumbItem>{{ workbenchLocationLabel }}</ElBreadcrumbItem>
+                  <ElBreadcrumbItem v-if="showBreadcrumbNodeType">
                     <AuditStatusTag :tone="getPillClass(selectedNode?.inspectionType)" round>
                       {{ selectedNode?.inspectionType || '-' }}类节点
                     </AuditStatusTag>
@@ -5502,6 +5462,7 @@ onBeforeUnmount(() => {
                   class="btn primary"
                   type="primary"
                   :disabled="actionLoading || isReadOnly"
+                  :icon="Upload"
                   @click="handleOpenInspectionUploadDrawer"
                 >
                   上传监检资料
@@ -5567,18 +5528,23 @@ onBeforeUnmount(() => {
               @action="loadInspectionAuditWorkspace(activeNodeId)"
             />
 
-            <AuditSummaryGrid
-              v-if="
-                role !== 'contractor' &&
-                !(
-                  role === 'inspection' &&
-                  (activeWorkbenchSection === 'overview' || activeWorkbenchSection === 'node')
-                )
-              "
-              :cards="workbenchAuditCards"
-              aria-label="业务工作台审计摘要"
-              @card-action="handleSummaryCardAction"
-            />
+            <dl v-if="role === 'ndt'" class="ndt-submission-summary" aria-label="待办与提交摘要">
+              <div v-for="card in ndtSubmissionSummary" :key="card.label">
+                <dt>{{ card.label }}</dt>
+                <dd>
+                  <strong>{{ card.value }}</strong>
+                  <ElButton
+                    v-if="card.actionKey"
+                    link
+                    type="primary"
+                    @click="handleSummaryCardAction(card.actionKey)"
+                  >
+                    {{ card.actionLabel || '查看明细' }}
+                  </ElButton>
+                  <small v-else>{{ card.hint }}</small>
+                </dd>
+              </div>
+            </dl>
 
             <section
               v-if="role === 'inspection' && activeWorkbenchSection === 'overview'"
@@ -5599,26 +5565,72 @@ onBeforeUnmount(() => {
                        全量数字降为次要信息，仍然保留——需要核对整体进度时还得看。 -->
                   <div
                     class="inspection-headline"
-                    :class="{ 'is-clear': !inspectionAttentionItemCount }"
+                    :class="{
+                      'is-clear': !!inspectionAuditOverview && !inspectionAttentionItemCount,
+                      'is-pending': !inspectionAuditOverview
+                    }"
                   >
-                    <div class="inspection-headline-main">
+                    <div v-if="inspectionAuditOverview" class="inspection-headline-main">
                       <strong v-if="inspectionAttentionItemCount">
                         {{ inspectionAttentionItemCount }} 项需要你处理
                       </strong>
                       <strong v-else>暂无需要你处理的事项</strong>
                       <small v-if="inspectionAttentionItemCount">
-                        分布在 {{ inspectionAttentionNodeCount }} 个节点，已列在下方清单
+                        分布在 {{ inspectionAttentionNodeCount }} 个节点，勾选“只看需处理”可查看
                       </small>
                       <small v-else>系统在跑的部分完成后会自动出现在这里</small>
                     </div>
                     <!-- 单位不同要写清楚：上面数的是「审计项」，清单里数的是「节点」。
                          两个数字并排而不说明单位，会让人以为其中一个算错了。 -->
-                    <dl class="inspection-headline-rest" aria-label="全部审计项统计">
-                      <div v-for="row in inspectionAuditStatusSummaryRows" :key="row.key">
-                        <dt>{{ row.label }}</dt>
-                        <dd>{{ row.value }}</dd>
-                      </div>
-                    </dl>
+                    <div v-else class="inspection-headline-main">
+                      <strong>{{
+                        inspectionAuditLoading ? '正在加载审计项状态' : '审计项状态尚未取得'
+                      }}</strong>
+                      <small>状态取得后会显示需要处理的事项和节点。</small>
+                    </div>
+                  </div>
+                  <div v-if="inspectionAuditOverview" class="inspection-status-overview">
+                    <p
+                      >全部 {{ inspectionAuditSummaryTotal }} 项审计项 ·
+                      点击状态查看包含该状态的节点</p
+                    >
+                    <div
+                      v-if="inspectionAuditSummaryTotal"
+                      class="inspection-status-track"
+                      aria-hidden="true"
+                    >
+                      <span
+                        v-for="row in inspectionAuditStatusSummaryRows"
+                        :key="row.key"
+                        :class="`status-segment--${row.key}`"
+                        :style="{ width: `${(row.value / inspectionAuditSummaryTotal) * 100}%` }"
+                      ></span>
+                    </div>
+                    <div class="inspection-status-legend" aria-label="按审计项状态筛选节点">
+                      <button
+                        v-for="row in inspectionAuditStatusSummaryRows"
+                        :key="row.key"
+                        type="button"
+                        :class="{ 'is-selected': inspectionAuditStatusFilter === row.key }"
+                        :aria-pressed="inspectionAuditStatusFilter === row.key"
+                        :disabled="!row.value"
+                        @click="selectInspectionStatus(row.key)"
+                      >
+                        <span
+                          :class="['status-legend-dot', `status-segment--${row.key}`]"
+                          aria-hidden="true"
+                        ></span>
+                        {{ row.label }} <strong>{{ row.value }}</strong
+                        ><span>项</span>
+                      </button>
+                      <ElButton
+                        v-if="inspectionAuditStatusFilter"
+                        link
+                        type="primary"
+                        @click="selectInspectionStatus(null)"
+                        >清除状态筛选</ElButton
+                      >
+                    </div>
                   </div>
                 </article>
 
@@ -5628,12 +5640,16 @@ onBeforeUnmount(() => {
                       <strong>节点处理清单</strong>
                       <!-- 计数写在开关上：关着的时候也得知道有几个在等，
                            否则筛选本身就成了新的隐藏 -->
-                      <ElCheckbox v-model="inspectionOnlyAttentionNodes" class="node-filter-toggle">
+                      <ElCheckbox
+                        v-model="inspectionOnlyAttentionNodes"
+                        class="node-filter-toggle"
+                        @change="changeInspectionAttentionFilter"
+                      >
                         只看需处理（{{ inspectionAttentionNodeCount }}）
                       </ElCheckbox>
                       <small>与左侧项目树一致，按节点查看资料、要求和审查进度。</small>
                     </div>
-                    <AuditStatusTag tone="green" round>
+                    <AuditStatusTag tone="gray" round>
                       {{ inspectionVisibleNodeRows.length }} 个节点
                     </AuditStatusTag>
                   </div>
@@ -5653,13 +5669,15 @@ onBeforeUnmount(() => {
                               inspectionNodeSortDirection === 'asc' ? 'ascending' : 'descending'
                           }
                     "
-                    empty-text="暂无节点"
+                    :empty-text="
+                      inspectionAuditStatusFilter ? '没有包含此状态审计项的节点' : '暂无节点'
+                    "
                     @sort-change="handleInspectionNodeTableSort"
                   >
-                    <ElTableColumn prop="nodeId" label="序号" width="84" sortable="custom">
+                    <ElTableColumn prop="nodeId" label="序号" width="68" sortable="custom">
                       <template #default="{ row }">{{ row.node.nodeId }}</template>
                     </ElTableColumn>
-                    <ElTableColumn label="节点名称" min-width="180" show-overflow-tooltip>
+                    <ElTableColumn label="节点名称" min-width="260">
                       <template #default="{ row }">
                         <ElButton
                           class="inspection-node-name-button"
@@ -5677,14 +5695,14 @@ onBeforeUnmount(() => {
                         </ElButton>
                       </template>
                     </ElTableColumn>
-                    <ElTableColumn label="类别" width="108" align="center">
+                    <ElTableColumn label="类别" width="72" align="center">
                       <template #default="{ row }">
                         <AuditStatusTag :tone="getPillClass(row.node.inspectionType)" round>
                           {{ row.node.inspectionType }}
                         </AuditStatusTag>
                       </template>
                     </ElTableColumn>
-                    <ElTableColumn prop="material" label="已提交文件" width="170" sortable="custom">
+                    <ElTableColumn prop="material" label="已提交文件" width="128" sortable="custom">
                       <template #default="{ row }">
                         <div class="inspection-node-material">
                           <strong>{{ submittedFileCountLabel(row.submittedFileCount) }}</strong>
@@ -5697,7 +5715,7 @@ onBeforeUnmount(() => {
 
                          业务口径是「监检最好只需要知道状态，全程不需要人工干预」，
                          所以列表只回答一个问题：这个节点要不要我管。七项明细点开详情再看。 -->
-                    <ElTableColumn label="状态" min-width="240">
+                    <ElTableColumn label="状态" min-width="220">
                       <template #default="{ row }">
                         <button
                           v-if="inspectionAuditOverviewNodeMap.get(row.node.nodeId)"
@@ -5706,14 +5724,15 @@ onBeforeUnmount(() => {
                           :title="`点击查看 ${row.node.name} 的七项审计明细`"
                           @click="handleInspectionMatrixSelect(row.node, 'submission')"
                         >
-                          <span
-                            :class="[
-                              'node-status-pill',
-                              `is-${nodeAggregate(row.node.nodeId).tone}`
-                            ]"
-                          >
-                            {{ nodeAggregate(row.node.nodeId).label }}
-                          </span>
+                          <StatusTag
+                            :status="
+                              aggregateStatusKey(
+                                inspectionAuditOverviewNodeMap.get(row.node.nodeId)?.items
+                              )
+                            "
+                            :label="nodeAggregate(row.node.nodeId).label"
+                            size="small"
+                          />
                           <!-- 卡在哪一步必须说出来。只说「需要处理」等于把问题原样
                                丢回给人，他还得点进去逐项翻才知道是 OCR 没跑完还是等他签字。 -->
                           <small
@@ -5861,6 +5880,16 @@ onBeforeUnmount(() => {
               :project="currentProject"
               :node="selectedNode"
               :package-data="nodePackage"
+              :project-rectifications="role === 'contractor' ? projectRectifications : undefined"
+              :rectification-issue="projectRectificationIssue"
+              :rectification-loading="projectRectificationLoading"
+              :rectification-loaded="projectRectificationLoaded"
+              :report-archive-loading="reportArchiveLoading"
+              :report-archive-loaded="reportArchiveLoaded"
+              :report-archive-issue="reportArchiveIssue"
+              :project-nodes="projectTreeNodes"
+              @retry-rectifications="loadProjectRectifications"
+              @retry-report-archive="loadReportArchive"
               :read-only="isReadOnly"
               :action-loading="actionLoading"
               :upload-error="uploadDrawerError"
@@ -6654,23 +6683,6 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section v-if="role === 'owner'" class="card node-package-card">
-              <div class="card-head">
-                <h2>只读节点资料联动区</h2>
-                <div class="sub">集中展示当前节点文件、审核反馈和错误恢复能力</div>
-              </div>
-              <div class="card-body">
-                <NodePackagePanel
-                  :package-data="nodePackage"
-                  :loading="nodeLoading"
-                  :issue="nodeIssue"
-                  :retry-loading="nodeLoading"
-                  @open-file="handleOpenFileDetail"
-                  @retry="handleRetryNodeLoad"
-                />
-              </div>
-            </section>
-
             <NdtWorkflowPanel
               v-if="role === 'ndt'"
               :node="selectedNode"
@@ -6742,87 +6754,23 @@ onBeforeUnmount(() => {
               @open-export-task="handleOpenExportTask"
             />
 
-            <section
-              v-if="role !== 'inspection' && role !== 'contractor' && role !== 'ndt'"
-              class="center-support-grid"
-            >
-              <WorkbenchRightStaticDetails
-                :role="role"
-                :project="currentProject"
-                :node="selectedNode"
-                :package-data="nodePackage"
-                :metrics="metrics"
-                :review-steps="reviewChainSteps"
-                :ai-confidence="aiConfidence"
-                :reports="reports"
-                :archive-items="archiveItems"
-                :ndt-films="ndtFilms"
-                :ndt-records="ndtRecords"
-                :ndt-reports="ndtReports"
-                :ndt-feedback="ndtFeedback"
-              />
-
-              <section class="right-card action-card">
-                <h3>{{ role === 'owner' ? '强制限制' : '办理操作' }}</h3>
-                <div class="body">
-                  <div v-if="role === 'owner'" class="readonly-mask">
-                    建设方页面不出现上传、退回、审查、复核、报告确认或归档操作按钮；这里只展示预览、浏览和摘要查看。
-                  </div>
-                  <WorkbenchActionBar
-                    v-else
-                    :role="role"
-                    :actions="availableActions"
-                    :loading="actionLoading"
-                    :read-only="isReadOnly"
-                    @upload="handleOpenUploadDrawer"
-                    @bind="handleOpenBindDialog"
-                    @save-draft="handleSaveDraft"
-                    @submit="handleOpenSubmissionDialog"
-                    @history="handleOpenSubmissionHistory"
-                    @rectify="handleOpenRectificationDialog"
-                  />
-                </div>
-              </section>
-
-              <RoleContextPanel
-                :role="role"
-                :project="currentProject"
-                :package-data="nodePackage"
-                :todos="todos"
-              />
-              <ReviewDecisionPanel
-                v-model:review-result="reviewResult"
-                v-model:review-opinion="reviewOpinion"
-                v-model:correction-reason="correctionReason"
-                v-model:selected-evidence-ids="selectedReviewEvidenceIds"
-                :role="role"
-                :actions="availableActions"
-                :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
-                :evidence-count="evidenceLinks.length"
-                :confirmed-evidence-links="confirmedEvidenceLinks"
-                :save-disabled-reason="reviewSaveDisabledReason"
-                :blocking-reasons="readinessBlockingReasons"
-                :requires-evidence-selection="draftRequiresEvidenceSelection"
-                :loading="actionLoading"
-                @save-review="handleSaveReviewOpinion"
-                @return-correction="handleReturnCorrection"
-                @adopt-ai="handleAdoptAiSuggestion"
-                @reject-ai="handleRejectAiSuggestion"
-              />
-              <WorkbenchSidePanel
-                v-model="activeSideTab"
-                :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
-                :extracted-fields="extractedFields"
-                :evidence-links="evidenceLinks"
-                :standards="standardReferences"
-                :date-comparisons="dateComparisons"
-                :inspection-loading="inspectionDetailLoading"
-                :todos="todos"
-                :messages="messages"
-                :review-opinions="reviewOpinions"
-                @locate-evidence="handleLocateEvidence"
-              />
-            </section>
+            <details v-if="role === 'owner'" class="card owner-node-documents">
+              <summary class="owner-node-documents-summary">
+                节点资料
+                <span>{{ selectedNode?.name || '请先选择节点' }}</span>
+              </summary>
+              <div class="card-body">
+                <NodePackagePanel
+                  :show-technical-status="false"
+                  :package-data="nodePackage"
+                  :loading="nodeLoading"
+                  :issue="nodeIssue"
+                  :retry-loading="nodeLoading"
+                  @open-file="handleOpenFileDetail"
+                  @retry="handleRetryNodeLoad"
+                />
+              </div>
+            </details>
           </div>
         </main>
       </div>
@@ -6878,7 +6826,9 @@ onBeforeUnmount(() => {
           >
           <div class="preview-source">{{ previewDrawerMeta }}</div>
           <div class="preview-actions">
-            <ElButton class="btn" @click="activeSideTab = 'evidence'">定位证据</ElButton>
+            <ElButton v-if="role === 'inspection'" class="btn" @click="activeSideTab = 'evidence'"
+              >定位证据</ElButton
+            >
             <ElButton
               class="btn"
               :disabled="previewDrawerTarget.source === 'standard' || !firstBinding"
@@ -6936,7 +6886,10 @@ onBeforeUnmount(() => {
                   :closable="false"
                   show-icon
                 />
-                <code v-if="previewDrawerTarget.url" class="doc-source-url">
+                <code
+                  v-if="previewDrawerTarget.url && role === 'inspection'"
+                  class="doc-source-url"
+                >
                   {{ previewDrawerTarget.url }}
                 </code>
               </div>
@@ -6956,12 +6909,14 @@ onBeforeUnmount(() => {
                       <td>节点状态</td>
                       <td>{{ selectedNode?.status || '-' }}</td>
                     </tr>
-                    <tr v-for="field in extractedFields.slice(0, 3)" :key="field.id">
-                      <td>{{ field.fieldName }}</td>
-                      <td>{{ field.fieldValue }}</td>
-                      <td>置信度</td>
-                      <td>{{ formatConfidence(field.confidence) }}</td>
-                    </tr>
+                    <template v-if="role === 'inspection'">
+                      <tr v-for="field in extractedFields.slice(0, 3)" :key="field.id">
+                        <td>{{ field.fieldName }}</td>
+                        <td>{{ field.fieldValue }}</td>
+                        <td>置信度</td>
+                        <td>{{ formatConfidence(field.confidence) }}</td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -7081,6 +7036,7 @@ onBeforeUnmount(() => {
         :loading="reportDetailLoading"
         :saving="actionLoading"
         :issue="reportDetailError"
+        :save-issue="reportSaveError"
         @locate-evidence="handleLocateEvidence"
         @retry="handleRetryReportDetail"
         @save="handleSaveReportDetail"
@@ -7122,6 +7078,7 @@ onBeforeUnmount(() => {
         :todos="todos"
         :rectification-id="activeRectificationId"
         :rectification="activeRectification"
+        :preferred-binding-ids="correctionPreferredBindingIds"
         :mode="rectificationDialogMode"
         :loading="actionLoading"
         @submit="handleSubmitRectification"
@@ -7132,6 +7089,7 @@ onBeforeUnmount(() => {
         v-model:active-tab="quickAccessTab"
         v-model:keyword="quickAccessKeyword"
         :search-results="quickSearchResults"
+        :search-scope="currentProject?.name"
         :todos="quickTodos"
         :messages="quickMessages"
         :loading="quickAccessLoading"
@@ -7495,10 +7453,9 @@ onBeforeUnmount(() => {
    原先这里是四张数字卡片，最大的那个 471 不驱动任何行动。 */
 .inspection-headline {
   display: flex;
-  padding: 14px 16px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 10px;
+  padding: 0;
+  background: transparent;
+  border: 0;
   gap: 20px;
   align-items: center;
   flex-wrap: wrap;
@@ -7506,8 +7463,7 @@ onBeforeUnmount(() => {
 
 /* 没有待办时不该继续用告警色——那会让人一直处在「有事没办」的错觉里 */
 .inspection-headline.is-clear {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
+  background: transparent;
 }
 
 .inspection-headline-main {
@@ -7520,11 +7476,15 @@ onBeforeUnmount(() => {
 
 .inspection-headline-main strong {
   font-size: 20px;
-  color: #7f1d1d;
+  color: #92400e;
 }
 
 .inspection-headline.is-clear .inspection-headline-main strong {
   color: #14532d;
+}
+
+.inspection-headline.is-pending .inspection-headline-main strong {
+  color: var(--el-text-color-regular);
 }
 
 .inspection-headline-main small {
@@ -7532,28 +7492,78 @@ onBeforeUnmount(() => {
   color: #64748b;
 }
 
-.inspection-headline-rest {
-  display: flex;
-  margin: 0;
-  gap: 18px;
-  flex-wrap: wrap;
+.inspection-status-overview {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
 }
-
-.inspection-headline-rest div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.inspection-headline-rest dt {
+.inspection-status-overview p {
+  margin: 0 0 8px;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
-  color: #64748b; /* 原 #94a3b8 仅 2.45:1；12px 正文按 WCAG AA 要 4.5:1，这几个字正是统计口径 */
 }
-
-.inspection-headline-rest dd {
-  margin: 0;
-  font-size: 15px;
-  color: #475569;
+.inspection-status-track {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--line-soft);
+}
+.inspection-status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+}
+.inspection-status-legend > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  color: var(--el-text-color-regular);
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.inspection-status-legend > button:hover:not(:disabled),
+.inspection-status-legend > button.is-selected {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-7);
+  color: var(--el-color-primary);
+}
+.inspection-status-legend > button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.inspection-status-legend > button:disabled {
+  cursor: default;
+}
+.inspection-status-legend strong {
+  font-variant-numeric: tabular-nums;
+}
+.status-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+.status-segment--not_started {
+  background: #94a3b8;
+}
+.status-segment--in_progress {
+  background: #2563eb;
+}
+.status-segment--needs_attention {
+  background: #b45309;
+}
+.status-segment--failed {
+  background: #dc2626;
+}
+.status-segment--completed {
+  background: #15803d;
 }
 
 .node-filter-toggle {
@@ -7611,7 +7621,7 @@ onBeforeUnmount(() => {
 .node-status-progress {
   margin-left: auto;
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .top-actions::-webkit-scrollbar {
@@ -8192,6 +8202,24 @@ onBeforeUnmount(() => {
 .center.is-workbench-page-entering {
   will-change: opacity, transform;
   animation: workbench-page-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.owner-node-documents-summary {
+  padding: 14px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.owner-node-documents-summary span {
+  margin-left: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.owner-node-documents-summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .center-support-grid {
@@ -9110,12 +9138,74 @@ h3 {
 }
 
 .inspection-node-name-button {
+  width: 100%;
+  height: auto;
   max-width: 100%;
+  min-height: 44px;
   justify-content: flex-start;
+  white-space: normal;
+}
+
+.inspection-node-name-button :deep(> span) {
+  min-width: 0;
 }
 
 .inspection-node-name-content {
+  align-items: flex-start;
   text-align: left;
+}
+
+.inspection-node-name-content > span:last-child {
+  overflow: visible;
+  line-height: 1.5;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.ndt-submission-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 20px;
+  padding: 12px 16px;
+  margin: 0 0 14px;
+  background: var(--aicheck-surface, #fff);
+  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
+  border-radius: 8px;
+}
+
+.ndt-submission-summary dt {
+  margin-bottom: 5px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ndt-submission-summary dd {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.ndt-submission-summary strong {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.ndt-submission-summary small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ndt-submission-summary :deep(.el-button) {
+  height: auto;
+  min-height: 30px;
+  padding: 0;
+  font-size: 12px;
+  white-space: normal;
 }
 
 .overview-file-source {
