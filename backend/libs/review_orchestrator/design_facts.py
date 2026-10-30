@@ -31,6 +31,7 @@ from libs.regulatory_tables import (
 from libs.review_grounding import REGULATION_CODE_RE
 from libs.review_input_data import current_selected_parse_results, ocr_parse_usable
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
+from libs.review_orchestrator.design_judgment import standard_reference_judgment
 from libs.review_orchestrator.design_ndt_requirements import (
     design_ndt_requirements,
     method_value_summary,
@@ -381,6 +382,9 @@ def build_design_business_facts(
         "drawingReviewWitness": drawing_review_witness(documents, texts, _project_record(state, project_id)),
         "design": design_standard_references(texts, str(_project_record(state, project_id).get("constructionStart") or "")[:10] or None),
         "standardCatalog": {"versionStatus": design_standard_references(texts, None)["versionStatus"]},
+        # 第一阶段只登记节点 8（R08）的标准引用；别的设计节点见 design_judgment 的说明。
+        **({"judgment": standard_reference_judgment(parse_by_version, versions)}
+           if review_run.get("nodeId") == 8 and parse_by_version else {}),
     }
 
 
