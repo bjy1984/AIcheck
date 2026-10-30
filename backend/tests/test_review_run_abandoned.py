@@ -69,3 +69,36 @@ def test_视图给出可读原因而不是干说失败():
     assert "重新发起" in view["errorMessage"], "要告诉人下一步能做什么"
     # 只改展示：原记录不能被改写
     assert stale["status"] == "queued"
+
+
+def _queued_with_task(monkeypatch, queue_ids):
+    """2026-10-29 生产：一次排 8 个复核，队尾的排了约 50 分钟还没轮到，被判成无人执行。"""
+    from libs.review_orchestrator import execution
+
+    monkeypatch.setitem(execution.repo.state, "ai_runs", [{"id": "AIRUN-Q", "taskId": "celery-q"}])
+    monkeypatch.setattr("libs.project_analysis.queue_probe.pending_task_ids", lambda *a, **k: queue_ids)
+    monkeypatch.setattr(execution, "_queue_ids_cache", {"at": None, "ids": None})
+    return {
+        "id": "RRUN-Q",
+        "reviewRunId": "RRUN-Q",
+        "aiRunId": "AIRUN-Q",
+        "status": "queued",
+        "updatedAt": _minutes_ago(int(STALE_QUEUED_AFTER_SECONDS / 60) + 20),
+    }
+
+
+def test_还在队列里排着的不判无人执行(monkeypatch):
+    view = review_run_view(_queued_with_task(monkeypatch, ["other-1", "celery-q", "other-2"]))
+    assert view["status"] == "queued"
+    assert view["queueAhead"] == 1
+    assert "statusReconciledFrom" not in view
+
+
+def test_队列里已经没有了照样判无人执行(monkeypatch):
+    view = review_run_view(_queued_with_task(monkeypatch, ["other-1"]))
+    assert view["status"] == "failed" and view["errorCode"] == "REVIEW_RUN_ABANDONED"
+
+
+def test_问不到队列时按时间判(monkeypatch):
+    view = review_run_view(_queued_with_task(monkeypatch, None))
+    assert view["status"] == "failed" and view["statusReconciledFrom"] == "stale_queue"

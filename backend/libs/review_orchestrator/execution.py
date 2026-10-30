@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -3484,9 +3485,54 @@ def review_run_looks_abandoned(review_run: dict[str, Any]) -> bool:
     return (now - moment).total_seconds() > STALE_QUEUED_AFTER_SECONDS
 
 
+# 列表接口每行都走视图：几秒内的多次判断共用一次 LRANGE
+_QUEUE_IDS_TTL_SECONDS = 5.0
+_queue_ids_cache: dict[str, Any] = {"at": None, "ids": None}
+
+
+def _pending_queue_task_ids() -> list[str] | None:
+    from libs.project_analysis import queue_probe
+
+    now = time.monotonic()
+    at = _queue_ids_cache["at"]
+    if at is None or now - at > _QUEUE_IDS_TTL_SECONDS:
+        _queue_ids_cache.update(at=now, ids=queue_probe.pending_task_ids())
+    return _queue_ids_cache["ids"]
+
+
+def review_run_queue_status(review_run: dict[str, Any]) -> dict[str, Any]:
+    """queued 的运行还在 broker 队列里吗；{"pending": True/False/None, "ahead": n}，None 是问不到。
+
+    2026-10-29 生产：一次排 8 个节点复核，llm.remote 一个槽位依次跑（每个 5–13 分钟），
+    队尾的 RRUN-4BDD2C9189 排了约 50 分钟还没轮到，被上面的 30 分钟阈值判成 REVIEW_RUN_ABANDONED。
+    celery 任务 id 记在 ai_run 的 taskId（派发后路由和自动复核都会回填）。
+    """
+    ai_run_id = str(review_run.get("aiRunId") or "").strip()
+    task_id = next(
+        (
+            str(item.get("taskId") or "")
+            for item in repo.state.get("ai_runs") or []
+            if isinstance(item, dict) and ai_run_id and str(item.get("id") or "") == ai_run_id
+        ),
+        "",
+    )
+    if not task_id:
+        return {"pending": None, "ahead": None}
+    ids = _pending_queue_task_ids()
+    if ids is None:
+        return {"pending": None, "ahead": None}
+    if task_id not in ids:
+        return {"pending": False, "ahead": None}
+    return {"pending": True, "ahead": ids.index(task_id)}
+
+
 def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = False) -> dict[str, Any]:
     view = output_contract.review_view_with_limitations(review_run, repo.state)
-    if review_run_looks_abandoned(view):
+    queue = review_run_queue_status(view) if review_run_looks_abandoned(view) and view.get("status") == "queued" else {}
+    if queue.get("pending"):
+        # 还在队列里排着：不是没人执行，是还没轮到
+        view["queueAhead"] = queue.get("ahead")
+    elif review_run_looks_abandoned(view):
         # 只改展示，不改库：库里那份是执行留痕。界面据此显示「未能执行」
         # 并允许重新发起，而不是让人对着「执行中」等下去。
         view["status"] = "failed"
