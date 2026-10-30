@@ -424,3 +424,11 @@ body,
 .el-message.el-message--info .el-message__content {
   color: #334155;
 }
+
+
+// 窄窗口下表格会横向滚动，但 macOS 的滚动条默认悬停才出现，用户看到的是被切掉一半的列、不知道还能往右拉。
+// 横向滚动条常驻显示：有内容在右边就能看见，没有溢出时它不会出现。
+.el-table .el-scrollbar__bar.is-horizontal {
+  height: 8px;
+  opacity: 1;
+}

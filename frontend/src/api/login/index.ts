@@ -35,7 +35,9 @@ export const loginApi = async (data: UserLoginType): Promise<IResponse<LoginResu
   }
   const res = await request.post<{ token: string; user: UserType }>({
     url: '/api/auth/login',
-    data
+    data,
+    // 登录失败由表单里的提示框说明；全局再弹一条同样的红色提示，同一句话会出现两次
+    headers: { 'X-Silent-Http-Error': 'true' }
   })
   return { ...res, data: normalizeLoginResult(res.data) }
 }

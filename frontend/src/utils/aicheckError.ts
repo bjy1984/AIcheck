@@ -115,6 +115,27 @@ export const getLatestAicheckBusinessError = (maxAgeMs = 5000) => {
   return latestBusinessError
 }
 
+// axios 在没有响应体时给的是英文原话（Request failed with status code 500 / Network Error / timeout of 5000ms exceeded）。
+// 这些话对使用者没有任何帮助：说清是什么类型的问题、该怎么办。
+export const friendlyHttpErrorMessage = (message: string) => {
+  const text = message.trim()
+  const status = text.match(/^Request failed with status code (\d{3})$/)
+  if (status) {
+    const code = Number(status[1])
+    if (code === 401) return '登录状态已失效，请重新登录。'
+    if (code === 403) return '没有权限执行该操作，如需开通请联系管理员。'
+    if (code === 404) return '请求的内容不存在或已被移除，请刷新后重试。'
+    if (code === 408 || code === 504) return '服务响应超时，请稍后重试。'
+    if (code === 429) return '操作过于频繁，请稍等片刻再试。'
+    if (code >= 500)
+      return `服务暂时不可用（服务器错误 ${code}），请稍后重试；持续出现请联系管理员。`
+    return `请求没有成功（错误 ${code}），请检查输入后重试。`
+  }
+  if (/^Network Error$/i.test(text)) return '网络连接失败，请检查网络后重试。'
+  if (/^timeout of \d+ms exceeded$/i.test(text)) return '请求超时，请稍后重试。'
+  return message
+}
+
 export const getAicheckErrorMessage = (error: unknown, fallback: string) => {
   const candidate = error as {
     message?: unknown
@@ -132,7 +153,7 @@ export const getAicheckErrorMessage = (error: unknown, fallback: string) => {
     }
   }
 
-  if (error instanceof Error && error.message.trim()) return error.message
+  if (error instanceof Error && error.message.trim()) return friendlyHttpErrorMessage(error.message)
   if (typeof error === 'string' && error.trim()) return error
 
   if (latestBusinessError && Date.now() - latestBusinessError.recordedAt < 5000) {
