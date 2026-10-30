@@ -2,10 +2,15 @@
 import type { InspectionWorkspaceView } from '../inspectionWorkspaceView'
 defineProps<{ modelValue: InspectionWorkspaceView }>()
 const emit = defineEmits<{ change: [value: InspectionWorkspaceView] }>()
-const views: Array<{ value: InspectionWorkspaceView; label: string }> = [
-  { value: 'ai', label: 'AI审查' },
-  { value: 'important', label: '重要节点审查' },
-  { value: 'list', label: '完整工作台' }
+// 三个入口各管什么，写在悬浮提示里：名字相近，第一次用的人分不清该点哪个
+const views: Array<{ value: InspectionWorkspaceView; label: string; hint: string }> = [
+  { value: 'ai', label: 'AI审查', hint: '和 AI 助手对话：问规则、查证据、对当前节点发起缺陷预审' },
+  {
+    value: 'important',
+    label: '重要节点审查',
+    hint: '先选工程资料，由系统推荐适用的节点，只审查你挑出的重点节点'
+  },
+  { value: 'list', label: '完整工作台', hint: '按节点逐项办理：看资料、核对依据、写人工审查意见' }
 ]
 </script>
 <template>
@@ -16,6 +21,7 @@ const views: Array<{ value: InspectionWorkspaceView; label: string }> = [
       type="button"
       role="tab"
       :aria-selected="modelValue === view.value"
+      :title="view.hint"
       :class="['view-segment', { 'is-active': modelValue === view.value }]"
       @click="emit('change', view.value)"
       >{{ view.label }}</button

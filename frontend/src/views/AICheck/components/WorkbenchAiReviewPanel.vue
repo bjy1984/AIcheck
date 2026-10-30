@@ -1072,7 +1072,8 @@ const ruleLabel = (rule: Record<string, unknown>) => {
         </div>
       </article>
 
-      <section class="ai-history" aria-label="历史 AI 复核结果">
+      <!-- 一次都没跑过就不占位：「历史 0 次」的空卡片只会把真正要看的人工审查往下推一屏 -->
+      <section v-if="history.length" class="ai-history" aria-label="历史 AI 复核结果">
         <div class="ai-history-head">
           <div>
             <h3>历史 AI 复核结果</h3>

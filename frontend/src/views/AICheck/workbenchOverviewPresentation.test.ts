@@ -22,7 +22,8 @@ for (const overviewRole of ['owner', 'inspection']) {
   assert.equal(showNodeType.value, false)
 
   activeWorkbenchSection.value = 'node'
-  assert.equal(location.value, '24. 焊工资格证及持证合格项目')
+  // 节点名字已经是页面标题，面包屑只写位置，不重复一遍
+  assert.equal(location.value, '节点审查')
   assert.equal(showNodeType.value, true)
 
   activeWorkbenchSection.value = 'overview'

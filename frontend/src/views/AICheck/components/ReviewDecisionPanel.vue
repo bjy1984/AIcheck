@@ -28,7 +28,7 @@ const props = defineProps<{
   actions: ActionCode[]
   latestAiRun?: AiReviewRun
   showAiSuggestion?: boolean
-  reviewResult: ReviewOpinion['result']
+  reviewResult: ReviewOpinion['result'] | ''
   reviewOpinion: string
   correctionReason: string
   evidenceCount: number
@@ -108,7 +108,7 @@ const evidenceText = (evidence: EvidenceLink) =>
       <div class="panel-header">
         <span>人工审查</span>
         <ElTag type="info" effect="plain">
-          {{ confirmedEvidenceLinks.length }} / {{ evidenceCount }} 条 confirmed 证据
+          {{ confirmedEvidenceLinks.length }} / {{ evidenceCount }} 条 已确认证据
         </ElTag>
       </div>
     </template>
@@ -160,6 +160,7 @@ const evidenceText = (evidence: EvidenceLink) =>
       <ElFormItem label="审查结论">
         <ElSelect
           :model-value="reviewResult"
+          placeholder="请选择审查结论"
           :disabled="!canSave"
           @update:model-value="emit('update:reviewResult', $event)"
         >
@@ -176,7 +177,7 @@ const evidenceText = (evidence: EvidenceLink) =>
           type="warning"
           :closable="false"
           show-icon
-          title="AI 建议没有可直接采纳的 confirmed 证据，请人工选择后再保存正式意见。"
+          title="AI 建议没有可直接采纳的 已确认证据，请人工选择后再保存正式意见。"
         />
         <ElCheckboxGroup
           v-if="confirmedEvidenceLinks.length"
@@ -210,7 +211,7 @@ const evidenceText = (evidence: EvidenceLink) =>
           type="warning"
           :closable="false"
           show-icon
-          title="当前节点暂无 confirmed 证据，不能保存“满足要求”正式结论。"
+          title="当前节点暂无已确认证据，不能保存“满足要求”正式结论。"
         />
       </ElFormItem>
       <ElFormItem label="人工审查意见">

@@ -214,7 +214,15 @@ onBeforeUnmount(stopPolling)
 
 <template>
   <div class="project-analysis-control">
-    <ElButton type="primary" :loading="loading" :disabled="disabled || !projectId" @click="open">
+    <!-- 它分析的是整个工程，不是当前打开的节点：顶栏上和「AI 审查」「完整工作台」并排，不说清范围容易点错 -->
+    <ElButton
+      type="primary"
+      :loading="loading"
+      :disabled="disabled || !projectId"
+      title="对整个工程的全部适用节点发起 AI 分析，不只是当前节点"
+      aria-label="一键分析：对整个工程的全部适用节点发起 AI 分析"
+      @click="open"
+    >
       一键分析
     </ElButton>
     <ElDrawer v-model="drawerVisible" title="全工程一键分析" :size="summary ? '760px' : '460px'">

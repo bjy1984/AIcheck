@@ -2693,7 +2693,7 @@ test.describe('AIcheck business writeback flows', () => {
     const panel = page.locator('.report-panel')
     await expect(panel.getByRole('button', { name: '生成报告草稿' })).toBeDisabled()
     await expect(panel.locator('.report-gate-alert')).toContainText(
-      /confirmed 证据|confirmed-only 校验|readiness 快照/
+      /已确认证据|仅限已确认证据的校验|就绪快照/
     )
   })
 

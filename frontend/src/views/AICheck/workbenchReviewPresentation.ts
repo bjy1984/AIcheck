@@ -1251,8 +1251,21 @@ export const selectWorkbenchAiPresentation = ({
         : nodeRun.suggestion?.decisionSource === 'jev_unavailable'
           ? '节点判定未完成'
           : '节点 AI 复核',
-    statusLabel: failed ? 'AI 结果生成失败' : running ? 'AI 正在分析' : 'AI 已完成，等待人工确认',
-    statusTone: failed ? 'red' : running ? 'blue' : 'green',
+    // 跑完了但结论是「证据不足 / 需人工」：不能用绿色的「已完成」暗示一切顺利，同一张卡里还写着证据不足。
+    statusLabel: failed
+      ? 'AI 结果生成失败'
+      : running
+        ? 'AI 正在分析'
+        : /证据不足|需人工/.test(String(nodeRun.suggestion?.result || ''))
+          ? 'AI 已完成，证据不足，需人工判断'
+          : 'AI 已完成，等待人工确认',
+    statusTone: failed
+      ? 'red'
+      : running
+        ? 'blue'
+        : /证据不足|需人工/.test(String(nodeRun.suggestion?.result || ''))
+          ? 'orange'
+          : 'green',
     resultLabel: failed ? '未产出结论' : String(nodeRun.suggestion?.result || '等待结果'),
     // 摘要同样来自模型落库的文本，历史留痕里带着字段名，展示侧一起兜住。
     summary: withoutFieldNames(

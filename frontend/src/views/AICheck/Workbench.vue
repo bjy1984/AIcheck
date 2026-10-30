@@ -148,6 +148,7 @@ import type {
   Project,
   ProjectTreeNode,
   ReportVersion,
+  ReviewOpinion,
   RoleCode,
   SearchResult,
   TodoItem,
@@ -891,7 +892,7 @@ const readinessBlockingReasons = computed(() => {
   const pendingCount = Number(evidenceReadiness.value?.pendingCount || 0)
   const missingCount = Number(evidenceReadiness.value?.missingCount || 0)
   if (pendingCount > 0) fallback.push(`仍有 ${pendingCount} 条候选证据待确认或不采用。`)
-  if (missingCount > 0) fallback.push(`仍有 ${missingCount} 项必传审查点缺少 confirmed 证据。`)
+  if (missingCount > 0) fallback.push(`仍有 ${missingCount} 项必传审查点缺少 已确认证据。`)
   if (!evidenceReadiness.value) fallback.push('等待节点资料证据 readiness 加载。')
   return fallback
 })
@@ -959,17 +960,18 @@ const aiReviewModeHint = computed(() => {
 })
 const reviewSaveDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
+  if (!reviewResult.value) return '请先选择审查结论'
   const selectedInvalid = selectedReviewEvidenceIds.value.filter(
     (id) => !confirmedEvidenceIds.value.has(id)
   )
   if (selectedInvalid.length)
-    return `证据引用不属于当前节点 confirmed 范围：${selectedInvalid.join('、')}`
+    return `证据引用不属于当前节点 已确认范围：${selectedInvalid.join('、')}`
   if (reviewResult.value === '满足要求') {
     if (!readyForAiFormal.value) {
       return readinessBlockingReasons.value.join('；') || '资料证据未满足保存“满足要求”的条件。'
     }
     if (!selectedReviewEvidenceIds.value.length)
-      return '请选择至少一条 confirmed 证据后再保存“满足要求”。'
+      return '请选择至少一条 已确认证据后再保存“满足要求”。'
   }
   return ''
 })
@@ -978,14 +980,14 @@ const reportGenerateDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
   const opinion = latestReviewOpinion.value
   if (!opinion) return '生成报告前必须先保存人工审查意见。'
-  if (!opinion.evidenceLinkIds?.length) return '人工审查意见缺少 confirmed 证据引用。'
+  if (!opinion.evidenceLinkIds?.length) return '人工审查意见缺少 已确认证据引用。'
   if (opinion.evidenceValidation?.passed !== true) {
     return (
-      opinion.evidenceValidation?.message || '人工审查意见的证据引用未通过 confirmed-only 校验。'
+      opinion.evidenceValidation?.message || '人工审查意见的证据引用未通过 仅限已确认证据的校验。'
     )
   }
   if (opinion.result === '满足要求' && opinion.readinessSnapshot?.readyForAiFormal !== true) {
-    return '人工审查意见缺少正式 readiness 快照，需重新校验证据后生成报告。'
+    return '人工审查意见缺少正式就绪快照，需重新校验证据后生成报告。'
   }
   return ''
 })
@@ -1229,7 +1231,8 @@ const workbenchLocationLabel = computed(() => {
   if (role.value === 'contractor') return '项目文件库'
   if (role.value === 'ndt') return '无损检测资料库'
   if (activeWorkbenchSection.value === 'overview') return '项目总览'
-  return currentNodeLabel.value
+  // 节点名字已经是页面标题，面包屑里再写一遍只会让同一行字在一屏里出现两次。
+  return selectedNode.value ? '节点审查' : currentNodeLabel.value
 })
 const showBreadcrumbNodeType = computed(
   () =>
@@ -1306,7 +1309,9 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
         label: '监检反馈',
         value: `${openFeedbackCount} 项`,
         hint: '按反馈补充报告、底片、记录或说明',
-        tone: openFeedbackCount ? 'red' : 'green'
+        tone: openFeedbackCount ? 'red' : 'green',
+        // 有待处理反馈就给入口：它有期限，不能只让人自己往下翻。
+        ...(openFeedbackCount ? { actionKey: 'ndt-feedback', actionLabel: '去处理反馈' } : {})
       }
     ]
   }
@@ -2626,12 +2631,14 @@ const handleLocateQuickResult = async (result: SearchResult) => {
  * 一个凭空冒出来的动作 key 说明是代码写错了，不该让用户来承担。
  */
 const handleSummaryCardAction = async (actionKey: string) => {
-  if (actionKey === 'ndt-pending') {
-    await nextTick()
-    document
-      .querySelector('#ndt-pending-files')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const anchors: Record<string, string> = {
+    'ndt-pending': '#ndt-pending-files',
+    'ndt-feedback': '#ndt-feedback-list'
   }
+  const selector = anchors[actionKey]
+  if (!selector) return
+  await nextTick()
+  document.querySelector(selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 const handleOpenQuickMessage = async (message: MessageItem) => {
@@ -4253,7 +4260,7 @@ const handleSaveReviewOpinion = async () => {
   const projectId = activeProjectId.value
   const nodeId = activeNodeId.value
   const draft = {
-    result: reviewResult.value,
+    result: reviewResult.value as ReviewOpinion['result'],
     opinion: reviewOpinion.value.trim(),
     evidenceLinkIds: [...selectedReviewEvidenceIds.value]
   }
@@ -5437,7 +5444,7 @@ onBeforeUnmount(() => {
                 <div class="sub">
                   {{
                     role === 'inspection' && activeWorkbenchSection === 'node'
-                      ? `${businessBasis?.ruleName || '监检审计节点'} · 当前查看 ${activeInspectionAuditItemData?.label || '资料提交'}`
+                      ? `当前查看：${activeInspectionAuditItemData?.label || '资料提交'}`
                       : pageIntro
                   }}
                 </div>
@@ -5918,17 +5925,7 @@ onBeforeUnmount(() => {
               @file-delete="handleDeleteProjectFile"
             />
 
-            <WorkbenchNodeStatusStrip
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected
-              "
-              :items="inspectionAuditItems"
-              :active="activeInspectionAuditItem"
-              @select="activeInspectionAuditItem = $event"
-            />
-
+            <!-- 先给要动手的（本节点所需资料），再给流程各阶段的状态：状态是背景，资料才是这个页面要办的事 -->
             <WorkbenchNodeMaterialsCard
               v-if="
                 role === 'inspection' &&
@@ -5937,6 +5934,18 @@ onBeforeUnmount(() => {
               "
               :rows="nodeRequirementRows"
               @open-materials="openNodeMaterialsDetail"
+            />
+
+            <WorkbenchNodeStatusStrip
+              v-if="
+                role === 'inspection' &&
+                activeWorkbenchSection === 'node' &&
+                !inspectionNodeUnselected
+              "
+              :items="inspectionAuditItems"
+              :active="activeInspectionAuditItem"
+              :omit="['ai_review', 'human_review']"
+              @select="activeInspectionAuditItem = $event"
             />
 
             <WorkbenchAiReviewPanel

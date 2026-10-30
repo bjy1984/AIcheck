@@ -11,7 +11,12 @@ import { computed } from 'vue'
 
 import type { InspectionAuditItem, InspectionAuditItemKey } from '@/types/aicheck'
 
-const props = defineProps<{ items: InspectionAuditItem[]; active: InspectionAuditItemKey }>()
+const props = defineProps<{
+  items: InspectionAuditItem[]
+  active: InspectionAuditItemKey
+  /** 页面上方的目录已经展示的项（AI 复核、人工结论）：这里不再重复画一遍芯片，要人处理的摘要仍保留。 */
+  omit?: InspectionAuditItemKey[]
+}>()
 const emit = defineEmits<{ select: [key: InspectionAuditItemKey] }>()
 
 const ORDER: InspectionAuditItemKey[] = [
@@ -47,6 +52,7 @@ const ordered = computed(() => {
     Boolean(item)
   )
 })
+const chips = computed(() => ordered.value.filter((item) => !props.omit?.includes(item.key)))
 
 /** 只把要人处理的摘要摊开：全绿时一条状态条就够了，不必把七段说明都铺出来。 */
 const attention = computed(() =>
@@ -62,7 +68,7 @@ const tone = (item: InspectionAuditItem) => TONES[item.status] || 'gray'
     <div class="card-body">
       <ol class="node-status-list">
         <li
-          v-for="item in ordered"
+          v-for="item in chips"
           :key="item.key"
           :class="[`is-${tone(item)}`, { 'is-active': item.key === active }]"
         >

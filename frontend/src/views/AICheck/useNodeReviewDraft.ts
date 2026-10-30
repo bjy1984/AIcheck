@@ -2,7 +2,8 @@ import { computed, reactive, type Ref } from 'vue'
 import type { ReviewOpinion } from '@/types/aicheck'
 
 type ReviewDraft = {
-  result: ReviewOpinion['result']
+  // 空串＝还没选。不预选「满足要求」：受阻的节点一打开就带着一个不允许保存的结论，既冲突又容易误点。
+  result: ReviewOpinion['result'] | ''
   opinion: string
   correctionReason: string
   evidenceIds: string[]
@@ -15,7 +16,7 @@ export const useNodeReviewDraft = (projectId: Ref<string>, nodeId: Ref<number>) 
   const current = () => {
     const key = JSON.stringify([projectId.value, nodeId.value])
     return (drafts[key] ||= {
-      result: '满足要求',
+      result: '',
       opinion: '',
       correctionReason: '',
       evidenceIds: [],

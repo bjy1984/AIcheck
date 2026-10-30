@@ -325,6 +325,20 @@ export const checkReasonLabels: Record<string, string> = {
   certificate_holder_missing: '证书没有持证主体',
   certificate_scope_missing: '证书没有许可范围',
   provider_confidence_unavailable: '抽取引擎没给置信度，需人工核对引文',
+  // 业务工具已判出不符合，但设计类事实还没登记成带页码引文的事实：交人看，不盖成「证据不足」。
+  business_failed_without_grounded_facts:
+    '业务工具已发现不符合项，但这些事实还没有页码和引文可核，需人工确认',
+  unclassified_documents_may_contain_it: '有认不出类型的文件，缺的类型可能就在其中',
+  document_pipeline_link_missing: '文件没有标明对应哪条管线，无法判定是否要求四级签字',
+  // 标准版本在线核验（libs/standard_online_lookup.py）没核成时的原因
+  invalid_ref: '标准编号格式无法识别',
+  no_year: '引用没有年份，无法判断是哪一版',
+  online_lookup_disabled: '在线核验标准未启用，仅按本地标准时间线判定',
+  over_limit: '超出单次核验条数上限，其余标准未核',
+  upstream_failed: '官方平台暂时无法访问，该标准未核到',
+  not_queried_after_repeated_failures: '官方平台连续访问失败，其余标准未核',
+  deadline_exceeded: '核验耗时过长已中止，其余标准未核',
+  misconfigured: '标准核验服务配置有误',
   requiredFields_not_configured: '规则未配置必填字段清单',
   sampling_parameters_missing: '缺少抽检比例 / 抽样参数',
   R19_SEMANTIC_JUDGMENT_MISSING: '需要语义判断，确定性工具不判',

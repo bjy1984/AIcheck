@@ -136,8 +136,9 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
       </ElSteps>
     </div>
 
+    <!-- 还没开始的项，上面的步骤条已经写了「未开始」，这里再写一遍同样的状态只是重复：有进展或有问题才展开说明 -->
     <div
-      v-if="items[selectedIndex]"
+      v-if="items[selectedIndex] && items[selectedIndex].status !== 'not_started'"
       :class="['audit-item-directory__summary', `is-${items[selectedIndex].status}`]"
       aria-live="polite"
     >
@@ -194,7 +195,8 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .audit-item-directory__steps {
-  min-width: 896px;
+  /* 目录只有两三项时不必撑到 896px，否则窄屏下步骤条要横向滚动 */
+  min-width: min(896px, 100%);
   padding: 2px 0;
 }
 
@@ -527,6 +529,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   .audit-item-directory__item {
     scroll-behavior: auto;
     transform: none;
+  }
+}
+
+/* 矮屏上悬浮的步骤条会盖住下面的内容（1024×768 实测盖住一行资料）：只在够高的屏上吸顶 */
+@media (height < 820px) {
+  .audit-item-directory__scroll {
+    position: static;
   }
 }
 </style>

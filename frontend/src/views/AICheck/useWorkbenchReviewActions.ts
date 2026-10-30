@@ -23,7 +23,7 @@ export type WorkbenchReviewActionsContext = {
   activeNodeId: Ref<number>
   latestAiRun: Ref<AiReviewRun | undefined>
   latestAiReviewFailed: () => boolean
-  reviewResult: Ref<ReviewOpinion['result']>
+  reviewResult: Ref<ReviewOpinion['result'] | ''>
   reviewOpinion: Ref<string>
   correctionReason: Ref<string>
   selectedReviewEvidenceIds: Ref<string[]>
@@ -94,10 +94,10 @@ export const useWorkbenchReviewActions = (ctx: WorkbenchReviewActionsContext) =>
       if (res.data.draftOpinion.requiresEvidenceSelection) {
         ctx.rememberActionBlocker(
           'AI 建议已转为草稿，但仍需选择证据',
-          '请选择当前节点 confirmed 证据后再保存正式审查意见。'
+          '请选择当前节点 已确认证据后再保存正式审查意见。'
         )
         ctx.activeSideTab.value = 'evidence'
-        ElMessage.warning('AI 建议已采纳为草稿，但仍需人工选择 confirmed 证据')
+        ElMessage.warning('AI 建议已采纳为草稿，但仍需人工选择 已确认证据')
       } else {
         ctx.actionBlocker.value = undefined
         ElMessage.success('AI 建议已采纳为审查草稿')
