@@ -105,7 +105,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R08-01 | 所采用的标准是现行有效的 | `design.standardReferences`<br>`standardCatalog.versionStatus`<br>`officialStandardStatus`<br>`reviewDate` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_date_covers`<br>`lookup_standard_status`<br>`check_standard_version_active`<br>`validate_evidence_grounding` | `profile=standard_version`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R08-01 | 所采用的标准是现行有效的 | `design.standardReferences`<br>`standardCatalog.versionStatus`<br>`officialStandardStatus`<br>`reviewDate` | `get_document_ocr_result`<br>`extract_document_fields`<br>`lookup_standard_status`<br>`check_standard_version_active`<br>`validate_evidence_grounding` | `profile=standard_version`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
 | AC-R08-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R09

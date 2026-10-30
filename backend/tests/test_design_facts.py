@@ -238,3 +238,23 @@ def test_design_run_uses_only_selected_documents_and_pipeline_sources():
     state["ocr_parse_results"][2]["fragments"][0]["text"] = "CHANGED"
     with pytest.raises(ValueError, match="sources_changed"):
         build_design_business_facts(state, run)
+
+
+def test_r08_standard_not_yet_effective_on_construction_start_needs_human_review() -> None:
+    """GDLNG（用户 2026-10-29 定）：设计 2021.3 引用 GB/T 20801-2020（2021-06-01 实施），施工 2021-03-24 开工。
+    提前采用已发布的新版不是用了作废标准，交人工，不判不符合。"""
+    from libs.review_orchestrator.design_facts import design_standard_references
+    from libs.review_tools.business_tools import check_standard_version_active
+
+    facts = design_standard_references({"V-1": "《压力管道规范 工业管道》GB/T 20801.2-2020、GB/T 8163-2018"}, "2021-03-24")
+    outcome = check_standard_version_active({"standardReferences": facts["standardReferences"], "reviewDate": "2021-03-24"})
+    assert outcome["result"] == "human_review_required"
+    assert [item["code"] for item in outcome["checks"] if item.get("humanReview")] == ["GB/T 20801.2-2020"]
+    assert outcome["warnings"] == ["standard_not_yet_effective_on_review_date:GB/T 20801.2-2020"]
+
+    withdrawn_too = design_standard_references({"V-1": "GB/T 20801.2-2020、TSG D0001-2009"}, "2026-03-25")
+    later = check_standard_version_active({"standardReferences": withdrawn_too["standardReferences"], "reviewDate": "2026-03-25"})
+    assert later["result"] == "failed", "真用了作废标准照样不符合（TSG D0001-2009 于 2026-01-01 废止）"
+
+    in_force = check_standard_version_active({"standardReferences": facts["standardReferences"], "reviewDate": "2021-06-01"})
+    assert in_force["result"] == "passed"

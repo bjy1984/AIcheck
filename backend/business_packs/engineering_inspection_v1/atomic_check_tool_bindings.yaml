@@ -608,7 +608,6 @@ atomicCheckToolBindings:
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_date_covers
   - lookup_standard_status
   - check_standard_version_active
   - validate_evidence_grounding

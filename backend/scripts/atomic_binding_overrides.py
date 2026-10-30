@@ -50,9 +50,9 @@ ATOMIC_BINDING_OVERRIDES = {'AC-R01-03': {'requiredFacts': ['certificateFacts.ce
                                  'standardCatalog.versionStatus',
                                  'officialStandardStatus',
                                  'reviewDate'],
+               # check_date_covers 不给 R08 填日期（只有 r01/r02 证照参数），永远证据不足，挡住符合（2026-10-29）
                'tools': ['get_document_ocr_result',
                          'extract_document_fields',
-                         'check_date_covers',
                          'lookup_standard_status',
                          'check_standard_version_active',
                          'validate_evidence_grounding']},
