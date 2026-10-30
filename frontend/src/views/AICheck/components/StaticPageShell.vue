@@ -95,6 +95,10 @@ type StaticShellRightCard = {
   note?: string
 }
 
+// .tree-group-status 的宽度是固定的（max-width 84px，12px 字、左右各 6px 内边距），最多放得下约 5 个汉字。
+const GROUP_STATUS_MAX_CHARS = 5
+const groupStatusFits = (text: string) => [...String(text).trim()].length <= GROUP_STATUS_MAX_CHARS
+
 const props = defineProps<{
   brandMark: string
   /** 数据正在刷新。**只画一条顶部细条，不遮挡页面**——
@@ -596,9 +600,14 @@ onBeforeUnmount(() => {
                           <Icon icon="vi-ep:arrow-down" :size="12" />
                         </span>
                         <span class="tree-group-title">{{ section.title }}</span>
-                        <span v-if="section.meta" class="tree-group-status" :title="section.meta">{{
-                          section.meta
-                        }}</span>
+                        <!-- 胶囊只放得下约 5 个汉字：放不下的整段不显示（被截成「全局真值…」比不显示更糟），
+                             完整内容仍在整行的悬浮提示里 -->
+                        <span
+                          v-if="section.meta && groupStatusFits(section.meta)"
+                          class="tree-group-status"
+                          :title="section.meta"
+                          >{{ section.meta }}</span
+                        >
                       </span>
                       <span v-if="section.chips?.length" class="tree-group-chips">
                         <AuditStatusTag

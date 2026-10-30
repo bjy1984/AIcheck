@@ -1,3 +1,4 @@
+import { ElMessage } from 'element-plus'
 import router from './router'
 import { useAppStoreWithOut } from '@/store/modules/app'
 import type { RouteRecordRaw } from 'vue-router'
@@ -50,6 +51,8 @@ router.beforeEach(async (to, from, next) => {
     } else {
       if (!isPathAllowedForRole(to.path, currentRole)) {
         if (to.path !== '/') {
+          // 静默跳走会让人以为是页面坏了或点错了：说一句为什么回到这里
+          ElMessage.warning('当前账号没有该页面的访问权限，已回到你的工作台。')
           next({ path: defaultPath, replace: true })
           return
         }

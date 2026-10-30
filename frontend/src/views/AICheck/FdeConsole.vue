@@ -4230,6 +4230,19 @@ const formatDashboardMetric = (metric: FdeDashboardPayload['metrics'][number]) =
   }
   return metric.suffix === '%' ? percent(metric.value) : metric.value
 }
+// 比率指标必须带样本量：1 个样本得出的 100% 和 1000 个样本的 100% 是两回事。
+// 低于这个数就明说「样本偏少」，没有样本量的比率明说「未提供样本量」，不让一个裸的 100% 单独站在那里。
+const LOW_SAMPLE_THRESHOLD = 30
+const metricSampleSize = (metric: FdeDashboardPayload['metrics'][number]) => {
+  const size = metric.sampleSize ?? metric.denominator
+  return typeof size === 'number' ? size : null
+}
+const metricSampleNote = (metric: FdeDashboardPayload['metrics'][number]) => {
+  if (metric.suffix !== '%' || metric.availability === 'insufficient_data') return ''
+  const size = metricSampleSize(metric)
+  if (size === null) return '未提供样本量，仅供参考'
+  return size < LOW_SAMPLE_THRESHOLD ? `样本偏少（${size}），仅供参考` : ''
+}
 const fdeDomainLabel = (key: string) =>
   fdeRouteCatalog.find((item) => item.key === key)?.label || key
 const blockerSeverityType = (severity: string): FdeElTagType =>
@@ -11830,6 +11843,9 @@ onBeforeUnmount(() => {
             样本 {{ metric.sampleSize ?? metric.denominator }} · {{ metric.numerator ?? 0 }}/{{
               metric.denominator
             }}
+          </small>
+          <small v-if="metricSampleNote(metric)" class="metric-sample-note">
+            {{ metricSampleNote(metric) }}
           </small>
         </div>
       </div>
@@ -28534,5 +28550,12 @@ onBeforeUnmount(() => {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* 样本不足的比率：数字照常显示，但旁边明说不可当结论用 */
+.metric-card .metric-sample-note {
+  display: block;
+  color: var(--el-color-warning-dark-2, #b88230);
+  font-weight: 600;
 }
 </style>
