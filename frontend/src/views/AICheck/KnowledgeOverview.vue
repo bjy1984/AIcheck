@@ -3316,7 +3316,10 @@ onMounted(() => {
 
                   <ElTableColumn label="状态" width="118">
                     <template #default="{ row }">
-                      <StatusTag :status="row.status" effect="light">{{ row.status }}</StatusTag>
+                      <!-- 状态没取到也要说一声：空白格看起来像是页面没加载完 -->
+                      <StatusTag :status="row.status || '未取得'" effect="light">{{
+                        row.status || '未取得'
+                      }}</StatusTag>
                     </template>
                   </ElTableColumn>
 

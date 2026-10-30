@@ -6,6 +6,7 @@ import {
   adminOrgTypeLabels,
   adminOrgTypeLabel,
   adminAuditTypeLabels,
+  adminAuditActionLabel,
   adminCodeLabel,
   filterMaterialPoints,
   filterOrganizations,
@@ -2426,7 +2427,7 @@ const handleSaveProjectEdit = async () => {
 const handleDeleteProject = async (row: Project) => {
   try {
     await ElMessageBox.confirm(
-      `确认删除或归档项目「${row.name}」？有业务数据的项目将自动归档。`,
+      `确认删除或归档项目「${row.name}」？有业务数据的项目不会被删除，而是自动归档（数据保留）；没有业务数据的项目会被直接删除，无法恢复。`,
       '项目删除/归档',
       { type: 'warning' }
     )
@@ -2459,6 +2460,14 @@ const handleDeleteProject = async (row: Project) => {
   } finally {
     projectSaving.value = false
   }
+}
+
+const handleProjectRowCommand = async (command: string, row: Project) => {
+  if (command === 'registration') {
+    openProjectRegistration(row)
+    return
+  }
+  if (command === 'archive') await handleDeleteProject(row)
 }
 
 const handleProjectCardCommand = async (command: string, row: Project) => {
@@ -3758,7 +3767,7 @@ onMounted(() => {
       </div>
 
       <ElTabs v-model="activeTab" class="admin-tabs">
-        <ElTabPane label="项目管理" name="projects">
+        <ElTabPane lazy label="项目管理" name="projects">
           <ElRow :gutter="16">
             <ElCol :span="24">
               <ElCard shadow="never" class="panel">
@@ -3856,27 +3865,29 @@ onMounted(() => {
                   </ElTableColumn>
                   <ElTableColumn prop="todoCount" label="待办" width="76" sortable="custom" />
                   <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
-                  <ElTableColumn label="操作" width="180" fixed="right">
+                  <!-- 常用的两个留在行上；注册审核、归档/删除收进「更多」：四个链接挤成两行，删除还紧挨着编辑 -->
+                  <ElTableColumn label="操作" width="150" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="handleOpenProjectDetail(row)"
                         >详情</ElButton
                       >
-                      <!-- 注册链接与审核（按项目发链接 → 自选角色 → 负责人审核）。
-                           界面上的禁用只是省得白点，真正拦越权的是服务端。 -->
-                      <ElButton link type="primary" @click="openProjectRegistration(row)"
-                        >注册审核</ElButton
-                      >
                       <ElButton link type="primary" @click="openProjectEditDialog(row)"
                         >编辑</ElButton
                       >
-                      <ElButton
-                        link
-                        type="danger"
-                        :loading="projectSaving"
-                        @click="handleDeleteProject(row)"
+                      <ElDropdown
+                        trigger="click"
+                        @command="(command: string) => handleProjectRowCommand(command, row)"
                       >
-                        归档/删除
-                      </ElButton>
+                        <ElButton link type="primary" :loading="projectSaving">更多</ElButton>
+                        <template #dropdown>
+                          <ElDropdownMenu>
+                            <!-- 注册链接与审核（按项目发链接 → 自选角色 → 负责人审核）。
+                                 界面上的禁用只是省得白点，真正拦越权的是服务端。 -->
+                            <ElDropdownItem command="registration">注册审核</ElDropdownItem>
+                            <ElDropdownItem command="archive" divided>归档/删除</ElDropdownItem>
+                          </ElDropdownMenu>
+                        </template>
+                      </ElDropdown>
                     </template>
                   </ElTableColumn>
                 </ElTable>
@@ -3949,7 +3960,7 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="组织用户" name="org">
+        <ElTabPane lazy label="组织用户" name="org">
           <nav class="admin-directory-links" aria-label="组织与用户快速定位">
             <ElButton @click="scrollToAdminDirectory('organizations')"
               >组织单位（{{ overview.orgUnits.length }}）</ElButton
@@ -4217,7 +4228,7 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="业务类型管理" name="business-pack">
+        <ElTabPane lazy label="业务类型管理" name="business-pack">
           <ElRow :gutter="16">
             <ElCol :span="24">
               <ElCard shadow="never" class="panel">
@@ -4324,7 +4335,7 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="权限与节点" name="permission">
+        <ElTabPane lazy label="权限与节点" name="permission">
           <ElRow :gutter="16" class="admin-stack-row">
             <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
@@ -4374,14 +4385,16 @@ onMounted(() => {
                         >
                           {{ actionLabel(action) }}
                         </ElTag>
-                        <ElTag
+                        <!-- 「+17」不能只是个数字：悬浮就列出被折叠的全部权限，不必点进编辑才知道 -->
+                        <ElTooltip
                           v-if="row.actions.length > 5"
-                          size="small"
-                          type="info"
-                          effect="plain"
+                          :content="row.actions.slice(5).map(actionLabel).join('、')"
+                          placement="top"
                         >
-                          +{{ row.actions.length - 5 }}
-                        </ElTag>
+                          <ElTag size="small" type="info" effect="plain">
+                            +{{ row.actions.length - 5 }}
+                          </ElTag>
+                        </ElTooltip>
                       </div>
                     </template>
                   </ElTableColumn>
@@ -4469,7 +4482,7 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="AI业务规则与流程" name="rule">
+        <ElTabPane lazy label="AI业务规则与流程" name="rule">
           <ElRow :gutter="16" class="admin-stack-row">
             <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
@@ -4600,7 +4613,7 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="业务资料审查点" name="material-review-point">
+        <ElTabPane lazy label="业务资料审查点" name="material-review-point">
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
@@ -4759,7 +4772,7 @@ onMounted(() => {
           </ElCard>
         </ElTabPane>
 
-        <ElTabPane label="Prompt 模板管理" name="prompt-template">
+        <ElTabPane lazy label="Prompt 模板管理" name="prompt-template">
           <ElCard shadow="never" class="panel" v-loading="promptTemplateLoading">
             <template #header>
               <div class="panel-header">
@@ -4918,7 +4931,7 @@ onMounted(() => {
           </ElCard>
         </ElTabPane>
 
-        <ElTabPane label="报告模板管理" name="report-template">
+        <ElTabPane lazy label="报告模板管理" name="report-template">
           <ElCard shadow="never" class="panel" v-loading="reportTemplateLoading">
             <template #header>
               <div class="panel-header">
@@ -5094,7 +5107,7 @@ onMounted(() => {
           </ElCard>
         </ElTabPane>
 
-        <ElTabPane label="细项配置" name="fine-config">
+        <ElTabPane lazy label="细项配置" name="fine-config">
           <p class="admin-table-hint">窄屏下可横向滚动表格查看全部字段。</p>
           <ElRow :gutter="16" class="admin-stack-row fine-config-grid">
             <ElCol :span="24" class="admin-stack-col">
@@ -5372,7 +5385,7 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="联调清单" name="integration">
+        <ElTabPane lazy label="接口联调清单（开发用）" name="integration">
           <ElCard shadow="never" class="panel integration-panel" v-loading="integrationLoading">
             <template #header>
               <div class="panel-header">
@@ -5545,11 +5558,11 @@ onMounted(() => {
           </ElCard>
         </ElTabPane>
 
-        <ElTabPane label="Skill 请求记录" name="skill-requests">
+        <ElTabPane lazy label="Skill 请求记录" name="skill-requests">
           <SkillRequestRecords v-if="activeTab === 'skill-requests'" />
         </ElTabPane>
 
-        <ElTabPane label="审计日志" name="audit">
+        <ElTabPane lazy label="审计日志" name="audit">
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
@@ -5610,7 +5623,14 @@ onMounted(() => {
                 min-width="180"
                 show-overflow-tooltip
                 sortable="custom"
-              />
+              >
+                <!-- 接口调用原文放在 title 里，表格里只写人话 -->
+                <template #default="{ row }"
+                  ><span :title="row.action">{{
+                    adminAuditActionLabel(row.action)
+                  }}</span></template
+                >
+              </ElTableColumn>
               <ElTableColumn prop="objectType" label="对象类型" width="144" sortable="custom"
                 ><template #default="{ row }">{{
                   adminCodeLabel(row.objectType)

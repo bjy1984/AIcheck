@@ -26,7 +26,8 @@ export const adminAuditTypeLabels: Record<string, string> = {
   ProjectMember: '项目成员',
   RuleTemplate: '业务规则',
   ReportVersion: '报告版本',
-  MessageItem: '消息'
+  MessageItem: '消息',
+  SecurityEvent: '安全事件'
 }
 
 const technicalLabels: Record<string, string> = {
@@ -41,6 +42,40 @@ const technicalLabels: Record<string, string> = {
   none: '无需鉴权',
   token: '令牌',
   compliance_review_agent: '合规审查 Agent'
+}
+
+// 审计日志里「动作」是接口调用原文（拒绝 POST /v1/extension-agents/xxx/token）。管理员要的是「谁被拦了、拦的是什么」，
+// 不是 HTTP 方法和路径。能认出的片段翻成人话，认不出的原样保留；原文仍放在单元格的 title 里。
+const auditResourceLabels: Record<string, string> = {
+  'extension-agents': '浏览器扩展',
+  'extension-tasks': '扩展任务',
+  'ws-tickets': '实时连接票据',
+  'claim-next': '领取下一个任务',
+  token: '令牌',
+  refresh: '刷新'
+}
+const auditMethodLabels: Record<string, string> = {
+  GET: '读取',
+  POST: '提交',
+  PUT: '修改',
+  PATCH: '修改',
+  DELETE: '删除'
+}
+const looksLikeIdentifier = (segment: string) => /\d/.test(segment) && segment.length >= 6
+
+export const adminAuditActionLabel = (action?: string) => {
+  const text = String(action || '').trim()
+  if (!text) return '—'
+  const match = text.match(/^(?:(\S+)\s+)?(GET|POST|PUT|PATCH|DELETE)\s+(\/\S*)$/i)
+  if (!match) return text
+  const [, decision, method, path] = match
+  const parts = path
+    .split(/[/?#]/)
+    .filter((segment) => segment && !/^v\d+$/i.test(segment))
+    .filter((segment) => !looksLikeIdentifier(segment))
+    .map((segment) => auditResourceLabels[segment.toLowerCase()] || segment)
+  if (!parts.length) return text
+  return `${decision ? `${decision}：` : ''}${parts.join(' · ')}（${auditMethodLabels[method.toUpperCase()] || method}）`
 }
 
 export const adminCodeLabel = (value?: string) => (value ? technicalLabels[value] || value : '—')

@@ -10,6 +10,7 @@ import {
   filterOrganizations,
   filterAdminUsers,
   adminOrgTypeLabel,
+  adminAuditActionLabel,
   adminCodeLabel,
   reportDraftFrom
 } from './adminListPresentation'
@@ -212,3 +213,18 @@ assert.equal(createdPayloads[0].id, undefined)
 assert.equal(visible.value, false)
 assert.equal(production.status, 'production')
 assert.equal(production.etag, 'production-etag')
+
+// 审计日志动作：接口原文翻成人话，认不出的保持原样
+{
+  assert.equal(
+    adminAuditActionLabel('拒绝 POST /v1/extension-agents/agt_9f8e7d6c/token'),
+    '拒绝：浏览器扩展 · 令牌（提交）'
+  )
+  assert.equal(
+    adminAuditActionLabel('拒绝 POST /v1/extension-tasks/claim-next'),
+    '拒绝：扩展任务 · 领取下一个任务（提交）'
+  )
+  assert.equal(adminAuditActionLabel('登录成功'), '登录成功', '不是接口原文就原样返回')
+  assert.equal(adminAuditActionLabel(''), '—')
+  assert.equal(adminCodeLabel('SecurityEvent'), '安全事件')
+}

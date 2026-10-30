@@ -55,13 +55,11 @@ const SECTION_DEFS: Array<{ title: string; items: AdminMenuItem[] }> = [
   {
     title: '基础管理',
     items: [
-      { index: 'a01', label: '项目管理', badge: '多项目', tone: 'blue', route: '/admin/projects' },
+      { index: 'a01', label: '项目管理', route: '/admin/projects' },
       { index: 'a02', label: '组织用户', route: '/admin/org' },
       {
         index: 'a03',
         label: '权限与节点',
-        badge: '动作级',
-        tone: 'blue',
         route: '/admin/permission'
       }
     ]
@@ -72,43 +70,31 @@ const SECTION_DEFS: Array<{ title: string; items: AdminMenuItem[] }> = [
       {
         index: 'a04',
         label: '业务类型管理',
-        badge: '复用',
-        tone: 'green',
         route: '/admin/business-packs'
       },
       {
         index: 'a05',
         label: 'AI 业务规则与流程',
-        badge: '发布',
-        tone: 'blue',
         route: '/admin/rules'
       },
       {
         index: 'a06',
         label: '业务资料审查点',
-        badge: '打靶',
-        tone: 'orange',
         route: '/admin/material-review-points'
       },
       {
         index: 'a07',
         label: 'Prompt 模板管理',
-        badge: 'Prompt',
-        tone: 'blue',
         route: '/admin/prompt-templates'
       },
       {
         index: 'a08',
         label: '报告模板管理',
-        badge: '报告',
-        tone: 'green',
         route: '/admin/report-templates'
       },
       {
         index: 'a09',
         label: '细项配置',
-        badge: '字段',
-        tone: 'orange',
         route: '/admin/fine-config'
       }
     ]
@@ -121,67 +107,49 @@ const SECTION_DEFS: Array<{ title: string; items: AdminMenuItem[] }> = [
       {
         index: 'k01',
         label: '知识库总览',
-        badge: '运行',
-        tone: 'blue',
         route: '/knowledge/overview'
       },
       {
         index: 'k02',
         label: '标准规范库',
-        badge: '标准',
-        tone: 'green',
         route: '/knowledge/sources'
       },
       {
         index: 'k03',
         label: '项目文件知识库',
-        badge: '项目',
-        tone: 'blue',
         route: '/knowledge/files'
       },
       {
         index: 'k04',
         label: 'OCR/向量任务中心',
-        badge: '任务',
-        tone: 'orange',
         route: '/knowledge/tasks'
       },
       {
         index: 'k05',
         label: '监检业务判断规则管理',
-        badge: '规则',
-        tone: 'blue',
         route: '/knowledge/rules'
       },
       {
         index: 'k06',
         label: '知识检索测试',
-        badge: '测试',
-        tone: 'blue',
         route: '/knowledge/retrieval'
       },
       {
         index: 'k07',
         label: '知识网络',
-        badge: '图谱',
-        tone: 'green',
         route: '/knowledge/network'
       },
       {
         index: 'k08',
         label: '推理链路历史日志',
-        badge: '日志',
-        tone: 'green',
         route: '/knowledge/reasoning'
       },
       {
         index: 'k09',
         label: '多 LLM 反馈对比',
-        badge: '评估',
-        tone: 'green',
         route: '/knowledge/compare'
       },
-      { index: 'k10', label: '知识库配置', badge: '策略', tone: 'blue', route: '/knowledge/config' }
+      { index: 'k10', label: '知识库配置', route: '/knowledge/config' }
     ]
   },
   {
@@ -189,13 +157,11 @@ const SECTION_DEFS: Array<{ title: string; items: AdminMenuItem[] }> = [
     items: [
       {
         index: 'a10',
-        label: '联调清单',
-        badge: '对账',
-        tone: 'orange',
+        label: '接口联调清单（开发用）',
         route: '/admin/integration'
       },
       { index: 'a12', label: 'Skill 请求记录', route: '/admin/skill-requests' },
-      { index: 'a11', label: '审计日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
+      { index: 'a11', label: '审计日志', route: '/admin/audit' }
     ]
   }
 ]
