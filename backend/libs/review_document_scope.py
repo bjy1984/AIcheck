@@ -45,7 +45,19 @@ def validate_document_scope(run: dict[str, Any]) -> None:
         raise ValueError("document_scope_pages_mismatch")
 
 
-def document_source_fingerprint(run: dict[str, Any], state: dict[str, Any]) -> str:
+def _row_key(row: dict[str, Any]) -> str:
+    return str(row.get("id") or _hash(row))
+
+
+def document_source_fingerprint(run: dict[str, Any], state: dict[str, Any], *, list_order: bool = False) -> str:
+    """资料指纹。解析行、抽取字段、证据链接按 id 排序后再哈希，不依赖内存列表的先后。
+
+    内存列表的顺序因进程而异：整表加载按 object_id 排，增量刷新把新行插在最前面
+    （见 repository._merge_incremental_collection）。同一个资料版本一旦有了第二条解析
+    结果（重新识别），接口进程和 worker 进程看到的顺序就不同，创建运行时冻结的指纹在
+    执行时一定对不上，运行以 REVIEW_INPUT_CHANGED_RECREATE_RUN 失败。
+    list_order=True 是旧算法（按列表原顺序），只用来识别旧运行冻结的指纹。
+    """
     allowed = set(run.get("inputDocumentVersionIds") or [])
     parses = [row for row in state.get("ocr_parse_results", [])
               if isinstance(row, dict) and row.get("documentVersionId") in allowed]
@@ -55,13 +67,16 @@ def document_source_fingerprint(run: dict[str, Any], state: dict[str, Any]) -> s
                    and str(row.get("nodeId")) == str(run.get("nodeId"))
                    and row.get("status") == "active"
                    and (row.get("fieldId") or (run.get("inputDocumentPageRanges") and row.get("factPath")))]
+    if not list_order:
+        parses = sorted(parses, key=_row_key)
     # Preserve order: the existing correction reader uses the last matching value.
     sources = {"parses": parses, "corrections": corrections}
     if run.get("inputDocumentPageRanges"):
         # Scoped model grounding also reads these independent evidence stores.
         for key in ("extracted_fields", "evidence_links"):
-            sources[key] = [row for row in state.get(key, [])
-                            if isinstance(row, dict) and row.get("documentVersionId") in allowed]
+            rows = [row for row in state.get(key, [])
+                    if isinstance(row, dict) and row.get("documentVersionId") in allowed]
+            sources[key] = rows if list_order else sorted(rows, key=_row_key)
     return _hash(sources)
 
 
@@ -69,7 +84,10 @@ def validate_document_sources(run: dict[str, Any], state: dict[str, Any]) -> Non
     validate_document_scope(run)
     snapshot = run.get("documentScopeSnapshot") or {}
     expected = snapshot.get("sourceFingerprint")
-    if expected is not None and expected != document_source_fingerprint(run, state):
+    if expected is None or expected == document_source_fingerprint(run, state):
+        return
+    # 修复前创建的运行冻结的是按列表顺序算的指纹，仍要认得，否则在途运行会被误判作废。
+    if expected != document_source_fingerprint(run, state, list_order=True):
         raise ValueError("review_document_sources_changed_recreate_run")
 
 
