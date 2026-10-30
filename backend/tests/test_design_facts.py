@@ -287,7 +287,11 @@ def _bundle(*sheets: dict) -> dict:
 
 def test_bundled_drawing_set_is_split_by_title_block_names() -> None:
     """2026-10-29 生产 ECD202 节点 4：整本施工图按首页认成「图纸目录」，签字检查找不到要核的文件。"""
-    from libs.review_orchestrator.design_facts import bundled_design_sections, title_block_roles, _page_subset
+    from libs.review_orchestrator.design_facts import (
+        _page_subset,
+        bundled_design_sections,
+        title_block_roles,
+    )
 
     bundle = _bundle(
         _sheet(1, "图纸目录", body="1 安装设计说明 2 管道特性表 3 管道平面布置图"),
@@ -313,7 +317,11 @@ def test_plain_multi_page_document_is_not_split_by_words_in_its_text() -> None:
 
 
 def test_printed_names_in_title_blocks_need_a_person_and_blank_cells_fail() -> None:
-    from libs.review_orchestrator.design_facts import _design_document_entry, _page_subset, bundled_design_sections
+    from libs.review_orchestrator.design_facts import (
+        _design_document_entry,
+        _page_subset,
+        bundled_design_sections,
+    )
     from libs.review_tools.business_tools import evaluate_design_document_approval
 
     bundle = _bundle(_sheet(1, "图纸目录"), _sheet(2, "管道特性表", body="A01-PL-02"), _sheet(3, "管道平面布置图", body="A01-PL-02"))
