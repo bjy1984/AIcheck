@@ -2491,7 +2491,7 @@ def cmd_standard_content(args: argparse.Namespace) -> Any:
 
 
 def status_on_date(result: Any, day: str) -> dict[str, Any]:
-    """服务器的 verdict 按今天算；给了 --date 就按实施日、废止日算出那一天的状态。"""
+    """按实施日、废止日在本地算出 --date 那一天的状态，和服务器按同一天算的 verdict 交叉核对（matched.status 是今天的）。"""
     result = result if isinstance(result, dict) else {}
     ref = next(iter(result.get("standardReferences") or []), {})
     detail = result.get("detail") or {}
