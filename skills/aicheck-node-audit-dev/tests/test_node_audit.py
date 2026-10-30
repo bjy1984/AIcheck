@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -1947,6 +1948,47 @@ class NodeAuditTest(unittest.TestCase):
         self.assertEqual(uploads[0], na.OCR_FIRST_REQUEST)  # 保证进展的第一份
         self.assertTrue(all(t <= 30 for t in uploads[1:]), uploads)  # 之后的都不超过剩余时间
         self.assertTrue(calls and all(t <= na.OCR_FIRST_REQUEST for t in calls), calls)
+
+    def test_large_photos_are_downscaled_before_upload(self):
+        # 2026-10-29 生产：5712×3213 的手机照片 MinerU 全部失败，4032×2268 的都成功
+        fitz = na.quiet_fitz()
+        root = Path(self.tmp.name) / "photos"
+        root.mkdir()
+        big, small = root / "big.png", root / "small.png"
+        fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 20), False).save(str(big))
+        fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 30, 10), False).save(str(small))
+        with patch.object(na, "OCR_MAX_IMAGE_SIDE", 40):
+            name, data = na.upload_payload(big, "a" * 64)
+            shrunk = fitz.Pixmap(data)
+            self.assertEqual((name, shrunk.width, shrunk.height), ("a" * 16 + ".jpg", 40, 13))
+            self.assertEqual(na.upload_payload(small, "b" * 64), ("b" * 16 + ".png", small.read_bytes()))  # 不大的照原样传
+        fake = root / "fake.png"
+        fake.write_bytes(b"\x89PNG not really")
+        self.assertEqual(na.upload_payload(fake, "c" * 64), ("c" * 16 + ".png", b"\x89PNG not really"))  # 读不出尺寸：照原样交服务器判断
+
+    def test_downscaled_photos_get_their_own_idempotency_key(self):
+        # 2026-10-29 评测：键按原件哈希算、内容却是缩小后的，原尺寸传过的照片再传被拒 40905，整条 ocr 中止
+        fitz = na.quiet_fitz()
+        root = Path(self.tmp.name) / "key-project"
+        root.mkdir()
+        fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 20), False).save(str(root / "a-焊工证.png"))
+        fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 30, 10), False).save(str(root / "b-焊工证.png"))
+        bundle = Path(run("local-init", "--node", "24", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "key"))[1]["data"]["bundle"])
+        self.login()
+        self.server.ocr_result = self.certificate_result()
+        sent = {}
+        upload = na.Api.upload
+
+        def spy_upload(api, path, content, *, headers, timeout=300):
+            sent[headers["Idempotency-Key"]] = content
+            return upload(api, path, content, headers=headers, timeout=timeout)
+
+        with patch.object(na, "OCR_MAX_IMAGE_SIDE", 40), patch.object(na, "OCR_POLL_SECONDS", 0), patch.object(na.Api, "upload", spy_upload):
+            code, out = run("ocr", "--bundle", str(bundle), "--allow-egress")
+        self.assertEqual((code, len(out["data"]["done"])), (0, 2), out)
+        originals = {hashlib.sha256(p.read_bytes()).hexdigest() for p in root.iterdir()}
+        self.assertEqual({key: hashlib.sha256(content).hexdigest()[:48] in key for key, content in sent.items()}, {key: True for key in sent})
+        self.assertEqual(sum(any(sha[:48] in key for sha in originals) for key in sent), 1)  # 只有原样传的那份沿用原件哈希
 
     def test_ocr_counts_blank_pages_only_where_the_file_needs_ocr(self):
         fitz = na.quiet_fitz()

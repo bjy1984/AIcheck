@@ -1928,18 +1928,35 @@ def ocr_reason(path: Path) -> str | None:
     return None
 
 
+# MinerU 收不了太大的照片：2026-10-29 生产实测，GDLNG-002 的 5712×3213 手机照片（15–20MB）13 张全部
+# MINERU_JOB_FAILED，同一批 4032×2268 的都识别成功。长边超过这个值的图片先等比缩小再上传，拍一页 A4 仍有约 340 dpi。
+OCR_MAX_IMAGE_SIDE = 4000
+
+
 def upload_payload(path: Path, sha: str) -> tuple[str, bytes]:
-    """上传名只用哈希：文件名里常有人名，没必要给出去。服务器不收的图片格式先转 PNG。"""
+    """上传名只用哈希：文件名里常有人名，没必要给出去。服务器不收的图片格式先转 PNG；太大的照片先缩小（存 JPEG）。"""
     suffix = path.suffix.lower()
-    if suffix in OCR_UPLOAD_SUFFIXES:
+    if suffix in OCR_UPLOAD_SUFFIXES and suffix not in IMAGE_SUFFIXES:
         return f"{sha[:16]}{suffix}", path.read_bytes()
     if suffix not in IMAGE_SUFFIXES:
         raise ClientError("unsupportedFile", f"{path.name}：服务器 OCR 不收这种格式，请用户转成 PDF。")
     try:
         fitz = quiet_fitz()
         pix = fitz.Pixmap(str(path))
+    except Exception:  # noqa: BLE001 -- 读不出尺寸：服务器收的格式照原样传，让服务器判断
+        if suffix in OCR_UPLOAD_SUFFIXES:
+            return f"{sha[:16]}{suffix}", path.read_bytes()
+        raise ClientError("unsupportedFile", f"{path.name}：服务器 OCR 不收这种图片格式，也转不成 PNG。") from None
+    try:
+        side = max(pix.width, pix.height)
+        if side <= OCR_MAX_IMAGE_SIDE and suffix in OCR_UPLOAD_SUFFIXES:
+            return f"{sha[:16]}{suffix}", path.read_bytes()
         if pix.alpha or pix.n > 3:
             pix = fitz.Pixmap(fitz.csRGB, pix)
+        if side > OCR_MAX_IMAGE_SIDE:
+            scale = OCR_MAX_IMAGE_SIDE / side
+            pix = fitz.Pixmap(pix, max(1, round(pix.width * scale)), max(1, round(pix.height * scale)), None)
+            return f"{sha[:16]}.jpg", pix.tobytes("jpg", jpg_quality=92)
         return f"{sha[:16]}.png", pix.tobytes("png")
     except Exception:  # noqa: BLE001 -- 转不了就跳过这份，不让整批失败
         raise ClientError("unsupportedFile", f"{path.name}：服务器 OCR 不收这种图片格式，也转不成 PNG。") from None
@@ -2160,8 +2177,11 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
         name, content = payload
         # 同一份原件同一个键：网关重试、重跑都拿回原来的任务，不会重复识别。要重做已完成的文件（--force）
         # 或上次失败了，就换键（r1、r2…）：服务器的幂等记录不过期，同键永远是第一次的那个任务。
+        # 键按实际上传的字节算：原样传的就是原件哈希；缩小、转 PNG 的换了内容，用原件哈希的键会被拒（40905，
+        # 2026-10-29 评测：早上原尺寸传过的照片，缩小后再传永远拿不到 OCR）。
         metadata = base64.urlsafe_b64encode(json.dumps({"fileName": name, "options": {"language": "ch"}}).encode()).decode()
-        headers = {"Content-Type": "application/octet-stream", "Idempotency-Key": idempotency_key(sha, attempt),
+        key = idempotency_key(hashlib.sha256(content).hexdigest(), attempt)
+        headers = {"Content-Type": "application/octet-stream", "Idempotency-Key": key,
                    "X-AICheck-Ocr-Metadata-B64": metadata}
         try:
             data = with_server_retry(lambda: api.upload("/internal/ocr/mineru/tasks/upload", content, headers=headers,
