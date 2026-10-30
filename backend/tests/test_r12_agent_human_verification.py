@@ -333,11 +333,26 @@ def test_r12_inline_review_pauses_and_resumes_after_human_input(monkeypatch) -> 
     }
     repo.state.setdefault("ai_runs", []).insert(0, ai_run)
     monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "deterministic")
+    monkeypatch.setattr("libs.review_orchestrator.r12_agent.auto_verify_candidates",
+                        lambda candidates: [{"candidateId": item["candidateId"], "outcome": "unable_to_verify",
+                                             "platformError": "CNSE_UPSTREAM_FAILED"} for item in candidates])
+    graph_runs: list[str] = []
+
+    def fake_graph(review_run, context, **kwargs):
+        graph_runs.append(review_run["status"])
+        review_run["findingDrafts"] = [{"description": "R12 已复核", "confidence": 0.8}]
+        return {"runner": "langgraph", "checkpointer": "postgres", "nodeCount": 12}
+
+    monkeypatch.setattr("libs.review_orchestrator.graph.execute_review_graph", fake_graph)
     run = create_review_run_from_ai_run(ai_run, mode="inline")
 
     paused = execute_review_run_inline(run["reviewRunId"])
 
+    # 2026-10-29 生产 ECD202 节点 12：官网核验交人时，其余检查也要照常出结论，不能整次审查停在人工任务上
     assert paused["status"] == "waiting_human_input"
+    assert graph_runs == ["running"], "等人工核验之前，其余检查先跑完"
+    assert paused["humanInputTaskId"] == run["humanInputTasks"][0]["taskId"]
+    assert ai_run["status"] == "待人工核验" and "atomicCheckOutcomes" in ai_run
     task = run["humanInputTasks"][0]
     candidate = task["candidates"][0]
     applied = apply_r12_human_input_for_review_run(
@@ -362,14 +377,10 @@ def test_r12_inline_review_pauses_and_resumes_after_human_input(monkeypatch) -> 
     )
     assert applied["status"] == "applied"
 
-    def fake_graph(review_run, context, **kwargs):
-        review_run["findingDrafts"] = [{"description": "R12 已复核", "confidence": 0.8}]
-        return {"runner": "langgraph", "checkpointer": "postgres", "nodeCount": 12}
-
-    monkeypatch.setattr("libs.review_orchestrator.graph.execute_review_graph", fake_graph)
     resumed = execute_review_run_inline(run["reviewRunId"])
 
     assert resumed["status"] == "waiting_human_review"
+    assert graph_runs == ["running", "running"], "人工核验提交后整次重跑"
     assert len(run["humanInputTasks"]) == 1
 
 

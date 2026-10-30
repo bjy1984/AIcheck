@@ -1176,6 +1176,7 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         return {"reviewRunId": review_run_id, "status": review_run.get("status"), "alreadyCompleted": True}
     ai_run = resolve_ai_run(review_run, allow_reload=True)
     context: dict[str, Any] = {}
+    pending_human_task: dict[str, Any] | None = None
     try:
         ensure_document_sources(review_run, repo.state)
         if is_r12_formal_review(review_run):
@@ -1206,9 +1207,10 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                 agent_trace=agent_trace,
             )
             if task:
-                review_run["status"] = "waiting_human_input"
-                review_run["currentStep"] = "waiting_r12_registry_verification"
+                # 官网核验交人的同时，其余检查照常跑完出结论；运行最后停在 waiting_human_input，提交后重跑。
+                # 2026-10-29 生产 ECD202 节点 12：一张许可证平台查询失败，人工任务挡住了整次审查，一项结论都没有。
                 review_run["r12AgentControl"] = agent_trace
+                pending_human_task = task
                 if not task.get("waitingEventRecorded"):
                     task["waitingEventRecorded"] = True
                     append_review_event(
@@ -1223,15 +1225,6 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                             "controlMode": agent_trace.get("controlMode"),
                         },
                     )
-                bump_review_run_revision(review_run)
-                if ai_run:
-                    ai_run["status"] = "待人工核验"
-                    ai_run["reviewRunId"] = review_run_id
-                return {
-                    "reviewRunId": review_run_id,
-                    "status": "waiting_human_input",
-                    "humanInputTaskId": task.get("taskId"),
-                }
         if is_r19_formal_review(review_run):
             r19_context = build_r19_agent_context(repo.state, review_run)
             agent_trace = plan_r19_semantic_review(review_run, r19_context)
@@ -1327,20 +1320,21 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         review_run["graphExecution"] = graph_execution
         review_run["graphRunner"] = graph_execution["runner"]
         review_run["graphEngine"] = "langgraph" if graph_execution.get("runner") == "langgraph" else "langgraph_fallback"
-        review_run["status"] = "waiting_human_review"
-        review_run["currentStep"] = "waiting_human_review"
+        waiting_input = bool(pending_human_task and pending_human_task.get("status") == "pending")
+        review_run["status"] = "waiting_human_input" if waiting_input else "waiting_human_review"
+        review_run["currentStep"] = "waiting_r12_registry_verification" if waiting_input else "waiting_human_review"
         review_run["finishedAt"] = server_time()
         bump_review_run_revision(review_run)
         review_run["outputHash"] = stable_hash_payload(review_run.get("findingDrafts") or [])
         append_review_event(
             review_run_id,
             event_type="review_run.waiting_human",
-            title="等待人工确认",
-            status="waiting_human_review",
+            title="其余检查已出结论，等待官网人工核验" if waiting_input else "等待人工确认",
+            status=review_run["status"],
             details={"graphExecution": graph_execution},
         )
         if ai_run:
-            ai_run["status"] = "完成"
+            ai_run["status"] = "待人工核验" if waiting_input else "完成"
             ai_run["finishedAt"] = review_run["finishedAt"]
             ai_run["findingDrafts"] = repo.clone(review_run.get("findingDrafts") or [])
             ai_run["certificateVerification"] = repo.clone(context.get("certificateVerification") or None)
@@ -1418,6 +1412,9 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             review_run["stateTransition"] = transition
             if ai_run:
                 ai_run["stateTransition"] = repo.clone(transition)
+        if waiting_input and pending_human_task:
+            return {"reviewRunId": review_run_id, "status": review_run["status"],
+                    "humanInputTaskId": pending_human_task.get("taskId")}
         return {"reviewRunId": review_run_id, "status": review_run["status"]}
     except Exception as exc:
         if isinstance(exc, shard_execution.EvidenceShardProcessingIncomplete):
