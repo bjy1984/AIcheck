@@ -228,3 +228,38 @@ def test_historical_withdrawn_without_date_is_ambiguous():
     with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
         result=StdSamrClient(client=http_client).verify('GB/T 12771-2008',review_date=date(2019,1,1)).to_dict()
     assert result['verdict']=='ambiguous'
+
+
+def test_同编号都已废止时不把旧版当成代替版() -> None:
+    """2026-10-29：GB/T 20801.2-2020 由不同编号的 20801.1-2025 代替，同编号只剩被代替的 2006 版，
+    replacedBy 和现行执行原来都指成了 2006 版。"""
+    search_html = (
+        fixture_text("stdpage_gbt_12771.html")
+        .replace('label-success">现行', 'label-danger">废止', 1)
+        .replace('label-danger">废止', 'label-warning">被代替', 2)
+        .replace('label-warning">被代替', 'label-danger">废止', 1)
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/search/stdPage"):
+            return httpx.Response(200, text=search_html)
+        return httpx.Response(404, text="missing")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        result = StdSamrClient(client=http_client).verify("GB/T 12771-2019", review_date=date(2026, 10, 29)).to_dict()
+
+    assert [row.status for row in parse_search_html(search_html)[1]] == ["废止", "被代替", "废止"]
+    assert result["matched"]["code"] == "GB/T 12771-2019"
+    assert result["currentExecution"] is None
+    assert result["standardReferences"][0]["replacedBy"] is None
+
+
+def test_被不同编号代替时按标准时间线补上代替版() -> None:
+    from libs.integrations.external_registry_queries import with_catalog_replacement
+
+    result = with_catalog_replacement(
+        {"standardReferences": [{"standardRef": "GB/T 20801.2-2020", "status": "废止", "replacedBy": None}]}
+    )
+    reference = result["standardReferences"][0]
+    assert reference["replacedBy"] == "GB/T 20801.1-2025"
+    assert reference["replacedBySource"] == "business_pack_standard_timeline"

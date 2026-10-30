@@ -112,4 +112,20 @@ def query_standard_status(standard_ref: str, review_date: date | str | None = No
 
     as_of = parse_review_date(review_date)
     with StdSamrClient(origin=configured_std_samr_origin()) as client:
-        return dict(client.verify(standard_ref, review_date=as_of).to_dict(origin=client.origin))
+        result = dict(client.verify(standard_ref, review_date=as_of).to_dict(origin=client.origin))
+    return with_catalog_replacement(result)
+
+
+def with_catalog_replacement(result: dict[str, Any]) -> dict[str, Any]:
+    """平台只按同编号找新版：被不同编号代替的（GB/T 20801.2-2020 → GB/T 20801.1-2025）replacedBy 为空，
+    按业务包标准时间线补上，并标明来源。"""
+    from libs.standard_timeline import timeline_status
+
+    for reference in result.get("standardReferences") or []:
+        if not isinstance(reference, dict) or reference.get("replacedBy") or reference.get("status") not in {"废止", "被代替"}:
+            continue
+        replaced_by = timeline_status(str(reference.get("standardRef") or "")).get("replacedBy")
+        if replaced_by:
+            reference["replacedBy"] = replaced_by
+            reference["replacedBySource"] = "business_pack_standard_timeline"
+    return result

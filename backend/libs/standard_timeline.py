@@ -8,12 +8,14 @@ std.samr.gov.cn（lookup_standard_status），核到的结果也可以落进同�
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from libs.contracts.responses import business_today
 
 TIMELINE_PATH = Path(__file__).resolve().parents[1] / "business_packs" / "engineering_inspection_v1" / "standard_version_timeline.yaml"
 _TSG_RE = re.compile(r"TSG\s*([A-Z]{0,2}\s?\d{2,5})\s*[-—–－]\s*(\d{4})", re.IGNORECASE)
@@ -76,7 +78,7 @@ def timeline_status(code: str, on_date: date | str | None = None, *, path: Path 
     """按时间线判一个编号在某天的状态。未收录 → unknown（调用方走在线查询 + 人工）。"""
     normalized = normalize_code(code)
     entry = load_timeline(path).get(normalized)
-    day = _parse_date(on_date) if on_date else datetime.now(UTC).date()
+    day = _parse_date(on_date) if on_date else business_today()  # 业务日（上海），不是容器的 UTC 日
     if entry is None:
         return {"code": normalized, "status": STATUS_UNKNOWN, "label": STATUS_LABELS[STATUS_UNKNOWN], "onDate": day.isoformat() if day else None, "verified": False}
     effective = _parse_date(entry.get("effectiveFrom"))

@@ -463,6 +463,11 @@ def _status_rank(status: str) -> int:
 
 
 def _pick_current(candidates: list[StdSamrBrief]) -> StdSamrBrief | None:
+    """同编号里现行（其次即将实施）的那一版；都已废止或被代替就是没有。
+
+    2026-10-29：GB/T 20801.2/.3/.4/.6-2020 由不同编号的 20801.1-2025 代替，同编号只剩
+    2006 版（被代替）和 2020 版（废止），原来退回排序第一的 2006 版，现行执行和 replacedBy 都指成了旧版。
+    """
     ordered = sorted(candidates, key=lambda item: (_status_rank(item.status), item.code))
     for item in ordered:
         if item.status == STATUS_CURRENT:
@@ -470,7 +475,17 @@ def _pick_current(candidates: list[StdSamrBrief]) -> StdSamrBrief | None:
     for item in ordered:
         if item.status == STATUS_UPCOMING:
             return item
-    return ordered[0] if ordered else None
+    return None
+
+
+def _replacement_code(matched: StdSamrBrief, current: StdSamrBrief | None, status: str) -> str | None:
+    """被同编号新版代替时给出新版编号：只认比查询那版年份新的现行版。"""
+    if current is None or current.code == matched.code or status not in {STATUS_WITHDRAWN, STATUS_REPLACED}:
+        return None
+    matched_ref, current_ref = _brief_canonical(matched), _brief_canonical(current)
+    if matched_ref is None or current_ref is None or (current_ref.year or 0) <= (matched_ref.year or 0):
+        return None
+    return current.code
 
 
 def _bounded_text_response(response: httpx.Response, *, limit: int, label: str) -> str:
@@ -673,9 +688,7 @@ class StdSamrClient:
         effective_from = (detail.effective_date if detail else None) or matched.effective_date
         withdrawn_on = detail.withdrawn_on if detail else None
         status = (detail.status if detail else None) or matched.status
-        replaced_by = None
-        if current is not None and current.code != matched.code and status in {STATUS_WITHDRAWN, STATUS_REPLACED}:
-            replaced_by = current.code
+        replaced_by = _replacement_code(matched, current, status)
 
         effective_date = _parse_iso_date(effective_from)
         withdrawn_date = _parse_iso_date(withdrawn_on)
