@@ -2023,6 +2023,47 @@ class NodeAuditTest(unittest.TestCase):
             _, _, merged, used = na.page_texts(bundle, "files/99-表.pdf", paths["files/99-表.pdf"])
             self.assertEqual(used, set())  # 工程资料的数字文字层比 OCR 准
 
+    def test_ocr_only_seals_on_text_layer_drawing_pages_are_appended_once(self):
+        # 10-29 服务器节点评测：储罐施工图有文字层，设计许可章、签字栏人名是图片，只在 OCR 里，text、search 读不到
+        root = Path(self.tmp.name) / "seal-project"
+        root.mkdir()
+        sentence = "管道安装完毕后应进行压力试验，水压试验压力为设计压力的一点五倍。"
+        with na.quiet_fitz().open() as doc:
+            for n in range(1, 7):
+                doc.new_page().insert_text((40, 60), "\n".join([f"管道布置图 第{n}张 图号 S10{n}", sentence if n == 3 else "设计说明见首页"] * 3),
+                                           fontname="china-s")
+            doc.save(root / "施工图.pdf")
+        bundle = Path(run("local-init", "--node", "4", "--project-dir", str(root), "--out", str(Path(self.tmp.name) / "seal"))[1]["data"]["bundle"])
+        [relative] = [f["path"] for f in json.loads((bundle / "bundle.json").read_text(encoding="utf-8"))["files"]]
+        source = bundle / relative
+        seal = "压力管道设计 | 主要负责人:张三（跨3列） | TS1234567-2028有效期至:2028年1月17日"
+        ocr_pages = [{"page": n, "text": f"管道布置图 | 第{n}张 | 图号 S10{n}\n{seal}\n版次REV. | 审核REVD.\n李四 | III级\nIII级"} for n in range(1, 7)]
+        ocr_pages[1]["text"] += "\n" + sentence  # 服务器把第 3 页的字记到了第 2 页
+        ocr_pages[2]["text"] = ""
+        na.write_private(na.ocr_record_path(bundle, relative), json.dumps(
+            {"file": relative, "sha256": na.cached_sha(source), "renderVersion": na.OCR_RENDER_VERSION, "pages": ocr_pages}, ensure_ascii=False))
+        status, layer, merged, used = na.page_texts(bundle, relative, source)
+        self.assertEqual((status, used), ("text", set()))
+        self.assertEqual(merged[2], layer[2])  # 这页没有 OCR 文字
+        tails = [m[len(l.strip()):] for m, l in zip(merged, layer)]
+        self.assertEqual(tails[0], f"\n\n{na.OCR_SUPPLEMENT_MARK}\n压力管道设计 | 主要负责人:张三 | TS1234567-2028有效期至:2028年1月17日\n"
+                                   "版次REV. | 审核REVD.\n李四 | III级")
+        for tail in tails[1:2] + tails[3:]:
+            self.assertIn("压力管道设计 | 主要负责人:张三 | TS1234567-2028有效期至:2028年1月17日", tail)  # 章每页照给
+            self.assertIn("李四", tail)  # 签字栏人名每页照给
+            self.assertNotIn("版次REV.", tail)  # 每页都有的双语栏名只给第一页
+            self.assertNotIn("第", tail)  # 文字层有的格不补
+        self.assertNotIn("压力试验", tails[1])  # 错记到第 2 页、其实在第 3 页文字层里的字不补
+        code, out = run("text", "--file", relative, "--bundle", str(bundle), "--pages", "1-2")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["data"]["ocrSupplementPages"], "ocrPages" in out["data"]), ("1-2", False))
+        self.assertIn("--- 第 1 页（文字层＋OCR 补充） ---", Path(out["data"]["saved"]).read_text(encoding="utf-8"))
+        code, out = run("search", "--bundle", str(bundle), "--only", "--terms", "张三")
+        self.assertEqual(code, 0, out)
+        hits = json.loads(Path(out["data"]["saved"]).read_text(encoding="utf-8"))["files"][0]["hits"]
+        self.assertEqual(sorted({h["page"] for h in hits}), [1, 2, 4, 5, 6])
+        self.assertIsNone(na.excerpt_problem(bundle, {"file": relative, "page": 1, "excerpt": "主要负责人:张三"}, {relative}, {}))
+
     def test_a_docx_with_embedded_pictures_goes_to_ocr_and_reads_both_parts(self):
         # c 轮评测：储罐焊工清单 docx 文末嵌着焊工证照片，没被标成要 OCR
         import zipfile

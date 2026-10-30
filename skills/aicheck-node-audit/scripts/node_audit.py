@@ -1224,7 +1224,9 @@ def cmd_text(args: argparse.Namespace) -> Any:
     # --pages 只转这几页：大文件、标准原文按 search 命中页读，不用整份读进对话
     selected = parse_pages(args.pages, len(pages), limit=max(len(pages), 1)) if args.pages else list(range(1, len(pages) + 1))
     out = text_out_path(args, path, page_ranges(selected) if args.pages else None)
-    label = lambda n: f"--- 第 {n} 页{'（OCR）' if status == 'ocr' or n in used else ''} ---"
+    # 文字层齐、只在页末补了 OCR 多读出的字（印章、签字栏、图片上的字）的页
+    supplemented = {n for n in selected if status == "text" and n not in used and n <= len(layer) and pages[n - 1] != layer[n - 1]}
+    label = lambda n: f"--- 第 {n} 页{'（OCR）' if status == 'ocr' or n in used else '（文字层＋OCR 补充）' if n in supplemented else ''} ---"
     body = "\n\n".join(f"{label(n)}\n{pages[n - 1]}" if len(pages) > 1 or status == "ocr" else pages[n - 1] for n in selected)
     write_private(out, mask_ids(body))
     result = {"file": str(path), "status": status, "pages": len(pages), "chars": sum(len(pages[n - 1]) for n in selected), "saved": str(out)}
@@ -1234,11 +1236,15 @@ def cmd_text(args: argparse.Namespace) -> Any:
         result["readHint"] = (f"共 {len(pages)} 页：不要整份读进对话。按 search 的 termPages 用 --pages 只转要看的页；"
                               "逐件核对要看全部页时分段转、边读边记 notes.md。")
     record = load_ocr(bundle, relative, path)
-    if status == "ocr" or used:
+    if status == "ocr" or used or supplemented:
         ocr_selected = selected if status == "ocr" else sorted(used & set(selected))
         if ocr_selected:
             result["ocrPages"] = page_ranges(ocr_selected)
-        result["ocrNote"] = ("标（OCR）的页是服务器识别的文字；[印章：…]、[签名：…] 是服务器识别的印章、签名，“服务器未读出章上的字”表示有章但没读出字，该事实交人工确认。"
+        if supplemented:
+            result["ocrSupplementPages"] = page_ranges(sorted(supplemented))
+        result["ocrNote"] = ("标（OCR）的页是服务器识别的文字；标（文字层＋OCR 补充）的页，页末“以下是服务器 OCR 读出、文字层里没有的字”后面"
+                             "是 OCR 多读出的格（印章、签字栏人名、图片上的字），引用照抄那一行；"
+                             "[印章：…]、[签名：…] 是服务器识别的印章、签名，“服务器未读出章上的字”表示有章但没读出字，该事实交人工确认。"
                              f"{CODE_MISREAD_NOTE}。")
         if (record or {}).get("renderVersion") != OCR_RENDER_VERSION:
             result["ocrOutdated"] = "这份 OCR 是旧排版（横跨多列的格子逐格重复）：再跑一次 ocr 会按新排版重排，不重新上传、不重新识别；重排后摘录照新转出的文字抄。"
@@ -1764,7 +1770,9 @@ def page_texts(bundle: Path | None, relative: str | None, path: Path) -> tuple[s
         # 标准的表格页以 OCR 版为准：文字层常丢列（c 轮评测：NB/T 47014-2023 第 41 页表 6 文字层缺了最大值一列），
         # 又看不出来。只对标准这么做：工程资料的数字文字层比 OCR 准。
         shaky.update({n: "table" for n, text in ocr.items() if n not in shaky and ocr_has_table(text)})
-    for number, text in ocr.items():
+    extras: dict[int, list[list[str]]] = {}
+    whole = norm_cell("".join(layer))
+    for number, text in sorted(ocr.items()):
         if not (1 <= number <= len(layer)) or not text.strip():
             continue
         if number in shaky:
@@ -1773,7 +1781,62 @@ def page_texts(bundle: Path | None, relative: str | None, path: Path) -> tuple[s
         elif len(layer[number - 1].strip()) < OCR_FILL_BELOW or number in scanned:
             merged[number - 1] = f"{layer[number - 1].strip()}\n{text}".strip()
             used.add(number)
+        elif not (relative or "").startswith("standard:"):
+            extras[number] = ocr_only_cells(layer[number - 1], text, whole)
+    # 文字层齐的页只补文字层没有的格（10-29 服务器节点评测：储罐施工图是带文字层的 PDF，设计许可章、出图专用章、
+    # 签字栏人名都是图片，只在 OCR 里，text、search 读不到）。很多页都补出的中英双语栏名（“版次REV.”）只在第一页给；
+    # 章上的字、签字栏人名每页照给，逐页核盖章、签字要用。
+    seen = Counter(cell for lines in extras.values() for cell in {norm_cell(c) for line in lines for c in line})
+    boiler = {cell for cell, pages in seen.items() if pages >= max(OCR_BOILERPLATE_PAGES, len(extras) / 3)
+              and re.search(r"[A-Za-z]", cell) and not re.search(r"\d", cell)}
+    shown: set[str] = set()
+    for number, lines in extras.items():
+        kept = []
+        for line in lines:
+            cells = [c for c in line if norm_cell(c) not in boiler or norm_cell(c) not in shown]
+            shown.update(norm_cell(c) for c in cells)
+            if cells:
+                kept.append(" | ".join(cells))
+        if kept:
+            merged[number - 1] = f"{layer[number - 1].strip()}\n\n{OCR_SUPPLEMENT_MARK}\n" + "\n".join(kept)
     return status, layer, merged, used
+
+
+OCR_SUPPLEMENT_MARK = "（以下是服务器 OCR 读出、文字层里没有的字：印章、签名、图签和图片上的字；可能有误读，数字和文字层不同时以文字层为准）"
+OCR_SPAN_TAG = re.compile(r"（跨\d+[列行]）")
+OCR_BOILERPLATE_PAGES = 5  # 同一份文件至少这么多页（且三分之一以上）都补出的同一个双语栏名，只在第一页给
+OCR_CELL_SHINGLE = 6  # 长格按 6 字一段、隔 3 字取段，六成段落在文字层里就算文字层有（OCR 认错几个字、断句不同）
+
+
+def norm_cell(cell: str) -> str:
+    return re.sub(r"[\W_]+", "", cell)
+
+
+def ocr_only_cells(layer: str, text: str, whole: str = "") -> list[list[str]]:
+    """OCR 文字里文字层没有的格，按 OCR 的行分组。比较时去掉空白、标点和“（跨N列）”：表格在 OCR 里按格展开，
+    和文字层的写法不同，逐行比几乎每行都算多出来的。长格还和整份文件的文字层（whole，已 norm_cell）比：
+    服务器 OCR 会把后面几页的字记到前一页（10-29 储罐施工图第 4 页的 OCR 含第 4–11 页的设计说明，第 5–11 页是空的）。"""
+    flat = norm_cell(layer)
+
+    def in_layer(cell: str) -> bool:
+        if len(cell) < 2:
+            return True  # 单字、勾选符号：补了也看不出是哪一格
+        if len(cell) < 2 * OCR_CELL_SHINGLE:
+            return cell in flat  # 短格（签字栏人名）只和本页比：别页文字层有同一个名字不等于本页签了
+        parts = [cell[i:i + OCR_CELL_SHINGLE] for i in range(0, len(cell) - OCR_CELL_SHINGLE + 1, OCR_CELL_SHINGLE // 2)]
+        return any(sum(part in source for part in parts) >= 0.6 * len(parts) for source in (flat, whole) if source)
+
+    lines, seen = [], set()
+    for line in OCR_SPAN_TAG.sub("", text).splitlines():
+        cells = []
+        for cell in line.split(" | "):
+            key = norm_cell(cell)
+            if key not in seen and not in_layer(key):  # 同一页里重复的格（表格一列的“III级”、两枚章读出同一行）只给一次
+                seen.add(key)
+                cells.append(cell.strip())
+        if cells:
+            lines.append(cells)
+    return lines
 
 
 OCR_SPARSE_BELOW = 40  # OCR 只读出这么几个字的页
