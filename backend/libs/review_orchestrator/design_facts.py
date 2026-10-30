@@ -81,6 +81,20 @@ def _text_of(item: Any) -> str:
     return str(item or "")
 
 
+# 文件齐全性按「文件类型」对必备清单，类型表里没有为每种叫法单列一项：图名写「管道强度计算书」的就是
+# 管道（直管）强度计算，清单里要的是 straight_pipe_strength_calculation。只在齐全性这一处按别名算，
+# 文件本身的 documentType 不动——R06 的计算书审批仍按 strength_calculation 找它。
+_SET_MEMBER_ALIASES: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("strength_calculation", ("管道强度计算", "管线强度计算"), "straight_pipe_strength_calculation"),
+)
+
+
+def set_member_types(design_type: str, name: str) -> list[str]:
+    compact = (name or "").replace(" ", "")
+    return [design_type, *(alias for source, keywords, alias in _SET_MEMBER_ALIASES
+                           if design_type == source and any(keyword in compact for keyword in keywords))]
+
+
 def classify_design_document(file_name: str, page_text: str) -> str:
     """文件名优先（人起的名字最准），再看首页文本。"""
     for source in (file_name or "", (page_text or "")[:600]):
@@ -124,8 +138,22 @@ def _table_grid(table: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[tuple
     return cells, grid
 
 
+# 图签那一行被 OCR 还原成一条文字片段：「图名DWG NAME 管道特性表 设计分项UNIT … 项目名称PROJ. …」。
+# 必须后面跟着图签的下一个栏名才认，正文里说到「图名」不算；目录表头「图名 图号 …」也不算。
+_TITLE_TEXT_RE = re.compile(
+    r"图\s*名\s*(?:DWG\.?\s*NAME\.?)?\s*[:：]?\s*(?!(?:图\s*号|DWG\.?\s*NO|页\s*数|张\s*数|序\s*号))"
+    r"(?P<name>[^\n]{1,60}?)\s*(?=设计\s*分项|项目\s*名称|图\s*号|DWG\.?\s*NO|UNIT|PROJ|比\s*例|版\s*次)",
+    re.IGNORECASE,
+)
+
+
 def title_block_name(parse_result: dict[str, Any]) -> str:
-    """图签「图名」栏的值：整本施工图逐页分类就靠它，页面正文里会提到别的图名。"""
+    """图签「图名」栏的值：整本施工图逐页分类就靠它，页面正文里会提到别的图名。
+
+    先找结构化表格里的「图名」格；表格没有（MinerU 把图签并进了前一页的大表，整份只剩一张表）
+    就看文字片段里还原出来的图签行。2026-10-30 生产 ECD202：34 页只有 1 张表，原来每页都找不到图名，
+    整本一直按首页认成「图纸目录」，文件齐全性把管道数据表等五类都报成没上传。
+    """
     for table in parse_result.get("tables") or []:
         if not isinstance(table, dict):
             continue
@@ -139,6 +167,10 @@ def title_block_name(parse_result: dict[str, Any]) -> str:
             right = grid.get((int(cell.get("row") or 0), int(cell.get("col") or 0) + max(int(cell.get("colspan") or 1), 1)))
             if _cjk_label(right):
                 return _cjk_label(right)
+    for fragment in parse_result.get("fragments") or []:
+        match = _TITLE_TEXT_RE.search(_text_of(fragment))
+        if match and match.group("name").strip(" :：\t"):
+            return match.group("name").strip(" :：\t")
     return ""
 
 
@@ -289,8 +321,9 @@ def build_design_business_facts(
             # 2026-10-29 生产 ECD202 节点 4：整本按首页认成「图纸目录」，签字检查找不到要核的文件，只能证据不足。
             for section_type, section_pages in sections.items():
                 page = _page_subset(parse_result, set(section_pages))
-                uploaded.append(section_type)
-                parseable.append(section_type)
+                member_types = set_member_types(section_type, title_block_name(_page_subset(parse_result, {section_pages[0]})))
+                uploaded.extend(member_types)
+                parseable.extend(member_types)
                 if section_type == "drawing_catalog":
                     catalog.extend(catalog_listed_types(page))
                 documents.append(_design_document_entry(
@@ -298,9 +331,10 @@ def build_design_business_facts(
                     known_pipeline_ids, section_pages=section_pages,
                 ))
             continue
-        uploaded.append(design_type)
+        member_types = set_member_types(design_type, file_name)
+        uploaded.extend(member_types)
         if parsed_ok:
-            parseable.append(design_type)
+            parseable.extend(member_types)
         if parsed_ok and design_type == "drawing_catalog":
             catalog.extend(catalog_listed_types(parse_result))
         if design_type == "design_document_other":

@@ -1257,10 +1257,17 @@ def check_document_set_completeness(arguments: dict[str, Any]) -> dict[str, Any]
     parseable = normalized_set(arguments.get("parseableDocumentTypes") or arguments.get("uploadedDocumentTypes"))
     if not required:
         return insufficient("check_document_set_completeness", arguments, "required_document_types_missing")
+    # 有认不出是什么的设计文件（扫描件、照片）时，清单里缺的类型可能就在它们里面：只能说证据不足，不能说没传。
+    unclassified = integer(arguments.get("unclassifiedDocumentCount")) or 0
     checks = []
     for document_type in sorted(required):
         checks.append(check(f"uploaded_{safe_code(document_type)}", document_type in uploaded, sorted(uploaded), document_type))
         checks.append(check(f"parseable_{safe_code(document_type)}", document_type in parseable, sorted(parseable), document_type))
+    if unclassified:
+        for item in checks:
+            if not item["passed"]:
+                item["missing"] = True
+                item["reason"] = "unclassified_documents_may_contain_it"
     return checked_result(
         "check_document_set_completeness",
         {"requiredDocumentTypes": sorted(required), "uploadedDocumentTypes": sorted(uploaded), "parseableDocumentTypes": sorted(parseable)},
