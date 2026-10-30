@@ -128,3 +128,36 @@ def test_dispatcher_tool_uses_licence_lookup_and_flags_human_confirmation(monkey
     other = dispatch_runtime_tool({}, "verify_org_license", {"name": "别家有限公司", "expectedLicenseNo": "TS1844171-2028"})
     assert other["outcome"] == "verified_mismatch" and other["requiresHumanConfirmation"] is True
     assert dispatch_runtime_tool({}, "verify_org_license", {"name": ""})["status"] == "failed"
+
+
+def test_licence_lookups_are_paced_and_retried_once() -> None:
+    """2026-10-29 生产：两张许可证同一秒连查，第二张 CNSE_UPSTREAM_FAILED，整个运行停在人工任务。"""
+    from libs.integrations.cnse_client import CnseRequestError
+
+    calls: list[str] = []
+    pauses: list[float] = []
+
+    def license_query(no: str) -> dict:
+        calls.append(no)
+        if no == "TS2713486-2026" and calls.count(no) == 1:
+            raise CnseRequestError("403 Forbidden")
+        return {"found": True, "record": {**LICENSE_RECORD, "zsbh": no}}
+
+    candidates = [CANDIDATE, {**CANDIDATE, "candidateId": "R12LIC-2", "licenseNo": "TS2713486-2026"}]
+    results = r12_registry.auto_verify_candidates(candidates, query=lambda name: {"rows": ROWS}, license_query=license_query,
+                                                  today=TODAY, sleep=pauses.append)
+    assert calls == ["TS1844171-2028", "TS2713486-2026", "TS2713486-2026"]
+    assert len(pauses) == 2, "第二张查询前停一下，失败重试前再停一下"
+    assert [item["outcome"] for item in results] == ["verified_match", "verified_match"]
+
+
+def test_licence_lookup_failure_keeps_the_error_detail() -> None:
+    from libs.integrations.cnse_client import CnseRequestError
+
+    def license_query(no: str) -> dict:
+        raise CnseRequestError("403 Forbidden")
+
+    [result] = r12_registry.auto_verify_candidates([CANDIDATE], query=lambda name: {"rows": ROWS}, license_query=license_query,
+                                                   today=TODAY, sleep=lambda seconds: None)
+    assert result["outcome"] == "unable_to_verify" and result["platformError"] == "CNSE_UPSTREAM_FAILED"
+    assert result["platformErrorDetail"] == "CnseRequestError: 403 Forbidden"

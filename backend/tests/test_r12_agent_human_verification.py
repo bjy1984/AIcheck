@@ -459,3 +459,42 @@ def test_r12_llm_agent_uses_tool_calls_and_preserves_reasoning_content(monkeypat
     )
     assert attempt["status"] == "succeeded"
     assert attempt["reasoningContent"] == trace["reasoningContent"]
+
+
+def test_r12_human_task_lists_only_licences_the_platform_did_not_verify(monkeypatch) -> None:
+    """2026-10-29 生产 ECD202 节点 12：一张平台核实一致、一张查询失败，人工任务却要求两张都填。"""
+    state = {
+        "ocr_parse_results": [
+            manufacturing_parse_result("VER-R12-A", page_no=1, license_no="TS2735332-2030", organization="甲管件有限公司", scope="无缝钢管"),
+            manufacturing_parse_result("VER-R12-B", page_no=1, license_no="TS2713486-2026", organization="乙阀门有限公司", scope="金属阀门"),
+        ],
+        "versions": [],
+        "documents": [],
+    }
+    review_run = {
+        "reviewRunId": "RRUN-R12-PARTIAL",
+        "nodeId": 12,
+        "reviewMode": "formal",
+        "advisoryOnly": False,
+        "inputHash": "sha256:input",
+        "inputDocumentVersionIds": ["VER-R12-A", "VER-R12-B"],
+        "humanInputTasks": [],
+    }
+
+    def fake_auto_verify(candidates):
+        return [
+            {"candidateId": item["candidateId"], "source": "cnse_platform", "attested": False,
+             "outcome": "verified_match" if item["licenseNo"] == "TS2735332-2030" else "unable_to_verify",
+             **({} if item["licenseNo"] == "TS2735332-2030" else {"platformError": "CNSE_UPSTREAM_FAILED"})}
+            for item in candidates
+        ]
+
+    monkeypatch.setattr("libs.review_orchestrator.r12_agent.auto_verify_candidates", fake_auto_verify)
+    candidates = extract_r12_license_candidates(state, review_run)
+    assert {item["licenseNo"] for item in candidates} == {"TS2735332-2030", "TS2713486-2026"}
+    task = ensure_r12_human_input_task(state, review_run, requested_by="llm_agent")
+    assert task is not None
+    assert [item["licenseNo"] for item in task["candidates"]] == ["TS2713486-2026"]
+    assert task["candidateCount"] == 1
+    matched_id = next(item["candidateId"] for item in candidates if item["licenseNo"] == "TS2735332-2030")
+    assert task["autoVerifiedCandidateIds"] == [matched_id]

@@ -381,7 +381,12 @@ def ensure_r12_human_input_task(
     auto_by_candidate = {
         str(item.get("candidateId")): item for item in review_run.get("autoRegistryVerifications") or [] if isinstance(item, dict)
     }
-    if candidates and all(str(auto_by_candidate.get(str(item.get("candidateId")), {}).get("outcome")) == "verified_match" for item in candidates):
+    # 平台已核实一致的候选不再交人工：任务只列没核成的，build_r12_business_facts 用自动记录补上其余的
+    unverified = [
+        item for item in candidates
+        if str(auto_by_candidate.get(str(item.get("candidateId")), {}).get("outcome")) != "verified_match"
+    ]
+    if not unverified:
         return None
     task_input_hash = stable_payload_hash(
         {
@@ -409,8 +414,8 @@ def ensure_r12_human_input_task(
         "nodeId": R12_NODE_ID,
         "title": "核验制造许可证官网登记信息",
         "description": (
-            "请在全国特种设备公示信息查询平台逐张查询许可证号，核对单位名称、证照状态、"
-            "许可范围和有效期。系统不会把 OCR 结果当作官网核验结果。"
+            "请在全国特种设备公示信息查询平台逐张查询下列许可证号，核对单位名称、证照状态、"
+            "许可范围和有效期（平台自动核实一致的已不在列）。系统不会把 OCR 结果当作官网核验结果。"
         ),
         "status": "pending",
         "required": True,
@@ -418,8 +423,11 @@ def ensure_r12_human_input_task(
         "officialRegistryUrl": registry_url,
         "inputHash": task_input_hash,
         "reviewRunInputHash": review_run.get("inputHash"),
-        "candidates": candidates,
-        "candidateCount": len(candidates),
+        "candidates": unverified,
+        "candidateCount": len(unverified),
+        "autoVerifiedCandidateIds": [
+            str(item.get("candidateId")) for item in candidates if item not in unverified
+        ],
         "agentTrace": agent_trace or {},
         "responses": [],
         "createdAt": now,

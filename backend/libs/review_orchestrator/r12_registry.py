@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
@@ -191,6 +192,36 @@ def _platform_error(exc: BaseException) -> str:
     return "CNSE_UPSTREAM_FAILED"
 
 
+def _query_interval_seconds() -> float:
+    try:
+        return max(0.0, float(os.getenv("AICHECK_CNSE_QUERY_INTERVAL_SECONDS") or 3))
+    except ValueError:
+        return 3.0
+
+
+def _license_lookup(
+    license_query: Callable[[str], dict[str, Any]], license_no: str, *, pause: bool, sleep: Callable[[float], None]
+) -> dict[str, Any]:
+    """按编号查一张许可证：和上一次查询隔几秒，验证码识别失败或上游失败再试一次。
+
+    2026-10-29 生产：ECD202 节点 12 的两张许可证在同一秒连查，第一张 verified_match，第二张
+    CNSE_UPSTREAM_FAILED（平台连查会 403），整个运行停在人工任务、一项结论都没有。
+    """
+    last: BaseException | None = None
+    for attempt in range(2):
+        if pause or attempt:
+            sleep(_query_interval_seconds())
+        try:
+            return {"lookup": license_query(license_no)}
+        except (CnseRecognitionError, CnseRequestError) as exc:
+            last = exc
+        except (CnseConfigurationError, CnseProtocolError) as exc:
+            last = exc
+            break
+    assert last is not None
+    return {"error": _platform_error(last), "detail": f"{type(last).__name__}: {str(last)[:200]}"}
+
+
 _USE_DEFAULT: Any = object()
 
 
@@ -201,6 +232,7 @@ def auto_verify_candidates(
     license_query: Callable[[str], dict[str, Any]] | None = _USE_DEFAULT,
     detail_lookup: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = None,
     today: date | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> list[dict[str, Any]]:
     """逐个候选证照查平台：有许可证编号先按编号直查（能比对编号与单位），否则按单位名称查；
     同一编号/单位只查一次。平台故障不抛，记 unable_to_verify + platformError。"""
@@ -218,10 +250,9 @@ def auto_verify_candidates(
         license_no = _normalize_license(candidate.get("licenseNo"))
         if license_no and license_query is not None:
             if license_no not in license_cache:
-                try:
-                    license_cache[license_no] = {"lookup": license_query(str(candidate.get("licenseNo")))}
-                except (CnseRecognitionError, CnseConfigurationError, CnseRequestError, CnseProtocolError) as exc:
-                    license_cache[license_no] = {"error": _platform_error(exc)}
+                license_cache[license_no] = _license_lookup(
+                    license_query, str(candidate.get("licenseNo")), pause=bool(license_cache), sleep=sleep
+                )
             cached_license = license_cache[license_no]
             if cached_license.get("error"):
                 results.append(
@@ -232,6 +263,7 @@ def auto_verify_candidates(
                         "outcome": "unable_to_verify",
                         "registryStatus": "unknown",
                         "platformError": cached_license["error"],
+                        "platformErrorDetail": cached_license.get("detail"),
                         "lookupBy": "licenseNo",
                         "comment": "公示平台查询失败，需人工核验。",
                         "queriedAt": server_time(),
