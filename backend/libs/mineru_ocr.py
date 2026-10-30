@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import math
+import re
 import stat
 import zipfile
 from collections.abc import Mapping
@@ -81,6 +82,12 @@ def normalize_mineru_zip(
     content = _load_json(members[content_name], expected_type=list)
     layout = _load_json(members[layout_name], expected_type=dict)
     pages = mineru_pages(layout)
+    model_name = next((name for name in sorted(members) if name.endswith("_model.json")), None)
+    try:  # 只用来还原跨页合并的表格；格式不对就当没有，不让整份 OCR 失败
+        model = _load_json(members[model_name], expected_type=list) if model_name else None
+    except MinerUNormalizationError:
+        model = None
+    split = cross_page_table_split(content, layout, model)
     result = build_mineru_result(
         content,
         pages=pages,
@@ -91,6 +98,7 @@ def normalize_mineru_zip(
         provider_task_id=provider_task_id,
         markdown_present=markdown_name is not None,
         preserve_source_tables=preserve_source_tables,
+        cross_page_split=split,
     )
     artifacts = build_mineru_artifacts(
         zip_bytes,
@@ -242,6 +250,88 @@ def primary_markdown_name(members: Mapping[str, bytes]) -> str | None:
     return markdown[0] if markdown else None
 
 
+_DATA_URI_IMAGE = re.compile(r"""<img\b[^>]*\bsrc\s*=\s*["']data:[^"']*["'][^>]*>""", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class CrossPageTableSplit:
+    """content 下标 → 该页自己的表格 HTML（只给表格文字片段用）；合并大表所在下标 → 并进来的页码。"""
+
+    fragment_html: dict[int, str]
+    merged_page_nos: dict[int, list[int]]
+    diagnostics: list[dict[str, Any]]
+
+
+def cross_page_table_split(
+    content: list[Any],
+    layout: Mapping[str, Any],
+    model: list[Any] | None,
+) -> CrossPageTableSplit:
+    """MinerU 跨页表格合并后，把表格文字按页还原。
+
+    2026-10-29 生产 OCRJOB-BIZ-7003C584A5（ECD202 施工图，MinerU hybrid 3.4.4）：每张图纸的
+    图框＋图签被识别成一整页的表格，MinerU 把后页第一张表并进前页最后一张表（从后往前并）。
+    layout.json 里被并的表块标 lines_deleted，content_list 只剩第 4 页一张合并大表、第 5–11 页是
+    空表——这几页的字、印章、签名的证据页码全记成第 4 页。model.json 留着每页合并前的表格 HTML：
+    表格文字片段按它回到各自的页。tables 里的合并大表照旧保留，真跨页的表还要靠它带表头。
+    """
+    raw_pages = layout.get("pdf_info") if isinstance(layout.get("pdf_info"), list) else []
+    absorbed: set[int] = set()
+    for fallback_index, raw_page in enumerate(raw_pages):
+        blocks = raw_page.get("para_blocks") if isinstance(raw_page, Mapping) else None
+        first = blocks[0] if isinstance(blocks, list) and blocks and isinstance(blocks[0], Mapping) else {}
+        if str(first.get("type") or "") == "table" and any(
+            isinstance(sub, Mapping) and sub.get("lines_deleted") for sub in first.get("blocks") or []
+        ):
+            absorbed.add(_safe_int(raw_page.get("page_idx"), fallback_index))
+    if not absorbed:
+        return CrossPageTableSplit({}, {}, [])
+    merged_pages = sorted(page + 1 for page in absorbed)
+    if not isinstance(model, list) or len(model) != len(raw_pages):
+        return CrossPageTableSplit({}, {}, [_diagnostic(
+            "mineru_cross_page_table_merged",
+            "MinerU merged tables across pages and the per-page model output is unavailable; their text stays on the first page.",
+            severity="warning",
+            mergedPageNos=merged_pages,
+        )])
+
+    def model_tables(page: int) -> list[str]:
+        blocks = model[page] if 0 <= page < len(model) and isinstance(model[page], list) else []
+        return [
+            _DATA_URI_IMAGE.sub("", str(block.get("content") or ""))
+            for block in blocks
+            if isinstance(block, Mapping) and str(block.get("type") or "") == "table"
+        ]
+
+    tables_on: dict[int, list[int]] = {}
+    for index, item in enumerate(content):
+        if isinstance(item, Mapping) and str(item.get("type") or "").lower() == "table":
+            tables_on.setdefault(_safe_int(item.get("page_idx"), 0), []).append(index)
+    fragment_html: dict[int, str] = {}
+    merged_page_nos: dict[int, list[int]] = {}
+    for page in sorted(absorbed):
+        target = page - 1
+        while target in absorbed:
+            target -= 1
+        own, target_own = model_tables(page), model_tables(target)
+        if target < 0 or not own or not target_own or not tables_on.get(page) or not tables_on.get(target):
+            continue
+        fragment_html[tables_on[page][0]] = own[0]
+        fragment_html.setdefault(tables_on[target][-1], target_own[-1])
+        merged_page_nos.setdefault(tables_on[target][-1], [target + 1]).append(page + 1)
+    diagnostics = [
+        _diagnostic(
+            "mineru_cross_page_table_split",
+            "MinerU merged tables across pages; table text was restored to each page from the per-page model output.",
+            severity="info",
+            pageNo=pages[0],
+            mergedPageNos=pages,
+        )
+        for pages in merged_page_nos.values()
+    ]
+    return CrossPageTableSplit(fragment_html, merged_page_nos, diagnostics)
+
+
 def mineru_pages(middle: Mapping[str, Any]) -> list[dict[str, Any]]:
     raw_pages = middle.get("pdf_info")
     if not isinstance(raw_pages, list) or not raw_pages:
@@ -313,13 +403,15 @@ def build_mineru_result(
     provider_task_id: str,
     markdown_present: bool,
     preserve_source_tables: bool = False,
+    cross_page_split: CrossPageTableSplit | None = None,
 ) -> dict[str, Any]:
     page_by_no = {int(page["pageNo"]): page for page in pages}
     fragments: list[dict[str, Any]] = []
     layout_blocks: list[dict[str, Any]] = []
     tables: list[dict[str, Any]] = []
     seals: list[dict[str, Any]] = []
-    diagnostics: list[dict[str, Any]] = []
+    split = cross_page_split or CrossPageTableSplit({}, {}, [])
+    diagnostics: list[dict[str, Any]] = list(split.diagnostics)
     reasons = ["provider_confidence_unavailable"]
     if not markdown_present:
         diagnostics.append(
@@ -418,6 +510,8 @@ def build_mineru_result(
                 **common,
                 **structure,
             }
+            if source_index in split.merged_page_nos:
+                table["crossPageMergedPageNos"] = split.merged_page_nos[source_index]
             tables.append(table)
             if not structure.get("rows") or not structure.get("columns"):
                 diagnostics.append(
@@ -442,7 +536,8 @@ def build_mineru_result(
             # fragments。少了这一条，普通上传的表格在知识库里彻底不存在——检索
             # 不到、条款原文里也看不见。
             caption = _table_caption(raw_item)
-            body = html_table_to_text(html)
+            fragment_html = split.fragment_html.get(source_index, html)
+            body = html_table_to_text(fragment_html)
             footnote = _joined_caption(raw_item.get("table_footnote"))
             table_text = "\n".join(
                 part for part in (caption, body, footnote) if part
@@ -457,7 +552,7 @@ def build_mineru_result(
                         "sourceCandidateIds": [candidate_id],
                         "text": table_text,
                         "blockType": "table",
-                        "tableHtml": html,
+                        "tableHtml": fragment_html,
                         "caption": caption,
                         "readingOrder": reading_order,
                         "confidence": 0.0,

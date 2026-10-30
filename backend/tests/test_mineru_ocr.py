@@ -682,3 +682,66 @@ def test_zip_member_count_and_expansion_limits_are_enforced(
     with pytest.raises(MinerUNormalizationError) as expanded:
         _normalize(_zip_bytes())
     assert expanded.value.code == "MINERU_ZIP_EXPANSION_TOO_LARGE"
+
+
+def _drawing_sheet(title: str, signer: str) -> str:
+    return f"<table><tr><td>{title}</td><td>设计 {signer}</td></tr></table>"
+
+
+def _cross_page_zip(*, include_model: bool = True) -> bytes:
+    """三张图纸各是一整页的“表格”，MinerU 把第 2、3 页并进了第 1 页（从后往前并）。"""
+    merged = "<table><tr><td>总图</td><td>设计 张三</td></tr><tr><td>平面图</td><td>设计 李四</td></tr>" \
+             "<tr><td>轴测图</td><td>设计 王五</td></tr></table>"
+    content = [
+        {"type": "table", "table_body": merged, "bbox": [80, 50, 950, 950], "page_idx": 0},
+        {"type": "table", "table_body": "", "bbox": [80, 50, 950, 950], "page_idx": 1},
+        {"type": "table", "table_body": "", "bbox": [80, 50, 950, 950], "page_idx": 2},
+    ]
+    deleted = {"type": "table", "blocks": [{"type": "table_body", "lines": [], "lines_deleted": True}]}
+    layout = {
+        "pdf_info": [
+            {"page_idx": 0, "page_size": [595, 841], "para_blocks": [{"type": "table", "blocks": [{"type": "table_body", "lines": [{"spans": []}]}]}]},
+            {"page_idx": 1, "page_size": [595, 841], "para_blocks": [deleted]},
+            {"page_idx": 2, "page_size": [595, 841], "para_blocks": [deleted]},
+        ],
+        "_backend": "hybrid",
+        "_version_name": "3.4.4",
+    }
+    model = [
+        [{"type": "table", "bbox": [0.08, 0.05, 0.95, 0.95], "content": _drawing_sheet("总图", "张三")}],
+        [{"type": "table", "bbox": [0.08, 0.05, 0.95, 0.95],
+          "content": '<table><tr><td><img src="data:image/jpeg;base64,AAAA"/>平面图</td><td>设计 李四</td></tr></table>'}],
+        [{"type": "table", "bbox": [0.08, 0.05, 0.95, 0.95], "content": _drawing_sheet("轴测图", "王五")}],
+    ]
+    extra = {"nested/document_model.json": json.dumps(model, ensure_ascii=False).encode()} if include_model else {}
+    return _zip_bytes(content=content, middle=layout, extra_members=extra)
+
+
+def test_cross_page_merged_tables_go_back_to_their_own_pages() -> None:
+    """2026-10-29 生产 ECD202 施工图：MinerU 把第 5–11 页的图签表并进第 4 页，证据页码全记成第 4 页。"""
+    bundle = normalize_mineru_zip(
+        _cross_page_zip(), storage_key="minio://documents/drawing.pdf", file_name="drawing.pdf",
+        profile_id=None, document_type=None, provider_task_id="task-1",
+    )
+    result = bundle.result
+    by_page = {}
+    for fragment in result["fragments"]:
+        by_page.setdefault(fragment["pageNo"], []).append(fragment["text"])
+    assert sorted(by_page) == [1, 2, 3] and all(len(texts) == 1 for texts in by_page.values())
+    assert "张三" in by_page[1][0] and "李四" not in by_page[1][0]
+    assert "李四" in by_page[2][0] and "data:image" not in json.dumps(result["fragments"])
+    assert "王五" in by_page[3][0]
+    merged_table = next(table for table in result["tables"] if table["pageNo"] == 1)
+    assert merged_table["crossPageMergedPageNos"] == [1, 2, 3], "合并大表保留，标明并进来的页"
+    assert any(item["code"] == "mineru_cross_page_table_split" for item in result["diagnostics"])
+
+
+def test_cross_page_merge_without_model_output_is_flagged() -> None:
+    bundle = normalize_mineru_zip(
+        _cross_page_zip(include_model=False), storage_key="minio://documents/drawing.pdf", file_name="drawing.pdf",
+        profile_id=None, document_type=None, provider_task_id="task-1",
+    )
+    result = bundle.result
+    assert {fragment["pageNo"] for fragment in result["fragments"]} == {1}
+    flagged = next(item for item in result["diagnostics"] if item["code"] == "mineru_cross_page_table_merged")
+    assert flagged["mergedPageNos"] == [2, 3]
