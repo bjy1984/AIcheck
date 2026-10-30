@@ -1122,7 +1122,7 @@ def test_r09_checks_only_specific_design_requirements_and_frozen_standard_rules(
     assert all(item["standardComplianceResult"] == "passed" for item in output["domainResults"])
 
 
-def test_r09_missing_specific_item_and_standard_violation_fail_separately() -> None:
+def test_r09_missing_specific_item_is_insufficient_evidence_and_standard_violation_fails() -> None:
     requirements = r09_requirements()
     del requirements["corrosion"]["requirements"]["acceptanceCriteria"]
     requirements["pressureTest"]["requirements"]["testPressure"] = 5
@@ -1137,8 +1137,10 @@ def test_r09_missing_specific_item_and_standard_violation_fail_separately() -> N
     )
 
     by_domain = {item["domain"]: item for item in output["domainResults"]}
-    assert output["result"] == "failed"
-    assert by_domain["corrosion"]["completenessResult"] == "failed"
+    assert output["result"] == "failed", "压力试验的实质违规照旧判不符合"
+    # 必备字段没抽到只说明没读到，不等于设计没写：证据不足，不再判不符合（2026-10-30 用户定）
+    assert by_domain["corrosion"]["completenessResult"] == "evidence_insufficient"
+    assert by_domain["corrosion"]["result"] == "evidence_insufficient"
     assert by_domain["corrosion"]["missingPaths"] == ["requirements.acceptanceCriteria"]
     assert by_domain["pressureTest"]["standardComplianceResult"] == "failed"
     assert by_domain["pressureTest"]["violations"] == ["pressure_min"]

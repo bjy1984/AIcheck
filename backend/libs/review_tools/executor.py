@@ -339,6 +339,7 @@ def build_tool_arguments(
     if tool_name == "evaluate_drawing_review_witness":
         arguments.setdefault("witness", nested_dict(facts, "drawingReviewWitness"))
     if tool_name == "evaluate_design_special_requirements":
+        arguments.setdefault("reviewDate", nested_dict(facts, "design").get("reviewDate") or nested_dict(facts, "project").get("constructionStart"))
         special = nested_dict(facts, "designSpecialRequirements")
         fixed_clauses = nested_dict(facts, "fixedClauses")
         arguments.setdefault("requirements", special.get("domains") or {})

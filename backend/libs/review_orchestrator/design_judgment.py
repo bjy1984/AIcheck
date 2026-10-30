@@ -6,7 +6,9 @@ validate_evidence_grounding 拿到 0 条事实，一律回证据不足，聚合�
 （certificate_facts._certificate_judgment）和材料节点（material_facts.build_material_judgment）
 09-11 修过同样的毛病，这里同构。
 
-第一阶段只登记节点 8（R08 标准版本）：它的不符合来自官方平台核实的废止，精确；
+第一阶段登记节点 8（R08 标准版本）：它的不符合来自官方平台核实的废止，精确。
+第二阶段登记节点 9（R09 专项要求）：登记前先让 R09 的规则按审查日期选标准、没抽到的值算证据不足
+（business_tools.evaluate_design_special_requirements），否则假的不符合会被登记后的事实放出来。
 别的设计节点的业务工具有假的不符合，登记前要先修，见 design_facts.build_design_business_facts。
 
 MinerU 不给置信度（quality.reasons 含 provider_confidence_unavailable，片段 confidence 恒 0.0），
@@ -103,4 +105,60 @@ def standard_reference_judgment(
                 "standardRef": code, "documentVersionId": version_id, "evidenceRefIds": [ref_id],
                 "confidence": score, "confidenceUnavailable": unavailable or score is None, "conflicted": False,
             })
+    return {"claimedFacts": claimed, "evidenceRefs": list(refs.values())}
+
+
+# 节点 9：四个专项领域各登记一条「设计里有这项要求」的事实，证据是设计文件里第一处提到它的页码和原句。
+_DOMAIN_PATTERNS = {
+    "ndt": re.compile(r"无损检测|射线检测|超声检测|磁粉检测|渗透检测|\bRT\b|\bUT\b"),
+    "corrosion": re.compile(r"防腐|除锈|涂层|油漆|刷漆"),
+    "pressureTest": re.compile(r"耐压试验|强度试验|水压试验|压力试验|气压试验|液压试验"),
+    "leakTest": re.compile(r"泄漏性试验|泄漏试验|气密性试验|严密性试验"),
+}
+_DOMAIN_LABELS = {"ndt": "无损检测要求", "corrosion": "防腐要求", "pressureTest": "压力试验要求", "leakTest": "泄漏试验要求"}
+
+
+def _first_domain_hit(parse_result: dict[str, Any], pattern: re.Pattern[str]) -> dict[str, Any] | None:
+    for page_no, text, bbox, confidence in sorted(_page_sources(parse_result), key=lambda item: item[0]):
+        match = pattern.search(text or "")
+        if match:
+            start, end = max(match.start() - _QUOTE_RADIUS, 0), match.end() + _QUOTE_RADIUS
+            return {"pageNo": page_no, "quotedText": re.sub(r"\s+", " ", text[start:end]).strip(), "bbox": bbox, "confidence": confidence}
+    return None
+
+
+def special_requirement_judgment(
+    parse_by_version: dict[str, dict[str, Any]], versions: dict[str, dict[str, Any]], domains: dict[str, Any],
+) -> dict[str, Any]:
+    """specified 为 True 的领域，在它的来源文件里找第一处提到该要求的页和原句，登记成事实；找不到的不登记。"""
+    claimed: list[dict[str, Any]] = []
+    refs: dict[str, dict[str, Any]] = {}
+    for domain_name, pattern in _DOMAIN_PATTERNS.items():
+        domain = domains.get(domain_name) if isinstance(domains.get(domain_name), dict) else {}
+        if domain.get("specified") is not True:
+            continue
+        source_ids = [str(item) for item in (domain.get("source") or {}).get("documentVersionIds") or [] if str(item) in parse_by_version]
+        for version_id in source_ids or sorted(parse_by_version):
+            where = _first_domain_hit(parse_by_version[version_id], pattern)
+            if where is None:
+                continue
+            unavailable = _confidence_unavailable(parse_by_version[version_id])
+            try:
+                score = None if unavailable else float(where["confidence"])
+            except (TypeError, ValueError):
+                score = None
+            document = versions.get(version_id) or {}
+            ref_id = _ref_id(version_id, where["pageNo"], where["quotedText"])
+            refs[ref_id] = {
+                "id": ref_id, "evidenceRefId": ref_id, "documentVersionId": version_id, "documentId": document.get("id"),
+                "fileName": document.get("fileName") or parse_by_version[version_id].get("fileName"),
+                "pageNo": where["pageNo"], "bbox": where["bbox"], "quotedText": where["quotedText"],
+                "source": "ocr_text", "confidence": score, "confidenceUnavailable": unavailable or score is None,
+            }
+            claimed.append({
+                "factId": f"requirement-{domain_name}", "label": _DOMAIN_LABELS[domain_name], "value": where["quotedText"][:80],
+                "documentVersionId": version_id, "evidenceRefIds": [ref_id],
+                "confidence": score, "confidenceUnavailable": unavailable or score is None, "conflicted": False,
+            })
+            break
     return {"claimedFacts": claimed, "evidenceRefs": list(refs.values())}

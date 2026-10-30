@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
@@ -1864,7 +1865,30 @@ def evaluate_drawing_review_witness(arguments: dict[str, Any]) -> dict[str, Any]
     )
 
 
+_STANDARD_ID_RE = re.compile(r"^STD-(?P<family>[A-Z]+)-(?P<number>\d+(?:\.\d+)*)(?:-(?P<year>\d{4}))?$")
+_STANDARD_FAMILIES = {"GBT": "GB/T", "NBT": "NB/T", "HGT": "HG/T", "SHT": "SH/T", "JBT": "JB/T"}
+
+
+def standard_code_from_id(standard_id: str) -> str | None:
+    """业务包里的标准标识（STD-GBT-20801.1-2025、STD-TSG-31-2025）→ 编号（GB/T 20801.1-2025、TSG 31-2025）。"""
+    match = _STANDARD_ID_RE.match(str(standard_id or "").strip())
+    if match is None:
+        return None
+    family = _STANDARD_FAMILIES.get(match.group("family"), match.group("family"))
+    year = match.group("year")
+    return f"{family} {match.group('number')}-{year}" if year else f"{family} {match.group('number')}"
+
+
+def standard_not_yet_effective(standard_id: str, review_date: Any) -> bool:
+    """这条规则依据的标准在审查日是否还没实施（时间线里查得到才算；查不到按现行，保持原有口径）。"""
+    from libs.standard_timeline import STATUS_NOT_YET, timeline_status
+
+    code = standard_code_from_id(standard_id)
+    return bool(code) and timeline_status(code, review_date).get("status") == STATUS_NOT_YET
+
+
 def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str, Any]:
+    review_date = parse_date(arguments.get("reviewDate"))
     requirements = dict_value(arguments.get("requirements"))
     standard_rules = dict_value(arguments.get("standardRules"))
     required_paths_by_domain = dict_value(arguments.get("requiredPathsByDomain"))
@@ -1927,6 +1951,10 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
                     arguments,
                     f"{domain_name}_standard_rule_{index}_invalid",
                 )
+            if review_date is not None and standard_ref not in referenced_standards and standard_not_yet_effective(standard_ref, review_date):
+                # 2021 年的设计不可能引用 2025 版标准：审查日还没实施、设计也没采用的标准，不拿来要求设计（GDLNG 节点 9）。
+                not_applicable_rules.append(str(rule.get("code") or f"rule_{index}"))
+                continue
             if "applicabilityPath" in rule:
                 applicability_path = rule["applicabilityPath"]
                 if not isinstance(applicability_path, str) or not applicability_path.strip():
@@ -1964,23 +1992,29 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
                     arguments,
                     f"{domain_name}_standard_rule_{index}_unsupported",
                 )
+            if not evaluated.get("passed") and actual is None:
+                # 事实里没有这个值只说明没抽到（照片读不全、表格没解析），不等于设计没写：证据不足，不算不过。
+                evaluated["missing"] = True
+                unresolved_rules.append(str(rule.get("code") or f"rule_{index}"))
             standard_checks.extend([reference_check, evaluated])
             if not reference_check.get("passed"):
                 violations.append(f"standard_not_referenced:{standard_ref}")
-            if not evaluated.get("passed"):
+            if not evaluated.get("passed") and not evaluated.get("missing"):
                 violations.append(str(rule.get("code") or f"rule_{index}"))
 
         checks.extend([*domain_checks, *standard_checks])
-        completeness_passed = all(item.get("passed") for item in domain_checks)
-        compliance_passed = all(item.get("passed") for item in standard_checks)
+        # 设计没有这项要求（specified 不是 True）才是实质不合规；必备字段没抽到是证据不足。
+        completeness_passed = bool(domain_checks[0].get("passed"))
+        missing_required = [item for item in domain_checks[1:] if not item.get("passed")]
+        compliance_passed = all(item.get("passed") or item.get("missing") for item in standard_checks)
         domain_result = "failed" if not completeness_passed or not compliance_passed else (
-            "evidence_insufficient" if unresolved_rules else "passed"
+            "evidence_insufficient" if unresolved_rules or missing_required else "passed"
         )
         domain_results.append(
             {
                 "domain": domain_name,
                 "specified": domain.get("specified"),
-                "completenessResult": "passed" if completeness_passed else "failed",
+                "completenessResult": "failed" if not completeness_passed else "evidence_insufficient" if missing_required else "passed",
                 "standardComplianceResult": ("failed" if not compliance_passed else
                     "evidence_insufficient" if unresolved_rules else "passed"),
                 "unresolvedRules": unresolved_rules,
