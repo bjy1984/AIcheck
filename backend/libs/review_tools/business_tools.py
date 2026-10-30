@@ -2046,6 +2046,10 @@ def evaluate_design_document_approval(arguments: dict[str, Any]) -> dict[str, An
                     return insufficient("evaluate_design_document_approval", arguments, "covered_pipeline_not_found")
             elif len(pipelines) == 1:
                 covered = pipelines
+            elif all(design_four_level_trigger(item) == "" for item in pipelines):
+                # 文件没挂到具体管线，但工程里没有任何一条会触发四级签字（参数齐全且全不触发）：
+                # 它属于哪一条都不影响结论。ECD202 的「管道材料等级代号说明」没有管线号，工程 10 条管线全是 GC2。
+                continue
             else:
                 return insufficient("evaluate_design_document_approval", arguments, "document_pipeline_link_missing")
             for pipeline in covered:
