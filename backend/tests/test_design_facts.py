@@ -258,3 +258,82 @@ def test_r08_standard_not_yet_effective_on_construction_start_needs_human_review
 
     in_force = check_standard_version_active({"standardReferences": facts["standardReferences"], "reviewDate": "2021-06-01"})
     assert in_force["result"] == "passed"
+
+
+def _sheet(page_no: int, drawing_name: str | None, *, names: tuple[str, ...] = ("马伟平", "王赛", "贺宏伟", "-"), body: str = "") -> dict:
+    """ECD202 施工图的图签：姓名一行在「版次 日期 说明 设计 校核 审核 审定」上面，同一列对齐。"""
+    from apps.ocr_service.engines import html_table_to_structure
+
+    rows = [f"<tr><td>图名DWG NAME</td><td>{drawing_name}</td><td>图号DWG NO.</td><td>HZ026Y-112-02-S0{page_no:02d}</td></tr>"] if drawing_name else []
+    rows += [
+        "<tr><td>C-1</td><td>2025年4月</td><td></td>" + "".join(f"<td>{name}</td>" for name in names) + "</tr>",
+        "<tr><td>版次REV.</td><td>日期DATE</td><td>说明DESCRIPTION</td><td>设计DES.</td><td>校核CHKD.</td><td>审核REVD.</td><td>审定APPR.</td></tr>",
+    ]
+    structure = html_table_to_structure("<table>" + "".join(rows) + "</table>")
+    return {
+        "fragments": [{"pageNo": page_no, "text": f"{drawing_name or ''} {body}".strip() or "续页"}],
+        "tables": [{"pageNo": page_no, **structure}],
+    }
+
+
+def _bundle(*sheets: dict) -> dict:
+    return {
+        "documentVersionId": "DV-DRAWING",
+        "status": "success",
+        "fragments": [item for sheet in sheets for item in sheet["fragments"]],
+        "tables": [item for sheet in sheets for item in sheet["tables"]],
+    }
+
+
+def test_bundled_drawing_set_is_split_by_title_block_names() -> None:
+    """2026-10-29 生产 ECD202 节点 4：整本施工图按首页认成「图纸目录」，签字检查找不到要核的文件。"""
+    from libs.review_orchestrator.design_facts import bundled_design_sections, title_block_roles, _page_subset
+
+    bundle = _bundle(
+        _sheet(1, "图纸目录", body="1 安装设计说明 2 管道特性表 3 管道平面布置图"),
+        _sheet(2, "安装设计说明", body="详见设计文件《管道特性表》"),
+        {"fragments": [{"pageNo": 3, "text": "设计说明续页：管道布置图另见"}], "tables": []},
+        _sheet(4, "管道特性表", body="A01-PL-02 GC2 0.275"),
+        _sheet(5, "管道平面布置图"),
+    )
+    assert bundled_design_sections(bundle) == {
+        "drawing_catalog": [1], "design_specification": [2, 3], "pipeline_data_sheet": [4], "pipeline_layout_drawing": [5],
+    }
+    assert title_block_roles(_page_subset(bundle, {4})) == {"named": ["审核", "校核", "设计"], "blank": ["审定"]}
+    assert title_block_roles(_page_subset(bundle, {3})) is None, "续页没有图签，不猜"
+
+
+def test_plain_multi_page_document_is_not_split_by_words_in_its_text() -> None:
+    from libs.review_orchestrator.design_facts import bundled_design_sections
+
+    spec = {"documentVersionId": "DV-SPEC", "status": "success", "tables": [], "fragments": [
+        {"pageNo": 1, "text": "安装设计说明"}, {"pageNo": 2, "text": "无损检测比例见《管道特性表》，布置见管道布置图"},
+    ]}
+    assert bundled_design_sections(spec) == {}
+
+
+def test_printed_names_in_title_blocks_need_a_person_and_blank_cells_fail() -> None:
+    from libs.review_orchestrator.design_facts import _design_document_entry, _page_subset, bundled_design_sections
+    from libs.review_tools.business_tools import evaluate_design_document_approval
+
+    bundle = _bundle(_sheet(1, "图纸目录"), _sheet(2, "管道特性表", body="A01-PL-02"), _sheet(3, "管道平面布置图", body="A01-PL-02"))
+    documents = [
+        _design_document_entry({"id": "DOC-1"}, bundle, "DV-DRAWING", "施工图.pdf", kind, _page_subset(bundle, set(pages)),
+                               {"A01-PL-02", "A02-PL-02"}, section_pages=pages)
+        for kind, pages in bundled_design_sections(bundle).items()
+    ]
+    targets = ["pipeline_data_sheet", "pipeline_layout_drawing"]
+    three = evaluate_design_document_approval({"approvalMode": "three_level", "documents": documents,
+                                               "targetDocumentTypes": targets, "requiredRoles": ["设计", "校核", "审核"]})
+    assert three["result"] == "human_review_required", "图签只有打印的姓名，签没签字由人看"
+    assert three["documentResults"][0]["titleBlock"]["printedNameOnlyRoles"] == ["设计", "校核", "审核"]
+
+    four_args = {"approvalMode": "four_level_conditional", "documents": documents, "targetDocumentTypes": targets,
+                 "requiredRoles": ["设计", "校核", "审核", "审定"]}
+    assert documents[1]["coveredPipelineIds"] == ["A01-PL-02"], "多段管线号（ECD202 的 A01-PL-02）要整段认出来"
+    other = {"pipelineId": "A02-PL-02", "pipelineGrade": "GC1"}
+    gc2 = evaluate_design_document_approval({**four_args, "pipelines": [{"pipelineId": "A01-PL-02", "pipelineGrade": "GC2"}, other]})
+    assert gc2["result"] == "not_applicable", "GC2 不要四级签字"
+    gc1 = evaluate_design_document_approval({**four_args, "pipelines": [{"pipelineId": "A01-PL-02", "pipelineGrade": "GC1"}, other]})
+    assert gc1["result"] == "failed", "要四级签字，图签审定栏是「-」"
+    assert gc1["documentResults"][0]["titleBlock"]["blankRoles"] == ["审定"]

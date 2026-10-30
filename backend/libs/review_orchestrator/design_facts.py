@@ -62,7 +62,7 @@ _DESIGN_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 _ROLE_LABELS = ("设计", "校核", "审核", "审定", "批准", "专业负责", "项目负责")
 _ROLE_RE = re.compile(r"(设计|校核|审核|审定|批准)\s*[人:：]\s*([一-龥]{2,4})")
-_LINE_NO_RE = re.compile(r"\b[A-Z]{1,4}-?\d{2,5}(?:-[A-Z0-9]{1,6})?\b")
+_LINE_NO_RE = re.compile(r"\b[A-Z]{1,4}-?\d{2,5}(?:-[A-Z0-9]{1,6}){0,3}\b")  # A01-PL-02 这种多段管线号（ECD202）
 CALCULATION_TYPES = frozenset({"strength_calculation", "straight_pipe_strength_calculation", "pipeline_stress_calculation"})
 _PARAM_RES = {
     "designPressureMPa": re.compile(r"设计压力\s*[:：]?\s*(\d+(?:\.\d+)?)\s*MPa?", re.IGNORECASE),
@@ -89,6 +89,102 @@ def classify_design_document(file_name: str, page_text: str) -> str:
             if any(keyword in compact for keyword in keywords):
                 return code
     return "design_document_other"
+
+
+_TITLE_ROLES = ("设计", "校核", "审核", "审定", "批准")
+_TITLE_WORDS = frozenset({*_TITLE_ROLES, "专业负责", "项目负责", "日期", "说明", "版次", "比例", "图号", "图名", "专业",
+                          "工艺", "阶段", "设计阶段", "施工图", "建设单位", "项目名称", "设计分项"})
+_PERSON_NAME_RE = re.compile(r"^[一-龥]{2,4}$")
+_BLANK_CELLS = frozenset({"", "-", "--", "—", "——", "/", "／"})
+
+
+def _cjk_label(text: Any) -> str:
+    """图签格子去掉英文栏名、标点和空白：「设计DES.」→「设计」。"""
+    return re.sub(r"[A-Za-z0-9.\s·:：'’()（）\-—_/]", "", str(text or ""))
+
+
+def _page_subset(parse_result: dict[str, Any], pages: set[int]) -> dict[str, Any]:
+    """只留某几页的片段、表格、签名、印章；没有页码的文档级字段不分给任何一页。"""
+    def on_pages(item: Any) -> bool:
+        return isinstance(item, dict) and item.get("pageNo") is not None and int(item.get("pageNo") or 0) in pages
+
+    subset = dict(parse_result)
+    for key in ("fragments", "tables", "signatures", "seals", "fields"):
+        subset[key] = [item for item in parse_result.get(key) or [] if on_pages(item)]
+    return subset
+
+
+def _table_grid(table: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[tuple[int, int], str]]:
+    cells = [cell for cell in table.get("cells") or [] if isinstance(cell, dict)]
+    grid: dict[tuple[int, int], str] = {}
+    for cell in cells:
+        row, col = int(cell.get("row") or 0), int(cell.get("col") or 0)
+        for offset in range(max(int(cell.get("colspan") or 1), 1)):
+            grid[(row, col + offset)] = str(cell.get("text") or "").strip()
+    return cells, grid
+
+
+def title_block_name(parse_result: dict[str, Any]) -> str:
+    """图签「图名」栏的值：整本施工图逐页分类就靠它，页面正文里会提到别的图名。"""
+    for table in parse_result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        cells, grid = _table_grid(table)
+        for cell in cells:
+            label = _cjk_label(cell.get("text"))
+            if not label.startswith("图名"):
+                continue
+            if label[2:]:
+                return label[2:]
+            right = grid.get((int(cell.get("row") or 0), int(cell.get("col") or 0) + max(int(cell.get("colspan") or 1), 1)))
+            if _cjk_label(right):
+                return _cjk_label(right)
+    return ""
+
+
+def title_block_roles(parse_result: dict[str, Any]) -> dict[str, list[str]] | None:
+    """图签角色栏对应格子里的人名：{"named": 有名字的角色, "blank": 格子是「-」或空的角色}；一个角色栏都没对上返回 None。
+
+    ECD202 施工图的图签：姓名一行在「版次 日期 说明 设计DES. 校核CHKD. 审核REVD. … 审定APPR.」上面，同一列对齐；
+    别的图纸姓名在下面一行或右边一格，按一整行里对上人名最多的方向取。打印的姓名不等于签了字，只说明栏里有人。
+    """
+    named: set[str] = set()
+    blank: set[str] = set()
+    for table in parse_result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        cells, grid = _table_grid(table)
+        labels = [(int(cell.get("row") or 0), int(cell.get("col") or 0), _cjk_label(cell.get("text"))) for cell in cells]
+        labels = [item for item in labels if item[2] in _TITLE_ROLES]
+        for row in sorted({item[0] for item in labels}):
+            row_labels = [item for item in labels if item[0] == row]
+            best: tuple[int, int, int] | None = None
+            for d_row, d_col in ((-1, 0), (1, 0), (0, 1)):
+                hits = sum(
+                    1 for r, c, _ in row_labels
+                    if _PERSON_NAME_RE.match(_cjk_label(grid.get((r + d_row, c + d_col))))
+                    and _cjk_label(grid.get((r + d_row, c + d_col))) not in _TITLE_WORDS
+                )
+                if hits and (best is None or hits > best[0]):
+                    best = (hits, d_row, d_col)
+            if best is None:
+                continue
+            for r, c, role in row_labels:
+                value = grid.get((r + best[1], c + best[2]))
+                name = _cjk_label(value)
+                if _PERSON_NAME_RE.match(name) and name not in _TITLE_WORDS:
+                    named.add(role)
+                elif value is not None and value.strip() in _BLANK_CELLS:
+                    blank.add(role)
+    if not named and not blank:
+        return None
+    return {"named": sorted(named - blank), "blank": sorted(blank)}
+
+
+def classify_design_page(page: dict[str, Any]) -> str | None:
+    """一页的设计文件子类型，只认图签「图名」；没有图名返回 None（续页，跟前一页）。"""
+    name = title_block_name(page)
+    return classify_design_document(name, "") if name else None
 
 
 def _first_page_text(parse_result: dict[str, Any]) -> str:
@@ -184,6 +280,24 @@ def build_design_business_facts(
         file_name = str(document.get("fileName") or parse_result.get("fileName") or "")
         design_type = classify_design_document(file_name, _first_page_text(parse_result))
         parsed_ok = ocr_parse_usable(parse_result)
+        if parsed_ok:
+            texts[version_id] = _all_text(parse_result)
+            parse_by_version[version_id] = parse_result
+        sections = bundled_design_sections(parse_result) if parsed_ok else {}
+        if sections:
+            # 整本施工图（目录、说明、特性表、布置图、材料表、计算书合订成一个 PDF）：按页分成几份设计文件。
+            # 2026-10-29 生产 ECD202 节点 4：整本按首页认成「图纸目录」，签字检查找不到要核的文件，只能证据不足。
+            for section_type, section_pages in sections.items():
+                page = _page_subset(parse_result, set(section_pages))
+                uploaded.append(section_type)
+                parseable.append(section_type)
+                if section_type == "drawing_catalog":
+                    catalog.extend(catalog_listed_types(page))
+                documents.append(_design_document_entry(
+                    document, parse_result, version_id, file_name, section_type, page,
+                    known_pipeline_ids, section_pages=section_pages,
+                ))
+            continue
         uploaded.append(design_type)
         if parsed_ok:
             parseable.append(design_type)
@@ -192,9 +306,6 @@ def build_design_business_facts(
         if design_type == "design_document_other":
             unclassified.append({"documentVersionId": version_id, "fileName": file_name})
         roles = signature_roles(parse_result) if parsed_ok else []
-        if parsed_ok:
-            texts[version_id] = _all_text(parse_result)
-            parse_by_version[version_id] = parse_result
         page_no = int((next((item for item in parse_result.get("fragments") or [] if isinstance(item, dict)), {}) or {}).get("pageNo") or 1)
         documents.append(
             {
@@ -236,6 +347,52 @@ def build_design_business_facts(
         "drawingReviewWitness": drawing_review_witness(documents, texts, _project_record(state, project_id)),
         "design": design_standard_references(texts, str(_project_record(state, project_id).get("constructionStart") or "")[:10] or None),
         "standardCatalog": {"versionStatus": design_standard_references(texts, None)["versionStatus"]},
+    }
+
+
+def bundled_design_sections(parse_result: dict[str, Any]) -> dict[str, list[int]]:
+    """多页 PDF 里认出两种以上设计文件时，{子类型: 页码}；认不出的页不归任何一份。只有一种就返回空，照整份处理。"""
+    pages = sorted({int(item.get("pageNo") or 1) for item in parse_result.get("fragments") or [] if isinstance(item, dict)})
+    if len(pages) < 2:
+        return {}
+    sections: dict[str, list[int]] = {}
+    current = classify_design_document("", _first_page_text(parse_result))
+    for page_no in pages:
+        # 没有图名的页（说明书续页、读不出图签的轴测图）跟前一页；正文里提到的别的图名不算，免得把普通文件拆开
+        current = classify_design_page(_page_subset(parse_result, {page_no})) or current
+        if current != "design_document_other":
+            sections.setdefault(current, []).append(page_no)
+    return sections if len(sections) >= 2 else {}
+
+
+def _design_document_entry(
+    document: dict[str, Any],
+    parse_result: dict[str, Any],
+    version_id: str,
+    file_name: str,
+    design_type: str,
+    page: dict[str, Any],
+    known_pipeline_ids: set[str] | None,
+    *,
+    section_pages: list[int],
+) -> dict[str, Any]:
+    """整本施工图里的一份：签字、印章、管线只看这几页；图签上打印的姓名另记，不当签字。"""
+    base_id = str(document.get("id") or parse_result.get("documentId") or version_id)
+    return {
+        "documentId": f"{base_id}#{design_type}",
+        "documentVersionId": version_id,
+        "documentType": design_type,
+        "materialTypeCode": document.get("materialTypeCode"),
+        "fileName": file_name,
+        "pageNos": section_pages,
+        "bodyUploaded": True,
+        "parsed": True,
+        "signatureRoles": signature_roles(page),
+        "titleBlockRoles": title_block_roles(page),
+        "sealTexts": [item for item in _seal_texts(page) if item.strip()],
+        "coveredPipelineIds": covered_pipeline_ids(page, known_pipeline_ids or set()),
+        "evidenceRefs": [{"documentVersionId": version_id, "pageNo": section_pages[0],
+                          "quotedText": f"{file_name} 第 {section_pages[0]}–{section_pages[-1]} 页"}],
     }
 
 

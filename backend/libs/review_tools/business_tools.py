@@ -2040,6 +2040,19 @@ def evaluate_design_document_approval(arguments: dict[str, Any]) -> dict[str, An
         ]
         checks.extend([body_check, *role_checks])
         missing_roles = [role for role in required_role_list if role not in actual_roles]
+        document_result = "passed" if body_check["passed"] and not missing_roles else "failed"
+        title_block: dict[str, Any] = {}
+        if "titleBlockRoles" in document and body_check["passed"] and missing_roles:
+            # 整本施工图里拆出的文件（design_facts）：没有签字记录的角色看图签那一格——
+            # 「-」或空着是看得见的缺签；只有打印的姓名证明不了签过字，交人；那一格没读到就是证据不足。
+            title_block = dict(document.get("titleBlockRoles") or {})
+            blank = [role for role in missing_roles if role in set(title_block.get("blank") or [])]
+            named = [role for role in missing_roles if role in set(title_block.get("named") or [])]
+            unknown = [role for role in missing_roles if role not in blank and role not in named]
+            document_result = (
+                "failed" if blank else "evidence_insufficient" if unknown else "human_review_required"
+            )
+            title_block = {"blankRoles": blank, "printedNameOnlyRoles": named, "unreadRoles": unknown}
         document_results.append(
             {
                 "documentId": document.get("documentId"),
@@ -2050,7 +2063,8 @@ def evaluate_design_document_approval(arguments: dict[str, Any]) -> dict[str, An
                 "actualRoles": actual_role_list,
                 "missingRoles": missing_roles,
                 "bodyUploaded": document.get("bodyUploaded"),
-                "result": "passed" if body_check["passed"] and not missing_roles else "failed",
+                "result": document_result,
+                **({"titleBlock": title_block} if title_block else {}),
                 "evidenceRefs": list(document.get("evidenceRefs") or []),
             }
         )
@@ -2066,9 +2080,14 @@ def evaluate_design_document_approval(arguments: dict[str, Any]) -> dict[str, An
         output["documentResults"] = []
         return output
 
+    outcomes = {item["result"] for item in document_results}
+    overall = next(
+        (status for status in ("failed", "evidence_insufficient", "human_review_required") if status in outcomes),
+        "passed" if checks and all(item.get("passed") for item in checks) else "failed",
+    )
     output = result(
         "evaluate_design_document_approval",
-        "passed" if checks and all(item.get("passed") for item in checks) else "failed",
+        overall,
         facts={"documents": selected, "pipelines": pipelines, "approvalMode": mode},
         checks=checks,
         rule_version=rule_version(arguments),
