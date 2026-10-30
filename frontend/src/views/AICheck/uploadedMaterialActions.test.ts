@@ -41,8 +41,20 @@ const uploadHandler = readFileSync(
 assert.ok(/const canReplaceContractorFile/.test(sections), '要判断这份能不能替换')
 assert.ok(/\['未关联', '待提交'\]\.includes\(file\.status\)/.test(sections), '只有未提交的才能替换')
 assert.ok(/补正流程/.test(sections), '不能替换时要说清楚该走哪条路')
-assert.ok(/>\s*替换\s*</.test(sections), '台账要有替换按钮')
-assert.ok(/width="290" fixed="right"/.test(sections), '多一个按钮就要放宽列宽——挤掉的按钮等于没有')
+// 2026-10-31 体验审计：一行摆五个链接太挤。查看、提交留在行上，替换/选择环节/删除收进「更多」。
+assert.ok(
+  /command="replace"/.test(sections) && />\s*替换文件\s*</.test(sections),
+  '台账要有替换入口（收在「更多」菜单里）'
+)
+assert.ok(
+  /handleContractorRowCommand\(command, row\)/.test(sections) &&
+    /const handleContractorRowCommand/.test(sections),
+  '「更多」菜单的命令要接到处理函数，不能只画菜单不接线'
+)
+assert.ok(
+  /width="170" fixed="right"/.test(sections),
+  '操作列现在只放查看、提交、更多；改宽时要保证三个入口都看得见'
+)
 
 // ② 替换走的是「加版本」，不是新建
 assert.ok(/useWorkbenchUploadSession\(/.test(workbench), '工作台必须使用保留上传目标的处理器')

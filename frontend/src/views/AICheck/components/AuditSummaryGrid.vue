@@ -55,7 +55,11 @@ const normalizedCards = computed(() =>
 </script>
 
 <template>
-  <section class="audit-summary-grid" role="list" :aria-label="ariaLabel || '审计摘要'">
+  <section
+    :class="['audit-summary-grid', { 'is-triple': normalizedCards.length === 3 }]"
+    role="list"
+    :aria-label="ariaLabel || '审计摘要'"
+  >
     <ElCard
       v-for="card in normalizedCards"
       :key="`${card.label}-${card.value}`"
@@ -192,6 +196,17 @@ const normalizedCards = computed(() =>
 @media (width <= 1180px) {
   .audit-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 三张卡排成 2 列会孤立出第三张、留一块空白：三张就保持一排三列，窄到放不下再单列 */
+  .audit-summary-grid.is-triple {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (width <= 760px) {
+  .audit-summary-grid.is-triple {
+    grid-template-columns: 1fr;
   }
 }
 

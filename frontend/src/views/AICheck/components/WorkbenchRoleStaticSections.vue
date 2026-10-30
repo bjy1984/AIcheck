@@ -6,6 +6,9 @@ import {
   ElCard,
   ElDescriptions,
   ElDescriptionsItem,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
   ElEmpty,
   ElInput,
   ElOption,
@@ -223,6 +226,8 @@ const clearContractorNodeFilter = () => {
 defineExpose({ focusContractorNode })
 
 const contractorStatusFilter = ref<ContractorStatusFilter>('全部')
+// 分类指引是参考资料：默认收起，要看才展开，不占用上传列表后面的一整屏
+const materialGuideOpen = ref(false)
 type ContractorProcessingFilter = '全部' | '上传中' | '失败'
 const contractorProcessingFilter = ref<ContractorProcessingFilter>('全部')
 const contractorUsageFilter = ref('全部用途')
@@ -629,6 +634,12 @@ const requestFileReplace = (file: ContractorFileRow) => {
   })
 }
 
+const handleContractorRowCommand = (command: string, row: ContractorFileRow) => {
+  if (command === 'replace') requestFileReplace(row)
+  else if (command === 'bind') requestFileBind(row)
+  else if (command === 'delete') requestFileDelete(row)
+}
+
 const requestFileBind = (file: ContractorFileRow) => {
   if (!props.readOnly) emit('file-bind', file.documentId)
 }
@@ -786,25 +797,22 @@ const getPillClass = (value?: string): AuditStatusTone => {
           @rectify="requestRectify"
         />
       </div>
+      <!-- 先说要做什么，再给入口：计数口径（意见数和文件数不同）用一句话带过，不让施工方读一段解释 -->
       <ElAlert
         v-if="
           rectificationLoaded && !rectificationLoading && !rectificationIssue && correctionFileCount
         "
         class="correction-scope-note"
-        type="info"
+        type="warning"
         :closable="false"
-        title="补正意见与需补正文件分别统计"
+        :title="`${correctionFileCount} 份文件需要补正`"
       >
-        <p
-          >当前有 {{ correctionFileCount }} 份文件标记为需补正，{{
-            pendingRectificationCount
-          }}
-          条可查看的待处理补正意见。一个意见可能关联多份文件。</p
-        >
-        <p v-if="!pendingRectificationCount"
-          >尚无可查看的待处理意见，请先核对文件关联信息；若缺少具体要求，请联系监检人员确认。</p
-        >
-        <ElButton @click="showCorrectionFiles"
+        <p>{{
+          pendingRectificationCount
+            ? `有 ${pendingRectificationCount} 条待处理的补正意见；一条意见可能涉及多份文件，上传补正资料时会自动带入。`
+            : '监检人员还没有给出具体的补正要求，可先查看这些文件。'
+        }}</p>
+        <ElButton type="primary" plain @click="showCorrectionFiles"
           >查看需补正文件（{{ correctionFileCount }}）</ElButton
         >
       </ElAlert>
@@ -998,27 +1006,10 @@ const getPillClass = (value?: string): AuditStatusTone => {
             <ElTableColumn prop="usage" label="文件用途" min-width="130" show-overflow-tooltip />
             <!-- 五个操作（查看/替换/提交/删除/挂接）挤不进 220px：
                  列宽不够时按钮会被裁掉，等于加了个看不见的功能。 -->
-            <ElTableColumn label="操作" width="290" fixed="right">
+            <ElTableColumn label="操作" width="170" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
                   <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
-                  <ElTooltip
-                    :content="getContractorReplaceHint(row)"
-                    :disabled="canReplaceContractorFile(row)"
-                    placement="top"
-                    popper-class="audit-action-tooltip-popper"
-                  >
-                    <span class="table-action-tooltip">
-                      <ElButton
-                        link
-                        type="primary"
-                        :disabled="!canReplaceContractorFile(row)"
-                        @click="requestFileReplace(row)"
-                      >
-                        替换
-                      </ElButton>
-                    </span>
-                  </ElTooltip>
                   <ElTooltip
                     :content="getContractorSubmitHint(row)"
                     :disabled="canSubmitContractorFile(row)"
@@ -1036,26 +1027,41 @@ const getPillClass = (value?: string): AuditStatusTone => {
                       </ElButton>
                     </span>
                   </ElTooltip>
-                  <ElTooltip
-                    :content="getContractorDeleteHint(row)"
-                    :disabled="!readOnly && ['未关联', '待提交'].includes(row.status)"
-                    placement="top"
-                    popper-class="audit-action-tooltip-popper"
+                  <!-- 查看、提交是常用动作，留在行上；替换、选择环节、删除收进「更多」，一行不再摆五个链接 -->
+                  <ElDropdown
+                    trigger="click"
+                    @command="(command: string) => handleContractorRowCommand(command, row)"
                   >
-                    <span class="table-action-tooltip">
-                      <ElButton
-                        link
-                        type="danger"
-                        :disabled="readOnly || !['未关联', '待提交'].includes(row.status)"
-                        @click="requestFileDelete(row)"
-                      >
-                        删除
-                      </ElButton>
-                    </span>
-                  </ElTooltip>
-                  <ElButton link type="primary" :disabled="readOnly" @click="requestFileBind(row)">
-                    选择环节
-                  </ElButton>
+                    <ElButton link type="primary">更多</ElButton>
+                    <template #dropdown>
+                      <ElDropdownMenu>
+                        <ElDropdownItem
+                          command="replace"
+                          :disabled="!canReplaceContractorFile(row)"
+                          :title="
+                            canReplaceContractorFile(row) ? '' : getContractorReplaceHint(row)
+                          "
+                        >
+                          替换文件
+                        </ElDropdownItem>
+                        <ElDropdownItem command="bind" :disabled="readOnly"
+                          >选择环节</ElDropdownItem
+                        >
+                        <ElDropdownItem
+                          command="delete"
+                          divided
+                          :disabled="readOnly || !['未关联', '待提交'].includes(row.status)"
+                          :title="
+                            !readOnly && ['未关联', '待提交'].includes(row.status)
+                              ? ''
+                              : getContractorDeleteHint(row)
+                          "
+                        >
+                          删除
+                        </ElDropdownItem>
+                      </ElDropdownMenu>
+                    </template>
+                  </ElDropdown>
                 </div>
               </template>
             </ElTableColumn>
@@ -1083,9 +1089,17 @@ const getPillClass = (value?: string): AuditStatusTone => {
               <h2>四、资料分类与上传指引</h2>
               <div class="sub">直接上传即可，系统会自动识别类别；下面的分类只是整理参考。</div>
             </div>
+            <ElButton
+              link
+              type="primary"
+              :aria-expanded="materialGuideOpen"
+              @click="materialGuideOpen = !materialGuideOpen"
+            >
+              {{ materialGuideOpen ? '收起指引' : '展开指引' }}
+            </ElButton>
           </div>
         </template>
-        <div class="material-checklist">
+        <div v-if="materialGuideOpen" class="material-checklist">
           <ElTable
             class="material-gap-table"
             :data="CONTRACTOR_MATERIAL_REQUIREMENTS"
@@ -1100,7 +1114,6 @@ const getPillClass = (value?: string): AuditStatusTone => {
               :label="column.label"
               :width="column.width"
               :min-width="column.minWidth"
-              :show-overflow-tooltip="column.key !== 'category'"
             />
           </ElTable>
         </div>
@@ -2166,5 +2179,12 @@ p {
 
 .time-dot.orange {
   background: var(--orange);
+}
+
+/* 指引表是给人读的说明，不是数据列：文字换行显示，不再被省略号截掉 */
+.material-gap-table :deep(.cell) {
+  line-height: 1.6;
+  white-space: normal;
+  word-break: break-word;
 }
 </style>

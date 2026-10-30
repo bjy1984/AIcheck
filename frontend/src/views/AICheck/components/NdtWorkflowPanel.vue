@@ -141,6 +141,10 @@ const pendingReports = computed(() => pendingNdtReports(props.reports))
 const pendingFilms = computed(() => pendingNdtFilms(props.films))
 const openFeedback = computed(() => props.feedback.filter((item) => item.status === '待反馈'))
 const defaultFeedback = computed(() => openFeedback.value[0])
+// 有待处理的监检反馈时先给反馈：这是唯一有期限、要立刻动手的事，不该排在 22 行资料类型表后面。
+const feedbackFirst = computed(() => openFeedback.value.length > 0)
+const CHECKLIST_PREVIEW = 6
+const checklistExpanded = ref(false)
 watch(
   () => defaultFeedback.value?.id,
   (defaultId) => {
@@ -293,7 +297,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
 </script>
 
 <template>
-  <div class="ndt-workspace">
+  <div class="ndt-workspace" :class="{ 'is-feedback-first': feedbackFirst }">
     <ElDialog
       v-model="filmDialogVisible"
       title="新增底片编号"
@@ -398,7 +402,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       <template #header>
         <div class="panel-header">
           <div>
-            <span>一、无损检测资料</span>
+            <span>无损检测资料</span>
             <div class="panel-subtitle"
               >集中管理检测方案、底片、记录、报告和补正资料，并逐项提交监检审核。</div
             >
@@ -430,10 +434,28 @@ const handleRectifyNdt = async (rectificationId?: string) => {
             {{ ndtChecklistSummary.uploaded }} 个文件 / {{ ndtChecklistSummary.types }} 种类型
           </ElTag>
         </div>
-        <ElTable :data="ndtMaterialChecklist" border class="ndt-checklist-table">
+        <ElTable
+          :data="
+            checklistExpanded
+              ? ndtMaterialChecklist
+              : ndtMaterialChecklist.slice(0, CHECKLIST_PREVIEW)
+          "
+          border
+          class="ndt-checklist-table"
+        >
           <ElTableColumn type="index" label="序号" width="72" />
           <ElTableColumn prop="name" label="资料类型" min-width="250" show-overflow-tooltip />
-          <ElTableColumn prop="group" label="业务规则" min-width="360" show-overflow-tooltip />
+          <ElTableColumn label="业务规则" min-width="360" show-overflow-tooltip>
+            <template #default="{ row, $index }">
+              <!-- 连续几行属于同一条业务规则时只写一次，其余写「同上」：整列重复同一句话没有信息量 -->
+              <span
+                v-if="$index > 0 && ndtMaterialChecklist[$index - 1]?.group === row.group"
+                class="ndt-rule-same"
+                >同上</span
+              >
+              <span v-else>{{ row.group }}</span>
+            </template>
+          </ElTableColumn>
           <ElTableColumn label="已上传" width="110">
             <template #default="{ row }">
               <!-- 0 项不做成可点：点开是空的，不如让人一眼看出还没传 -->
@@ -459,6 +481,21 @@ const handleRectifyNdt = async (rectificationId?: string) => {
             </template>
           </ElTableColumn>
         </ElTable>
+
+        <div v-if="ndtMaterialChecklist.length > CHECKLIST_PREVIEW" class="ndt-checklist-toggle">
+          <ElButton
+            link
+            type="primary"
+            :aria-expanded="checklistExpanded"
+            @click="checklistExpanded = !checklistExpanded"
+          >
+            {{
+              checklistExpanded
+                ? '收起资料类型'
+                : `展开全部 ${ndtMaterialChecklist.length} 种资料类型`
+            }}
+          </ElButton>
+        </div>
 
         <ul class="ndt-mobile-checklist" aria-label="资料类型与上传">
           <li v-for="material in ndtMaterialChecklist" :key="material.code">
@@ -639,7 +676,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       <template #header>
         <div class="panel-header">
           <div>
-            <span>二、监检反馈列表</span>
+            <span>监检反馈</span>
             <div class="panel-subtitle"
               >按监检退回意见逐项处理，补充报告、底片或检测记录后提交反馈。</div
             >
@@ -650,20 +687,20 @@ const handleRectifyNdt = async (rectificationId?: string) => {
         </div>
       </template>
 
-      <ElTable v-if="feedback.length" :data="feedback" border max-height="220">
-        <ElTableColumn prop="id" label="反馈编号" width="130" />
-        <ElTableColumn prop="title" label="反馈事项" min-width="190" show-overflow-tooltip />
-        <ElTableColumn prop="description" label="问题说明" min-width="260" show-overflow-tooltip />
-        <ElTableColumn prop="deadline" label="期限" width="150" />
-        <ElTableColumn label="状态" width="100">
-          <template #default="{ row }">
-            <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-              {{ row.status }}
-            </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="操作" width="150" fixed="right">
-          <template #default="{ row }">
+      <!-- 反馈用列表而不是表格：事项、状态、期限、操作在窄屏下不被裁，待处理的整行高亮 -->
+      <ul v-if="feedback.length" class="ndt-feedback-list" aria-label="监检反馈">
+        <li v-for="row in feedback" :key="row.id" :class="{ 'is-open': row.status === '待反馈' }">
+          <div class="ndt-feedback-main">
+            <div class="ndt-feedback-head">
+              <strong>{{ row.title }}</strong>
+              <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
+                {{ row.status }}
+              </ElTag>
+            </div>
+            <p v-if="row.description" class="ndt-feedback-desc">{{ row.description }}</p>
+            <small class="ndt-feedback-meta">期限 {{ row.deadline }} · 编号 {{ row.id }}</small>
+          </div>
+          <div class="ndt-feedback-actions">
             <ElButton link type="primary" @click="emit('openFeedbackDetail', row.id)"
               >详情</ElButton
             >
@@ -675,8 +712,9 @@ const handleRectifyNdt = async (rectificationId?: string) => {
             >
               <span class="ndt-action-tooltip">
                 <ElButton
-                  link
-                  type="warning"
+                  :type="row.status === '已关闭' ? 'default' : 'warning'"
+                  :plain="row.status === '已关闭'"
+                  size="small"
                   :disabled="row.status === '已关闭'"
                   @click="handleRectifyNdt(row.id)"
                 >
@@ -684,9 +722,9 @@ const handleRectifyNdt = async (rectificationId?: string) => {
                 </ElButton>
               </span>
             </ElTooltip>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+          </div>
+        </li>
+      </ul>
       <ElEmpty v-else description="暂无监检反馈" class="compact-empty" />
 
       <ElForm
@@ -1080,5 +1118,75 @@ const handleRectifyNdt = async (rectificationId?: string) => {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+/* 工作区本来就是 grid，order 直接生效，gap 不变 */
+.ndt-workspace.is-feedback-first #ndt-feedback-list {
+  order: -1;
+}
+
+.ndt-rule-same {
+  color: var(--el-text-color-placeholder);
+}
+
+.ndt-checklist-toggle {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 0;
+}
+
+.ndt-feedback-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ndt-feedback-list > li {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.ndt-feedback-list > li.is-open {
+  background: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-5);
+}
+
+.ndt-feedback-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ndt-feedback-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ndt-feedback-desc {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.ndt-feedback-meta {
+  color: var(--el-text-color-secondary);
+}
+
+.ndt-feedback-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
 }
 </style>
