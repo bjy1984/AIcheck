@@ -92,6 +92,7 @@ def execute_node_tool_plan(
             )
             continue
         outputs = []
+        online_statuses: list[dict[str, Any]] = []
         for tool_name in item.get("tools") or []:
             arguments = build_tool_arguments(
                 tool_name,
@@ -102,6 +103,8 @@ def execute_node_tool_plan(
                 evidence_facts=evidence_facts or [],
                 evidence_refs=evidence_refs or [],
             )
+            if tool_name == "check_standard_version_active" and online_statuses:
+                arguments["onlineStatuses"] = online_statuses
             tool_call_id = f"TOOL-{uuid4().hex[:16].upper()}"
             capture_context = (
                 RawCaptureContext(**{**raw_context.__dict__, "turn": turn})
@@ -137,13 +140,15 @@ def execute_node_tool_plan(
                     provider_tool_call_id=tool_call_id,
                 )
             outputs.append(output)
+            if tool_name == "lookup_standard_status" and isinstance(output.get("lookups"), list):
+                online_statuses = [entry for entry in output["lookups"] if isinstance(entry, dict)]
         atomic_results.append(
             {
                 "atomicCheckId": item.get("atomicCheckId"),
                 "result": aggregate_planned_tool_results(item, outputs),
                 **({"resultRole": "evidence_gate"} if is_evidence_gate_plan(item) else {}),
                 "toolResults": outputs,
-                "warnings": pending_capability_warnings(item),
+                "warnings": pending_capability_warnings(item) + ([UNGROUNDED_FAILURE_WARNING] if ungrounded_business_failure(outputs) else []),
             }
         )
     return {
@@ -323,6 +328,12 @@ def build_tool_arguments(
     if tool_name == "check_standard_version_active":
         design = nested_dict(facts, "design")
         arguments.setdefault("standardReferences", list_value(design.get("standardReferences")))
+        arguments.setdefault("reviewDate", design.get("reviewDate") or nested_dict(facts, "project").get("constructionStart"))
+    if tool_name == "lookup_standard_status" and not arguments.get("standardRef"):
+        # 计划里的这一步原来不带标准号，一律 VALIDATION_ERROR。现在把时间线没收录的编号交给它批量核。
+        design = nested_dict(facts, "design")
+        arguments.setdefault("standardRefs", [str(item.get("standardRef")) for item in list_value(design.get("standardReferences"))
+                                              if isinstance(item, dict) and item.get("requiresOnlineLookup") and item.get("standardRef")])
         arguments.setdefault("reviewDate", design.get("reviewDate") or nested_dict(facts, "project").get("constructionStart"))
     if tool_name == "evaluate_drawing_review_witness":
         arguments.setdefault("witness", nested_dict(facts, "drawingReviewWitness"))
@@ -629,11 +640,35 @@ def project_pipeline_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+UNGROUNDED_FAILURE_WARNING = "business_failed_without_grounded_facts"
+
+
+def ungrounded_business_failure(outputs: list[dict[str, Any]]) -> bool:
+    """业务工具判了 failed，而锚定门一条事实都没有（factCount 为 0）。"""
+    gates = [item for item in outputs if str(item.get("toolName")) == "validate_evidence_grounding"
+             and str(item.get("result")) in {"evidence_insufficient", "failed"}]
+    business_failed = any(str(item.get("result")) == "failed" for item in outputs
+                          if item.get("result") and str(item.get("toolName")) != "validate_evidence_grounding")
+    return bool(gates) and business_failed and all(_grounded_fact_count(item) == 0 for item in gates)
+
+
+def _grounded_fact_count(gate: dict[str, Any]) -> int | None:
+    """锚定门明确报出的事实条数；没报（输出缺 factCount）就是不知道，按有事实处理，保持一票否决。"""
+    facts = gate.get("facts")
+    if not isinstance(facts, dict) or facts.get("factCount") is None:
+        return None
+    try:
+        return int(facts["factCount"])
+    except (TypeError, ValueError):
+        return None
+
+
 def aggregate_tool_results(outputs: list[dict[str, Any]]) -> str:
     """单个原子项内聚合各工具输出。
 
     优先级（业务口径）：
     1. 证据锚定失效一票否决——grounding 不通过时 passed/failed 均不可靠，降级证据不足；
+       例外：锚定门一条事实都没拿到（factCount 为 0）而业务工具判了 failed，改报需人工，违规交给人看；
     2. 已确认的 failed（真实不符合）不被工具执行故障掩盖；
     3. 工具执行故障是系统问题，走独立 execution_error 通道，不伪装成业务结论；
     4. human_review_required 独立保留（证据够但需专业判断 ≠ 证据不足）。
@@ -655,7 +690,10 @@ def aggregate_tool_results(outputs: list[dict[str, Any]]) -> str:
     # 不能让其余工具的 passed 把它盖过去。
     capability_disabled = any(item.get("status") == "capability_disabled" for item in outputs)
     if grounding_failed:
-        return "evidence_insufficient"
+        # 锚定门一事实都没拿到（设计类节点的事实直接从 OCR 文字解析，没登记成带页码引文的 claimedFacts），
+        # 它说的是「没东西可核」，不是「核了不通过」。业务工具已经判出不符合时，整项盖成证据不足会把违规藏起来：
+        # 改成需人工，把不过的检查项交给人看（用户 2026-10-30）。门拿到了事实却核不过的，照旧一票否决。
+        return "human_review_required" if ungrounded_business_failure(outputs) else "evidence_insufficient"
     if "failed" in business_results:
         return "failed"
     if execution_failed:

@@ -442,6 +442,8 @@ def _outcome_reason(atomic: dict[str, Any]) -> str:
             return reason
         elif tool.get("result") in {"evidence_insufficient", "human_review_required"}:
             insufficient_reason = insufficient_reason or reason
+    if not (insufficient_reason or grounding_reason) and "business_failed_without_grounded_facts" in (atomic.get("warnings") or []):
+        return "business_failed_without_grounded_facts"
     return insufficient_reason or grounding_reason
 
 

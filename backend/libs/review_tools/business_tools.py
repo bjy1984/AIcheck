@@ -1268,11 +1268,36 @@ def check_document_set_completeness(arguments: dict[str, Any]) -> dict[str, Any]
     )
 
 
+_ONLINE_STATUS_BY_VERDICT = {
+    "current": ("active", "current", "现行（官方平台）"),
+    "superseded": ("withdrawn", "withdrawn", "已废止（官方平台）"),
+    "not_yet_effective": ("active", "not_yet_effective", "尚未实施（官方平台）"),
+}
+
+
+def with_online_statuses(references: list[dict[str, Any]], online: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把官方平台核到的状态补进时间线没收录（unknown）的引用；时间线已有的以时间线为准。"""
+    by_ref = {str(item.get("standardRef")): item for item in online if item.get("standardRef") and item.get("verdict") in _ONLINE_STATUS_BY_VERDICT}
+    merged = []
+    for reference in references:
+        found = by_ref.get(str(reference.get("standardRef")))
+        if found is None or reference.get("status") != "unknown":
+            merged.append(reference)
+            continue
+        status, timeline_status, label = _ONLINE_STATUS_BY_VERDICT[found["verdict"]]
+        merged.append({**reference, "status": status, "timelineStatus": timeline_status, "timelineLabel": label,
+                       "effectiveFrom": found.get("effectiveFrom"), "withdrawnOn": found.get("withdrawnOn"),
+                       "replacedBy": found.get("replacedBy"), "verified": True, "requiresOnlineLookup": False,
+                       "statusSource": found.get("source") or "std.samr.gov.cn"})
+    return merged
+
+
 def check_standard_version_active(arguments: dict[str, Any]) -> dict[str, Any]:
     references = list_of_dicts(arguments.get("standardReferences"))
     review_date = parse_date(arguments.get("reviewDate"))
     if not references or review_date is None:
         return insufficient("check_standard_version_active", arguments, "standard_version_facts_missing")
+    references = with_online_statuses(references, list_of_dicts(arguments.get("onlineStatuses")))
     checks = []
     for index, item in enumerate(references, 1):
         effective = parse_date(item.get("effectiveFrom"))

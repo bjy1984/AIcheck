@@ -92,6 +92,9 @@ runtime = {
     # 连接 20s、读取 60s；验证码图片最大 16MB，读取要留够。
     "AICHECK_CNSE_TIMEOUT_CONNECT": "20",
     "AICHECK_CNSE_TIMEOUT_READ": "60",
+    # R08：设计引用的标准时间线没收录的，审查时逐个到 std.samr.gov.cn 核版本状态（libs/standard_online_lookup.py）。
+    # 默认关，因为单元测试和本地环境不该对外发请求；生产在这里打开。
+    "AICHECK_STANDARD_ONLINE_LOOKUP": "true",
     "AICHECK_QWEN_CALL_MODE": "official_api",
     "AICHECK_LLM_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "AICHECK_LLM_MODEL_REVIEW": "qwen3.7-plus",

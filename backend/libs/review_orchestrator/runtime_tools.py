@@ -924,8 +924,34 @@ def verify_welder_on_platform_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def lookup_standard_statuses_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """审查计划里的批量模式：对设计引用但本地时间线没收录的标准逐个核官网。
+
+    不带 result：它只补事实（lookups 交给后面的 check_standard_version_active），
+    自己不投票，否则字典形式的 result 会让整项永远凑不成 passed。
+    """
+    from libs.standard_online_lookup import lookup_standard_statuses, online_lookup_enabled
+
+    base = {"toolCallId": runtime_tool_call_id(), "toolName": "lookup_standard_status", "status": "succeeded",
+            "requiresHumanConfirmation": True}
+    refs = [str(item) for item in arguments.get("standardRefs") or [] if isinstance(item, str)]
+    if not refs:
+        return {**base, "lookups": [], "unresolved": [], "skipped": [], "summary": "没有需要在线核验的标准。"}
+    if not online_lookup_enabled():
+        return {**base, "lookups": [], "unresolved": [], "skipped": [{"standardRef": ref, "reason": "online_lookup_disabled"} for ref in refs],
+                "summary": "在线核验标准未启用，本次只用本地时间线。"}
+    try:
+        outcome = lookup_standard_statuses(refs, arguments.get("reviewDate"))
+    except StdSamrConfigurationError:
+        return _cnse_tool_failure("lookup_standard_status", error_code="VALIDATION_ERROR", message="审查日期格式无效。")
+    return {**base, **outcome,
+            "summary": f"官方平台核到 {len(outcome['lookups'])} 条，{len(outcome['unresolved'])} 条没核成，{len(outcome['skipped'])} 条未查。"}
+
+
 def lookup_standard_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     tool_name = "lookup_standard_status"
+    if not str(arguments.get("standardRef") or "").strip() and "standardRefs" in arguments:
+        return lookup_standard_statuses_tool(arguments)
     try:
         normalize_standard_ref(str(arguments.get("standardRef") or ""))
         review_date = parse_review_date(arguments.get("reviewDate"))
