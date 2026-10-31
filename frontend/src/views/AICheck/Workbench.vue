@@ -1016,9 +1016,31 @@ const availableActions = computed<ActionCode[]>(() => {
   )
 })
 const unreadMessageCount = computed(() => messages.value.filter((message) => !message.read).length)
-const quickAccessNotificationCount = computed(() => todos.value.length + unreadMessageCount.value)
+// 摘要接口的 todos 只带前 5 条（后端 role_todos[:5]），真正的总数在 metrics 的 todo 项里。
+// 徽标原先拿那 5 条的长度当总数：生产里写 5，点开「待办」页签却是 20 条。
+const todoTotal = computed(() => {
+  const metric = metrics.value.find((item) => item.key === 'todo')
+  const value = Number(metric?.value)
+  return Number.isFinite(value) && value >= todos.value.length ? value : todos.value.length
+})
+const quickAccessNotificationCount = computed(() => todoTotal.value + unreadMessageCount.value)
 const projectTreeNodes = computed<ProjectTreeNode[]>(() =>
   treeGroups.value.flatMap((group) => group.nodes || [])
+)
+// 待办标题只有「节点资料已提交，待监检核验」这一句，二十条一个样，分不出是哪个节点的。
+// 在弹窗里补上它指向的节点名；没指向节点的写明是项目资料池。
+const quickTodoRows = computed(() =>
+  quickTodos.value.map((todo) => {
+    const node = todo.nodeId
+      ? projectTreeNodes.value.find((item) => item.nodeId === todo.nodeId)
+      : undefined
+    const nodeLabel = node
+      ? `${node.nodeId}. ${node.name}`
+      : todo.nodeId
+        ? `节点 ${todo.nodeId}`
+        : '项目资料池（未指向具体节点）'
+    return { ...todo, nodeLabel }
+  })
 )
 const feedbackNodeIds = computed(() => {
   const nodeIds = new Set<number>()
@@ -2682,17 +2704,33 @@ const handleOpenQuickTodo = async (todo: TodoItem) => {
     await loadProjectBundle()
   }
   let located = false
-  if (Number.isFinite(targetNodeId) && targetNodeId > 0) {
-    await loadNodePackage(targetNodeId)
-    // 取回节点数据 ≠ 用户看见了它。施工方/建设方这个视图是文件库，
-    // 不渲染节点包——线上实测点完提示「已定位」，页面首屏一字未变。
-    // 这里让静态视图真的把节点名填进筛选并滚过去，滚不动就如实降级措辞。
-    const focus = staticSectionsRef.value?.focusContractorNode
-    if (typeof focus === 'function') {
-      located = (await focus({ id: targetNodeId, name: nodeDisplayName(targetNodeId) })) === true
-    } else {
-      located = Boolean(selectedNode.value && Number(selectedNode.value.id) === targetNodeId)
+  // 加载节点要几秒；这几秒里弹窗不能看上去没反应，否则用户会以为点不动、再点第二下。
+  quickAccessLoading.value = true
+  try {
+    const inspectionNode =
+      role.value === 'inspection' && targetNodeId > 0
+        ? projectTreeNodes.value.find((item) => item.nodeId === targetNodeId)
+        : undefined
+    if (inspectionNode) {
+      // 监检的节点页由 activeWorkbenchSection 决定显不显示：光把节点包加载回来，
+      // 页面还停在项目总览，用户看到「已定位」却什么都没变。走和点项目树一样的路径。
+      activeInspectionWorkspaceView.value = 'list'
+      await handleNodeSelect(inspectionNode)
+      located = true
+    } else if (Number.isFinite(targetNodeId) && targetNodeId > 0) {
+      await loadNodePackage(targetNodeId)
+      // 取回节点数据 ≠ 用户看见了它。施工方/建设方这个视图是文件库，
+      // 不渲染节点包——线上实测点完提示「已定位」，页面首屏一字未变。
+      // 这里让静态视图真的把节点名填进筛选并滚过去，滚不动就如实降级措辞。
+      const focus = staticSectionsRef.value?.focusContractorNode
+      if (typeof focus === 'function') {
+        located = (await focus({ id: targetNodeId, name: nodeDisplayName(targetNodeId) })) === true
+      } else {
+        located = Boolean(selectedNode.value && Number(selectedNode.value.id) === targetNodeId)
+      }
     }
+  } finally {
+    quickAccessLoading.value = false
   }
   quickAccessVisible.value = false
   if (targetNodeId > 0 && located) {
@@ -5223,6 +5261,7 @@ onBeforeUnmount(() => {
           <div
             v-if="projectAnalysisBanner"
             :class="['project-analysis-banner', `is-${projectAnalysisBanner.tone}`]"
+            :title="projectAnalysisBanner.title"
             role="status"
             aria-live="polite"
           >
@@ -5783,11 +5822,20 @@ onBeforeUnmount(() => {
                     row-key="id"
                     empty-text="暂无已提交审查资料"
                   >
-                    <ElTableColumn prop="rowNo" label="序号" width="72" align="center" />
+                    <!-- 序号和文件名固定在左：表格比内容区宽，横向滚到右边的「查看原文」时，
+                         不固定的话文件名早滚出视野，点的是哪份文件自己都不知道。 -->
+                    <ElTableColumn
+                      prop="rowNo"
+                      label="序号"
+                      width="72"
+                      align="center"
+                      fixed="left"
+                    />
                     <ElTableColumn
                       prop="fileName"
                       label="文件名"
-                      min-width="220"
+                      width="240"
+                      fixed="left"
                       show-overflow-tooltip
                     >
                       <template #default="{ row }">
@@ -7080,7 +7128,7 @@ onBeforeUnmount(() => {
         v-model:keyword="quickAccessKeyword"
         :search-results="quickSearchResults"
         :search-scope="currentProject?.name"
-        :todos="quickTodos"
+        :todos="quickTodoRows"
         :messages="quickMessages"
         :loading="quickAccessLoading"
         @search="handleQuickSearch"

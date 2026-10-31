@@ -21,7 +21,7 @@ const props = defineProps<{
   keyword: string
   searchScope?: string
   searchResults: SearchResult[]
-  todos: TodoItem[]
+  todos: Array<TodoItem & { nodeLabel?: string }>
   messages: MessageItem[]
   loading: boolean
 }>()
@@ -162,7 +162,7 @@ const focusSearchInput = async () => {
       </ElTabPane>
 
       <ElTabPane :label="`待办 ${todos.length}`" name="todos">
-        <ElTable v-if="todos.length" :data="todos" border height="420">
+        <ElTable v-if="todos.length" v-loading="loading" :data="todos" border height="420">
           <!-- 待办要能点过去处理。原来只有一个「完成」：告诉你「资料已提交、
                待监检处理」，却不告诉你去哪处理——用户只能自己回项目树里翻。 -->
           <ElTableColumn label="待办事项" min-width="240" show-overflow-tooltip>
@@ -178,6 +178,8 @@ const focusSearchInput = async () => {
                 {{ row.title }}
               </ElButton>
               <span v-else>{{ row.title }}</span>
+              <!-- 待办标题是一句固定的话，二十条一个样。写上它指向哪个节点，才分得出先处理哪条。 -->
+              <small v-if="row.nodeLabel" class="todo-node-label">{{ row.nodeLabel }}</small>
             </template>
           </ElTableColumn>
           <ElTableColumn prop="assigneeName" label="责任人" width="92" />
@@ -301,6 +303,15 @@ const focusSearchInput = async () => {
   font-weight: inherit;
   text-align: left;
   white-space: normal;
+}
+
+.todo-node-label {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 12px;
+  color: #667085;
+  text-overflow: ellipsis;
 }
 
 .search-bar,

@@ -3,6 +3,33 @@ import type { ProjectAnalysisStatus } from '@/api/aicheck/projectAnalysis'
 export type ProjectAnalysisBannerState = {
   tone: 'running' | 'success' | 'failure'
   label: string
+  /** 鼠标停上去的说明：失败发生在什么时候、为什么。 */
+  title?: string
+}
+
+// 失败标签原来只有四个字，没有时间也没有原因：生产里顶栏一直挂着「AI分析失败」，
+// 其实是 10 月 23 日的一次旧失败（那时的模型套餐已过期），之后没人再跑过，看起来却像刚坏的。
+const failureCodeHints: Record<string, string> = {
+  'ACCESSDENIED.UNPURCHASED': '模型服务未开通或套餐已过期'
+}
+
+const shortTime = (value?: string | null) => {
+  const match = String(value || '').match(/^\d{4}-(\d{2}-\d{2})[ T](\d{2}:\d{2})/)
+  return match ? `${match[1]} ${match[2]}` : ''
+}
+
+const failureBanner = (status: ProjectAnalysisStatus): ProjectAnalysisBannerState => {
+  const when = shortTime(status.finishedAt)
+  const code = String(status.errorCode || '').trim()
+  const reason = failureCodeHints[code] || String(status.errorMessage || '').trim() || code
+  const label = when ? `AI分析失败 · ${when}` : 'AI分析失败'
+  if (!when && !reason) return { tone: 'failure', label }
+  const detail = reason ? `：${reason}${code && reason !== code ? `（${code}）` : ''}` : ''
+  return {
+    tone: 'failure',
+    label,
+    title: `最近一次全工程一键分析${when ? `在 ${when} ` : ''}失败${detail}。点「一键分析」可查看详情或重新发起。`
+  }
 }
 
 export const projectAnalysisBannerState = (
@@ -14,9 +41,7 @@ export const projectAnalysisBannerState = (
   if (status.phase === 'waiting_human_review') {
     return { tone: 'success', label: 'AI分析完成' }
   }
-  if (status.phase === 'failed' || status.phase === 'partial_failure') {
-    return { tone: 'failure', label: 'AI分析失败' }
-  }
+  if (status.phase === 'failed' || status.phase === 'partial_failure') return failureBanner(status)
   return { tone: 'running', label: 'AI一键分析正在运行' }
 }
 

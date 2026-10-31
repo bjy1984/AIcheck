@@ -132,6 +132,28 @@ assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'failed' })), {
 })
 assert.equal(projectAnalysisBannerState?.(), undefined)
 
+// 失败标签带上发生时间和人话原因，让一条陈旧的失败一眼看得出是旧的
+assert.deepEqual(
+  projectAnalysisBannerState?.(
+    status({
+      phase: 'failed',
+      finishedAt: '2026-10-23 08:39:24',
+      errorCode: 'ACCESSDENIED.UNPURCHASED'
+    })
+  ),
+  {
+    tone: 'failure',
+    label: 'AI分析失败 · 10-23 08:39',
+    title:
+      '最近一次全工程一键分析在 10-23 08:39 失败：模型服务未开通或套餐已过期（ACCESSDENIED.UNPURCHASED）。点「一键分析」可查看详情或重新发起。'
+  }
+)
+// 认不出的错误码照样给出，没有时间也不编
+assert.equal(
+  projectAnalysisBannerState?.(status({ phase: 'failed', errorCode: 'SOMETHING_ELSE' }))?.title,
+  '最近一次全工程一键分析失败：SOMETHING_ELSE。点「一键分析」可查看详情或重新发起。'
+)
+
 // 超限提示必须可执行：带前三大文件与 token 占用，而不是一句「减少资料」
 assert.deepEqual(
   projectAnalysisRequestFailure?.({
