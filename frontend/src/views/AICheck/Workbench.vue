@@ -455,6 +455,7 @@ const quickAccessKeyword = ref('')
 const quickAccessLoading = ref(false)
 const quickSearchResults = ref<SearchResult[]>([])
 const quickTodos = ref<TodoItem[]>([])
+const quickTodoTotal = ref(0)
 const quickMessages = ref<MessageItem[]>([])
 const activeEvidence = ref<EvidenceLink>()
 const fileDetail = ref<DocumentDetailPayload>()
@@ -2527,12 +2528,15 @@ const loadQuickAccessData = async () => {
   if (!activeProjectId.value) return
   quickAccessLoading.value = true
   try {
+    // 接口默认每页 20 条。不传 pageSize 时第 21 条起被悄悄截掉：生产里徽标（总数）写 21，
+    // 弹窗列表和页签只有 20，第 21 条永远看不到。
     const [todoRes, messageRes] = await Promise.all([
-      listTodosApi({ role: role.value, projectId: activeProjectId.value }),
-      listMessagesApi({ projectId: activeProjectId.value })
+      listTodosApi({ role: role.value, projectId: activeProjectId.value, pageSize: 100 }),
+      listMessagesApi({ projectId: activeProjectId.value, pageSize: 100 })
     ])
     if (!todoRes || !messageRes) return
     quickTodos.value = todoRes.data.items
+    quickTodoTotal.value = Number(todoRes.data.total) || todoRes.data.items.length
     quickMessages.value = messageRes.data.items
   } finally {
     quickAccessLoading.value = false
@@ -7129,6 +7133,7 @@ onBeforeUnmount(() => {
         :search-results="quickSearchResults"
         :search-scope="currentProject?.name"
         :todos="quickTodoRows"
+        :todo-total="quickTodoTotal"
         :messages="quickMessages"
         :loading="quickAccessLoading"
         @search="handleQuickSearch"

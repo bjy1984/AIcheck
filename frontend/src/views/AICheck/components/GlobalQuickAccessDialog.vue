@@ -22,6 +22,8 @@ const props = defineProps<{
   searchScope?: string
   searchResults: SearchResult[]
   todos: Array<TodoItem & { nodeLabel?: string }>
+  /** 待办总数。列表可能只装了一页，页签上的数字要写总数，不能写列表长度。 */
+  todoTotal?: number
   messages: MessageItem[]
   loading: boolean
 }>()
@@ -161,7 +163,7 @@ const focusSearchInput = async () => {
         <ElEmpty v-else description="暂无搜索结果" />
       </ElTabPane>
 
-      <ElTabPane :label="`待办 ${todos.length}`" name="todos">
+      <ElTabPane :label="`待办 ${todoTotal ?? todos.length}`" name="todos">
         <ElTable v-if="todos.length" v-loading="loading" :data="todos" border height="420">
           <!-- 待办要能点过去处理。原来只有一个「完成」：告诉你「资料已提交、
                待监检处理」，却不告诉你去哪处理——用户只能自己回项目树里翻。 -->
@@ -212,7 +214,10 @@ const focusSearchInput = async () => {
             </template>
           </ElTableColumn>
         </ElTable>
-        <ElEmpty v-else description="暂无待办" />
+        <p v-if="todoTotal && todoTotal > todos.length" class="todo-truncated-note">
+          共 {{ todoTotal }} 条，当前只显示前 {{ todos.length }} 条。
+        </p>
+        <ElEmpty v-else-if="!todos.length" description="暂无待办" />
       </ElTabPane>
 
       <ElTabPane :label="`消息 ${unreadCount}`" name="messages">
@@ -303,6 +308,12 @@ const focusSearchInput = async () => {
   font-weight: inherit;
   text-align: left;
   white-space: normal;
+}
+
+.todo-truncated-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #667085;
 }
 
 .todo-node-label {
