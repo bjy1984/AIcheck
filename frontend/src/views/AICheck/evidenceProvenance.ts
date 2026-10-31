@@ -44,3 +44,19 @@ export const evidenceStatusView = (
     hint: '已由人工确认。'
   }
 }
+
+// 证据定位弹窗里的「证据类型」原来直接显示内部类型名（nodeEvidenceLink、documentVersion）。
+const EVIDENCE_TYPE_LABELS: Record<string, string> = {
+  nodeEvidenceLink: '节点证据',
+  documentVersion: '资料文件',
+  extractedField: 'OCR 字段',
+  knowledgeClause: '标准条款',
+  aiRun: 'AI 复核',
+  reviewOpinion: '审查意见'
+}
+
+export const evidenceTypeText = (evidence?: { id?: string; objectType?: string }): string => {
+  // 按 AI 引用自带的文件页码合成的临时证据（见 evidenceFromAnalysisReference）
+  if (evidence?.id?.startsWith('AIREF-')) return 'AI 引用'
+  return EVIDENCE_TYPE_LABELS[evidence?.objectType || ''] || '节点证据'
+}

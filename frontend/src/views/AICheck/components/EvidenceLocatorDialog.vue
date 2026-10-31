@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { evidenceTypeText } from '../evidenceProvenance'
 import { defineAsyncComponent, computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ElAlert,
@@ -62,7 +63,7 @@ const previewLoading = ref(false)
 const previewError = ref('')
 let previewRequestSeq = 0
 
-const evidenceTypeLabel = computed(() => props.evidence?.objectType || 'nodeEvidenceLink')
+const evidenceTypeLabel = computed(() => evidenceTypeText(props.evidence))
 const evidenceProjectId = computed(() => props.projectId || props.evidence?.projectId || '')
 const evidenceDocumentId = computed(() => props.evidence?.documentId || '')
 const directPreviewUrl = computed(() => evidencePreviewSource(props.evidence, props.projectId))
@@ -302,7 +303,7 @@ onBeforeUnmount(() => {
           {{ evidence.fileName || '-' }}
         </ElDescriptionsItem>
         <ElDescriptionsItem label="页码">
-          {{ evidence.pageNo || '-' }}
+          {{ evidence.pageNo ? `第 ${evidence.pageNo} 页` : '未标注页码，从第 1 页看起' }}
         </ElDescriptionsItem>
         <ElDescriptionsItem v-if="!compact" label="字段">
           {{ evidence.fieldName || linkedField?.fieldName || '-' }}

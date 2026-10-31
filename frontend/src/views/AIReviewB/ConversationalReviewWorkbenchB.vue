@@ -2299,7 +2299,7 @@ onBeforeUnmount(() => {
                           evidence.fileName || evidence.fieldName || evidence.id
                         }}</strong>
                         <small
-                          >第 {{ evidence.pageNo || '-' }} 页 ·
+                          >{{ evidence.pageNo ? `第 ${evidence.pageNo} 页` : '未标注页码' }} ·
                           {{ evidenceStatusView(evidence).label }}</small
                         >
                         <ClauseContent
@@ -2631,7 +2631,7 @@ onBeforeUnmount(() => {
             <div v-for="evidence in selectedEvidence" :key="evidence.id" class="selected-evidence">
               <div>
                 <strong>{{ evidence.fileName || evidence.fieldName || evidence.id }}</strong>
-                <small>第 {{ evidence.pageNo || '-' }} 页</small>
+                <small>{{ evidence.pageNo ? `第 ${evidence.pageNo} 页` : '未标注页码' }}</small>
               </div>
               <ElTag
                 :type="evidenceStatusView(evidence).tagType"
