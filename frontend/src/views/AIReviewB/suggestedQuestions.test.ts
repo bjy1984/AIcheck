@@ -51,8 +51,9 @@ const NODE_24_BASIS = {
   assert.ok(!questions.some((q) => q.text.includes('AI 复核')))
 }
 
-// 默认最多 4 条：再多就成了一堵墙，人反而不会读
+// 默认最多 4 条：再多就成了一堵墙，人反而不会读。最后一条永远是使用帮助入口。
 assert.equal(buildSuggestedQuestions(NODE_24_ITEMS, NODE_24_BASIS).length, 4)
+assert.equal(buildSuggestedQuestions(NODE_24_ITEMS, NODE_24_BASIS).at(-1)?.origin, 'help')
 assert.equal(buildSuggestedQuestions(NODE_24_ITEMS, NODE_24_BASIS, 2).length, 2)
 // limit 传 0 或负数时至少给一条，不给空数组——空推荐区看上去像功能坏了
 assert.equal(buildSuggestedQuestions(NODE_24_ITEMS, NODE_24_BASIS, 0).length, 1)
@@ -101,8 +102,9 @@ assert.equal(buildSuggestedQuestions(NODE_24_ITEMS, NODE_24_BASIS, 0).length, 1)
 // 空推荐区看上去像功能坏了；通用问题至少能让人开口。
 {
   const questions = buildSuggestedQuestions(undefined, undefined)
-  assert.equal(questions.length, 1)
+  assert.equal(questions.length, 2)
   assert.equal(questions[0].origin, 'general')
+  assert.equal(questions[1].origin, 'help')
 }
 
 // 去重：同一个问题从卡点和规则两条路各出一次时，保留先出现的（卡点优先）

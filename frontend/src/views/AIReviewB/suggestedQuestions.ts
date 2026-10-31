@@ -47,8 +47,8 @@ export type BusinessBasisLike = {
 export type SuggestedQuestion = {
   /** 点击后填进输入框的问题原文 */
   text: string
-  /** 来源：当前卡点 / 规则依据 / 通用。仅用于排序与埋点，不显示 */
-  origin: 'blocker' | 'rule' | 'general'
+  /** 来源：当前卡点 / 规则依据 / 通用 / 使用帮助。仅用于排序与埋点，不显示 */
+  origin: 'blocker' | 'rule' | 'general' | 'help'
 }
 
 const ATTENTION_STATUSES = new Set([
@@ -125,6 +125,15 @@ const GENERAL_QUESTIONS: SuggestedQuestion[] = [
 ]
 
 /**
+ * 使用帮助入口。助手能回答「系统怎么用」（按钮在哪、状态什么意思、下一步怎么操作），
+ * 但用户没法从界面上知道它会——所以这一条永远占最后一个位置，不被卡点和规则问题挤掉。
+ */
+const HELP_QUESTION: SuggestedQuestion = {
+  text: '这个页面怎么用？我下一步该做什么？',
+  origin: 'help'
+}
+
+/**
  * 把 evidenceReadiness.blockingReasons 转成与审计项同构的形状。
  *
  * 两个来源给的是同一件事的两种记法：审计项总览走 items[].issues[].code，
@@ -162,5 +171,8 @@ export const buildSuggestedQuestions = (
     seen.add(text)
     unique.push({ ...question, text })
   }
-  return unique.slice(0, Math.max(1, limit))
+  const max = Math.max(1, limit)
+  // 只给一个名额时留给最要紧的那条，不放使用帮助
+  if (max < 2) return unique.slice(0, max)
+  return [...unique.slice(0, max - 1), HELP_QUESTION]
 }
