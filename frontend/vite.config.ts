@@ -132,6 +132,15 @@ export default ({ command, mode }: ConfigEnv): UserConfig => {
         plugins: env.VITE_USE_BUNDLE_ANALYZER === 'true' ? [visualizer()] : undefined,
         // 拆包
         output: {
+          // PDF 预览的 worker（pdf.worker.min.mjs）产物后缀改成 .js。
+          // 网关的 mime.types 没有 mjs，原先回 application/octet-stream，浏览器拒绝按模块加载，
+          // 所有 PDF 证据都显示「这份PDF暂时无法显示」（2026-10-31 生产实测）；
+          // 而 /assets/ 下的文件带 immutable 缓存一年，已经打开过的浏览器会一直拿着那个错误响应，
+          // 光修网关不够，产物换名字才会重新请求。
+          assetFileNames: (asset) =>
+            /\.mjs$/.test(asset.names?.[0] ?? asset.name ?? '')
+              ? `${env.VITE_ASSETS_DIR || 'assets'}/[name]-[hash].js`
+              : `${env.VITE_ASSETS_DIR || 'assets'}/[name]-[hash][extname]`,
           manualChunks: {
             'vue-chunks': ['vue', 'vue-router', 'pinia', 'vue-i18n'],
             'element-plus': ['element-plus'],
