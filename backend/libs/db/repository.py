@@ -44,6 +44,7 @@ from libs.ocr_readiness import (
     parse_result_outcome_status,
     parse_result_quality_blockers,
 )
+from libs.office_preview import CONVERTIBLE_SUFFIXES
 from libs.security.tenant import (
     apply_default_tenant,
     tenant_id_for_record,
@@ -1076,6 +1077,10 @@ class InMemoryRepository:
             "heif": "image/heif",
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "doc": "application/msword",
+            "xls": "application/vnd.ms-excel",
+            "ppt": "application/vnd.ms-powerpoint",
+            "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         }
         return content_types.get(suffix)
 
@@ -1087,7 +1092,10 @@ class InMemoryRepository:
             return "pdf"
         if raw_type.startswith("image/") or suffix in {"png", "jpg", "jpeg", "webp", "bmp", "heic", "heif"}:
             return "image"
-        if suffix in {"xlsx", "docx"}:
+        # 转得动的格式都走 Office→PDF 预览（LibreOffice，见 libs/office_preview）。
+        # 这里原先只放行 xlsx、docx：.doc（旧版 Word）、.xls、.ppt 明明转换器和预览接口都认，
+        # 却在这一关被判成「不支持预览」，前端根本不会去请求——生产里 6.1图纸会审记录.doc 就这样只能下载。
+        if suffix in CONVERTIBLE_SUFFIXES:
             return "office"
         return "unsupported"
 

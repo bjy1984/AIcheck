@@ -210,3 +210,35 @@ def test_metadata_lookup_error_is_treated_as_cache_miss() -> None:
         assert routes.office_preview_cached("office-preview/DOC-X/abc.pdf") is False
     finally:
         routes.object_storage = original
+
+
+@pytest.mark.parametrize(
+    "file_name",
+    ["6.1图纸会审记录.doc", "检测记录.xls", "施工方案.docx", "台账.xlsx", "汇报.ppt", "汇报.pptx"],
+)
+def test_every_convertible_office_suffix_is_offered_the_office_preview(file_name: str) -> None:
+    """转换器和预览接口认的格式，文档详情就得给 previewType=office。
+
+    此前这里只放行 xlsx、docx，.doc 在这一关被判成 unsupported，前端根本不会去请求
+    office-preview——转换器明明能转，监检却只能下载后用 Word 看（生产 6.1图纸会审记录.doc）。
+    """
+    from libs.db.repository import repo
+
+    assert repo.document_preview_type({"fileName": file_name, "fileType": ""}) == "office"
+
+
+def test_preview_type_still_separates_pdf_images_and_unknown_formats() -> None:
+    from libs.db.repository import repo
+
+    assert repo.document_preview_type({"fileName": "a.pdf"}) == "pdf"
+    assert repo.document_preview_type({"fileName": "a.JPG"}) == "image"
+    assert repo.document_preview_type({"fileName": "a.zip"}) == "unsupported"
+    assert repo.document_preview_type({"fileName": "a.exe"}) == "unsupported"
+    assert repo.document_preview_type({"fileName": "noextension"}) == "unsupported"
+
+
+def test_legacy_office_files_get_a_content_type() -> None:
+    from libs.db.repository import repo
+
+    assert repo.document_content_type({"fileName": "a.doc"}) == "application/msword"
+    assert repo.document_content_type({"fileName": "a.xls"}) == "application/vnd.ms-excel"
