@@ -204,6 +204,64 @@ def test_validator_downgrades_out_of_node_and_non_verbatim_evidence() -> None:
     }
 
 
+def test_validator_keeps_verified_refs_when_another_part_of_the_finding_fails() -> None:
+    """一条事项里只要有别的地方没过（另一条引用、规则依据、字段缺失），原来整批引用一起清空，
+    连逐字核对通过的也丢了——监检还得自己重找一遍同样的原文。核对通过的引用是事实，应当保留；
+    事项照旧降级为证据不足、置信度封顶、必须人工确认，引用失败的原因也照旧留在 validationFailures。"""
+    from libs.project_analysis.validation import validate_project_analysis_output
+
+    good_ref = {
+        "fileId": "DOC-1",
+        "documentVersionId": "DV-1",
+        "fileName": "一.pdf",
+        "pageNo": 2,
+        "quotedText": "许可证编号 TS-001",
+    }
+    bad_ref = {
+        "fileId": "DOC-1",
+        "documentVersionId": "DV-1",
+        "fileName": "一.pdf",
+        "pageNo": None,
+        "quotedText": "机构名称 不存在公司",
+    }
+    model_output = {
+        "nodeReviews": [
+            {
+                "nodeId": 1,
+                "nodeName": "节点一",
+                "reviewResult": "supported",
+                "findings": [
+                    _finding(confidence=0.9, evidenceRefs=[good_ref, bad_ref]),
+                    _finding(
+                        title="",
+                        evidenceRefs=[good_ref],
+                    ),
+                ],
+            },
+            {"nodeId": 2, "nodeName": "节点二", "reviewResult": "insufficient_evidence", "findings": []},
+        ]
+    }
+
+    result = validate_project_analysis_output(
+        json.dumps(model_output, ensure_ascii=False),
+        _snapshot(),
+        _payload(),
+    )
+    partly_bad_ref, missing_title = result["nodeReviews"][0]["findings"]
+
+    for finding in (partly_bad_ref, missing_title):
+        assert finding["groundingStatus"] == "insufficient_evidence"
+        assert finding["confidence"] <= 0.55
+        assert finding["suggestedAction"] == "human_confirm"
+        assert finding["requiresHumanConfirmation"] is True
+        # 核对通过的那条引用留下，且带上服务端补齐的文件元数据
+        assert [ref["quotedText"] for ref in finding["evidenceRefs"]] == ["许可证编号 TS-001"]
+        assert finding["evidenceRefs"][0]["documentVersionId"] == "DV-1"
+    # 没通过的那条仍然记在失败原因里，前端据此提示「不要照它的引用采信」
+    assert "EVIDENCE_QUOTE_NOT_VERBATIM" in {row["code"] for row in partly_bad_ref["validationFailures"]}
+    assert "EVIDENCE_QUOTE_NOT_VERBATIM" in partly_bad_ref["unsupportedClaims"]
+
+
 def test_validator_injects_server_owned_metadata_when_model_omits_or_hallucinates_it() -> None:
     from libs.project_analysis.validation import validate_project_analysis_output
 

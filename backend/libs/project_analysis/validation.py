@@ -225,7 +225,8 @@ def _validated_finding(
         item["groundingStatus"] = "insufficient_evidence"
         item["confidence"] = min(item["confidence"], 0.55)
         item["suggestedAction"] = "human_confirm"
-        item["evidenceRefs"] = []
+        # 事项降级，但逐字核对通过的引用保留：它们是事实，清掉只会让监检重找同样的原文。
+        # 没通过的引用早已被 valid_evidence 排除，原因留在 validationFailures / unsupportedClaims。
         codes = [row["code"] for row in failures if row.get("code")]
         item["unsupportedClaims"] = list(
             dict.fromkeys([*item["unsupportedClaims"], *codes])
