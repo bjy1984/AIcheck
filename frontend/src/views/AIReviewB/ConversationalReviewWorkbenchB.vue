@@ -1943,7 +1943,11 @@ onBeforeUnmount(() => {
   <div
     :class="[
       'review-b-shell',
-      { 'is-embedded': props.embedded, 'is-workstation-mode': workstationMode }
+      {
+        'is-embedded': props.embedded,
+        'is-workstation-mode': workstationMode,
+        'is-pane-assistant': activePane === 'assistant'
+      }
     ]"
   >
     <header v-if="!props.embedded" class="review-b-topbar">
@@ -2474,7 +2478,8 @@ onBeforeUnmount(() => {
           <ElInput
             v-model="composer"
             type="textarea"
-            :rows="2"
+            :rows="props.embedded ? 1 : 2"
+            :autosize="props.embedded ? { minRows: 1, maxRows: 4 } : false"
             resize="none"
             maxlength="4000"
             placeholder="向 AI 复核助手输入问题，或使用快捷命令继续处理…"
@@ -2975,6 +2980,128 @@ onBeforeUnmount(() => {
    所以去掉它，让输入框直接贴着面板底边。 */
 .review-b-shell.is-embedded .conversation-column {
   padding-bottom: 0;
+}
+
+/* —— 悬浮助手里的版面整理 ——
+   原来的整页版面搬进 600px 宽的面板后显得乱：面板标题栏已经写了节点名，下面又是一个 25px 的
+   大标题；「资料与审查协作」是一张带说明文字的大卡片；两个页签是 44px 高的大按钮；
+   输入框两行高、再加推荐问题和快捷命令，占掉四分之一的面板。
+   这里只在嵌入时收紧：去掉重复的标题和说明，页签放最上面做成小号分段控件，
+   三个工具按钮压成一行，标题字号降下来，输入框改成一行起步。 */
+.review-b-shell.is-embedded .conversation-column {
+  padding: 14px 16px 0;
+}
+
+.review-b-shell.is-embedded .conversation-head {
+  order: -3;
+  gap: 0;
+}
+
+.review-b-shell.is-embedded .conversation-head h1 {
+  display: none;
+}
+
+.review-b-shell.is-embedded .conversation-head p {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.review-b-shell.is-embedded .workstation-navigation {
+  order: -2;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  margin: 0 0 10px;
+  gap: 2px;
+  background: var(--el-fill-color);
+  border-radius: 18px;
+}
+
+.review-b-shell.is-embedded .workstation-navigation :deep(.el-button) {
+  min-height: 30px;
+  padding: 0 16px;
+  font-size: 13px;
+  border: none;
+  border-radius: 15px;
+}
+
+/* 分段控件：选中的一格是白底蓝字加一点阴影，没选的透明。
+   注意 Element 的主按钮同时带 --primary 和 --default，所以未选中那条要排除 --primary。 */
+.review-b-shell.is-embedded .workstation-navigation :deep(.el-button:not(.el-button--primary)) {
+  color: var(--el-text-color-regular);
+  background: transparent;
+}
+
+.review-b-shell.is-embedded .workstation-navigation :deep(.el-button--primary) {
+  font-weight: 600;
+  color: var(--el-color-primary);
+  background: var(--el-bg-color);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 16%);
+}
+
+.review-b-shell.is-embedded :deep(.workstation-tools) {
+  order: -1;
+  padding: 0;
+  margin: 0 0 12px;
+  gap: 6px 8px;
+  background: none;
+  border: none;
+}
+
+/* 对话页签里用不到选资料、规则、交接这三个按钮，收起来给对话让位。 */
+.review-b-shell.is-embedded.is-pane-assistant :deep(.workstation-tools) {
+  display: none;
+}
+
+.review-b-shell.is-embedded :deep(.workstation-tools__context),
+.review-b-shell.is-embedded :deep(.workstation-tools__hint.is-default) {
+  display: none;
+}
+
+.review-b-shell.is-embedded :deep(.workstation-tools__actions > .el-button) {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.review-b-shell.is-embedded :deep(.node-overview) {
+  gap: 14px;
+}
+
+.review-b-shell.is-embedded :deep(.node-overview h2) {
+  font-size: 16px;
+}
+
+.review-b-shell.is-embedded :deep(.node-overview h3) {
+  font-size: 15px;
+}
+
+.review-b-shell.is-embedded :deep(.node-overview p),
+.review-b-shell.is-embedded :deep(.node-overview li) {
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.review-b-shell.is-embedded :deep(.node-overview .overview-section) {
+  padding: 12px 14px;
+}
+
+.review-b-shell.is-embedded :deep(.node-overview .el-button) {
+  min-height: 32px;
+}
+
+.review-b-shell.is-embedded .composer-card {
+  padding: 8px 12px;
+  border-radius: 12px;
+}
+
+.review-b-shell.is-embedded .composer-card :deep(.el-textarea__inner) {
+  min-height: 34px;
+  padding: 6px 4px;
+}
+
+.review-b-shell.is-embedded .composer-actions {
+  margin-top: 4px;
 }
 
 .review-b-shell.is-embedded .context-panel {

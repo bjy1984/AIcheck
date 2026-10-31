@@ -142,7 +142,9 @@ const chooseObject = (objectId: string) => {
       :run-id="runId"
       :refresh-key="handoffRefreshKey"
     />
-    <p v-if="!runId" class="workstation-tools__hint">发起审查后，可核验该任务收到的工位交接。</p>
+    <p v-if="!runId" class="workstation-tools__hint is-default"
+      >发起审查后，可核验该任务收到的工位交接。</p
+    >
   </section>
 </template>
 

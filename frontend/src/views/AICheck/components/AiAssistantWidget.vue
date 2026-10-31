@@ -334,17 +334,50 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 @media (width <= 900px) {
-  .ai-assistant-body :deep(.review-b-shell.is-embedded .review-b-layout) {
-    padding-bottom: 0;
+  /* 单栏时让整个面板内容在 layout 里滚，输入框钉在面板底。
+     输入框是 sticky，只在它所属的块里有效；对话列和右边栏是两个并排的块，
+     输入框在对话列里，滚到右边栏那一段它就跟着对话列滚走了。
+     所以把对话列拆掉（display: contents），它的子项直接成为 layout 的子项，
+     输入框的「块」就变成整个 layout，一路钉到底。 */
+  .ai-assistant-body {
     overflow-y: auto;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: max-content max-content;
-    align-content: start;
+  }
+
+  /* sticky 的「块」必须比滚动区高：内容撑高的壳和 layout 不能再各自卡死高度、各自滚动，
+     不然 sticky 只能在那个固定高度的盒子里动，滚过一屏就脱钩（实测）。
+     滚动交给 .ai-assistant-body，壳和 layout 随内容长高。 */
+  .ai-assistant-body :deep(.review-b-shell.is-embedded) {
+    height: auto;
+    overflow: visible;
+    flex: none;
+  }
+
+  .ai-assistant-body :deep(.review-b-shell.is-embedded .review-b-layout) {
+    display: flex;
+    height: auto;
+    padding: 14px 16px 0;
+    overflow: visible;
+    flex: none;
+    flex-direction: column;
+  }
+
+  .ai-assistant-body :deep(.review-b-shell.is-embedded .review-b-layout > *) {
+    flex-shrink: 0;
   }
 
   .ai-assistant-body :deep(.review-b-shell.is-embedded .conversation-column) {
-    height: auto;
-    overflow: visible;
+    display: contents;
+  }
+
+  /* sticky 只在元素「自然位置」落在可视区下面时才钉住；输入框排在右边栏前面，滚过去它就脱钩。
+     用 order 把它排到最后，自然位置在整个内容的底部，从头到尾都钉着。 */
+  .ai-assistant-body :deep(.review-b-shell.is-embedded .composer-card) {
+    order: 10;
+    margin-top: 0;
+  }
+
+  .ai-assistant-body :deep(.review-b-shell.is-embedded .context-panel) {
+    margin: 12px 0 14px;
   }
 
   .ai-assistant-body :deep(.review-b-shell.is-embedded .context-panel) {
