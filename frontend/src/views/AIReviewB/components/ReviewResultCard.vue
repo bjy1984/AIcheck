@@ -7,6 +7,7 @@ import {
   projectAnalysisResultTagType,
   resolveProjectAnalysisEvidenceLink
 } from '../projectAnalysisConversation'
+import { evidenceGapNotice, evidenceGapOf, evidenceGapSummary } from '../findingEvidence'
 import { needsAttention } from '../workstationOverview'
 import ReviewMarkdownText from './ReviewMarkdownText.vue'
 
@@ -127,7 +128,7 @@ const openEvidence = (evidence: Record<string, unknown>) => {
             >看看原因和依据<span class="reference-count">{{
               records(finding.evidenceRefs).length
                 ? `（${records(finding.evidenceRefs).length} 处引用）`
-                : '（暂未附原文）'
+                : evidenceGapSummary[evidenceGapOf(finding) || 'no_citation']
             }}</span></summary
           >
           <div class="detail-body">
@@ -136,9 +137,9 @@ const openEvidence = (evidence: Record<string, unknown>) => {
               :content="String(finding.description || '这项没有附上详细说明，需要你进一步核对。')"
             />
             <h5>证据依据</h5>
-            <p v-if="!records(finding.evidenceRefs).length"
-              >这项没有附上原文引用，还需要补充或核对依据。</p
-            >
+            <p v-if="!records(finding.evidenceRefs).length">{{
+              evidenceGapNotice[evidenceGapOf(finding) || 'no_citation']
+            }}</p>
             <div
               v-for="(evidence, evidenceIndex) in records(finding.evidenceRefs)"
               :key="evidenceIndex"

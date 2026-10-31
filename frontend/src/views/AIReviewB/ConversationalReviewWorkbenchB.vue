@@ -18,6 +18,7 @@ import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'v
 import { useRoute, useRouter } from 'vue-router'
 
 import { blockingReasonsAsItems, buildSuggestedQuestions } from './suggestedQuestions'
+import { evidenceStatusView } from '../AICheck/evidenceProvenance'
 import { isRunSettled } from './runPolling'
 import {
   ElAlert,
@@ -2299,7 +2300,7 @@ onBeforeUnmount(() => {
                         }}</strong>
                         <small
                           >第 {{ evidence.pageNo || '-' }} 页 ·
-                          {{ evidence.manualStatusLabel || evidence.manualStatus || '候选' }}</small
+                          {{ evidenceStatusView(evidence).label }}</small
                         >
                         <ClauseContent
                           v-if="evidence.quotedText"
@@ -2633,10 +2634,11 @@ onBeforeUnmount(() => {
                 <small>第 {{ evidence.pageNo || '-' }} 页</small>
               </div>
               <ElTag
-                :type="evidence.manualStatus === 'confirmed' ? 'success' : 'warning'"
+                :type="evidenceStatusView(evidence).tagType"
+                :title="evidenceStatusView(evidence).hint"
                 size="small"
               >
-                {{ evidence.manualStatusLabel || evidence.manualStatus || '候选' }}
+                {{ evidenceStatusView(evidence).label }}
               </ElTag>
               <div class="selected-evidence-actions">
                 <ElButton text type="primary" @click="openEvidence(evidence)">查看</ElButton>
@@ -3102,6 +3104,14 @@ onBeforeUnmount(() => {
 
 .review-b-shell.is-embedded .composer-actions {
   margin-top: 4px;
+}
+
+/* 屏幕矮的时候，概览页签里不放「试试问」那一排：输入框连同它占到面板的三分之一，
+   内容区只剩一小截。对话页签里照常显示——那里才是提问的地方。 */
+@media (height < 760px) {
+  .review-b-shell.is-embedded:not(.is-pane-assistant) .composer-suggestions {
+    display: none;
+  }
 }
 
 .review-b-shell.is-embedded .context-panel {

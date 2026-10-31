@@ -22,6 +22,7 @@ import type {
 } from '@/types/aicheck'
 import { formatConfidence } from '@/utils/confidence'
 import { getStatusTagType } from './status'
+import { evidenceStatusView, isSystemLinked } from '../evidenceProvenance'
 
 const props = defineProps<{
   role: RoleCode
@@ -66,6 +67,9 @@ const selectedEvidenceIds = computed({
   set: (value: string[]) => emit('update:selectedEvidenceIds', value)
 })
 const confirmedEvidenceLinks = computed(() => props.confirmedEvidenceLinks || [])
+const systemLinkedCount = computed(
+  () => confirmedEvidenceLinks.value.filter((evidence) => isSystemLinked(evidence)).length
+)
 
 /**
  * 同一份资料常被多个审查点各挂一条链接（节点 23 实测两条指向同一个 doc），
@@ -109,6 +113,9 @@ const evidenceText = (evidence: EvidenceLink) =>
         <span>人工审查</span>
         <ElTag type="info" effect="plain">
           {{ confirmedEvidenceLinks.length }} / {{ evidenceCount }} 条 已确认证据
+          <template v-if="systemLinkedCount"
+            >（其中 {{ systemLinkedCount }} 条是系统挂接，未经人工核对）</template
+          >
         </ElTag>
       </div>
     </template>
@@ -192,6 +199,13 @@ const evidenceText = (evidence: EvidenceLink) =>
             border
           >
             <span class="review-evidence-label">{{ evidenceLabel(evidence) }}</span>
+            <ElTag
+              v-if="isSystemLinked(evidence)"
+              type="info"
+              size="small"
+              :title="evidenceStatusView(evidence).hint"
+              >系统挂接</ElTag
+            >
             <!-- 引文区不跟着勾选：这段能滚动也能划词复制，点进去不该把证据选中状态翻掉。
                  原生 label 激活控件不走冒泡，只 stop 挡不住，必须 prevent。 -->
             <!-- 用 v-text 而不是插值：pre-wrap 下模板缩进会变成可见的首行空白。 -->
