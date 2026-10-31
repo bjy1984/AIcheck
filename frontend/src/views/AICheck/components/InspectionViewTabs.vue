@@ -2,9 +2,9 @@
 import type { InspectionWorkspaceView } from '../inspectionWorkspaceView'
 defineProps<{ modelValue: InspectionWorkspaceView }>()
 const emit = defineEmits<{ change: [value: InspectionWorkspaceView] }>()
-// 三个入口各管什么，写在悬浮提示里：名字相近，第一次用的人分不清该点哪个
+// 两个整页视图各管什么，写在悬浮提示里：名字相近，第一次用的人分不清该点哪个。
+// AI 助手不在这里：它是右下角的悬浮按钮，哪个视图下都能点开。
 const views: Array<{ value: InspectionWorkspaceView; label: string; hint: string }> = [
-  { value: 'ai', label: 'AI审查', hint: '和 AI 助手对话：问规则、查证据、对当前节点发起缺陷预审' },
   {
     value: 'important',
     label: '重要节点审查',

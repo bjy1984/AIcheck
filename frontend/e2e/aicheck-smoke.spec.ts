@@ -837,10 +837,12 @@ test.describe('AIcheck route smoke', () => {
     await expect(page.locator('.inspection-review-list-region')).toBeVisible()
     await expect(page.locator('.inspection-ai-review-region')).toBeHidden()
 
+    // AI 审查是右下角的悬浮助手：点开不换页，节点列表仍在下面
     await page.getByRole('button', { name: 'AI审查', exact: true }).click()
-    await expect(page).toHaveURL(/#\/workbench\/inspection\?.*view=ai/)
-    await expect(page.locator('.inspection-ai-review-region')).toBeVisible()
-    await expect(page.locator('.inspection-review-list-region')).toBeHidden()
+    await expect(page.getByRole('dialog', { name: 'AI 审查助手' })).toBeVisible()
+    await expect(page.locator('.inspection-review-list-region')).toBeVisible()
+    await page.getByRole('button', { name: '收起 AI 审查', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'AI 审查助手' })).toBeHidden()
     expect(new URLSearchParams(page.url().split('?')[1] || '').get('nodeId')).toBe(nodeId)
 
     await page.setViewportSize({ width: 390, height: 900 })

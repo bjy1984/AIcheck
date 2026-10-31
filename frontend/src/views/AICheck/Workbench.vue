@@ -253,11 +253,12 @@ import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
 import ImportantReview from '@/views/ImportantReview/ImportantReview.vue'
 import InspectionViewTabs from './components/InspectionViewTabs.vue'
+import AiAssistantWidget from './components/AiAssistantWidget.vue'
 import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
 import { parseAiFindings } from '@/utils/aiFindings'
 import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
-import { resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
+import { opensAiAssistant, resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
 import { canLoadProjectNode, resolveLoadableProjectNodeId } from './projectNodeSelection'
 import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
 import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
@@ -354,6 +355,9 @@ const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
 const activeInspectionWorkspaceView = ref<InspectionWorkspaceView>(
   resolveInspectionWorkspaceView(route.query.view)
 )
+// 右下角悬浮的 AI 助手是否展开。它不是一个整页视图，哪个视图下都能点开；
+// 带 view=ai 的旧链接进来时自动展开。
+const aiAssistantOpen = ref(opensAiAssistant(route.query.view))
 // 重要节点审查页第一次打开才挂载：以前用 v-show 常驻，一进工作台就去拉配置、文件和轮询
 // （线上约 2.8 秒、106 KB），跟当前节点抢单进程 API（2026-09-25 实测）。打开过就保留，切走不丢状态。
 const importantReviewVisited = ref(activeInspectionWorkspaceView.value === 'important')
@@ -1227,6 +1231,19 @@ const currentNodeLabel = computed(() => {
   if (!selectedNode.value) return '未选择节点'
   return `${selectedNode.value.nodeId}. ${selectedNode.value.name}`
 })
+// AI 助手跟着项目树里选中的节点走。标题栏写明正在审哪个节点，免得在总览页点开后不知道它在对谁说话。
+const aiAssistantNode = computed(() =>
+  canLoadProjectNode(activeNodeId.value, treeGroups.value)
+    ? treeGroups.value
+        .flatMap((group) => group.nodes || [])
+        .find((node) => node.nodeId === activeNodeId.value)
+    : undefined
+)
+const aiAssistantSubtitle = computed(() =>
+  aiAssistantNode.value
+    ? `${aiAssistantNode.value.nodeId}. ${aiAssistantNode.value.name}`
+    : '请先在左侧项目树选择节点'
+)
 const workbenchLocationLabel = computed(() => {
   if (role.value === 'contractor') return '项目文件库'
   if (role.value === 'ndt') return '无损检测资料库'
@@ -2721,12 +2738,7 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
     const loadableNodeId = resolveLoadableProjectNodeId(requestedNodeId, treeRes.data.groups)
     if (!preserveSelection) {
       activeNodeId.value = loadableNodeId || 0
-      activeWorkbenchSection.value =
-        loadableNodeId &&
-        role.value === 'inspection' &&
-        activeInspectionWorkspaceView.value === 'ai'
-          ? 'node'
-          : 'overview'
+      activeWorkbenchSection.value = 'overview'
     }
     if (loadableNodeId) {
       activeNodeId.value = loadableNodeId
@@ -2821,6 +2833,7 @@ const loadProjects = async () => {
     const preserveRouteSelection =
       role.value === 'inspection' && Number.isFinite(requestedNodeId) && requestedNodeId > 0
     activeInspectionWorkspaceView.value = resolveInspectionWorkspaceView(route.query.view)
+    if (opensAiAssistant(route.query.view)) aiAssistantOpen.value = true
     if (preserveRouteSelection) {
       activeNodeId.value = requestedNodeId
       activeWorkbenchSection.value = 'node'
@@ -2835,7 +2848,7 @@ const loadProjects = async () => {
     }
     if (role.value === 'inspection' && !route.query.projectId) {
       await updateInspectionRoute(
-        preserveRouteSelection || activeInspectionWorkspaceView.value === 'ai'
+        preserveRouteSelection
           ? { nodeId: activeNodeId.value, auditItem: activeInspectionAuditItem.value }
           : { overview: true },
         'replace'
@@ -4938,6 +4951,7 @@ watch(
     const targetNodeId = Number.isFinite(parsedNodeId) && parsedNodeId > 0 ? parsedNodeId : 0
     const targetItem = inspectionReviewItemKey(auditItemQuery)
     activeInspectionWorkspaceView.value = resolveInspectionWorkspaceView(viewQuery)
+    if (opensAiAssistant(viewQuery)) aiAssistantOpen.value = true
 
     inspectionRouteSyncing.value = true
     try {
@@ -4950,8 +4964,7 @@ watch(
         return
       }
       if (!targetNodeId) {
-        activeWorkbenchSection.value =
-          activeInspectionWorkspaceView.value === 'ai' ? 'node' : 'overview'
+        activeWorkbenchSection.value = 'overview'
         return
       }
       if (!canLoadProjectNode(targetNodeId, treeGroups.value)) {
@@ -5176,18 +5189,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="aicheck-static-viewport" v-loading="loading">
-    <div
-      :class="[
-        'aicheck-page',
-        'app-shell',
-        {
-          'is-inspection-ai-page':
-            role === 'inspection' &&
-            activeInspectionWorkspaceView === 'ai' &&
-            activeWorkbenchSection === 'node'
-        }
-      ]"
-    >
+    <div class="aicheck-page app-shell">
       <a class="skip-main" href="#aicheck-workbench-main">跳到主内容</a>
       <header class="topbar" :class="{ 'is-business-topbar': role !== 'inspection' }">
         <div class="brand">
@@ -5372,10 +5374,6 @@ onBeforeUnmount(() => {
             {
               'has-flush-audit-directory':
                 role === 'inspection' && activeWorkbenchSection === 'node',
-              'is-inspection-ai-workspace':
-                role === 'inspection' &&
-                activeInspectionWorkspaceView === 'ai' &&
-                activeWorkbenchSection === 'node',
               'is-workbench-page-leaving': workbenchPageTransitionPhase === 'leaving',
               'is-workbench-page-hidden': workbenchPageTransitionPhase === 'hidden',
               'is-workbench-page-entering': workbenchPageTransitionPhase === 'entering'
@@ -5388,23 +5386,6 @@ onBeforeUnmount(() => {
             :project-id="activeProjectId"
             :active="activeInspectionWorkspaceView === 'important'"
           />
-          <section
-            v-if="
-              role === 'inspection' &&
-              activeInspectionWorkspaceView === 'ai' &&
-              activeWorkbenchSection === 'node' &&
-              canLoadProjectNode(activeNodeId, treeGroups)
-            "
-            class="inspection-ai-review-region"
-            aria-label="AI 审查"
-          >
-            <ConversationalReviewWorkbenchB
-              embedded
-              :project-id="activeProjectId"
-              :node-id="activeNodeId"
-            />
-          </section>
-
           <div
             v-show="role !== 'inspection' || activeInspectionWorkspaceView === 'list'"
             class="inspection-review-list-region"
@@ -7110,6 +7091,24 @@ onBeforeUnmount(() => {
         @read-all-messages="handleReadAllQuickMessages"
         @locate-result="handleLocateQuickResult"
       />
+
+      <AiAssistantWidget
+        v-if="role === 'inspection' && activeProjectId"
+        v-model:open="aiAssistantOpen"
+        title="AI 审查"
+        :subtitle="aiAssistantSubtitle"
+        hint="和 AI 助手对话：问规则、查证据、对当前节点发起缺陷预审"
+      >
+        <ConversationalReviewWorkbenchB
+          v-if="aiAssistantNode"
+          embedded
+          :project-id="activeProjectId"
+          :node-id="activeNodeId"
+        />
+        <p v-else class="ai-assistant-empty">
+          当前项目还没有可审查的节点。选中项目树里的节点后，AI 助手会针对它回答。
+        </p>
+      </AiAssistantWidget>
     </div>
   </div>
 </template>
@@ -7759,20 +7758,17 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-.inspection-ai-review-region,
 .inspection-review-list-region {
   min-width: 0;
 }
 
-.center.is-inspection-ai-workspace {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.center.is-inspection-ai-workspace > .inspection-ai-review-region {
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
+.ai-assistant-empty {
+  margin: 0;
+  padding: 32px 24px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+  text-align: center;
 }
 
 .left {
@@ -8187,7 +8183,6 @@ onBeforeUnmount(() => {
   padding-top: 0;
 }
 
-.center.has-flush-audit-directory > .inspection-ai-review-region,
 .center.has-flush-audit-directory > .important-review {
   margin-top: var(--center-top-gutter);
 }
