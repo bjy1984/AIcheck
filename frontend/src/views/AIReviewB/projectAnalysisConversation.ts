@@ -102,3 +102,40 @@ export const resolveProjectAnalysisEvidenceLink = (
   }
   return candidates.length === 1 ? candidates[0] : undefined
 }
+
+// AI 的引用在节点证据链接里对不上（没有登记、对应到不止一条、引文和字段值写法不同）时，
+// 原来一律显示「这条引用暂时打不开」。可这条引用已经被服务端逐字核对过——引文确实在这份文件的
+// OCR 全文里，引用自带文件、版本和页码。所以直接按它自己的文件和页码开原文，引文放在「引用文本」里，
+// 不必非得有一条证据链接才能看。它不是证据链接：不进证据选择，也不算人工核对过。
+const quoteKey = (value: string) => {
+  let hash = 5381
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash + value.charCodeAt(index)) | 0
+  }
+  return (hash >>> 0).toString(36)
+}
+
+export const evidenceFromAnalysisReference = (
+  evidence: Record<string, unknown>
+): EvidenceLink | undefined => {
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+  const documentId = text(evidence.fileId)
+  const documentVersionId = text(evidence.documentVersionId)
+  if (!documentId || !documentVersionId) return undefined
+  const page = Number(evidence.pageNo)
+  const pageNo = Number.isSafeInteger(page) && page >= 1 ? page : undefined
+  const quotedText = text(evidence.quotedText)
+  return {
+    id: `AIREF-${documentVersionId}-${pageNo ?? 0}-${quoteKey(quotedText)}`,
+    objectType: 'documentVersion',
+    objectId: documentVersionId,
+    documentId,
+    documentVersionId,
+    fileName: text(evidence.fileName) || undefined,
+    pageNo,
+    quotedText: quotedText || undefined,
+    previewAvailable: true,
+    manualStatus: 'pending',
+    manualStatusLabel: 'AI 引用，未人工核对'
+  }
+}

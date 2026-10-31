@@ -4,6 +4,7 @@ import { ElButton, ElTag } from 'element-plus'
 import type { EvidenceLink } from '@/types/aicheck'
 import type { ReviewBProjectAnalysisResult } from '@/types/ai-review-b'
 import {
+  evidenceFromAnalysisReference,
   projectAnalysisResultTagType,
   resolveProjectAnalysisEvidenceLink
 } from '../projectAnalysisConversation'
@@ -60,9 +61,13 @@ const evidenceLabel = (evidence: Record<string, unknown>) =>
     .join(' · ')
 const resolveEvidence = (evidence: Record<string, unknown>) =>
   resolveProjectAnalysisEvidenceLink(evidence, props.evidenceLinks)
+// 对得上节点证据链接的用链接；对不上（没登记、对应到多条、引文写法不同）就按引用自带的文件和页码开，
+// 这条引用服务端已经逐字核对过。两个都没有才是真的打不开。
+const openableEvidence = (evidence: Record<string, unknown>) =>
+  resolveEvidence(evidence) || evidenceFromAnalysisReference(evidence)
 const openEvidence = (evidence: Record<string, unknown>) => {
-  const resolved = resolveEvidence(evidence)
-  if (resolved) emit('open-evidence', resolved)
+  const target = openableEvidence(evidence)
+  if (target) emit('open-evidence', target)
 }
 </script>
 
@@ -148,7 +153,15 @@ const openEvidence = (evidence: Record<string, unknown>) => {
               :key="evidenceIndex"
               class="evidence-item"
             >
-              <button v-if="resolveEvidence(evidence)" type="button" @click="openEvidence(evidence)"
+              <button
+                v-if="openableEvidence(evidence)"
+                type="button"
+                :title="
+                  resolveEvidence(evidence)
+                    ? undefined
+                    : '这处引用没有在证据链里登记，按引用的文件和页码打开原文'
+                "
+                @click="openEvidence(evidence)"
                 >{{ evidenceLabel(evidence) }} · 查看原文</button
               >
               <p v-else>{{ evidenceLabel(evidence) }} · 这条引用暂时打不开，请到文件中核对</p>

@@ -6,7 +6,8 @@ import type { EvidenceLink } from '@/types/aicheck'
 import {
   mergeProjectAnalysisResultsIntoConversation,
   projectAnalysisResultTagType,
-  resolveProjectAnalysisEvidenceLink
+  resolveProjectAnalysisEvidenceLink,
+  evidenceFromAnalysisReference
 } from './projectAnalysisConversation'
 
 const messages: ReviewBMessage[] = [
@@ -146,7 +147,9 @@ const resultCard = readFileSync(
 assert.match(resultCard, /证据依据/)
 assert.match(resultCard, /规则依据/)
 assert.match(resultCard, /resolveProjectAnalysisEvidenceLink/)
-assert.match(resultCard, /emit\('open-evidence', resolved\)/)
+// 先用证据链接；对不上就按引用自带的文件和页码开（见 evidenceFromAnalysisReference）
+assert.match(resultCard, /evidenceFromAnalysisReference/)
+assert.match(resultCard, /emit\('open-evidence', target\)/)
 
 /* 幂等：把合并输出再喂回去，不产生重复卡片。
    正常渲染是 computed 不会触发，但乐观更新/快照回放一旦把合并结果
@@ -189,3 +192,59 @@ assert.equal(
   ]),
   undefined
 )
+
+// —— 对不上证据链接时，按引用自带的文件和页码开原文 ——
+// 生产里节点 1 引用 3.1告知书.png 的两处显示「这条引用暂时打不开」：引文是整行 OCR 文字，
+// 证据链接里存的是字段值，对应不到唯一一条。
+{
+  const opened = evidenceFromAnalysisReference({
+    fileId: 'DOC-9',
+    documentVersionId: 'DV-9',
+    fileName: '3.1告知书.png',
+    pageNo: 1,
+    quotedText: '制造(管道设计)许可证编号:TS1844168-2027'
+  })
+  assert.ok(opened)
+  assert.equal(opened?.documentId, 'DOC-9')
+  assert.equal(opened?.documentVersionId, 'DV-9')
+  assert.equal(opened?.fileName, '3.1告知书.png')
+  assert.equal(opened?.pageNo, 1)
+  assert.equal(opened?.quotedText, '制造(管道设计)许可证编号:TS1844168-2027')
+  // 它不是证据链接：没有人工核对过，不能冒充已确认
+  assert.equal(opened?.manualStatus, 'pending')
+  assert.ok(String(opened?.manualStatusLabel).includes('未人工核对'))
+  assert.ok(String(opened?.id).startsWith('AIREF-'))
+}
+
+// 同一位置同一引文给同一个 id，不同引文给不同 id（对话框靠 id 判断换没换）
+{
+  const base = { fileId: 'DOC-9', documentVersionId: 'DV-9', pageNo: 1 }
+  const a = evidenceFromAnalysisReference({ ...base, quotedText: 'A' })
+  const a2 = evidenceFromAnalysisReference({ ...base, quotedText: 'A' })
+  const b = evidenceFromAnalysisReference({ ...base, quotedText: 'B' })
+  assert.equal(a?.id, a2?.id)
+  assert.notEqual(a?.id, b?.id)
+}
+
+// 页码不合法就不带页码（开第一页），不能带 NaN 或 0
+assert.equal(
+  evidenceFromAnalysisReference({ fileId: 'D', documentVersionId: 'V', pageNo: 0 })?.pageNo,
+  undefined
+)
+assert.equal(
+  evidenceFromAnalysisReference({ fileId: 'D', documentVersionId: 'V', pageNo: 'x' })?.pageNo,
+  undefined
+)
+assert.equal(
+  evidenceFromAnalysisReference({ fileId: 'D', documentVersionId: 'V', pageNo: null })?.pageNo,
+  undefined
+)
+assert.equal(
+  evidenceFromAnalysisReference({ fileId: 'D', documentVersionId: 'V', pageNo: 3 })?.pageNo,
+  3
+)
+
+// 缺文件或版本就没法开：保持「暂时打不开」
+assert.equal(evidenceFromAnalysisReference({ documentVersionId: 'V', pageNo: 1 }), undefined)
+assert.equal(evidenceFromAnalysisReference({ fileId: 'D', pageNo: 1 }), undefined)
+assert.equal(evidenceFromAnalysisReference({}), undefined)
