@@ -6859,7 +6859,19 @@ def quality_certificate_manufacturer(text_items: list[tuple[str, dict[str, Any]]
         if labeled and not OTHER_PARTY_RE.search(text[: labeled.start() + 1]):
             return {"text": labeled.group(1), "fragment": fragment}
     # 没有标签时才退回第一个公司名；整张表、多行正文和别的当事方那行都不算。
+    previous = ""
     for text, fragment in text_items[:30]:
+        # 标签和值被 OCR 拆成两个文本块（「需方单位:」「佛山市佛润钢铁有限公司」）时，
+        # 标签那块本身会被下面的判断跳过，值那块却干干净净，被当成第一个公司名取走。
+        # 所以紧跟在「别的当事方标签」后面的那一块也要跳过。
+        after_party_label = bool(
+            previous
+            and (OTHER_PARTY_RE.search(previous) or SUPPLIER_PARTY_RE.search(previous))
+            and re.search(r"[:：]\s*$", previous)
+        )
+        previous = text
+        if after_party_label:
+            continue
         if "\n" in text.strip() or len(text) > 80 or OTHER_PARTY_RE.search(text) or SUPPLIER_PARTY_RE.search(text):
             continue
         if any(token in text for token in ["项目", "单位名称", "业务范围"]):

@@ -58,3 +58,28 @@ def test_numbers_inside_html_cells_are_kept_and_header_cells_dropped():
     common, _items = _common_document_fields(state, state["ocr_parse_results"][0])
     assert common.get("certificateNo") == "ST2026051706G002"
     assert "batchNo" not in common and "productName" not in common
+
+
+def _manufacturer(*texts: str):
+    from apps.ocr_service.service import quality_certificate_manufacturer
+
+    result = quality_certificate_manufacturer([(text, {"index": i}) for i, text in enumerate(texts)])
+    return result["text"] if result else None
+
+
+def test_buyer_company_split_into_its_own_block_is_not_taken_as_the_manufacturer() -> None:
+    """OCR 把「需方单位:」和公司名拆成两个文本块时，标签块被跳过，值块却干干净净，
+    原来会被当成第一个公司名取走——生产环境里质量证明书的「生产厂家」就填成了需方。"""
+    assert _manufacturer("需方单位:", "佛山市佛润钢铁有限公司", "曲靖恒特钢铁有限公司") == "曲靖恒特钢铁有限公司"
+    assert _manufacturer("供方单位：", "某某经销有限公司", "曲靖恒特钢铁有限公司") == "曲靖恒特钢铁有限公司"
+
+
+def test_buyer_company_alone_is_not_passed_off_as_the_manufacturer() -> None:
+    """只剩需方那一个公司名时宁可不填，也不能把需方写成制造单位。"""
+    assert _manufacturer("需方单位:", "佛山市佛润钢铁有限公司") is None
+    assert _manufacturer("需方单位:佛山市佛润钢铁有限公司") is None
+
+
+def test_manufacturer_on_the_letterhead_or_with_a_label_still_wins() -> None:
+    assert _manufacturer("曲靖恒特钢铁有限公司", "产品质量证明书", "需方单位:佛山市佛润钢铁有限公司") == "曲靖恒特钢铁有限公司"
+    assert _manufacturer("需方单位:佛山市佛润钢铁有限公司", "生产厂家：曲靖恒特钢铁有限公司") == "曲靖恒特钢铁有限公司"
