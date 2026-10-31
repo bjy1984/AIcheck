@@ -46,6 +46,14 @@ def test_辅助判定与未发布绑定必须注明():
     assert "需人工确认" in PROMPT
 
 
+def test_用法问题走教程检索且不得编造():
+    """用户问“按钮在哪、状态什么意思”时只能照教程回答；教程没写就说没写。
+    编一个不存在的按钮比答不上来更糟，用户会照着去找。"""
+    assert "search_help_docs" in PROMPT
+    assert "教程里没有" in PROMPT
+    assert "不得编造页面、按钮或操作步骤" in PROMPT
+
+
 def test_推理必须用中文():
     """推理会随结论一起存档、在界面上折叠可展开，读它的是监检人员。
 

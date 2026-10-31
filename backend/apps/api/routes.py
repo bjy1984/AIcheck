@@ -56,7 +56,7 @@ from apps.api.upload_session_workflow import (
 )
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
-from libs import rule_version_helpers
+from libs import help_center, rule_version_helpers
 from libs.ai_run_failure import ai_run_failure_view
 from libs.ai_run_order import sort_ai_runs_latest_first
 from libs.audit_context import (
@@ -10211,6 +10211,8 @@ REVIEW_CONVERSATION_CONTEXT_TOOLS = [
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
         },
     },
+    # 系统用法问答：不读任何节点数据，只查仓库里的使用教程（libs/help_center）。
+    help_center.TOOL_SCHEMA,
 ]
 
 REVIEW_CONVERSATION_AGENT_TOOLS = build_review_conversation_agent_tools(
@@ -10618,6 +10620,8 @@ def review_conversation_tool_result_summary(tool_name: str, output: dict[str, An
         return f"命中 {output.get('candidateCount', 0)} 条证据候选"
     if tool_name == "get_fixed_basis":
         return f"命中 {output.get('basisCount', 0)} 条固化条款"
+    if tool_name == help_center.TOOL_NAME:
+        return f"命中 {output.get('sectionCount', 0)} 节使用教程"
     if tool_name in {"check_all_equal", "check_date_covers", "check_design_license_scope", "check_installation_license_scope"}:
         result = output.get("result") or output.get("decision") or output.get("status")
         return f"判定结果：{result}"[:200]
@@ -10813,6 +10817,8 @@ def review_conversation_agent_tool_output(
                 "findingCount": len((review_run or {}).get("findingDrafts") or []),
             },
         }
+    if tool_name == help_center.TOOL_NAME:
+        return help_center.search_help_docs_tool(arguments, role="inspection")
     if tool_name == "search_node_evidence":
         query = str(arguments.get("query") or "").strip().lower()
         manual_status = str(arguments.get("manualStatus") or "").strip().lower()
