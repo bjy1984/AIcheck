@@ -9,6 +9,7 @@ import {
 } from '../projectAnalysisConversation'
 import { evidenceGapNotice, evidenceGapOf, evidenceGapSummary } from '../findingEvidence'
 import { needsAttention } from '../workstationOverview'
+import { humanizeAiText } from '@/utils/humanizeAiText'
 import ReviewMarkdownText from './ReviewMarkdownText.vue'
 
 const props = defineProps<{
@@ -112,7 +113,7 @@ const openEvidence = (evidence: Record<string, unknown>) => {
       >
         <div class="finding-title"
           ><span class="finding-number">{{ index + 1 }}</span
-          ><h4>{{ finding.title || '待核验事项' }}</h4
+          ><h4>{{ humanizeAiText(finding.title) || '待核验事项' }}</h4
           ><ElTag :type="severityType(finding.severity)" size="small"
             >关注程度：{{ severityLabel(finding.severity) }}</ElTag
           ></div
@@ -134,7 +135,9 @@ const openEvidence = (evidence: Record<string, unknown>) => {
           <div class="detail-body">
             <h5>问题说明</h5
             ><ReviewMarkdownText
-              :content="String(finding.description || '这项没有附上详细说明，需要你进一步核对。')"
+              :content="
+                humanizeAiText(finding.description) || '这项没有附上详细说明，需要你进一步核对。'
+              "
             />
             <h5>证据依据</h5>
             <p v-if="!records(finding.evidenceRefs).length">{{

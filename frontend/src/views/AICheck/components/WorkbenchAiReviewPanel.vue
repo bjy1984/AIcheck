@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { humanizeAiText } from '@/utils/humanizeAiText'
 import { computed, ref, watch } from 'vue'
 import { CircleCloseFilled } from '@element-plus/icons-vue'
 import { ElButton, ElIcon } from 'element-plus'
@@ -850,7 +851,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
             >
               <div class="ai-finding-head">
                 <span class="ai-finding-index">{{ findingIndex + 1 }}</span>
-                <h3>{{ finding.title || '审查发现' }}</h3>
+                <h3>{{ humanizeAiText(finding.title) || '审查发现' }}</h3>
                 <AuditStatusTag v-if="finding.severityTag" :tone="finding.severityTone" round>
                   {{ finding.severityTag }}
                 </AuditStatusTag>
@@ -884,7 +885,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                   { 'is-clamped': finding.clampable && !expandedFindings.has(finding.id) }
                 ]"
               >
-                {{ finding.description }}
+                {{ humanizeAiText(finding.description) }}
               </p>
               <button
                 v-if="finding.clampable"
@@ -1026,11 +1027,13 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                 class="ai-finding is-gray"
               >
                 <div class="ai-finding-head">
-                  <h3>{{ finding.modelTitle || finding.title || '证据不足，需人工确认' }}</h3>
+                  <h3>{{
+                    humanizeAiText(finding.modelTitle || finding.title) || '证据不足，需人工确认'
+                  }}</h3>
                   <span v-if="finding.unverified" class="ai-chip is-unverified">未经证据核实</span>
                   <span v-if="finding.typeLabel" class="ai-chip">{{ finding.typeLabel }}</span>
                 </div>
-                <p class="ai-finding-description">{{ finding.description }}</p>
+                <p class="ai-finding-description">{{ humanizeAiText(finding.description) }}</p>
                 <template v-if="finding.modelDescription">
                   <button type="button" class="ai-link-button" @click="toggle('model', finding.id)">
                     {{ expandedModelText.has(finding.id) ? '收起模型原文' : '查看模型原文' }}
@@ -1062,12 +1065,12 @@ const ruleLabel = (rule: Record<string, unknown>) => {
           >
             <div class="ai-finding-head">
               <span class="ai-finding-index">{{ findingIndex + 1 }}</span>
-              <h3>{{ finding.title || '审查发现' }}</h3>
+              <h3>{{ humanizeAiText(finding.title) || '审查发现' }}</h3>
               <AuditStatusTag v-if="finding.severityTag" :tone="finding.severityTone" round>
                 {{ finding.severityTag }}
               </AuditStatusTag>
             </div>
-            <p class="ai-finding-description">{{ finding.description }}</p>
+            <p class="ai-finding-description">{{ humanizeAiText(finding.description) }}</p>
           </article>
         </div>
       </article>

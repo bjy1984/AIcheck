@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { humanizeAiText } from '@/utils/humanizeAiText'
 import { ElAlert, ElButton, ElEmpty, ElTable, ElTableColumn, ElTag } from 'element-plus'
 import type {
   ImportantRun,
@@ -90,8 +91,8 @@ const filename = (item: ImportantEvidence) =>
     <details v-if="run.findingDrafts.length" open class="findings"
       ><summary>辅助审查意见（{{ run.findingDrafts.length }} 项）</summary
       ><article v-for="(finding, index) in run.findingDrafts" :key="finding.id || index"
-        ><h4>{{ finding.title }}</h4
-        ><p>{{ finding.description }}</p
+        ><h4>{{ humanizeAiText(finding.title) }}</h4
+        ><p>{{ humanizeAiText(finding.description) }}</p
         ><ElButton
           v-for="(item, refIndex) in finding.evidenceRefs || []"
           :key="refIndex"
@@ -102,7 +103,7 @@ const filename = (item: ImportantEvidence) =>
         ></article
       ></details
     >
-    <p v-if="run.summary">{{ run.summary }}</p>
+    <p v-if="run.summary">{{ humanizeAiText(run.summary) }}</p>
   </div>
 </template>
 <style scoped>

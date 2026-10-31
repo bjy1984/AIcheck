@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { humanizeAiText } from '@/utils/humanizeAiText'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElEmpty, ElTag } from 'element-plus'
@@ -72,12 +73,14 @@ watch(() => props.finding.id, loadDetail, { immediate: true })
   <section class="finding-detail" aria-label="发现详情与关联证据">
     <div class="finding-detail-heading">
       <div
-        ><h3>{{ finding.title }}</h3
+        ><h3>{{ humanizeAiText(finding.title) }}</h3
         ><p>{{ nodeName }}</p></div
       >
       <ElTag effect="plain">{{ findingReviewState(finding) }}</ElTag>
     </div>
-    <p class="finding-description">{{ finding.description || '这条发现尚未提供详细说明。' }}</p>
+    <p class="finding-description">{{
+      humanizeAiText(finding.description) || '这条发现尚未提供详细说明。'
+    }}</p>
     <p
       v-if="finding.suggestedAction && finding.suggestedAction !== 'human_confirm'"
       class="finding-description"
