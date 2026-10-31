@@ -4,7 +4,8 @@ import { ElIcon } from 'element-plus'
 import { ArrowDown, ChatDotRound } from '@element-plus/icons-vue'
 
 // 右下角悬浮的 AI 助手：样子和交互照在线客服窗口来——点悬浮按钮，面板从按钮处弹出，
-// 再点按钮或面板右上角的收起键就缩回去。面板不加遮罩，左边的项目树和页面照常能点；
+// 背景压一层半透明黑色遮罩，让注意力落在面板上；点遮罩、再点按钮或面板右上角的收起键都会缩回去。
+// 面板打开时背景页面点不了，要换节点先收起它。
 // 收起只是隐藏，里面的对话和选中的证据都留着，再点开接着用。
 const props = defineProps<{
   open: boolean
@@ -42,6 +43,9 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 <template>
   <div class="ai-assistant" @keydown="handleKeydown">
+    <Transition name="ai-assistant-mask">
+      <div v-show="open" class="ai-assistant-mask" aria-hidden="true" @click="close"></div>
+    </Transition>
     <Transition name="ai-assistant-pop" @after-enter="focusPanel">
       <section
         v-show="open"
@@ -111,6 +115,28 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 .ai-assistant > * {
   pointer-events: auto;
+}
+
+/* 整屏遮罩。z-index 取 -1：.ai-assistant 自己是个层叠上下文（fixed + 1900），
+   遮罩在里面垫在面板和按钮后面，整体仍压在页面内容之上、Element 弹窗之下。 */
+.ai-assistant-mask {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: rgb(0 0 0 / 45%);
+}
+
+.ai-assistant-mask-enter-active {
+  transition: opacity 220ms ease-out;
+}
+
+.ai-assistant-mask-leave-active {
+  transition: opacity 160ms ease-in;
+}
+
+.ai-assistant-mask-enter-from,
+.ai-assistant-mask-leave-to {
+  opacity: 0;
 }
 
 .ai-assistant-panel {
@@ -309,6 +335,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 @media (width <= 900px) {
   .ai-assistant-body :deep(.review-b-shell.is-embedded .review-b-layout) {
+    padding-bottom: 0;
     overflow-y: auto;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: max-content max-content;
@@ -344,6 +371,8 @@ const handleKeydown = (event: KeyboardEvent) => {
 @media (prefers-reduced-motion: reduce) {
   .ai-assistant-pop-enter-active,
   .ai-assistant-pop-leave-active,
+  .ai-assistant-mask-enter-active,
+  .ai-assistant-mask-leave-active,
   .ai-assistant-launcher,
   .ai-assistant-launcher-label {
     transition-duration: 0.01ms;

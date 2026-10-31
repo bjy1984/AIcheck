@@ -2452,7 +2452,10 @@ onBeforeUnmount(() => {
           </template>
         </section>
 
-        <section v-show="activePane === 'assistant'" class="composer-card">
+        <!-- 嵌在悬浮助手里时输入框永远在：工位版默认停在「待办与结果」，
+             原来输入框只在「追问助手与记录」页签里，面板一打开看不到任何能打字的地方。
+             在哪个页签发送都行——sendMessage 会切到对话页签看回复。 -->
+        <section v-show="props.embedded || activePane === 'assistant'" class="composer-card">
           <!-- 推荐问题按「这个节点此刻卡在哪」定制，不经 LLM——系统已经知道答案，
                让模型再生成一遍只会加两秒延迟和一次 token（见 suggestedQuestions）。 -->
           <div v-if="suggestedQuestions.length" class="composer-suggestions">
@@ -2956,6 +2959,22 @@ onBeforeUnmount(() => {
 .review-b-shell.is-embedded .conversation-timeline {
   max-height: none;
   min-height: 0;
+}
+
+/* 悬浮助手里输入框钉在面板底部，像在线客服窗口：内容再长、停在哪个页签，都有个能打字的地方。
+   内容不够一屏时 margin-top:auto 把它推到底；够长时 sticky 让它留在可视区底边。 */
+.review-b-shell.is-embedded .composer-card {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-top: auto;
+  box-shadow: 0 -8px 18px rgb(15 23 42 / 8%);
+}
+
+/* 列自己的下内边距会让 sticky 停在离底边 28px 的地方，下面露出一截被压住的内容，
+   所以去掉它，让输入框直接贴着面板底边。 */
+.review-b-shell.is-embedded .conversation-column {
+  padding-bottom: 0;
 }
 
 .review-b-shell.is-embedded .context-panel {
