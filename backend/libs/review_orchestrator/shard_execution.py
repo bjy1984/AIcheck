@@ -164,7 +164,22 @@ def _is_meta_finding(finding: dict[str, Any]) -> bool:
     return bool(_META_TITLE_RE.search(_finding_label(finding)) or _META_TEXT_RE.search(_finding_body(finding)))
 
 
+# 模型偶尔整片用繁体输出（2026-11-02 server8 gdlng-09：「無損檢測比例與合格級別證據不足」），
+# 事项词表和相似度都按简体比，先把审查发现里常见的繁体字折回简体。
+_TRADITIONAL_TO_SIMPLIFIED = str.maketrans(
+    "無損檢測壓洩漏與級別證據準驗試範圍簽許書設計標數圖規強廠製質補檔資應個說錄這為們實點項際內關發機場進經"
+    "顯讀識別單號種類響齊確認調並條處網線電絡過歷態蓋專產審報驗託狀",
+    "无损检测压泄漏与级别证据准验试范围签许书设计标数图规强厂制质补档资应个说录这为们实点项际内关发机场进经"
+    "显读识别单号种类响齐确认调并条处网线电络过历态盖专产审报验托状",
+)
+
+
+def _simplified(text: str) -> str:
+    return text.translate(_TRADITIONAL_TO_SIMPLIFIED)
+
+
 def _bigrams(text: str) -> set[str]:
+    text = _simplified(text)
     compact = re.sub(r"[\s，。、；：,.;:（）()“”\"'！!？?·…—-]+", "", text)
     return {compact[index:index + 2] for index in range(max(len(compact) - 1, 0))}
 
@@ -183,8 +198,11 @@ _FINDING_TOPICS = {
     "无损检测": ("无损检测", "射线", "超声", "检测比例"),
     "防腐": ("防腐", "除锈", "涂层", "涂漆"),
     "签字": ("签字", "签名", "签署"),
+    "印章": ("印章", "签章", "盖章", "公章", "专用章"),
     "许可": ("许可",),
-    "标准版本": ("标准", "版本", "年份"),
+    # 不用「标准」一词：正文几乎条条带「合格标准」「按某标准」，原来每条都被打上这一类，
+    # 两条标题一字不差的「无损检测要求缺比例与合格级别」因此没并上（2026-11-02 重跑）
+    "标准版本": ("版本", "年份", "废止", "未实施", "现行", "标准号"),
     "数据表": ("数据表", "特性表"),
     "布置图": ("布置图", "平面图", "配管图"),
     "材料表": ("材料表", "材料一览表", "材料等级"),
@@ -196,26 +214,34 @@ _FINDING_TOPICS = {
 
 
 def _topics(text: str) -> frozenset[str]:
+    text = _simplified(text)
     return frozenset(topic for topic, words in _FINDING_TOPICS.items() if any(word in text for word in words))
 
 
 def _similar_finding(candidates, finding: dict[str, Any]) -> dict[str, Any] | None:
     """同一节点里换个说法的同一件事（各片各写一遍「缺管道数据表…」）并成一条。
 
-    事项类别要完全一致、建议动作要相同、标题或正文要足够像，才算同一件事：标题相同但
+    事项类别要一致、建议动作要相同、标题或正文要足够像，才算同一件事：标题相同但
     正文说法相反（「资料不足」对「已经覆盖」）是冲突，必须两条都留着交人工。
+
+    类别一致有两种算法，满足其一即可：标题认得出类别且两条标题的类别相同；或标题＋正文的
+    类别完全相同。只用后者时，正文顺带提一句「特性表」就多出一类，同一件事被分成两条。
     """
     if _is_discarded(finding):
         return None
     label, body = _finding_label(finding), _finding_body(finding)
-    topics = _topics(label + body)
+    label_topics, full_topics = _topics(label), _topics(label + body)
     for candidate in candidates:
         if _is_discarded(candidate):
             continue
         if str(candidate.get("suggestedAction") or "") != str(finding.get("suggestedAction") or ""):
             continue
         other_label, other_body = _finding_label(candidate), _finding_body(candidate)
-        if _topics(other_label + other_body) != topics:
+        if label_topics and _topics(other_label) == label_topics:
+            topics = label_topics
+        elif _topics(other_label + other_body) == full_topics:
+            topics = full_topics
+        else:
             continue
         # 认不出事项类别时只合并同一 findingType 的；认得出时允许跨类型——各片对同一件事给的类型常常不同
         same_type = str(candidate.get("findingType") or "").casefold() == str(finding.get("findingType") or "").casefold()
@@ -365,7 +391,7 @@ def aggregate_shard_findings(
         "conflicts": conflicts,
         # 不单独出发现的「系统读取质量」类条目：只留计数和标题，这些情况逐项结论的理由里已经写了
         "suppressedMetaFindings": {"count": len(suppressed_meta), "titles": list(dict.fromkeys(suppressed_meta))[:20]},
-        "aggregationVersion": "similar-merge-meta-suppress@1.1.0",
+        "aggregationVersion": "similar-merge-meta-suppress@1.2.0",
     }
     aggregate_hash = _stable_hash(core)
     return {

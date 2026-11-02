@@ -73,12 +73,26 @@ def model_cost_cny(
         if cache_write_rate is not None
         else os.getenv("AICHECK_QWEN_CACHE_WRITE_CNY_PER_MILLION", str(input_rate))
     )
+    # OpenAI 兼容口径（百炼就是）：prompt_tokens 已经含命中缓存的那部分，cached_tokens 只是其中
+    # 多少按缓存价计；原来整份 prompt_tokens 按全价、cached_tokens 再按全价算一次，命中越多记得越贵
+    # （2026-11-02 server8 重跑：命中 31.5%，记账反而高于实际约四成）。百炼隐式缓存命中按输入单价 20%。
+    # Anthropic 口径的 cache_read_input_tokens 不含在 input_tokens 里，照原样另加。
+    raw = usage if isinstance(usage, dict) else {}
+    cached_inside_input = not (raw.get("cache_read_input_tokens") or raw.get("cacheReadInputTokens")) and bool(
+        normalized["cacheReadInputTokens"]
+    )
     cache_read_rate = float(
         cache_read_rate
         if cache_read_rate is not None
-        else os.getenv("AICHECK_QWEN_CACHE_READ_CNY_PER_MILLION", str(input_rate))
+        else os.getenv(
+            "AICHECK_QWEN_CACHE_READ_CNY_PER_MILLION",
+            str(input_rate * 0.2 if cached_inside_input else input_rate),
+        )
     )
-    input_cost = normalized["inputTokens"] * input_rate / 1_000_000
+    billed_input = normalized["inputTokens"] - (
+        min(normalized["cacheReadInputTokens"], normalized["inputTokens"]) if cached_inside_input else 0
+    )
+    input_cost = billed_input * input_rate / 1_000_000
     output_cost = normalized["outputTokens"] * output_rate / 1_000_000
     cache_write_cost = normalized["cacheCreationInputTokens"] * cache_write_rate / 1_000_000
     cache_read_cost = normalized["cacheReadInputTokens"] * cache_read_rate / 1_000_000

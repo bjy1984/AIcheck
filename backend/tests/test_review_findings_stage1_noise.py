@@ -163,3 +163,22 @@ def test_rewordings_merge_but_different_tests_and_meta_findings_do_not_survive_a
     templates = [row for row in aggregate["findingDrafts"] if row["title"] == TEMPLATE and not row.get("modelTitle")]
     assert len(templates) == 1 and {c["claim"] for c in templates[0]["unsupportedClaims"]} == {"2026-05-01", "TS1844171"}
     assert templates[0]["severity"] == "medium"
+
+
+# ── 六、重跑后发现的合并漏网：正文顺带提到别的事、繁体输出、印章 ───────────────
+
+def test_same_issue_merges_despite_incidental_body_words_traditional_script_and_seals() -> None:
+    drafts = [
+        _kept("A", "无损检测要求缺比例与合格级别", "设计说明只写了按 NB/T 47013 射线检测，特性表未见检测比例。"),
+        _kept("B", "无损检测要求缺比例与合格级别", "设计说明只写了射线检测按现行标准执行，未写比例与合格级别。"),
+        _kept("C", "無損檢測比例與合格級別證據不足", "本片資料未見檢測比例。"),
+        _kept("D", "制造许可证扫描件未识别出发证机关印章", "扫描件上看不到发证机关章。"),
+        _kept("E", "生产许可证发证机关印章未识别需确认", "未见发证机关印章。"),
+        _kept("F", "泄漏试验要求缺试验压力与合格标准", "设计说明提及泄漏试验，未写压力。"),
+    ]
+    aggregate = aggregate_shard_findings({"reviewRunId": "R"}, [
+        {"evidenceShardId": f"S{index}", "modelAttemptIds": [], "findingDrafts": [draft]} for index, draft in enumerate(drafts)])
+    by_id = {row["id"]: row for row in aggregate["findingDrafts"]}
+    assert set(by_id) == {"A", "D", "F"}
+    assert set(by_id["A"]["mergedFindingIds"]) == {"B", "C"}
+    assert by_id["D"]["mergedFindingIds"] == ["E"]

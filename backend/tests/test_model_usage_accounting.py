@@ -120,3 +120,21 @@ def test_fde_cost_budget_uses_normalized_attempts_and_marks_unknown_costs() -> N
     assert payload["normalizedAttemptCount"] == 1
     assert payload["unknownCostAttemptCount"] == 1
     assert payload["complete"] is False
+
+
+def test_openai_style_cached_tokens_are_billed_once_at_the_cache_rate() -> None:
+    # 百炼：prompt_tokens 含命中部分。原来整份按全价、命中部分再按全价算一次。
+    cost = model_cost_cny(
+        {"prompt_tokens": 1_000_000, "completion_tokens": 0, "prompt_tokens_details": {"cached_tokens": 400_000}},
+        input_rate=2.0,
+        output_rate=8.0,
+    )
+    assert cost["input"] == 1.2 and cost["cacheRead"] == 0.16 and cost["total"] == 1.36
+    # Anthropic 口径：cache_read_input_tokens 不在 input_tokens 里，照旧另加
+    anthropic = model_cost_cny(
+        {"input_tokens": 600_000, "output_tokens": 0, "cache_read_input_tokens": 400_000},
+        input_rate=2.0,
+        output_rate=8.0,
+        cache_read_rate=0.2,
+    )
+    assert anthropic["input"] == 1.2 and anthropic["cacheRead"] == 0.08
