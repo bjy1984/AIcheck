@@ -2044,7 +2044,9 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "and do not invent tools.",
             *([CERTIFICATE_VERIFICATION_REQUIREMENT] if context.get("certificateVerification") else []),
             *grounding_block["requirements"],
+            *output_contract.shard_scope_prompt(context)[0],
         ],
+        **output_contract.shard_scope_prompt(context)[1],
         "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),
@@ -2094,6 +2096,8 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     if checklist_mode.checklist_enabled():  # P8 H5：清单填表模式，结构由代码给，模型只填 verdict/note
         context["checklistItems"] = checklist_mode.build_checklist_items(pack, int(review_run.get("nodeId") or 0), context.get("requirements") or node.get("requiredMaterials") or [], effective_rule=effective_rule_snapshot(review_run))
         user_payload = checklist_mode.apply_to_payload(user_payload, context["checklistItems"], complete=bool(workstation))
+    # 随分片变化的证据放最后，同一次复核的各分片才能共享前缀、命中缓存（见 shard_variant_keys_last）。
+    user_payload = output_contract.shard_variant_keys_last(user_payload)
     review_task_json = json.dumps(user_payload, ensure_ascii=False)
     user_content = prompt["user"]
     if "{{reviewTaskJson}}" in user_content:

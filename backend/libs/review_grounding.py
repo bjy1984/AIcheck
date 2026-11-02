@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import re
 from typing import Any
@@ -12,7 +13,14 @@ from libs.review_page_scope import located_record_in_range, normalize_page_range
 # "与工艺卡要求的方法不一致"被当成肯定断言整条降级。
 POSITIVE_CLAIM_RE = re.compile(r"(?<![不未非没])(满足|符合|匹配|覆盖|一致|有效|真实|通过|已确认|具备|齐全|完整)")
 CODE_TOKEN_RE = re.compile(r"\b(?:[A-Z]{1,8}[A-Z0-9]*[-/][A-Z0-9][A-Z0-9./-]{2,}|[A-Z]{1,8}\d{4,}[A-Z0-9./-]*)\b", re.IGNORECASE)
-DATE_TOKEN_RE = re.compile(r"\d{4}\s*(?:[-/.年]\s*\d{1,2})?(?:[-/.月]\s*\d{1,2}\s*日?)?")
+# 前后不能紧挨数字：原来没有边界，标准号 GB/T 12459、GB 50316 会被切出「1245」「5031」当成日期断言，
+# 证据里当然找不到，整条发现就被判无据丢弃（2026-11-02 server8 复盘：74 条丢弃里大量是这种碎片）。
+DATE_TOKEN_RE = re.compile(r"(?<!\d)\d{4}(?:\s*[-/.年]\s*\d{1,2})?(?:\s*[-/.月]\s*\d{1,2}\s*日?)?(?!\d)")
+# 缺项类说法：「缺少设计特性表」「未见检测比例」。它说的是「没看到」，没有字可以和原文比对，
+# 守卫的词符核验天然放行；而分片送审时模型只看到一部分资料，没看到不等于没有。
+ABSENCE_CLAIM_RE = re.compile(
+    r"缺少|缺失|缺乏|缺(?!陷)[\u4e00-\u9fff]|未提供|未见|未上传|没有提供|未明确|未规定|未注明|未标注|不齐全"
+)
 ORG_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}(?:有限公司|设计院|研究院|监督管理局|公司|单位)")
 PERSON_TOKEN_RE = re.compile(r"(?:焊工|姓名|人员|审核|编制|校核|负责人|许可人员)\s*[:：]?\s*(?!证|资格|名册|考试|清单|项目)([\u4e00-\u9fff]{2,4})(?=证书|持证|有效|资格|,|，|。|\s|$)")
 
@@ -433,7 +441,20 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
                 for claim in unsupported
             )
         item["evidenceValidationFailures"] = _unique_diagnostics(evidence_failures)
-        if unsupported or input_status != "grounded" or (formal_review and not refs):
+        # 缺项断言没有任何引文时不能算有据：2026-11-02 server8 复盘，GDLNG 节点 9 三条「缺检测比例 /
+        # 缺试验压力」被标成有据，其实那一片只装了设计说明照片，管道特性表在别的片里，参数都写着。
+        absence_unquoted = bool(ABSENCE_CLAIM_RE.search(" ".join(str(item.get(key) or "") for key in ("title", "description")))) and not any(
+            str(ref.get("quotedText") or "").strip() for ref in refs
+        )
+        if absence_unquoted:
+            evidence_failures.append(
+                {
+                    "code": "ABSENCE_CLAIM_WITHOUT_QUOTE",
+                    "message": "A missing-item claim cites no quoted text; it cannot be verified against the evidence it saw.",
+                }
+            )
+            item["evidenceValidationFailures"] = _unique_diagnostics(evidence_failures)
+        if unsupported or input_status != "grounded" or (formal_review and not refs) or absence_unquoted:
             item["unsupportedClaims"] = unsupported
             item["groundingStatus"] = "insufficient_evidence"
             item["suggestedAction"] = "human_confirm"
@@ -549,6 +570,25 @@ def _regulation_codes(text: str) -> list[str]:
     return [re.sub(r"\s+", " ", match.group(0)).strip() for match in REGULATION_CODE_RE.finditer(text or "")]
 
 
+_ISO_DATE_RE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")
+
+
+def _tool_result_identifiers(context: dict[str, Any]) -> list[str]:
+    """确定性工具输出里的标准号和日期。
+
+    提示词允许模型引用 ruleResults，守卫却只拿 OCR 文本比对：工具在线核到的
+    「GB/T 12459-2017 于 2026-05-01 废止」被模型复述后判成无据、整条丢弃
+    （2026-11-02 server8 复盘：74 条丢弃里 13 条残留的其实是正确信息）。
+    这些是我们自己的工具算出来交给模型的，复述它们不是新断言。只收编号和日期。
+    """
+    dumped = json.dumps(
+        [context.get("ruleResults") or [], context.get("certificateVerification") or {}],
+        ensure_ascii=False,
+        default=str,
+    )
+    return [*_regulation_codes(dumped), *_ISO_DATE_RE.findall(_canonicalize_dates(dumped))]
+
+
 def supplemental_grounding_identifiers(context: dict[str, Any]) -> list[str]:
     """从审查上下文收集"我们发给模型的标识符"：规则/条款里的法规号、工程元数据、设计参数。
 
@@ -592,6 +632,7 @@ def supplemental_grounding_identifiers(context: dict[str, Any]) -> list[str]:
                     identifiers.append(str(item[key]))
     for text in texts:
         identifiers.extend(_regulation_codes(text))
+    identifiers.extend(_tool_result_identifiers(context))
     return list(dict.fromkeys(item for item in identifiers if item))
 
 

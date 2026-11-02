@@ -1,4 +1,4 @@
-"""P9 R2：守卫不销毁原文、降级条目按断言集合去重、AI 建议不取模板句。"""
+"""P9 R2：守卫不销毁原文、只剩模板句的降级条目一个节点并成一条、AI 建议不取模板句。"""
 
 from __future__ import annotations
 
@@ -128,11 +128,14 @@ def test_downgraded_findings_merge_by_claim_set_and_keep_highest_severity() -> N
     aggregate = aggregate_shard_findings({"reviewRunId": "RRUN-X"}, shard_results)
     drafts = aggregate.get("findingDrafts") if isinstance(aggregate, dict) else aggregate
     templates = [item for item in drafts if item["title"] == TEMPLATE]
-    assert len(templates) == 2, [item.get("unsupportedClaims") for item in templates]
-    merged = next(item for item in templates if item["unsupportedClaims"] == claims)
+    # 2026-11-02 起：原文已被丢弃、只剩模板句的条目一个节点并成一条，待核对断言取并集。
+    # 原来按断言集合分开，server8 复盘 113 条里 74 条是这句模板并排，只差几个碎片断言。
+    assert len(templates) == 1, [item.get("unsupportedClaims") for item in templates]
+    merged = templates[0]
+    assert {item["claim"] for item in merged["unsupportedClaims"]} == {"TS9999999-2030", "另一个断言"}
     assert merged["severity"] == "high"
-    assert set(merged["sourceEvidenceShardIds"]) == {"ESHARD-1", "ESHARD-2"}
-    assert merged["mergedFindingIds"] == ["F2"]
+    assert set(merged["sourceEvidenceShardIds"]) == {"ESHARD-1", "ESHARD-2", "ESHARD-3"}
+    assert merged["mergedFindingIds"] == ["F2", "F3"]
 
 
 def test_opinion_draft_never_uses_template_sentence() -> None:

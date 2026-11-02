@@ -513,3 +513,37 @@ def review_task_payload(run):
     """The output contract plus optional frozen, server-maintained review instructions."""
     from libs.important_review_runtime import important_review_prompt
     return {"task": "Generate ReviewFindingDraftList JSON only.", **important_review_prompt(run)}
+
+
+# 一次节点复核按证据切成多片，各片的提示词只有这几项不同（见 shard_execution：每片复制整个
+# 上下文，只换 fields/evidenceLinks 等证据集合和 groundingInput）。
+SHARD_VARIANT_PROMPT_KEYS = (
+    "nodeFields", "fieldCount", "groundingStatus", "groundedOcrEvidence", "evidenceLinkIds", "evidenceShardScope",
+)
+
+
+def shard_variant_keys_last(payload: dict[str, Any]) -> dict[str, Any]:
+    """把随分片变化的键挪到提示词最后，内容一项不增不减。
+
+    2026-11-02 生产实测：一次节点复核切 8 片（节点 12 切 18 片），规则口径、条款包、检索条款、
+    规则执行结果、工具清单每片原样重发，约占每次调用输入的六成；10 月节点复核 1801 万输入
+    token 只有 4.8 万命中缓存。前缀缓存只认从头开始完全相同的部分，而每片不同的 nodeFields
+    紧跟在当前规则后面，后面那一大段相同内容全接不上。挪到最后，各片就共享同一段长前缀。
+    """
+    fixed = {key: value for key, value in payload.items() if key not in SHARD_VARIANT_PROMPT_KEYS}
+    return {**fixed, **{key: payload[key] for key in SHARD_VARIANT_PROMPT_KEYS if key in payload}}
+
+
+# 分片送审时每片都一样的一条要求（各片相同，才不破坏共享前缀）；evidenceShardScope 本身随分片变化、排在最后。
+SHARD_SCOPE_REQUIREMENT = (
+    "本节点的资料是分片送审的，evidenceShardScope 写明你这一次看到的是第几片、包含哪些资料。"
+    "只能对这一片里的资料下判断；不得因为这一片里没看到某份资料、某个参数，就写“缺少”“未提供”“未见”“未明确”——"
+    "它可能在别的片里。资料是否齐全以 ruleResults 里的资料齐全性工具结论为准。"
+)
+
+
+def shard_scope_prompt(context: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    scope = context.get("evidenceShardScope")
+    if not isinstance(scope, dict) or not scope:
+        return [], {}
+    return [SHARD_SCOPE_REQUIREMENT], {"evidenceShardScope": scope}
