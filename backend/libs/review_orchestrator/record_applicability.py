@@ -49,7 +49,8 @@ def _leak_basis(pipeline: dict[str, Any]) -> str | None:
     if any(word in str(pipeline.get("mediumProperty") or "") for word in ("有毒", "剧毒", "毒性")):
         return "medium_toxic"
     flags = medium_hazard_flags(toxicity=pipeline.get("mediumToxicity"), leak_hazard=pipeline.get("leakHazard"),
-                                medium=pipeline.get("medium"))
+                                medium=pipeline.get("medium"), medium_property=pipeline.get("mediumProperty"),
+                                flash_point_c=pipeline.get("flashPointC"))
     if flags["toxic"] is True:
         return "medium_toxic"
     if flags["leakHazard"] is True:

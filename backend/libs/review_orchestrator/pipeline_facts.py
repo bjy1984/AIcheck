@@ -74,6 +74,7 @@ def _pipeline_from_characteristic(item: dict[str, Any]) -> dict[str, Any]:
     pipeline["fireHazard"] = _value(row, "fireHazard", "火灾危险性", "火灾危险类别", "火灾危险性类别")
     # 设计表「介质特性」栏（可燃、有毒、腐蚀……）与「泄漏试验要求」栏（打 √ 即要求）照原文取。
     pipeline["mediumProperty"] = _value(row, "mediumProperty", "介质特性")
+    pipeline["flashPointC"] = _number(_value(row, "flashPointC", "闪点", "闪点℃", "闪点°C"))
     pipeline["leakTestRequired"] = _required_mark(_value(row, "leakTestRequired", "泄漏试验要求"))
     pipeline["weldingMethod"] = _value(row, "weldingMethod", "焊接方法")
     pipeline["ndtRatio"] = _value(row, "ndtRatio", "检测比例", "无损检测比例")

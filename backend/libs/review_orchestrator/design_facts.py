@@ -775,6 +775,8 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             toxicity=item.get("mediumToxicity"),
             leak_hazard=item.get("leakHazard"),
             medium=item.get("medium"),
+            medium_property=item.get("mediumProperty"),
+            flash_point_c=item.get("flashPointC"),
         )
         if grade.strip().upper() == "GC2" and not flags["determined"]:
             undetermined.append(item.get("pipelineId") or item.get("lineNo") or "未编号管线")

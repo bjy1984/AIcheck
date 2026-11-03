@@ -647,3 +647,20 @@ def test_ndt_acceptance_query_preserves_actual_requirement_source(method, clause
     assert requirement["sourceClause"] == clause
     assert requirement["sourcePage"] == 123  # PDF page, printed page 115.
     assert requirement["standard"].startswith("NB/T")  # Method standard is a different reference.
+
+
+@pytest.mark.parametrize(("kwargs", "expected"), [
+    ({"medium_property": "液态、易燃"}, True),
+    ({"flash_point_c": "11℃"}, True),
+    ({"flash_point_c": -4}, True),
+    # 「可燃」还含易燃液体类别 3（闪点 23–60 ℃），不是泄漏危害性介质；ECD202 特性表只写「可燃」
+    ({"medium_property": "可燃"}, None),
+    ({"flash_point_c": 23}, None),
+    ({"flash_point_c": 55, "medium_property": "可燃"}, None),
+])
+def test_flammable_liquid_leak_hazard_only_from_explicit_marking(kwargs, expected):
+    from libs.regulatory_tables import medium_hazard_flags
+
+    flags = medium_hazard_flags(medium="甲醇", **kwargs)
+    assert flags["leakHazard"] is expected
+    assert flags["determined"] is (expected is True)

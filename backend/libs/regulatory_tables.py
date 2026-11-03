@@ -229,7 +229,20 @@ _TOXIC_TOKENS = ("极度危害", "高度危害", "中度危害", "轻度危害",
 _LEAK_TOKENS = ("泄漏危害", "易泄漏")
 
 
-def medium_hazard_flags(*, toxicity: Any = None, leak_hazard: Any = None, medium: Any = None) -> dict[str, Any]:
+_FLAMMABLE_LIQUID_FLASH_POINT_C = 23.0
+
+
+def _flash_point(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value or ""))
+    return float(match.group()) if match else None
+
+
+def medium_hazard_flags(*, toxicity: Any = None, leak_hazard: Any = None, medium: Any = None,
+                        medium_property: Any = None, flash_point_c: Any = None) -> dict[str, Any]:
     """从设计资料写的毒性程度/泄漏危害性栏推出两个开关，推不出来就说推不出来。
 
     只认资料上明确写的分级用语（GB 5044 的四档危害程度、"有毒"、"泄漏危害性"）。
@@ -250,12 +263,24 @@ def medium_hazard_flags(*, toxicity: Any = None, leak_hazard: Any = None, medium
     leak_text = str(leak_hazard).strip() if leak_hazard is not None else ""
     toxic_flag = flag(toxicity, _TOXIC_TOKENS, {"无毒", "非有毒", "无", "否", "false"})
     leak_flag = flag(leak_hazard, _LEAK_TOKENS, {"无泄漏危害", "无泄漏危害性", "非泄漏危害性介质", "无", "否", "false"})
+    # GB/T 20801.1-2025 3.15、4.1 a) 2)：易燃液体类别 1、2（表 A.4：闪点 <23 ℃）属泄漏危害性介质。
+    # 只认资料写明的「易燃」或闪点；「可燃」还含类别 3（闪点 23–60 ℃），不是泄漏危害性，不算（2026-11-03 用户定）。
+    flash_point = _flash_point(flash_point_c)
+    flammable_basis = None
+    if leak_flag is not True:
+        if any("易燃" in str(value or "") for value in (medium_property, leak_hazard)):
+            flammable_basis = "marked_flammable"
+        elif flash_point is not None and flash_point < _FLAMMABLE_LIQUID_FLASH_POINT_C:
+            flammable_basis = "flash_point_below_23c"
+        if flammable_basis:
+            leak_flag = True
 
     return {
         "toxic": toxic_flag,
         "leakHazard": leak_flag,
         "toxicitySource": toxicity_text or None,
         "leakHazardSource": leak_text or None,
+        "leakHazardBasis": flammable_basis,
         "medium": str(medium or "").strip() or None,
         "determined": leak_flag is True or (toxic_flag is not None and leak_flag is not None),
     }
