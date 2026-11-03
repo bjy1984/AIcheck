@@ -266,7 +266,16 @@ def blank_state() -> dict[str, Any]:
 
 
 def runtime_initial_state() -> dict[str, Any]:
-    return fresh_state() if demo_data_enabled() else blank_state()
+    """演示数据只给部署默认院（平台院）：新开的特检院一律从空白开始（2026-11-02）。
+
+    生产 runtime.env 开着演示数据；不加这层，院管理员一登录就会看到 5 个演示项目，
+    而且新院库里还没有数据，加载时演示数据原样留下、一落盘就写进那个院。
+    """
+    from libs.security.tenant import configured_tenant_id as deployment_tenant_id
+
+    if demo_data_enabled() and configured_tenant_id() == deployment_tenant_id():
+        return fresh_state()
+    return blank_state()
 
 
 def redact_url_query(value: str | None) -> str | None:

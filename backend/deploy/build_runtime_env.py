@@ -44,7 +44,9 @@ database = secrets.get("AICHECK_POSTGRES_DB", "aicheck")
 runtime = {
     "AICHECK_DATABASE_URL": "postgresql://%s:%s@aicheck-postgres:5432/%s" % (user, password, database),
     "AICHECK_TENANT_ID": "TENANT-DEFAULT",
-    "AICHECK_TENANT_MODE": "isolated",
+    # 多特检院（2026-11-02）：只认平台院和平台登记过、启用中的特检院（libs/institutes.py），
+    # 不再靠 isolated 把访问限死在默认院
+    "AICHECK_TENANT_MODE": "shared",
     "AICHECK_REDIS_URL": "redis://aicheck-redis:6379/0",
     "AICHECK_REQUIRE_AUTH": "true",
     "AICHECK_ENABLE_DEMO_DATA": "true",

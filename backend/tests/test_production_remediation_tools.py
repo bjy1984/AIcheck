@@ -44,7 +44,8 @@ def test_production_compose_is_explicit_and_fail_closed() -> None:
         assert deploy[service]["restart"] == "unless-stopped"
     assert deploy["minio"]["ports"][0].startswith("127.0.0.1:")
     assert "@sha256:" in deploy["litellm-service"]["image"]
-    assert deploy["api-service"]["environment"]["AICHECK_TENANT_MODE"].endswith(":-isolated}")
+    # 2026-11-02 多特检院：访问边界改由特检院注册表把关，部署默认 shared
+    assert deploy["api-service"]["environment"]["AICHECK_TENANT_MODE"].endswith(":-shared}")
     assert deploy["api-service"]["environment"]["AICHECK_AUDIT_ANCHOR_RETENTION_DAYS"].endswith(":-3650}")
     assert base["workflow-migrate"]["profiles"] == ["migration"]
     assert "workflow-migrate" not in base["api-service"]["depends_on"]

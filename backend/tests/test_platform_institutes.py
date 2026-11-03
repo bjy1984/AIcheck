@@ -244,3 +244,12 @@ def test_institute_review_basis_search_uses_the_platform_standard_library():
         got = retrieve_knowledge_clauses(state, query="泄漏性试验 审查依据", top_k=5)
     assert expected["clauses"] and got["clauses"] == expected["clauses"]  # 非空：真检到了平台的标准
     assert all("KF-PROJ-1" not in str(row) for row in got["clauses"])
+
+
+def test_a_new_institute_starts_blank_even_when_demo_data_is_on(monkeypatch):
+    # 生产 runtime.env 开着演示数据：平台院照旧有演示项目，新开的院必须是空的
+    monkeypatch.setenv("AICHECK_ENABLE_DEMO_DATA", "true")
+    repo.reset()
+    assert data(client.get("/api/projects", headers=PLATFORM))["items"], "平台院应当有演示项目"
+    token = open_gdtj()
+    assert data(client.get("/api/projects", headers=bearer(token)))["items"] == []
