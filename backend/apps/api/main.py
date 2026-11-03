@@ -23,16 +23,16 @@ from apps.api.auto_review_routes import auto_review_router
 from apps.api.batch_review_routes import batch_review_router
 from apps.api.blind_review_routes import blind_review_router
 from apps.api.cnse_routes import router as cnse_router
+from apps.api.data_service_mcp_routes import router as data_service_mcp_router
 from apps.api.document_category_routes import document_category_router
 from apps.api.feedback_metrics_routes import feedback_metrics_router
 from apps.api.idempotency_scope import authorization_membership_snapshot
 from apps.api.important_review_routes import important_review_router
-from apps.api.user_feedback_routes import user_feedback_router
 from apps.api.inspection_service_routes import inspection_service_router, public_review_request
 from apps.api.knowledge_admin_routes import knowledge_admin_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
-from apps.api.data_service_mcp_routes import router as data_service_mcp_router
 from apps.api.org_delegation_routes import org_delegation_router
+from apps.api.platform_routes import platform_router
 from apps.api.project_analysis_routes import project_analysis_router
 from apps.api.project_registration_routes import project_registration_router
 from apps.api.project_rule_routes import project_rule_router
@@ -51,6 +51,8 @@ from apps.api.routes import (
 )
 from apps.api.skill_auth_routes import skill_auth_router
 from apps.api.std_samr_routes import router as std_samr_router
+from apps.api.user_feedback_routes import user_feedback_router
+from libs import institutes
 from libs.audit_context import (
     current_request_audit_context,
     reset_request_audit_context,
@@ -256,9 +258,14 @@ async def attach_operation_id(request: Request, call_next):
         except (ValueError, UnicodeDecodeError):
             login_payload = None
         requested_tenant_id = str((login_payload or {}).get("tenantId") or "").strip()
+        if not requested_tenant_id:
+            # 多特检院：登录不用选单位，按用户名在全局目录里找到所属的院（找不到就是平台院）
+            requested_tenant_id = institutes.tenant_for_username(str((login_payload or {}).get("username") or "")) or ""
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", requested_tenant_id):
             claimed_tenant_id = requested_tenant_id
-    tenant_id = claimed_tenant_id if tenant_is_allowed(claimed_tenant_id) else configured_tenant_id()
+    # 只认平台院和登记过、启用中的特检院：原来带任意院名都会在内存里凭空建一个院
+    tenant_allowed = tenant_is_allowed(claimed_tenant_id) and institutes.tenant_login_allowed(claimed_tenant_id)
+    tenant_id = claimed_tenant_id if tenant_allowed else configured_tenant_id()
     tenant_context_token = set_request_tenant_id(tenant_id)
     mutation_lock = None
     mutation_lock_acquired = False
@@ -324,6 +331,11 @@ async def handle_request(
         if claims is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), errors.AUTH_REQUIRED.reason)
         claimed_tenant = str(claims.get("tid") or "")
+        if not institutes.tenant_login_allowed(claimed_tenant):
+            return audit_rejected_request(
+                request, fail(errors.AUTH_REQUIRED, request, message="所在单位未开通或已停用，请联系平台管理员。"),
+                "AUTH_TENANT_DISABLED",
+            )
         if not repo.tenant_is_loaded(claimed_tenant):
             if postgres_persistence_configured() or repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
                 # N-5：这里原先无参调用 load_state()，即一律按 configured_tenant_id()
@@ -1498,6 +1510,8 @@ if compatibility_mocks_enabled():
 # 意见反馈要排在主 router 前面：routes.py 有通配的 GET /admin/{kind}，会先吞掉 /admin/user-feedback
 app.include_router(user_feedback_router)
 app.include_router(user_feedback_router, prefix="/api")
+app.include_router(platform_router)
+app.include_router(platform_router, prefix="/api")
 app.include_router(knowledge_admin_router)
 app.include_router(knowledge_admin_router, prefix="/api")
 app.include_router(report_template_router)

@@ -132,6 +132,9 @@ STATE_COLLECTIONS = {
     "cnse_lookup_cache": "cnse_lookup_cache",
     "ai_feedback": "ai_feedback",
     "user_feedback": "user_feedback",
+    # 多特检院：特检院注册表与全局用户名目录，只放在平台院（libs/institutes.py）
+    "institutes": "institutes",
+    "user_directory": "user_directory",
     "access_grants": "access_grants",
     "ai_trace_steps": "ai_trace_steps",
     "ai_run_replays": "ai_run_replays",

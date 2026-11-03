@@ -400,6 +400,13 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         component: () => import('@/views/AICheck/AdminUserFeedback.vue'),
         name: 'AdminUserFeedback',
         meta: { title: '意见反馈', noCache: true, roles: ['admin'] }
+      },
+      {
+        // 平台管理员才能用；页面里再判一次，院管理员进来只看到提示
+        path: 'institutes',
+        component: () => import('@/views/AICheck/AdminInstitutes.vue'),
+        name: 'AdminInstitutes',
+        meta: { title: '特检院管理', noCache: true, roles: ['admin'] }
       }
     ]
   },

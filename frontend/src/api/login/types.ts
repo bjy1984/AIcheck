@@ -15,6 +15,9 @@ export interface UserType {
   orgUnitName?: string
   defaultPath?: string
   mustChangePassword?: boolean
+  /** 平台管理员：平台院的管理员，开通特检院和院管理员（2026-11-02） */
+  platformAdmin?: boolean
+  tenantId?: string
 }
 
 export interface LoginResult {

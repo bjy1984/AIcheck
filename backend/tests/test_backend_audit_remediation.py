@@ -99,6 +99,8 @@ def test_cold_tenant_login_loads_persistent_state_and_writes_tenant_audit(monkey
             }
         ]
 
+    # 2026-11-02 起只有登记过、启用中的特检院才能登录：先在平台院的注册表里登记它
+    repo.state.setdefault("institutes", []).append({"id": tenant_id, "code": "COLD-LOGIN", "name": "冷租户", "status": "active"})
     monkeypatch.setattr("apps.api.routes.postgres_persistence_configured", lambda: True)
     monkeypatch.setattr("apps.api.routes.load_state", load_cold_tenant)
     response = client.post(

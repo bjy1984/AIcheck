@@ -44,9 +44,11 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
 
+from libs import institutes
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import repo
+from libs.security.tenant import current_tenant_id
 
 project_registration_router = APIRouter()
 
@@ -451,6 +453,8 @@ def _review_registration_request_locked(
             )
             return ok({"requestId": request_id, "status": "已拒绝"}, request)
 
+        if conflict := institutes.username_conflict_message(record["username"]):
+            return fail(errors.CONFLICT, request, http_status=409, message=conflict)
         user = build_admin_user_record(
             {
                 "username": record["username"],
@@ -477,6 +481,7 @@ def _review_registration_request_locked(
                 message="该用户已是项目成员。",
             )
         repo.state["users"].insert(0, user)
+        institutes.register_username(user["username"], current_tenant_id())
         upsert_admin_config_user(user)
         # 建账号的同时把他加进项目成员，否则批准了却进不了这个项目
         grant = resolve_project_member_grant(project_id, record["role"])

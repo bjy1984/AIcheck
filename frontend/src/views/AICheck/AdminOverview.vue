@@ -458,7 +458,11 @@ watch(
 
 /* 菜单来自 adminMenuTree —— 后台**只有一棵树**。
  * 原先这里各写一份，点进知识库整棵树就被换掉，admin 的分组全部消失。 */
-const adminShellMenuSections = computed(() => buildAdminMenuSections(adminMenuActiveRoute.value))
+const adminShellMenuSections = computed(() =>
+  buildAdminMenuSections(adminMenuActiveRoute.value, {
+    platformAdmin: Boolean(userStore.getUserInfo?.platformAdmin)
+  })
+)
 
 const scrollAdminContentIntoView = () => {
   nextTick(() => {

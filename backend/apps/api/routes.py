@@ -56,7 +56,7 @@ from apps.api.upload_session_workflow import (
 )
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
-from libs import help_center, rule_version_helpers
+from libs import help_center, institutes, rule_version_helpers
 from libs.ai_run_failure import ai_run_failure_view
 from libs.ai_run_order import sort_ai_runs_latest_first
 from libs.audit_context import (
@@ -4842,6 +4842,8 @@ async def auth_login(request: Request, body: dict[str, Any] = Body(default_facto
         return fail(errors.VALIDATION_ERROR, request, message="tenantId 格式无效。")
     if not tenant_is_allowed(requested_tenant_id):
         return fail(errors.FORBIDDEN, request, message="当前部署不允许访问该租户。", http_status=403)
+    if not institutes.tenant_login_allowed(requested_tenant_id):
+        return fail(errors.FORBIDDEN, request, message="所在单位未开通或已停用，请联系平台管理员。", http_status=403)
     request.state.persistence_tenant_id = requested_tenant_id
     tenant_context_token = set_request_tenant_id(requested_tenant_id)
     audit_context_token = set_request_audit_context(
@@ -28206,7 +28208,7 @@ def create_admin_user(
                 message="初始密码不符合安全要求。",
                 data={"field": "password", "problems": password_errors},
             )
-        conflict = unique_admin_value_conflict(None, username=username, mobile=body.get("mobile"))
+        conflict = unique_admin_value_conflict(None, username=username, mobile=body.get("mobile")) or institutes.username_conflict_message(username)
         if conflict:
             return fail(errors.CONFLICT, request, message=conflict)
         org, org_error = validate_user_org_binding(request, role, body.get("orgId"), body.get("orgName"))
@@ -28216,6 +28218,7 @@ def create_admin_user(
         user["authVersion"] = 1
         user["mustChangePassword"] = password == DEFAULT_INITIAL_PASSWORD  # 预设初始密码人人可知：首次登录必须先改
         repo.state["users"].insert(0, user)
+        institutes.register_username(username, current_tenant_id())  # 用户名全平台唯一、登录按它找院
         upsert_admin_config_user(user)
         bump_singleton_revision(repo.state["admin_config"])
         audit_id = repo.add_audit("新增用户", "User", user["id"])

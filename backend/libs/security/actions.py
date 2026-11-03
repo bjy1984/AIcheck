@@ -106,6 +106,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/messages/read-all$", "message:update"),
     # 意见反馈：所有业务角色都能提给管理员；管理员处理走 /admin/ 下的 admin:config
     ("POST", r"/user-feedback$", "feedback:submit"),
+    # 平台管理：动作沿用 admin:config，再由接口里判是不是平台管理员（院管理员一律 403）
+    ("POST", r"/platform/.*", "admin:config"),
     ("POST", r"/workflow/commands$", "admin:config"),
     ("POST", r"/review/findings$", "review:save"),
     ("POST", r"/review/findings/[^/]+/(accept|reject)$", "review:save"),

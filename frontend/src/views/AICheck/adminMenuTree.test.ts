@@ -96,3 +96,17 @@ assert.equal(ADMIN_BOUNDARY_TITLE, '后台边界')
 assert.equal(ADMIN_BOUNDARY_BADGE, '无业务办理')
 
 console.log('Admin menu tree contract passed')
+
+// 平台分组只给平台管理员（2026-11-02 多特检院）：院管理员的菜单还是原来那棵树
+const plainRoutes = buildAdminMenuSections('/admin/overview').flatMap((section) =>
+  section.items.map((item) => item.route)
+)
+assert.ok(!plainRoutes.includes('/admin/institutes'), '院管理员不该看到特检院管理')
+const platformSections = buildAdminMenuSections('/admin/institutes', { platformAdmin: true })
+const platformRoutes = platformSections.flatMap((section) => section.items.map((item) => item.route))
+assert.ok(platformRoutes.includes('/admin/institutes'), '平台管理员要能看到特检院管理')
+assert.equal(new Set(platformRoutes).size, platformRoutes.length, '加了平台分组后路由仍不许重复')
+assert.equal(
+  platformSections.flatMap((section) => section.items).find((item) => item.active)?.route,
+  '/admin/institutes'
+)

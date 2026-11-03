@@ -209,7 +209,11 @@ const userLabel = computed(
  * 这一页原先自带第三份定义、根名字叫「AI 知识库」，
  * 于是同一个后台在三个页面上显示三副面孔，进来之后 admin 的分组还会消失。
  * 这一页没有 route 对象，用它自己的固定路径高亮。 */
-const menuSections = computed(() => buildAdminMenuSections('/knowledge/network'))
+const menuSections = computed(() =>
+  buildAdminMenuSections('/knowledge/network', {
+    platformAdmin: Boolean(userStore.getUserInfo?.platformAdmin)
+  })
+)
 
 const rightCards = computed(() => [
   {

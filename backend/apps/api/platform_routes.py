@@ -1,0 +1,138 @@
+"""平台管理：开通特检院（租户）和它的院管理员——多特检院第二阶段（2026-11-02）。
+
+只有平台管理员能用（平台院的管理员，见 libs.security.auth.is_platform_admin）。各特检院的
+院管理员也是 admin，但只管本院；他们调这里一律 403。
+独立 router，排在主 router 前面注册；路径用 /platform/，不进 routes.py 的 GET /admin/{kind} 通配。
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from fastapi import APIRouter, Body, Header, Request
+
+from apps.api import routes as api
+from libs import institutes
+from libs.contracts import errors
+from libs.contracts.responses import fail, ok, server_time
+from libs.db.repository import flush_state, repo
+from libs.security.auth import DEFAULT_INITIAL_PASSWORD, is_platform_admin, password_strength_errors
+from libs.security.tenant import configured_tenant_id as platform_tenant_id
+
+platform_router = APIRouter()
+CODE_RE = re.compile(r"[A-Z0-9][A-Z0-9-]{1,31}")
+
+
+def _guard(request: Request):
+    _, error = api.effective_role_for_request(request)
+    if error:
+        return error
+    if not is_platform_admin(getattr(request.state, "auth_user", None)):
+        return fail(errors.FORBIDDEN, request, http_status=403, message="只有平台管理员可以管理特检院。")
+    return None
+
+
+def _institute_view(row: dict[str, Any]) -> dict[str, Any]:
+    with institutes.tenant_scope(str(row["id"])) as state:
+        users = [user for user in state.get("users") or [] if isinstance(user, dict)]
+        projects = len([item for item in state.get("projects") or [] if isinstance(item, dict)])
+    return {
+        **repo.clone(row),
+        "userCount": len(users),
+        "adminUsernames": sorted(str(user.get("username")) for user in users if user.get("role") == "admin"),
+        "projectCount": projects,
+    }
+
+
+@platform_router.get("/platform/institutes")
+def list_platform_institutes(request: Request):
+    if error := _guard(request):
+        return error
+    platform = {"id": platform_tenant_id(), "code": "PLATFORM", "name": "平台（默认院）", "status": institutes.ACTIVE, "builtin": True}
+    return ok({"items": [_institute_view(platform), *(_institute_view(row) for row in institutes.list_institutes())]}, request)
+
+
+@platform_router.post("/platform/institutes")
+def create_platform_institute(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """开通一个特检院，同时建好它的第一个院管理员。"""
+    if error := _guard(request):
+        return error
+    code = str(body.get("code") or "").strip().upper()
+    name = " ".join(str(body.get("name") or "").split())[:80]
+    username = str(body.get("adminUsername") or "").strip()
+    if not CODE_RE.fullmatch(code):
+        return fail(errors.VALIDATION_ERROR, request, message="单位代码用 2–32 位大写字母、数字或连字符，例如 GDTJ。")
+    if not name or not username:
+        return fail(errors.VALIDATION_ERROR, request, message="请填写特检院名称和院管理员用户名。")
+    tenant_id = f"TENANT-{code}"
+    if tenant_id == platform_tenant_id() or institutes.find_institute(tenant_id):
+        return fail(errors.CONFLICT, request, http_status=409, message="这个单位代码已经用过了。")
+    if conflict := institutes.username_conflict_message(username, for_tenant=tenant_id):
+        return fail(errors.CONFLICT, request, http_status=409, message=conflict)
+    password = str(body.get("adminPassword") or "").strip() or DEFAULT_INITIAL_PASSWORD
+    if problems := password_strength_errors(username, password):
+        return fail(errors.VALIDATION_ERROR, request, message="初始密码不符合要求。", data={"problems": problems})
+
+    def produce():
+        actor = api.request_actor_name(request)
+        institute = {"id": tenant_id, "code": code, "name": name, "status": institutes.ACTIVE,
+                     "createdAt": server_time(), "createdBy": actor}
+        with institutes.tenant_scope(tenant_id) as state:
+            # 特检院本身就是监检单位：先建好以院命名的监检组织，院管理员马上就能给监检人员建号
+            # （监检等业务角色必须绑定组织，新院原来一个组织都没有）
+            org = {"id": f"ORG-{code}", "name": name, "type": "inspection", "contactName": "", "contactPhone": "",
+                   "status": "启用", "projectCount": 0, "updatedAt": server_time(), "revision": 1}
+            api.admin_org_units().insert(0, org)
+            admin = api.build_admin_user_record({"username": username, "role": "admin",
+                                                 "name": str(body.get("adminName") or username), "password": password},
+                                                org=org)
+            admin["authVersion"] = 1
+            # 平台定的初始密码平台知道：院管理员首次登录必须先改成只有自己知道的
+            admin["mustChangePassword"] = True
+            state.setdefault("users", []).insert(0, admin)
+            api.upsert_admin_config_user(admin)
+            repo.add_audit("平台开通特检院并建院管理员", "User", admin["id"])
+            flush_state({"users", "audit_logs"}, selected_singleton_keys={"admin_config"})
+        with institutes.platform_scope() as state:
+            state.setdefault(institutes.INSTITUTES, []).append(institute)
+            institutes.save_in_current_tenant(institutes.INSTITUTES, institute)
+        institutes.register_username(username, tenant_id)
+        audit_id = repo.add_audit("开通特检院", "Institute", tenant_id, after={"name": name, "admin": username})
+        request.state.scoped_flush_records = dict  # 只落本次审计；院、账号、目录上面已各自落库
+        return ok({"institute": _institute_view(institute), "auditLogId": audit_id}, request)
+
+    return api.idempotent(request, idempotency_key, produce, fingerprint_source={"body": body})
+
+
+@platform_router.post("/platform/institutes/{tenant_id}/status")
+def set_platform_institute_status(
+    request: Request,
+    tenant_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """停用后这个院的人立即登不进来（已发的令牌也失效），数据保留；启用即恢复。"""
+    if error := _guard(request):
+        return error
+    status = str(body.get("status") or "")
+    if status not in {institutes.ACTIVE, institutes.DISABLED}:
+        return fail(errors.VALIDATION_ERROR, request, message="状态只能是 active 或 disabled。")
+    def produce():
+        with institutes.platform_scope() as state:
+            row = next((item for item in state.setdefault(institutes.INSTITUTES, []) if item.get("id") == tenant_id), None)
+            if row is None:
+                return fail(errors.NOT_FOUND, request, message="没有这个特检院（平台院不能停用）。")
+            before = row.get("status")
+            row.update({"status": status, "updatedAt": server_time(), "updatedBy": api.request_actor_name(request)})
+            institutes.save_in_current_tenant(institutes.INSTITUTES, row)
+            view = repo.clone(row)
+        audit_id = repo.add_audit("修改特检院状态", "Institute", tenant_id, before={"status": before}, after={"status": status})
+        request.state.scoped_flush_records = dict
+        return ok({"institute": view, "auditLogId": audit_id}, request)
+
+    return api.idempotent(request, idempotency_key, produce, fingerprint_source={"tenantId": tenant_id, "body": body})

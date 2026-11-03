@@ -2431,6 +2431,8 @@ def fresh_state() -> dict[str, Any]:
         "ai_run_replays": deepcopy(AI_RUN_REPLAYS),
         "feedback_triage": deepcopy(FEEDBACK_TRIAGE),
         "user_feedback": [],
+        "institutes": [],
+        "user_directory": [],
         "blind_review_tasks": [],
         "evaluation_sets": deepcopy(EVALUATION_SETS),
         "evaluation_cases": deepcopy(EVALUATION_CASES),

@@ -48,7 +48,11 @@ const userStore = useUserStoreWithOut()
 const userLabel = computed(
   () => userStore.getUserInfo?.displayName || userStore.getUserInfo?.username || '系统管理员'
 )
-const menuSections = computed(() => buildAdminMenuSections('/admin/feedback'))
+const menuSections = computed(() =>
+  buildAdminMenuSections('/admin/feedback', {
+    platformAdmin: Boolean(userStore.getUserInfo?.platformAdmin)
+  })
+)
 
 const filters = reactive<{
   status: UserFeedbackStatus | ''

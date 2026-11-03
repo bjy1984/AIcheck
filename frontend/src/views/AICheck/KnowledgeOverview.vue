@@ -426,7 +426,11 @@ const fileDetail = ref<KnowledgeFileDetailPayload>()
 
 /* 菜单来自 adminMenuTree —— 知识库是后台的一个分组，不是另一棵树。
  * 原先这里自带一份，进到知识库后 admin 的三个分组全部消失，人回不去。 */
-const knowledgeShellMenuSections = computed(() => buildAdminMenuSections(route.path))
+const knowledgeShellMenuSections = computed(() =>
+  buildAdminMenuSections(route.path, {
+    platformAdmin: Boolean(userStore.getUserInfo?.platformAdmin)
+  })
+)
 
 const scrollKnowledgeContentIntoView = () => {
   nextTick(() => {

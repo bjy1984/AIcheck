@@ -174,11 +174,25 @@ export const ADMIN_MENU_SECTIONS: AdminMenuSection[] = SECTION_DEFS.map((section
   items: section.items
 }))
 
+/* 平台分组只给平台管理员（平台院的管理员，开通特检院和院管理员）。各特检院的院管理员看不到。
+ * 不并进 ADMIN_MENU_SECTIONS：院管理员的后台仍是原来那一棵树。 */
+export const PLATFORM_MENU_SECTION: AdminMenuSection = {
+  title: '平台',
+  meta: '1 页',
+  items: [{ index: 'p01', label: '特检院管理', route: '/admin/institutes' }]
+}
+
+const menuSectionsFor = (platformAdmin: boolean) =>
+  platformAdmin ? [...ADMIN_MENU_SECTIONS, PLATFORM_MENU_SECTION] : ADMIN_MENU_SECTIONS
+
 /** 当前路径属于哪个菜单项。用于高亮，取最长匹配以免 /admin 命中所有子页。 */
-export const findAdminMenuItem = (path: string): AdminMenuItem | undefined => {
+export const findAdminMenuItem = (
+  path: string,
+  platformAdmin = false
+): AdminMenuItem | undefined => {
   const clean = String(path || '').split(/[?#]/, 1)[0]
   let best: AdminMenuItem | undefined
-  for (const section of ADMIN_MENU_SECTIONS) {
+  for (const section of menuSectionsFor(platformAdmin)) {
     for (const item of section.items) {
       if (clean === item.route || clean.startsWith(`${item.route}/`)) {
         if (!best || item.route.length > best.route.length) best = item
@@ -188,10 +202,14 @@ export const findAdminMenuItem = (path: string): AdminMenuItem | undefined => {
   return best
 }
 
-/** 给 StaticPageShell 的菜单：标出当前项。 */
-export const buildAdminMenuSections = (activeRoute: string): AdminMenuSection[] => {
-  const active = findAdminMenuItem(activeRoute)
-  return ADMIN_MENU_SECTIONS.map((section) => ({
+/** 给 StaticPageShell 的菜单：标出当前项。平台管理员多一个「平台」分组。 */
+export const buildAdminMenuSections = (
+  activeRoute: string,
+  options: { platformAdmin?: boolean } = {}
+): AdminMenuSection[] => {
+  const platformAdmin = Boolean(options.platformAdmin)
+  const active = findAdminMenuItem(activeRoute, platformAdmin)
+  return menuSectionsFor(platformAdmin).map((section) => ({
     ...section,
     items: section.items.map((item) => ({
       ...item,

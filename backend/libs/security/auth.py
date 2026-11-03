@@ -224,7 +224,20 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
     }
     safe_user["mustChangePassword"] = bool(safe_user.get("mustChangePassword"))
     safe_user["defaultPath"] = ROLE_DEFAULT_PATHS.get(safe_user.get("role"), ROLE_DEFAULT_PATHS["inspection"])
+    safe_user["platformAdmin"] = is_platform_admin(user)
     return safe_user
+
+
+def is_platform_admin(user: dict[str, Any] | None) -> bool:
+    """平台管理员：平台院（部署默认院）的管理员，负责开通特检院和院管理员（2026-11-02）。
+
+    配了 AICHECK_PLATFORM_ADMIN_USERNAMES 就只认名单里的人；没配时平台院的管理员都算。
+    各特检院自己的管理员（role 也是 admin）不算：他们的院不是平台院。
+    """
+    if not user or user.get("role") != "admin" or tenant_id_for_record(user) != configured_tenant_id():
+        return False
+    allowed = {name.strip() for name in os.getenv("AICHECK_PLATFORM_ADMIN_USERNAMES", "").split(",") if name.strip()}
+    return not allowed or str(user.get("username") or "") in allowed
 
 
 def user_by_username(username: str | None) -> dict[str, Any] | None:
