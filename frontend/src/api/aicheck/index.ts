@@ -4373,8 +4373,14 @@ export const {
   runProjectAutoReviewApi
 } = autoReviewApi
 
-export const { getInstitutesApi, createInstituteApi, setInstituteStatusApi, syncPlatformRulesApi } =
-  createPlatformApi(request, mutationHeaders)
+export const {
+  getInstitutesApi,
+  createInstituteApi,
+  setInstituteStatusApi,
+  syncPlatformRulesApi,
+  addInstituteAdminApi,
+  resetInstituteAdminPasswordApi
+} = createPlatformApi(request, mutationHeaders)
 
 export const {
   submitUserFeedbackApi,

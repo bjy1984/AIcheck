@@ -288,6 +288,7 @@ def knowledge_network(
 @router.get("/knowledge/sources")
 def list_knowledge_sources(request: Request, keyword: str | None = None, sourceType: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
     items = [versioned_record("knowledge-source", item) for item in repo.state["knowledge_sources"] if item.get("sourceType") != "rule"]
+    items += _platform_standard_rows(sources=True)
     if sourceType:
         items = [item for item in items if item["sourceType"] == sourceType]
     if status:
@@ -790,6 +791,8 @@ def list_knowledge_files(request: Request, keyword: str | None = None, projectId
         elif item_source_type != "project-file":
             continue
         items.append(repo.clone(item))
+    if sourceType == "standard":
+        items += _platform_standard_rows(sources=False)
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if nodeId:
@@ -1295,6 +1298,20 @@ def canonical_content_group_scope(
         retained_provenance.append(retained_item)
     scoped["provenance"] = retained_provenance
     return scoped
+
+
+def _platform_standard_rows(*, sources: bool) -> list[dict[str, Any]]:
+    """院里的知识库列表页带上平台的标准来源/标准文件（只读）；平台院自己不重复。"""
+    from libs import institutes
+    from libs.security.tenant import configured_tenant_id as platform_tenant_id
+    from libs.security.tenant import current_tenant_id
+
+    if current_tenant_id() == platform_tenant_id():
+        return []
+    standard_sources, standard_files = institutes.platform_standard_listing()
+    if sources:
+        return [versioned_record("knowledge-source", item) for item in standard_sources]
+    return standard_files
 
 
 def platform_standard_fallback(handler):

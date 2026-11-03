@@ -253,3 +253,54 @@ def test_a_new_institute_starts_blank_even_when_demo_data_is_on(monkeypatch):
     assert data(client.get("/api/projects", headers=PLATFORM))["items"], "平台院应当有演示项目"
     token = open_gdtj()
     assert data(client.get("/api/projects", headers=bearer(token)))["items"] == []
+
+
+def test_registration_apply_rejects_a_username_another_institute_already_uses():
+    token = open_gdtj()
+    project = data(client.post("/api/projects", headers=bearer(token, "gd-p2"), json={
+        "name": "广东院注册试点二", "inspectionOrgName": "广东特检院"}))
+    project_id = (project.get("project") or project)["id"]
+    link = data(client.post(f"/api/projects/{project_id}/registration-links", headers=bearer(token, "gd-link2"), json={}))
+    # 平台院已有的用户名
+    data(client.post("/api/admin/users", headers={**PLATFORM, "If-Match": "*", "Idempotency-Key": "pu2"},
+                     json={"username": "taken-name", "name": "平台乙", "role": "admin", "password": "plat-pass1"}))
+    clash = client.post(f"/api/registration-links/{link['token']}/apply", json={
+        "username": "taken-name", "role": "inspection", "password": "applicant-1"})
+    assert clash.json()["code"] != 0 and "其他单位" in clash.json()["message"]
+
+
+def test_platform_adds_a_second_admin_and_resets_an_admins_password():
+    token = open_gdtj()
+    data(client.post(f"/api/platform/institutes/{GD}/admins", headers={**PLATFORM, "Idempotency-Key": "add-2"},
+                     json={"username": "gd-admin-2", "name": "广东院管理员乙", "password": "second-pass"}))
+    assert data(login("gd-admin-2", "second-pass"))["user"]["tenantId"] == GD
+
+    reset = data(client.post(f"/api/platform/institutes/{GD}/admins/gd-admin/reset-password",
+                             headers={**PLATFORM, "Idempotency-Key": "reset-1"}, json={"password": "reset-pass1"}))
+    assert reset["mustChangePassword"] is True
+    # 已登录的会话立即失效，旧密码不行，新密码能登但要先改
+    assert client.get("/api/auth/me", headers=bearer(token)).json()["code"] != 0
+    assert code_of(login("gd-admin", "gd-secret-1")) != 0
+    assert data(login("gd-admin", "reset-pass1"))["user"]["mustChangePassword"] is True
+
+    # 院管理员调不了这两个接口
+    other = data(login("gd-admin-2", "second-pass"))["token"]
+    assert code_of(client.post(f"/api/platform/institutes/{GD}/admins", headers=bearer(other),
+                               json={"username": "x-admin"})) != 0
+    assert code_of(client.post(f"/api/platform/institutes/{GD}/admins/gd-admin/reset-password",
+                               headers=bearer(other), json={})) != 0
+
+
+def test_institute_knowledge_pages_list_platform_standards_read_only_and_never_project_files():
+    _seed_platform_knowledge()
+    token = open_gdtj()
+    sources = {row["id"]: row for row in data(client.get("/api/knowledge/sources", headers=bearer(token)))["items"]}
+    assert sources["KS-STANDARD-RULES"]["sharedFromPlatform"] is True
+    assert "KS-PROJECT-FILE" not in sources
+    standards = data(client.get("/api/knowledge/project-files", headers=bearer(token), params={"sourceType": "standard"}))
+    assert [row["id"] for row in standards["items"]] == ["KF-STD-1"] and standards["items"][0]["sharedFromPlatform"]
+    project_files = data(client.get("/api/knowledge/project-files", headers=bearer(token)))
+    assert all(row["id"] != "KF-PROJ-1" for row in project_files["items"])
+    # 平台院自己看不到重复的
+    platform_sources = [row["id"] for row in data(client.get("/api/knowledge/sources", headers=PLATFORM))["items"]]
+    assert platform_sources.count("KS-STANDARD-RULES") == 1

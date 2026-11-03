@@ -13,6 +13,8 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElOption,
+  ElSelect,
   ElTable,
   ElTableColumn,
   ElTag
@@ -22,7 +24,9 @@ import {
   createInstituteApi,
   getInstitutesApi,
   setInstituteStatusApi,
-  syncPlatformRulesApi
+  syncPlatformRulesApi,
+  addInstituteAdminApi,
+  resetInstituteAdminPasswordApi
 } from '@/api/aicheck'
 import type { Institute } from '@/api/aicheck/platform'
 import { useUserStoreWithOut } from '@/store/modules/user'
@@ -156,6 +160,69 @@ const syncRules = async () => {
   }
 }
 
+/* 院管理员：再加一个，或者忘了密码时重置（下次登录必须先改，已登录的会话立即失效） */
+const adminDialog = ref<'add' | 'reset' | null>(null)
+const adminTarget = ref<Institute | null>(null)
+const adminSaving = ref(false)
+const adminError = ref('')
+const adminForm = reactive({ username: '', name: '', password: '' })
+let adminKey = ''
+
+const openAdminDialog = (mode: 'add' | 'reset', item: Institute) => {
+  adminDialog.value = mode
+  adminTarget.value = item
+  Object.assign(adminForm, {
+    username: mode === 'reset' ? item.adminUsernames[0] || '' : '',
+    name: '',
+    password: ''
+  })
+  adminError.value = ''
+  adminKey = `institute-admin-${mode}-${item.id}-${Date.now()}`
+}
+
+const submitAdminDialog = async () => {
+  const target = adminTarget.value
+  if (!target || !adminDialog.value) return
+  if (!adminForm.username.trim()) {
+    adminError.value = adminDialog.value === 'add' ? '请填写院管理员用户名。' : '请选择院管理员。'
+    return
+  }
+  if (adminForm.password && adminForm.password.length < 6) {
+    adminError.value = '密码至少 6 位，或留空使用系统默认初始密码。'
+    return
+  }
+  adminSaving.value = true
+  adminError.value = ''
+  try {
+    if (adminDialog.value === 'add') {
+      await addInstituteAdminApi(
+        target.id,
+        {
+          username: adminForm.username.trim(),
+          name: adminForm.name.trim() || undefined,
+          password: adminForm.password || undefined
+        },
+        { idempotencyKey: adminKey }
+      )
+      ElMessage.success('已新增院管理员，首次登录须修改密码。')
+    } else {
+      await resetInstituteAdminPasswordApi(
+        target.id,
+        adminForm.username,
+        { password: adminForm.password || undefined },
+        { idempotencyKey: adminKey }
+      )
+      ElMessage.success('已重置。该管理员已登录的会话已失效，下次登录须修改密码。')
+    }
+    adminDialog.value = null
+    await load()
+  } catch (error) {
+    adminError.value = getAicheckErrorMessage(error, '操作失败，请稍后重试。')
+  } finally {
+    adminSaving.value = false
+  }
+}
+
 const rightCards = computed(() => [
   {
     title: '开通流程',
@@ -239,8 +306,20 @@ onMounted(load)
             <ElTableColumn label="开通时间" width="170">
               <template #default="{ row }">{{ row.builtin ? '平台自带' : row.createdAt }}</template>
             </ElTableColumn>
-            <ElTableColumn label="操作" width="90" fixed="right">
+            <ElTableColumn label="操作" width="210" fixed="right">
               <template #default="{ row }">
+                <template v-if="!row.builtin">
+                  <ElButton link type="primary" @click="openAdminDialog('add', row)"
+                    >加管理员</ElButton
+                  >
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="!row.adminUsernames.length"
+                    @click="openAdminDialog('reset', row)"
+                    >重置密码</ElButton
+                  >
+                </template>
                 <ElButton
                   v-if="!row.builtin"
                   link
@@ -296,6 +375,53 @@ onMounted(load)
       <template #footer>
         <ElButton @click="createOpen = false">取消</ElButton>
         <ElButton type="primary" :loading="creating" @click="submitCreate">开通</ElButton>
+      </template>
+    </ElDialog>
+
+    <ElDialog
+      :model-value="adminDialog !== null"
+      :title="adminDialog === 'add' ? '新增院管理员' : '重置院管理员密码'"
+      width="min(460px, calc(100vw - 32px))"
+      append-to-body
+      @update:model-value="(open: boolean) => !open && (adminDialog = null)"
+    >
+      <p v-if="adminTarget" class="muted">{{ adminTarget.name }}</p>
+      <ElForm label-position="top" @submit.prevent>
+        <ElFormItem v-if="adminDialog === 'add'" label="用户名">
+          <ElInput
+            v-model="adminForm.username"
+            maxlength="64"
+            placeholder="全平台唯一，用它直接登录"
+          />
+        </ElFormItem>
+        <ElFormItem v-if="adminDialog === 'add'" label="姓名（选填）">
+          <ElInput v-model="adminForm.name" maxlength="40" />
+        </ElFormItem>
+        <ElFormItem v-if="adminDialog === 'reset'" label="院管理员">
+          <ElSelect v-model="adminForm.username" style="width: 100%">
+            <ElOption
+              v-for="name in adminTarget?.adminUsernames || []"
+              :key="name"
+              :label="name"
+              :value="name"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem :label="adminDialog === 'add' ? '初始密码（选填）' : '新密码（选填）'">
+          <ElInput
+            v-model="adminForm.password"
+            show-password
+            autocomplete="new-password"
+            placeholder="至少 6 位；留空使用系统默认初始密码。下次登录须修改"
+          />
+        </ElFormItem>
+      </ElForm>
+      <p v-if="adminError" class="error" role="alert">{{ adminError }}</p>
+      <template #footer>
+        <ElButton @click="adminDialog = null">取消</ElButton>
+        <ElButton type="primary" :loading="adminSaving" @click="submitAdminDialog">
+          {{ adminDialog === 'add' ? '新增' : '重置' }}
+        </ElButton>
       </template>
     </ElDialog>
   </StaticPageShell>

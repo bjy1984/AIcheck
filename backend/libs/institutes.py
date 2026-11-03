@@ -178,3 +178,31 @@ def platform_standard_file_exists(file_id: str) -> bool:
             (row for row in state.get("knowledge_sources") or [] if row.get("id") == file.get("sourceId")), {}
         )
     return is_standard_knowledge_file({**file, "sourceType": file.get("sourceType") or source.get("sourceType")})
+
+
+def platform_standard_listing() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """平台院的标准来源和标准文件（只读副本，标 sharedFromPlatform），给院里的知识库列表页用。
+
+    只取标准：平台院知识库里的项目文件来源和项目文件不出平台院。
+    """
+    from libs.knowledge_retrieval import is_project_file_source, is_standard_knowledge_file
+
+    with platform_scope() as state:
+        sources = {row.get("id"): row for row in state.get("knowledge_sources") or [] if isinstance(row, dict)}
+        standard_sources = [
+            {**repo.clone(row), SHARED_FROM_PLATFORM_FLAG: True}
+            for row in sources.values()
+            if row.get("sourceType") == "standard" and not is_project_file_source(row)
+        ]
+        standard_files = [
+            {**repo.clone(row), SHARED_FROM_PLATFORM_FLAG: True}
+            for row in state.get("knowledge_files") or []
+            if isinstance(row, dict)
+            and is_standard_knowledge_file(
+                {**row, "sourceType": row.get("sourceType") or (sources.get(row.get("sourceId")) or {}).get("sourceType")}
+            )
+        ]
+    return standard_sources, standard_files
+
+
+SHARED_FROM_PLATFORM_FLAG = "sharedFromPlatform"

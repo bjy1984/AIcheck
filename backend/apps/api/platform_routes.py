@@ -17,7 +17,12 @@ from libs import institutes
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import flush_state, repo
-from libs.security.auth import DEFAULT_INITIAL_PASSWORD, is_platform_admin, password_strength_errors
+from libs.security.auth import (
+    DEFAULT_INITIAL_PASSWORD,
+    hash_password,
+    is_platform_admin,
+    password_strength_errors,
+)
 from libs.security.tenant import configured_tenant_id as platform_tenant_id
 
 platform_router = APIRouter()
@@ -43,6 +48,27 @@ def _institute_view(row: dict[str, Any]) -> dict[str, Any]:
         "adminUsernames": sorted(str(user.get("username")) for user in users if user.get("role") == "admin"),
         "projectCount": projects,
     }
+
+
+def _add_institute_admin(state: dict[str, Any], username: str, name: str, password: str, org: dict[str, Any] | None,
+                         *, audit_action: str) -> dict[str, Any]:
+    """在当前院（调用方已切进 tenant_scope）建一个院管理员并落库。"""
+    admin = api.build_admin_user_record({"username": username, "role": "admin", "name": name, "password": password}, org=org)
+    admin["authVersion"] = 1
+    # 平台定的初始密码平台知道：院管理员首次登录必须先改成只有自己知道的
+    admin["mustChangePassword"] = True
+    state.setdefault("users", []).insert(0, admin)
+    api.upsert_admin_config_user(admin)
+    repo.add_audit(audit_action, "User", admin["id"])
+    flush_state({"users", "audit_logs"}, selected_singleton_keys={"admin_config"})
+    return admin
+
+
+def _institute_or_error(request: Request, tenant_id: str):
+    institute = institutes.find_institute(tenant_id)
+    if institute is None:
+        return None, fail(errors.NOT_FOUND, request, message="没有这个特检院（平台院的管理员在「组织用户」里管理）。")
+    return institute, None
 
 
 @platform_router.get("/platform/institutes")
@@ -88,16 +114,8 @@ def create_platform_institute(
             org = {"id": f"ORG-{code}", "name": name, "type": "inspection", "contactName": "", "contactPhone": "",
                    "status": "启用", "projectCount": 0, "updatedAt": server_time(), "revision": 1}
             api.admin_org_units().insert(0, org)
-            admin = api.build_admin_user_record({"username": username, "role": "admin",
-                                                 "name": str(body.get("adminName") or username), "password": password},
-                                                org=org)
-            admin["authVersion"] = 1
-            # 平台定的初始密码平台知道：院管理员首次登录必须先改成只有自己知道的
-            admin["mustChangePassword"] = True
-            state.setdefault("users", []).insert(0, admin)
-            api.upsert_admin_config_user(admin)
-            repo.add_audit("平台开通特检院并建院管理员", "User", admin["id"])
-            flush_state({"users", "audit_logs"}, selected_singleton_keys={"admin_config"})
+            _add_institute_admin(state, username, str(body.get("adminName") or username), password, org,
+                                 audit_action="平台开通特检院并建院管理员")
         with institutes.platform_scope() as state:
             state.setdefault(institutes.INSTITUTES, []).append(institute)
             institutes.save_in_current_tenant(institutes.INSTITUTES, institute)
@@ -157,3 +175,80 @@ def sync_platform_rules_to_institutes(
         return ok({"results": results, "auditLogId": audit_id}, request)
 
     return api.idempotent(request, idempotency_key, produce, fingerprint_source={"body": body})
+
+
+@platform_router.post("/platform/institutes/{tenant_id}/admins")
+def add_platform_institute_admin(
+    request: Request,
+    tenant_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """给特检院再加一个院管理员（原来只能在开通时建一个）。"""
+    if error := _guard(request):
+        return error
+    institute, error = _institute_or_error(request, tenant_id)
+    if error:
+        return error
+    username = str(body.get("username") or "").strip()
+    if not username:
+        return fail(errors.VALIDATION_ERROR, request, message="请填写院管理员用户名。")
+    if conflict := institutes.username_conflict_message(username, for_tenant=tenant_id):
+        return fail(errors.CONFLICT, request, http_status=409, message=conflict)
+    password = str(body.get("password") or "").strip() or DEFAULT_INITIAL_PASSWORD
+    if problems := password_strength_errors(username, password):
+        return fail(errors.VALIDATION_ERROR, request, message="初始密码不符合要求。", data={"problems": problems})
+
+    def produce():
+        with institutes.tenant_scope(tenant_id) as state:
+            if any(str(user.get("username")) == username for user in state.get("users") or []):
+                return fail(errors.CONFLICT, request, http_status=409, message="该院已有这个用户名。")
+            org = next((item for item in api.admin_org_units() if item.get("id") == f"ORG-{institute['code']}"), None)
+            admin = _add_institute_admin(state, username, str(body.get("name") or username), password, org,
+                                         audit_action="平台为特检院新增院管理员")
+        institutes.register_username(username, tenant_id)
+        audit_id = repo.add_audit("新增院管理员", "Institute", tenant_id, after={"admin": username})
+        request.state.scoped_flush_records = dict
+        return ok({"admin": {"username": admin["username"], "name": admin.get("name")}, "auditLogId": audit_id}, request)
+
+    return api.idempotent(request, idempotency_key, produce, fingerprint_source={"tenantId": tenant_id, "body": body})
+
+
+@platform_router.post("/platform/institutes/{tenant_id}/admins/{username}/reset-password")
+def reset_platform_institute_admin_password(
+    request: Request,
+    tenant_id: str,
+    username: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """院管理员忘了密码：平台重置成新的初始密码，下次登录必须先改；已登录的会话立即失效。"""
+    if error := _guard(request):
+        return error
+    _, error = _institute_or_error(request, tenant_id)
+    if error:
+        return error
+    password = str(body.get("password") or "").strip() or DEFAULT_INITIAL_PASSWORD
+    if problems := password_strength_errors(username, password):
+        return fail(errors.VALIDATION_ERROR, request, message="新密码不符合要求。", data={"problems": problems})
+
+    def produce():
+        with institutes.tenant_scope(tenant_id) as state:
+            user = next((item for item in state.get("users") or []
+                         if str(item.get("username")) == username and item.get("role") == "admin"), None)
+            if user is None:
+                return fail(errors.NOT_FOUND, request, message="该院没有这个院管理员。")
+            user["passwordHash"] = hash_password(password)
+            user.pop("password", None)
+            user["mustChangePassword"] = True
+            # 版本号加一：旧令牌里的 ver 对不上，已登录的会话立即失效
+            user["authVersion"] = int(user.get("authVersion") or 0) + 1
+            user["updatedAt"] = server_time()
+            repo.add_audit("平台重置院管理员密码", "User", str(user.get("id")))
+            flush_state({"users", "audit_logs"}, selected_singleton_keys=set())
+        audit_id = repo.add_audit("重置院管理员密码", "Institute", tenant_id, after={"admin": username})
+        request.state.scoped_flush_records = dict
+        return ok({"username": username, "mustChangePassword": True, "auditLogId": audit_id}, request)
+
+    return api.idempotent(request, idempotency_key, produce,
+                          fingerprint_source={"tenantId": tenant_id, "username": username, "body": body})

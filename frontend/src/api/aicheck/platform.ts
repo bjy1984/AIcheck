@@ -51,6 +51,29 @@ export const createPlatformApi = (adapter: RequestAdapter, mutationHeaders: Head
       headers: mutationHeaders(options)
     }),
 
+  addInstituteAdminApi: (
+    tenantId: string,
+    payload: { username: string; name?: string; password?: string },
+    options?: { idempotencyKey?: string }
+  ): Promise<IResponse<{ admin: { username: string; name?: string }; auditLogId: string }>> =>
+    adapter.post({
+      url: `/api/platform/institutes/${encodeURIComponent(tenantId)}/admins`,
+      data: payload,
+      headers: mutationHeaders(options)
+    }),
+
+  resetInstituteAdminPasswordApi: (
+    tenantId: string,
+    username: string,
+    payload: { password?: string },
+    options?: { idempotencyKey?: string }
+  ): Promise<IResponse<{ username: string; mustChangePassword: boolean; auditLogId: string }>> =>
+    adapter.post({
+      url: `/api/platform/institutes/${encodeURIComponent(tenantId)}/admins/${encodeURIComponent(username)}/reset-password`,
+      data: payload,
+      headers: mutationHeaders(options)
+    }),
+
   setInstituteStatusApi: (
     tenantId: string,
     status: 'active' | 'disabled',

@@ -304,6 +304,9 @@ def _submit_registration_locked(request: Request, token: str, body: dict[str, An
         )
     if any(str(u.get("username")) == username for u in repo.state.get("users", [])):
         return fail(errors.CONFLICT, request, http_status=409, message="该用户名已存在。")
+    # 用户名全平台唯一：提交申请时就查，不要等审核通过才告诉人家名字被别的单位用了
+    if conflict := institutes.username_conflict_message(username):
+        return fail(errors.CONFLICT, request, http_status=409, message=conflict)
     if any(
         str(r.get("username")) == username and str(r.get("status")) == "待审核"
         for r in repo.state.get(REQUESTS, [])

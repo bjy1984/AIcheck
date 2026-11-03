@@ -17196,7 +17196,7 @@
     },
     "/api/mcp/data-services": {
       "delete": {
-        "operationId": "mcp_api_mcp_data_services_delete",
+        "operationId": "mcp_api_mcp_data_services_post",
         "responses": {
           "200": {
             "content": {
@@ -17210,7 +17210,7 @@
         "summary": "Mcp"
       },
       "get": {
-        "operationId": "mcp_api_mcp_data_services_delete",
+        "operationId": "mcp_api_mcp_data_services_post",
         "responses": {
           "200": {
             "content": {
@@ -17224,7 +17224,7 @@
         "summary": "Mcp"
       },
       "post": {
-        "operationId": "mcp_api_mcp_data_services_delete",
+        "operationId": "mcp_api_mcp_data_services_post",
         "responses": {
           "200": {
             "content": {
@@ -17936,6 +17936,145 @@
           }
         },
         "summary": "Sync Platform Rules To Institutes"
+      }
+    },
+    "/api/platform/institutes/{tenant_id}/admins": {
+      "post": {
+        "description": "给特检院再加一个院管理员（原来只能在开通时建一个）。",
+        "operationId": "add_platform_institute_admin_api_platform_institutes__tenant_id__admins_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Platform Institute Admin"
+      }
+    },
+    "/api/platform/institutes/{tenant_id}/admins/{username}/reset-password": {
+      "post": {
+        "description": "院管理员忘了密码：平台重置成新的初始密码，下次登录必须先改；已登录的会话立即失效。",
+        "operationId": "reset_platform_institute_admin_password_api_platform_institutes__tenant_id__admins__username__reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Platform Institute Admin Password"
       }
     },
     "/api/platform/institutes/{tenant_id}/status": {
@@ -42926,6 +43065,145 @@
           }
         },
         "summary": "Sync Platform Rules To Institutes"
+      }
+    },
+    "/platform/institutes/{tenant_id}/admins": {
+      "post": {
+        "description": "给特检院再加一个院管理员（原来只能在开通时建一个）。",
+        "operationId": "add_platform_institute_admin_platform_institutes__tenant_id__admins_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Platform Institute Admin"
+      }
+    },
+    "/platform/institutes/{tenant_id}/admins/{username}/reset-password": {
+      "post": {
+        "description": "院管理员忘了密码：平台重置成新的初始密码，下次登录必须先改；已登录的会话立即失效。",
+        "operationId": "reset_platform_institute_admin_password_platform_institutes__tenant_id__admins__username__reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Platform Institute Admin Password"
       }
     },
     "/platform/institutes/{tenant_id}/status": {
