@@ -228,8 +228,126 @@ def title_block_roles(parse_result: dict[str, Any]) -> dict[str, list[str]] | No
                 elif value is not None and value.strip() in _BLANK_CELLS:
                     blank.add(role)
     if not named and not blank:
+        named = _fragment_title_block_named_roles(parse_result)
+    if not named and not blank:
         return None
     return {"named": sorted(named - blank), "blank": sorted(blank)}
+
+
+# 栏名被 OCR 读歪时（「设计」读成「攻计」）看同一格里的英文缩写。单独的 REV 是「版次」，不算审核。
+_ROLE_ABBREVIATIONS = (
+    ("设计", re.compile(r"\b(?:DES|DESIGN(?:ED)?(?!\s*(?:PHASE|STAGE|INST))|PRE'?D|PREP(?:ARED)?|DRAWN)\b", re.IGNORECASE)),
+    ("校核", re.compile(r"\b(?:CHKD|CHK|CHECKED)\b", re.IGNORECASE)),
+    ("审核", re.compile(r"\b(?:REVD|REVIEWED)\b", re.IGNORECASE)),
+)
+# 图签里「编制」就是设计栏（GDLNG-002 说明书首页「编制 DESIGN」）
+_ROLE_ALIASES = {"编制": "设计"}
+_ROLE_CELL_WORDS = sorted({*_TITLE_ROLES, *_ROLE_ALIASES, "专业负责", "项目负责"}, key=len, reverse=True)
+# 图签人名的首字。逐格成段的扫描件里，「材质」「序号」「施工单位」这类表头也是两到四个汉字，
+# 光看字数会被当成人名（2026-11-02 生产 86 份设计文件试跑）；首字是常见姓、结尾不是字段词才算。
+_COMMON_SURNAMES = frozenset(
+    "王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾"
+    "夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤常温康施文牛樊葛邢安齐易乔伍庞颜倪庄聂章鲁岳翟殷詹申欧"
+    "耿关兰焦俞左柳甘祝包宁尚符舒阮柯纪梅童凌毕单季裴霍涂成苗谷盛曲翁冉骆蓝路游辛靳管柴蒙鲍华喻祁蒲房滕屈饶解牟艾尤阳时穆农司卓古吉缪简车项连芦麦褚娄窦戚岑景党宫费卜冷晏席卫米柏宗瞿桂全佟应臧闵苟邬边卞姬师和仇栾隋商刁沙荣巫寇桑郎甄丛仲虞敖巩明佘池查麻苑迟邝"
+)
+_NOT_NAME_TAIL_RE = re.compile(r"(?:单位|日期|压力|温度|厚度|材质|型号|规格|名称|编号|数量|等级)$")
+
+
+def _looks_like_person_name(text: str) -> bool:
+    name = _cjk_label(text)
+    return bool(
+        _PERSON_NAME_RE.match(name) and name not in _TITLE_WORDS and name not in _ROLE_ALIASES
+        and name[0] in _COMMON_SURNAMES and not _NOT_NAME_TAIL_RE.search(name)
+        and not re.search(r"[A-Za-z0-9]", text)
+    )
+
+
+def _fragment_label_roles(text: str, bbox: list[float]) -> list[tuple[str, float]]:
+    """一个文字片段若是图签栏名格，给出 [(角色, 角色在格内的大致横坐标)]；不是栏名格返回 []。
+
+    格子里的汉字去掉角色词（含「专业负责」「项目负责」）后必须一个不剩：「设计单位」「设计压力」「批准日期」
+    是字段名，不是签字栏。
+    """
+    cjk = re.sub(r"[^一-龥]", "", text)  # 只看汉字：「设计 PRE•D校核」里的「•」不算剩余
+    remainder = cjk
+    for word in _ROLE_CELL_WORDS:
+        remainder = remainder.replace(word, "")
+    x0, x1 = float(bbox[0]), float(bbox[2])
+    roles: list[tuple[str, float]] = []
+    if cjk and not remainder:
+        for word in _ROLE_CELL_WORDS:
+            index = text.find(word)
+            role = _ROLE_ALIASES.get(word, word)
+            if index >= 0 and role in _TITLE_ROLES:
+                roles.append((role, x0 + (index + len(word) / 2) / max(len(text), 1) * (x1 - x0)))
+    elif len(cjk) <= 2 and len(text.strip()) <= 12:  # 只认短格子，「…DESIGN INSTITUTE…」那种整句不算
+        for role, pattern in _ROLE_ABBREVIATIONS:
+            if pattern.search(text):
+                roles.append((role, (x0 + x1) / 2))
+                break
+    return roles
+
+
+def _match_title_names(
+    labels: list[tuple[str, float, Any]], names: list[tuple[str, Any]], direction: int
+) -> dict[str, str]:
+    """栏名下方（direction>0）或上方的人名配到各栏；一个人名只配一栏，按横向距离由近到远分，
+    免得「校核」「审核」都配到同一个人。"""
+    pairs: list[tuple[float, int, int]] = []
+    for label_index, (_, x, (_, y0, _, y1)) in enumerate(labels):
+        height = max(float(y1) - float(y0), 1.0)
+        for name_index, (_, (nx0, ny0, nx1, ny1)) in enumerate(names):
+            center_y = (float(ny0) + float(ny1)) / 2
+            if direction > 0 and not (float(y1) - 0.3 * height <= center_y <= float(y1) + 2.5 * height):
+                continue
+            if direction < 0 and not (float(y0) - 2.5 * height <= center_y <= float(y0) + 0.3 * height):
+                continue
+            dx = abs((float(nx0) + float(nx1)) / 2 - x)
+            if dx <= float(nx1) - float(nx0):
+                pairs.append((dx, label_index, name_index))
+    found: dict[str, str] = {}
+    used_labels: set[int] = set()
+    used_names: set[int] = set()
+    for _, label_index, name_index in sorted(pairs):
+        role = labels[label_index][0]
+        if label_index in used_labels or name_index in used_names or role in found:
+            continue
+        used_labels.add(label_index)
+        used_names.add(name_index)
+        found[role] = names[name_index][0]
+    return found
+
+
+def _fragment_title_block_named_roles(parse_result: dict[str, Any]) -> set[str]:
+    """没有结构化表格时，按文字片段坐标认图签：栏名正下方（或正上方）一两行里横向最近的人名。
+
+    2026-11-02 生产 GDLNG-002 节点 4 的 Y-05：MinerU 没出表格，图签逐格成段——「攻计 PRE'D」「校核」「CHKD 审核」
+    一行，下一行「胡喜生」「方原欢」「杨道红」逐列对齐。原来一个角色都认不出，单张图纸又没有图签兜底，
+    整张图被判「缺签字」。打印的姓名仍只说明栏里有人，不当签字（见 evaluate_design_document_approval）。
+    """
+    fragments = [
+        item for item in parse_result.get("fragments") or []
+        if isinstance(item, dict) and isinstance(item.get("bbox"), (list, tuple)) and len(item["bbox"]) == 4
+    ]
+    named: set[str] = set()
+    for page_no in sorted({int(item.get("pageNo") or 1) for item in fragments}):
+        page = [item for item in fragments if int(item.get("pageNo") or 1) == page_no]
+        labels = [
+            (role, x, item["bbox"])
+            for item in page
+            for role, x in _fragment_label_roles(str(item.get("text") or ""), item["bbox"])
+        ]
+        names = [
+            (_cjk_label(item.get("text")), item["bbox"])
+            for item in page
+            if _looks_like_person_name(str(item.get("text") or ""))
+        ]
+        if not labels or not names:
+            continue
+
+        below, above = _match_title_names(labels, names, 1), _match_title_names(labels, names, -1)
+        named.update(below if len(below) >= len(above) else above)
+    return named
 
 
 def classify_design_page(page: dict[str, Any]) -> str | None:
@@ -373,6 +491,8 @@ def build_design_business_facts(
                 "bodyUploaded": True,
                 "parsed": parsed_ok,
                 "signatureRoles": roles,
+                # 单张图纸也看图签：原来只有整本拆出的文件才有，没读到签字记录就直接判「缺签字」
+                "titleBlockRoles": title_block_roles(parse_result) if parsed_ok else None,
                 "sealTexts": [item for item in _seal_texts(parse_result) if item.strip()] if parsed_ok else [],
                 "coveredPipelineIds": covered_pipeline_ids(parse_result, known_pipeline_ids or set()) if parsed_ok else [],
                 "evidenceRefs": [{"documentVersionId": version_id, "pageNo": page_no, "quotedText": file_name}],

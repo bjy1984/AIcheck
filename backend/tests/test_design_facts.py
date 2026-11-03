@@ -360,3 +360,52 @@ def test_title_block_name_read_cell_by_cell_classifies_a_scanned_layout_drawing(
     assert classify_design_page(parse) == "pipeline_layout_drawing"
     # 「图名」后面只有栏名和工程名、没有像图名的格子时，不硬认
     assert title_block_name({"fragments": [{"pageNo": 1, "text": text} for text in cells[:6]]}) == ""
+
+
+def _cell(text: str, x0: float, y0: float, x1: float, y1: float) -> dict:
+    return {"pageNo": 1, "text": text, "bbox": [x0, y0, x1, y1]}
+
+
+def test_scanned_title_block_read_cell_by_cell_finds_names_under_each_role() -> None:
+    """2026-11-02 生产 GDLNG-002 节点 4 的 Y-05（坐标取自原 OCR）：MinerU 没出表格，图签逐格成段，
+    「设计」读成「攻计」；原来一个角色都认不出，单张图纸又没有图签兜底，整张图被判缺签字。"""
+    from libs.review_orchestrator.design_facts import title_block_roles
+    from libs.review_tools.business_tools import evaluate_design_document_approval
+
+    cells = [
+        _cell("图名", 3329, 2075, 3470, 2175), _cell("设讨阶段", 4732, 2075, 4964, 2159),
+        _cell("工程名称", 1278, 2142, 1585, 2249), _cell("卸车台配管平面图", 3793, 2173, 4359, 2293),
+        _cell("DESIGN PHASE", 4700, 2200, 4900, 2260),  # 设计阶段，不是设计栏
+        _cell("设计压力", 300, 2360, 500, 2420), _cell("材质", 300, 2470, 450, 2560),  # 字段名和表头，不是签字栏和人名
+        _cell("攻计 PRE'D", 1270, 2357, 1620, 2424), _cell("校核", 1619, 2365, 1777, 2424),
+        _cell("CHKD 审核", 1777, 2357, 2059, 2441), _cell("APPR 专业负责CHF-项目负责P.Q审定 AUTPD", 2142, 2365, 3205, 2466),
+        _cell("胡喜生", 1287, 2465, 1519, 2565), _cell("方原欢", 1619, 2473, 1851, 2574),
+        _cell("杨道红", 1959, 2482, 2184, 2574), _cell("陶建生", 2291, 2490, 2499, 2574),
+        _cell("杨道红", 2615, 2490, 2831, 2582),
+        _cell("This drawing is the property of GUANGDONG XINGRAN PETROCHEMICAL DESIGN INSTITUTE", 1408, 1526, 4942, 1742),
+    ]
+    page = {"fragments": cells, "tables": []}
+    # 审定那一格在「专业负责…审定」整段的右端，离下面的名字超过一个名字宽，不硬配
+    assert title_block_roles(page) == {"named": ["审核", "校核", "设计"], "blank": []}
+
+    # 只有栏名、下面没有人名：认不出就是认不出，不猜
+    assert title_block_roles({"fragments": cells[:10], "tables": []}) is None
+    # 一个人名只配一栏：两栏挨着、下面只有一个名字时，只算离得近的那一栏
+    crowded = {"fragments": [_cell("校核", 1000, 100, 1100, 160), _cell("审核", 1120, 100, 1220, 160),
+                             _cell("杨道红", 1130, 170, 1260, 230)], "tables": []}
+    assert title_block_roles(crowded) == {"named": ["审核"], "blank": []}
+
+    state = {
+        "documents": [{"id": "D-Y05", "projectId": "P-1", "currentVersionId": "V-Y05", "fileName": "IMG_6524.png",
+                       "materialTypeCode": "design_document"}],
+        "versions": [],
+        "ocr_parse_results": [{"documentVersionId": "V-Y05", "status": "success", "tables": [], "fragments": cells}],
+    }
+    run = {"projectId": "P-1", "nodeId": 4, "inputDocumentVersionIds": ["V-Y05"]}
+    documents = build_design_business_facts(state, run)["designDocuments"]["documents"]
+    assert documents[0]["documentType"] == "pipeline_layout_drawing"
+    approval = evaluate_design_document_approval({"approvalMode": "three_level", "documents": documents,
+                                                  "targetDocumentTypes": ["pipeline_layout_drawing"],
+                                                  "requiredRoles": ["设计", "校核", "审核"]})
+    assert approval["result"] == "human_review_required", "图签有打印的姓名、没有签字记录：交人看，不判缺签字"
+    assert approval["documentResults"][0]["titleBlock"]["printedNameOnlyRoles"] == ["设计", "校核", "审核"]
