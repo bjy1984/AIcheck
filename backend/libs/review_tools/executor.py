@@ -188,8 +188,10 @@ def settle_evidence_trace_items(plan: list[dict[str, Any]], atomic_results: list
     """
     tools_by_id = {str(item.get("atomicCheckId")): set(item.get("tools") or []) for item in plan}
     trace_ids = {identity for identity, tools in tools_by_id.items() if tools and tools <= _EVIDENCE_TRACE_TOOLS}
+    # 已判不符合也算「定了」：追溯项核的是证据能否落地，ECD202 节点 9 的标准答案 01 不符合、02 照样符合
     unsettled = [item["atomicCheckId"] for item in atomic_results
-                 if str(item.get("atomicCheckId")) not in trace_ids and item.get("result") not in {"passed", "not_applicable"}]
+                 if str(item.get("atomicCheckId")) not in trace_ids
+                 and item.get("result") in {"evidence_insufficient", "human_review_required", "execution_error"}]
     if not unsettled:
         return
     for item in atomic_results:
@@ -386,6 +388,7 @@ def build_tool_arguments(
         special = nested_dict(facts, "designSpecialRequirements")
         fixed_clauses = nested_dict(facts, "fixedClauses")
         arguments.setdefault("requirements", special.get("domains") or {})
+        arguments.setdefault("misappliedStandards", special.get("misappliedStandards") or [])
         arguments.setdefault(
             "standardRules",
             fixed_clauses.get("designSpecialRequirementRules") or {},

@@ -397,3 +397,13 @@ def test_只做证据追溯的原子项_别的项没定时不判符合():
     settled = [{"atomicCheckId": "AC-R01-03", "result": "passed"}, {"atomicCheckId": "AC-R01-05", "result": "passed"}]
     settle_evidence_trace_items(plan, settled)
     assert settled[1]["result"] == "passed"
+
+
+def test_已判不符合的项不挡追溯项():
+    from libs.review_tools.executor import settle_evidence_trace_items
+
+    plan = [{"atomicCheckId": "AC-R09-01", "tools": ["evaluate_design_special_requirements"]},
+            {"atomicCheckId": "AC-R09-02", "tools": ["locate_evidence_fragment", "validate_evidence_grounding"]}]
+    results = [{"atomicCheckId": "AC-R09-01", "result": "failed"}, {"atomicCheckId": "AC-R09-02", "result": "passed"}]
+    settle_evidence_trace_items(plan, results)
+    assert results[1]["result"] == "passed"

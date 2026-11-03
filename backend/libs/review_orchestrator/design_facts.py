@@ -972,7 +972,44 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
         standard_refs,
         source,
     )
-    return {"domains": {"ndt": ndt, "corrosion": corrosion, "pressureTest": pressure_test, "leakTest": leak_test}, "standardRefs": standard_refs}
+    return {"domains": {"ndt": ndt, "corrosion": corrosion, "pressureTest": pressure_test, "leakTest": leak_test},
+            "standardRefs": standard_refs, "misappliedStandards": misapplied_medium_standards(standard_refs, pipelines)}
+
+
+# 只适用于特定介质的标准。GB/T 20801.5-2025 是《压力管道规范 工业管道 第5部分：氢用管道》
+# （官方平台核实，2026-05-01 实施；2020 版第 5 部分是「检验与试验」，号相同、对象不同）。
+# ECD202 设计说明 4.3/4.4.1 把它当成甲醇等有机液体管道的检验、试压依据（标准答案判不符合）。
+_MEDIUM_SPECIFIC_STANDARDS = {
+    "STD-GBT-20801.5-2025": {"title": "压力管道规范 工业管道 第5部分：氢用管道", "medium": "氢"},
+}
+_HYDROGEN_RE = re.compile(r"氢气|液氢|含氢|^氢$|^H\s*[2₂]$", re.IGNORECASE)
+
+
+def _pipeline_media(pipeline: dict[str, Any]) -> list[str]:
+    """一条管线读到的介质；行间冲突被置空时取冲突各方的值（都不是氢才算不是氢）。"""
+    if pipeline.get("medium"):
+        return [str(pipeline["medium"]).strip()]
+    return [str(item.get("value")).strip() for conflict in pipeline.get("fieldConflicts") or []
+            if conflict.get("field") == "medium" for item in conflict.get("sources") or [] if item.get("value")]
+
+
+def misapplied_medium_standards(standard_refs: list[str], pipelines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """设计引用了只适用于某种介质的标准，而本工程每条管线的介质都读得出、且都不是那种介质。
+
+    有一条管线介质读不出就不下结论（可能就是氢）；只说「引用对象不符」，不替设计挑该引哪一本。
+    """
+    findings = []
+    for ref in standard_refs:
+        spec = _MEDIUM_SPECIFIC_STANDARDS.get(ref)
+        if not spec or not pipelines:
+            continue
+        media = [_pipeline_media(item) for item in pipelines]
+        if any(not values for values in media):
+            continue
+        flat = sorted({value for values in media for value in values})
+        if not any(_HYDROGEN_RE.search(value) for value in flat):
+            findings.append({"standardRef": ref, "title": spec["title"], "requiredMedium": spec["medium"], "projectMedia": flat})
+    return findings
 
 
 def frozen_special_requirement_rules(business_pack_id: str | None = None) -> dict[str, Any]:

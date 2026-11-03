@@ -2043,6 +2043,15 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
             }
         )
 
+    # 引用了只适用于别种介质的标准当依据（ECD202：氢用管道标准用作甲醇管道的检验、试压依据）——
+    # 介质都读得出才会进来（design_facts.misapplied_medium_standards），是实质不合规
+    misapplied = list_of_dicts(arguments.get("misappliedStandards"))
+    if misapplied:
+        checks.append(check("standard_scope_matches_project_medium", False,
+                            [{"standardRef": item.get("standardRef"), "projectMedia": item.get("projectMedia")} for item in misapplied],
+                            [{"standardRef": item.get("standardRef"), "requiredMedium": item.get("requiredMedium")} for item in misapplied]))
+        domain_results.append({"domain": "standardApplicability", "result": "failed",
+                               "violations": [f"standard_medium_mismatch:{item.get('standardRef')}" for item in misapplied]})
     statuses = {item["result"] for item in domain_results}
     overall = "failed" if "failed" in statuses else (
         "evidence_insufficient" if "evidence_insufficient" in statuses else "passed"
