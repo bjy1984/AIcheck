@@ -88,6 +88,12 @@ def _human_confirmed_paths(state: dict[str, Any], review_run: dict[str, Any]) ->
     }
 
 
+def _content_keys(state: dict[str, Any]) -> dict[str, str]:
+    """版本号 → 文件内容哈希；同一份文件交两次（ECD202 的 01 与 03）只算一处出处。"""
+    return {str(version.get("id") or ""): str(version.get("hash") or version.get("id") or "")
+            for version in state.get("versions") or [] if isinstance(version, dict) and version.get("id")}
+
+
 def build_design_org_facts(state: dict[str, Any], review_run: dict[str, Any]) -> dict[str, Any]:
     """返回 {"designDocument": {...}} 或空 dict（输入里没有设计文件时）。"""
     project_id = str(review_run.get("projectId") or "")
@@ -103,6 +109,7 @@ def build_design_org_facts(state: dict[str, Any], review_run: dict[str, Any]) ->
     grade_sources: list[dict[str, Any]] = []
     grade_issues: list[str] = []
     parsed_design_versions: set[str] = set()
+    content_keys = _content_keys(state)
     for parse_result in latest_usable_selected_parses(state, review_run, expected_design_versions):
         version_id = str(parse_result.get("documentVersionId") or "")
         document = documents.get(version_id)
@@ -121,6 +128,9 @@ def build_design_org_facts(state: dict[str, Any], review_run: dict[str, Any]) ->
             field = candidates[0]
             grade_sources.append({
                 "value": next(iter(grades)), "documentId": document_id,
+                # 这份文件里读到这个级别的每一页（同内容的文件按哈希归一），供锚定门判「多处独立读到同值」
+                "locations": sorted({(content_keys.get(version_id, version_id), int(item.get("pageNo") or 0))
+                                     for item in candidates}),
                 "evidence": _evidence(
                     version_id, file_name, field.get("pageNo"), field.get("bbox"),
                     str(field.get("fieldValue") or field.get("value") or ""),
@@ -157,6 +167,18 @@ def build_design_org_facts(state: dict[str, Any], review_run: dict[str, Any]) ->
                     }
                     break
     grade_issues.extend(sorted(expected_design_versions - parsed_design_versions))
+    # 管道特性表里的「压力管道类别」是同一事实的另一处出处（ECD202 p32 八行 GC2，图签字段只在 p23）。
+    # 只取本节点输入的设计文件；只做佐证，不进 pipelineGrades，取值仍以结构化字段为准。
+    from libs.review_orchestrator.pipeline_facts import build_project_pipelines
+
+    table_grades = [
+        {"value": normalize_grade(item.get("pipelineGrade")),
+         "location": (content_keys.get(str(source.get("documentVersionId")), str(source.get("documentVersionId"))),
+                      int(source.get("pageNo") or 0))}
+        for item in build_project_pipelines(state, project_id, review_run=review_run)
+        for source in (item.get("source") or {},)
+        if str(source.get("documentVersionId") or "") in expected_design_versions and item.get("pipelineGrade")
+    ]
     confirmed = _human_confirmed_paths(state, review_run)
     for key, item in (("titleBlockOrganization", title_block), ("designSealOrganization", seal)):
         if item and FACT_PATHS[key] in confirmed:
@@ -167,6 +189,7 @@ def build_design_org_facts(state: dict[str, Any], review_run: dict[str, Any]) ->
         "pipelineGrades": list(dict.fromkeys(item["value"] for item in grade_sources)) if not grade_issues else [],
         "pipelineGradeIssues": grade_issues,
         "gradeSources": grade_sources,
+        "gradeTableLocations": table_grades,
         "evidence": [item["evidence"] for item in (title_block, seal) if item]
                     + [item["evidence"] for item in grade_sources],
         # 每处单位名配自己的那条证据与文件 id：两处名字常常一样，按引文包含去猜会互相串。

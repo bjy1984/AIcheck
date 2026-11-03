@@ -244,3 +244,108 @@ def test_设计章按事实路径确认后有分():
     assert seal["factPath"] == "designDocument.designSealOrganization"
     # 图签那条没确认，仍旧没分——一次确认只算一处。
     assert by_label["图签设计单位"]["confidenceUnavailable"] is True
+
+
+# ---- 2026-11-03「有佐证才放行」 ----
+
+def _gate(facts: dict) -> dict:
+    from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
+
+    judgment = facts["judgment"]
+    return validate_evidence_grounding({"facts": judgment["claimedFacts"], "evidenceRefs": judgment["evidenceRefs"]})
+
+
+def _with_grades(state: dict, *pages: int, duplicate_hash: bool = False) -> dict:
+    for page in pages:
+        state["ocr_parse_results"][0]["fields"].append({
+            "fieldCode": "pressure_pipe_level", "fieldName": "压力管道级别", "fieldValue": "GC2",
+            "pageNo": page, "bbox": [10, 20, 30, 40], "confidence": 0.0,
+        })
+    if duplicate_hash:
+        # 同一份施工图交两次：两个版本内容哈希相同
+        state["documents"].append({"id": "DOC-DWG2", "projectId": "P-1", "currentVersionId": "DV-DWG2",
+                                   "fileName": "施工图（重复）.pdf", "materialTypeCode": "design_document"})
+        state["versions"] = [{**item, "hash": "H1"} if item["id"] == "DV-DWG" else item for item in state["versions"]]
+        state["versions"].append({"id": "DV-DWG2", "documentId": "DOC-DWG2", "hash": "H1"})
+        state["ocr_parse_results"].append({**deepcopy(state["ocr_parse_results"][0]), "documentVersionId": "DV-DWG2"})
+    return state
+
+
+def test_级别在两页读到同值算有佐证():
+    facts = merge_certificate_facts(_with_grades(_state(), 23, 24), _run(), {})
+    grade = next(item for item in facts["judgment"]["claimedFacts"] if item.get("label") == "设计文件管道级别")
+    assert grade["corroboration"] == {"basis": "consistent_locations", "locationCount": 2}
+
+
+def test_只在一页读到的级别没有佐证_重复交的同一份文件不算第二处():
+    run = {**_run(), "inputDocumentVersionIds": ["DV-DWG", "DV-DWG2", "DV-LIC"]}
+    facts = merge_certificate_facts(_with_grades(_state(), 23, duplicate_hash=True), run, {})
+    grades = [item for item in facts["judgment"]["claimedFacts"] if item.get("label") == "设计文件管道级别"]
+    assert len(grades) == 2 and not any("corroboration" in item for item in grades)
+
+
+def test_与平台登记单位一致的单位名算有佐证_不一致的不算():
+    from libs.review_orchestrator.certificate_facts import (
+        _platform_registry_names,
+        _registry_corroboration,
+    )
+
+    certificate_facts = {"designLicense": {"certificates": [
+        {"platformVerification": {"outcome": "verified_match", "registryOrganizationName": "广东政和工程有限公司"}},
+        {"platformVerification": {"outcome": "verified_mismatch", "registryOrganizationName": "别的公司"}},
+    ]}}
+    names = _platform_registry_names(certificate_facts)
+    assert _registry_corroboration("广东政和工程 有限公司", names) == {"corroboration": {"basis": "platform_registry_match"}}
+    assert _registry_corroboration("别的公司", names) == {}
+    assert _registry_corroboration("齐政和工程有限公司", names) == {}
+
+
+def test_锚定门_有佐证的无分事实不再交人工_其余无分事实照旧():
+    facts = merge_certificate_facts(_with_grades(_state(), 23, 24), _run(), {})
+    claimed = facts["judgment"]["claimedFacts"]
+    assert _gate(facts)["result"] == "human_review_required", "图签/设计章/许可证仍无佐证"
+    for item in claimed:
+        item.setdefault("corroboration", {"basis": "platform_registry_match"})
+    gate = _gate(facts)
+    assert gate["result"] == "passed" and gate["facts"]["unscoredFacts"] == []
+    assert len(gate["facts"]["corroboratedFacts"]) == len(claimed)
+    # 门认不得的依据、或「多处」只有一处，都不算佐证
+    for item in claimed:
+        item["corroboration"] = {"basis": "consistent_locations", "locationCount": 1}
+    assert _gate(facts)["result"] == "human_review_required"
+    for item in claimed:
+        item["corroboration"] = {"basis": "llm_says_so"}
+    assert _gate(facts)["result"] == "human_review_required"
+
+
+def test_只有锚定门的原子项_门过了也不会判符合():
+    from libs.review_tools.executor import aggregate_atomic_results
+
+    assert aggregate_atomic_results([{"result": "passed", "resultRole": "evidence_gate"}]) == "evidence_insufficient"
+    assert aggregate_atomic_results([{"result": "passed", "resultRole": "evidence_gate"}, {"result": "failed"}]) == "failed"
+
+
+def _table_rows(monkeypatch, *rows: tuple[str, int, str]) -> None:
+    from libs.review_orchestrator import pipeline_facts
+
+    monkeypatch.setattr(pipeline_facts, "build_project_pipelines", lambda state, project_id, review_run=None: [
+        {"pipelineId": f"L{index}", "pipelineGrade": grade, "source": {"documentVersionId": version_id, "pageNo": page}}
+        for index, (version_id, page, grade) in enumerate(rows)])
+
+
+def test_图签只一页但特性表也写同一级别_算两处(monkeypatch):
+    # ECD202：结构化级别只在 p23，特性表 p32 八行都是 GC2
+    _table_rows(monkeypatch, ("DV-DWG", 32, "GC2"), ("DV-DWG", 32, "GC2"))
+    facts = merge_certificate_facts(_with_grades(_state(), 23), _run(), {})
+    grade = next(item for item in facts["judgment"]["claimedFacts"] if item.get("label") == "设计文件管道级别")
+    assert grade["corroboration"] == {"basis": "consistent_locations", "locationCount": 2}
+    assert facts["designDocument"]["pipelineGrades"] == ["GC2"], "特性表只作佐证，不改取值"
+
+
+def test_特性表读出别的级别或不在本节点输入里_不算佐证(monkeypatch):
+    _table_rows(monkeypatch, ("DV-DWG", 32, "GC1"))
+    facts = merge_certificate_facts(_with_grades(_state(), 23), _run(), {})
+    assert not any("corroboration" in item for item in facts["judgment"]["claimedFacts"] if item.get("label") == "设计文件管道级别")
+    _table_rows(monkeypatch, ("DV-OTHER", 32, "GC2"))
+    facts = merge_certificate_facts(_with_grades(_state(), 23), _run(), {})
+    assert not any("corroboration" in item for item in facts["judgment"]["claimedFacts"] if item.get("label") == "设计文件管道级别")

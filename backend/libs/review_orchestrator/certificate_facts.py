@@ -975,6 +975,30 @@ def _dedupe_claimed_facts(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return output
 
 
+def _platform_registry_names(certificate_facts: dict[str, Any]) -> set[str]:
+    """平台核验一致（verified_match）的许可证上登记的单位名，用来给设计文件上读到的单位名作佐证。"""
+    names: set[str] = set()
+    for namespace in certificate_facts.values():
+        for record in (namespace.get("certificates") or []) if isinstance(namespace, dict) else []:
+            verification = record.get("platformVerification") if isinstance(record, dict) else None
+            if isinstance(verification, dict) and verification.get("outcome") == "verified_match" and verification.get("registryOrganizationName"):
+                names.add(_registry_name_key(verification["registryOrganizationName"]))
+    return names
+
+
+def _registry_name_key(value: Any) -> str:
+    return re.sub(r"[\s（）()·]", "", str(value or ""))
+
+
+def _registry_corroboration(value: Any, registry_names: set[str]) -> dict[str, Any]:
+    # 2026-11-03 用户批的「有佐证才放行」：OCR 没给分的事实，与平台登记值逐字一致就算有佐证。
+    # 锚定门据此不再把它当无分事实；业务工具判不通过照样不通过，只有门的项也照样不通过
+    # （executor.aggregate_atomic_results 只认业务工具的结论）。
+    if _registry_name_key(value) in registry_names:
+        return {"corroboration": {"basis": "platform_registry_match"}}
+    return {}
+
+
 def merge_certificate_facts(
     state: dict[str, Any], review_run: dict[str, Any], business_facts: Any
 ) -> dict[str, Any]:
@@ -1005,6 +1029,13 @@ def merge_certificate_facts(
         if design_org:
             certificate_facts.update(design_org)
             judgment = certificate_facts.setdefault("judgment", {"claimedFacts": [], "evidenceRefs": []})
+            registry_names = _platform_registry_names(certificate_facts)
+            grade_sources = design_org["designDocument"].get("gradeSources") or []
+            table_grades = design_org["designDocument"].get("gradeTableLocations") or []
+            grade_locations = {tuple(location) for source in grade_sources for location in source.get("locations") or []}
+            grade_locations |= {tuple(item["location"]) for item in table_grades}
+            # 图签字段与特性表必须同一个级别，任何一处读出别的级别都不算佐证
+            grades_consistent = len({source["value"] for source in grade_sources} | {item["value"] for item in table_grades}) == 1
             for index, (key, label) in enumerate((("titleBlockOrganization", "图签设计单位"), ("designSealOrganization", "设计章单位")), 1):
                 value = design_org["designDocument"].get(key)
                 source = design_org["designDocument"].get("sources", {}).get(key)
@@ -1023,6 +1054,7 @@ def merge_certificate_facts(
                         "confidence": evidence.get("confidence"),
                         "confidenceUnavailable": bool(evidence.get("confidenceUnavailable")),
                         "conflicted": False,
+                        **_registry_corroboration(value, registry_names),
                         # 界面「核对无误」按字段回写；印章没有 fieldName，这里就没有可核的条目。
                         "fields": [
                             {
@@ -1048,6 +1080,8 @@ def merge_certificate_facts(
                     "confidence": evidence.get("confidence"),
                     "confidenceUnavailable": bool(evidence.get("confidenceUnavailable")),
                     "conflicted": False,
+                    **({"corroboration": {"basis": "consistent_locations", "locationCount": len(grade_locations)}}
+                       if grades_consistent and len(grade_locations) >= 2 else {}),
                     "fields": [{"fieldName": evidence["fieldName"],
                                 "documentVersionId": evidence["documentVersionId"],
                                 "documentId": source["documentId"],

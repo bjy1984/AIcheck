@@ -769,6 +769,19 @@ def check_pressure_test_report_consistency(arguments: dict[str, Any]) -> dict[st
     )
 
 
+_CORROBORATION_BASES = frozenset({"platform_registry_match", "consistent_locations"})
+
+
+def _corroboration_basis(fact: dict[str, Any]) -> str | None:
+    corroboration = fact.get("corroboration")
+    if not isinstance(corroboration, dict):
+        return None
+    basis = corroboration.get("basis")
+    if basis == "consistent_locations" and int(corroboration.get("locationCount") or 0) < 2:
+        return None
+    return basis if basis in _CORROBORATION_BASES else None
+
+
 def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
     facts = [item for item in arguments.get("facts") or [] if isinstance(item, dict)]
     refs = [item for item in arguments.get("evidenceRefs") or [] if isinstance(item, dict)]
@@ -776,6 +789,7 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
     ref_ids = {str(item.get("evidenceRefId") or item.get("id")) for item in refs if item.get("evidenceRefId") or item.get("id")}
     checks = []
     unscored: list[int] = []
+    corroborated_facts: list[int] = []
     for index, fact in enumerate(facts, 1):
         fact_refs = {str(item) for item in fact.get("evidenceRefIds") or []}
         confidence = decimal(fact.get("confidence"))
@@ -791,7 +805,12 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
         # 每个事实都判「置信度不够」，证书节点从结构上就不可能通过。
         # 现在：没分的事实不按低分判掉，也不冒充有分——位置齐、引文在，就交人工判断。
         confidence_unavailable = bool(fact.get("confidenceUnavailable"))
-        if confidence_unavailable:
+        # 2026-11-03「有佐证才放行」：没分但有独立佐证（与平台登记值一致 / 多处读到同值）的事实
+        # 不再交人工。佐证由事实构建方给（certificate_facts），门只认这两种依据。
+        corroborated = confidence_unavailable and _corroboration_basis(fact) is not None
+        if corroborated:
+            corroborated_facts.append(index)
+        elif confidence_unavailable:
             unscored.append(index)
         checks.extend(
             [
@@ -820,6 +839,7 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
             "evidenceRefCount": len(refs),
             "minConfidence": minimum,
             "unscoredFacts": unscored,
+            "corroboratedFacts": corroborated_facts,
             **({"reason": "provider_confidence_unavailable"} if status == "human_review_required" else {}),
         },
         checks=checks,
@@ -832,6 +852,7 @@ def validate_evidence_grounding(arguments: dict[str, Any]) -> dict[str, Any]:
         {
             **{key: fact.get(key) for key in ("factId", "label", "value", "documentVersionId", "factPath", "fields", "platformVerified") if key in fact},
             "scored": index not in unscored,
+            **({"corroboration": fact["corroboration"]} if index in corroborated_facts else {}),
             "evidence": [
                 {
                     "evidenceRefId": ref_id,
