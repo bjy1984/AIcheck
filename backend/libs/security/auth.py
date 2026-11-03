@@ -139,9 +139,19 @@ def hash_password(password: str) -> str:
     return f"pbkdf2_sha256${iterations}${salt}${digest}"
 
 
+PASSWORD_MIN_LENGTH = 6
+
+
 def password_strength_errors(username: str, password: str) -> list[str]:
-    """Accept any non-empty password; keep the shared validation entry point."""
-    return [] if password else ["口令不能为空"]
+    """口令只查长度，字符随意（自定义口令）；注册、改密、管理员建用户都走这一个入口。
+
+    2026-11-02 用户要求最短 6 位。
+    """
+    if not password:
+        return ["口令不能为空"]
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return [f"密码长度至少为 {PASSWORD_MIN_LENGTH} 位"]
+    return []
 
 
 def jwt_secret() -> str:

@@ -32,7 +32,10 @@ const form = reactive({
 
 const rules: FormRules = {
   currentPassword: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
-  newPassword: [{ required: true, message: '请输入新密码', trigger: 'blur' }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '密码至少 6 位', trigger: 'blur' }
+  ],
   confirmPassword: [
     { required: true, message: '请再次输入新密码', trigger: 'blur' },
     {
@@ -126,6 +129,7 @@ const logout = async () => {
             show-password
             autocomplete="new-password"
             aria-label="新密码"
+            placeholder="至少 6 位"
           />
         </ElFormItem>
         <ElFormItem label="确认新密码" prop="confirmPassword">

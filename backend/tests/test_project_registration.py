@@ -351,7 +351,7 @@ def test_不能自选管理员角色():
         assert _apply(token, username=f"applicant-{role}", role=role)["code"] != 0
 
 
-@pytest.mark.parametrize("password", ["1", "123456", "applicant-weak", "中文"])
+@pytest.mark.parametrize("password", ["123456", "applicant-weak", "中文口令六位"])
 def test_允许自由指定非空口令(password):
     token = _make_link()["data"]["token"]
     body = client.post(
@@ -690,3 +690,13 @@ def test_只能看到本项目的申请():
         f"/api/projects/{PROJECT_B}/registration-requests", headers=_headers("lead-b")
     ).json()
     assert all(item["projectId"] == PROJECT_B for item in body["data"]["items"])
+
+
+def test_短于六位的口令被拒():
+    token = _make_link()["data"]["token"]
+    body = client.post(
+        f"/api/registration-links/{token}/apply",
+        json={"username": "applicant-short", "role": "contractor", "password": "12345"},
+    ).json()
+    assert body["code"] != 0
+    assert body["data"]["problems"] == ["密码长度至少为 6 位"]

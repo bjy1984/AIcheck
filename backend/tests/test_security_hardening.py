@@ -177,7 +177,14 @@ def test_strict_mode_hides_mock_routes(monkeypatch) -> None:
     assert response.status_code == 404
 
 
-def test_admin_user_creation_accepts_short_password() -> None:
+def test_admin_user_creation_accepts_any_six_character_password() -> None:
+    # 自定义口令只要求最短 6 位（2026-11-02）：4 位被拒，6 位字符随意都能建
+    short = client.post(
+        "/api/admin/users",
+        headers={"If-Match": "*", "Idempotency-Key": "weak-user-short"},
+        json={"username": "weak-user", "name": "Weak", "role": "admin", "password": "weak"},
+    )
+    assert payload(short)["code"] != 0
     response = client.post(
         "/api/admin/users",
         headers={"If-Match": "*", "Idempotency-Key": "weak-user"},
@@ -185,13 +192,13 @@ def test_admin_user_creation_accepts_short_password() -> None:
             "username": "weak-user",
             "name": "Weak",
             "role": "admin",
-            "password": "weak",
+            "password": "weak12",
         },
     )
     assert payload(response)["code"] == 0
     user = next(u for u in repo.state["users"] if u.get("username") == "weak-user")
     from libs.security.auth import verify_password
-    assert verify_password("weak", user["passwordHash"])
+    assert verify_password("weak12", user["passwordHash"])
 
 
 def test_admin_user_created_with_the_default_password_must_change_it_first() -> None:
@@ -254,9 +261,14 @@ def test_disabled_missing_password_user_does_not_block_strict_startup(monkeypatc
     assert security_runtime_problems() == []
 
 
-@pytest.mark.parametrize("password", ["1", "123456", "Password123!", "secure-user", "中文"])
-def test_password_policy_accepts_any_nonempty_password(password: str) -> None:
+@pytest.mark.parametrize("password", ["123456", "Password123!", "secure-user", "中文口令六位"])
+def test_password_policy_accepts_any_password_of_six_or_more(password: str) -> None:
     assert password_strength_errors("secure-user", password) == []
+
+
+@pytest.mark.parametrize("password", ["1", "12345", "中文"])
+def test_password_policy_rejects_shorter_than_six(password: str) -> None:
+    assert password_strength_errors("secure-user", password) == ["密码长度至少为 6 位"]
 
 
 def test_password_policy_requires_password() -> None:

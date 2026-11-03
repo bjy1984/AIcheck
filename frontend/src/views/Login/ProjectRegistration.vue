@@ -99,6 +99,10 @@ const handleSubmit = async () => {
     ElMessage.warning('请填写口令。')
     return
   }
+  if (form.value.password.length < 6) {
+    ElMessage.warning('口令至少 6 位。')
+    return
+  }
   /* 两次口令不一致要在提交前拦住：交给服务端的话，申请提上去了但口令
      不是他以为的那个，等审核通过去登录才发现——那时已经改不了了。 */
   if (form.value.password !== form.value.confirm) {
@@ -175,6 +179,7 @@ const handleSubmit = async () => {
               type="password"
               show-password
               autocomplete="new-password"
+              placeholder="至少 6 位"
             />
           </ElFormItem>
           <ElFormItem label="确认口令">

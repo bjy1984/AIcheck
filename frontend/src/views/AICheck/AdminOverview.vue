@@ -2585,6 +2585,10 @@ const handleSaveUser = async () => {
   }
   // 新增时留空：后端用预设初始密码建账号，并要求首次登录先改密。
   const initialPassword = userForm.password.trim()
+  if (initialPassword && initialPassword.length < 6) {
+    ElMessage.warning('密码至少 6 位')
+    return
+  }
   userSaving.value = true
   userOperationError.value = ''
   try {
@@ -6115,8 +6119,8 @@ onMounted(() => {
               autocomplete="new-password"
               :placeholder="
                 userDialogMode === 'create'
-                  ? '留空则使用系统默认初始密码，用户首次登录须改密'
-                  : '留空则不修改；填写后用户须首次改密'
+                  ? '至少 6 位；留空则使用系统默认初始密码，用户首次登录须改密'
+                  : '至少 6 位；留空则不修改，填写后用户须首次改密'
               "
             />
           </ElFormItem>
