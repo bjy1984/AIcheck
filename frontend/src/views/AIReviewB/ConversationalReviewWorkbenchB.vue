@@ -1395,10 +1395,41 @@ const waitForAssistantCompletion = async (
 /** 本地占位消息的 id 前缀。服务端回来后按这个前缀清掉。 */
 const PENDING_MESSAGE_PREFIX = 'local-pending-'
 
+/** 回车发送、Shift+回车换行。拼音输入法选字时的回车（isComposing / 229）是确认候选词，不能当发送。 */
+const onComposerEnter = (event: Event | KeyboardEvent) => {
+  const key = event as KeyboardEvent
+  if (key.shiftKey || key.isComposing || key.keyCode === 229) return
+  key.preventDefault()
+  void sendMessage()
+}
+
 const sendMessage = async (preset?: string) => {
   activePane.value = 'assistant'
   const text = (preset || composer.value).trim()
-  if (!text || !session.value?.id || sending.value) return
+  if (sending.value) return
+  if (!text) {
+    ElMessage.info('请先输入要问的问题。')
+    return
+  }
+  /* 会话没建起来时原来直接 return——线上「点了发送没反应」就是这条：
+   * 建会话用的是静默请求（失败不弹提示），按钮看起来正常，点了什么都不发生。
+   * 现在先补建一次；还是没有就把原因说出来。 */
+  if (!session.value?.id) {
+    if (!activeProjectId.value || !activeNodeId.value) {
+      ElMessage.warning('请先选择要审查的项目节点，再提问。')
+      return
+    }
+    try {
+      await ensureSession()
+    } catch (error) {
+      ElMessage.error(getAicheckErrorMessage(error, 'AI 对话会话没有建立成功，请刷新页面后重试。'))
+      return
+    }
+    if (!session.value?.id) {
+      ElMessage.error('AI 对话会话没有建立成功，请刷新页面后重试。')
+      return
+    }
+  }
   const sessionId = session.value.id
   const sessionEtag = session.value.etag
   const generation = reviewContextGeneration.value
@@ -2483,9 +2514,8 @@ onBeforeUnmount(() => {
             :autosize="props.embedded ? { minRows: 1, maxRows: 4 } : false"
             resize="none"
             maxlength="4000"
-            placeholder="向 AI 复核助手输入问题，或使用快捷命令继续处理…"
-            @keydown.meta.enter.prevent="sendMessage()"
-            @keydown.ctrl.enter.prevent="sendMessage()"
+            placeholder="向 AI 复核助手输入问题，回车发送，Shift+回车换行"
+            @keydown.enter="onComposerEnter"
           />
           <div class="composer-actions">
             <div>

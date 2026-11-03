@@ -330,6 +330,8 @@ export const checkReasonLabels: Record<string, string> = {
     '业务工具已发现不符合项，但这些事实还没有页码和引文可核，需人工确认',
   unclassified_documents_may_contain_it: '有认不出类型的文件，缺的类型可能就在其中',
   catalog_pages_not_all_submitted: '交的页数少于图纸目录所列，缺页见明细',
+  construction_period_not_in_node_documents:
+    '施工期只录在项目信息里、本节点资料里没有出处，不能据此判符合',
   document_pipeline_link_missing: '文件没有标明对应哪条管线，无法判定是否要求四级签字',
   // 标准版本在线核验（libs/standard_online_lookup.py）没核成时的原因
   invalid_ref: '标准编号格式无法识别',
