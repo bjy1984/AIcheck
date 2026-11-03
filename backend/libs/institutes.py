@@ -157,3 +157,24 @@ def sync_platform_rules(tenant_id: str) -> dict[str, int]:
         # 和加载时的基线比对落库：新增、更新、删除一次写完；只碰 rule_versions
         flush_state({"rule_versions"}, selected_singleton_keys=set())
     return {"synced": len(synced), "removed": len(removed)}
+
+
+# ── 标准原文共用平台标准库（第三阶段）───────────────────────────────────────
+#
+# 依据条款、标准原文在各院打开时读的是 /knowledge/files/{id}/… 这些只读接口；标准文件只在
+# 平台院有。main.py 对「非平台院的 GET、读的是平台院的标准文件」把这一次请求切到平台院，
+# 文件元数据、OCR 文字和对象存储原件（平台院路径不带院前缀）就都对了。只放行标准文件：
+# 平台院知识库里还有平台自己的项目资料，列表接口和项目文件一律不切。
+
+
+def platform_standard_file_exists(file_id: str) -> bool:
+    from libs.knowledge_retrieval import is_standard_knowledge_file
+
+    with platform_scope() as state:
+        file = next((row for row in state.get("knowledge_files") or [] if str(row.get("id")) == str(file_id)), None)
+        if file is None:
+            return False
+        source = next(
+            (row for row in state.get("knowledge_sources") or [] if row.get("id") == file.get("sourceId")), {}
+        )
+    return is_standard_knowledge_file({**file, "sourceType": file.get("sourceType") or source.get("sourceType")})

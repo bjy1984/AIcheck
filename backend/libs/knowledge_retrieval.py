@@ -1420,6 +1420,21 @@ def strict_lexical_match(query: str, searchable: str) -> bool:
     )
 
 
+def _institute_reads_platform_standards(state: dict[str, Any]) -> bool:
+    """各特检院共用平台维护的标准库（2026-11-02 多特检院）。
+
+    标准规范只在平台院维护（各院 knowledge:manage 一律 403），新开的院知识库是空的；
+    院里发起的检索传进来的是本院的 repo.state，要切到平台院去检。候选本来就排除项目
+    资料来源（项目资料是被审查的对象，不是依据），所以不会把平台院的项目文件带给别的院。
+    测试和工具传入的字面量 state 不受影响。
+    """
+    from libs.db.repository import repo
+    from libs.security.tenant import configured_tenant_id as platform_tenant_id
+    from libs.security.tenant import current_tenant_id
+
+    return state is repo.state and current_tenant_id() != platform_tenant_id()
+
+
 def retrieve_knowledge_clauses(
     state: dict[str, Any],
     *,
@@ -1434,6 +1449,16 @@ def retrieve_knowledge_clauses(
     require_query_match: bool = False,
     enable_pageindex: bool = False,
 ) -> dict[str, Any]:
+    if _institute_reads_platform_standards(state):
+        from libs.institutes import platform_scope
+
+        with platform_scope() as platform_state:
+            return retrieve_knowledge_clauses(
+                platform_state, query=query, review_run_id=review_run_id, business_pack_id=business_pack_id,
+                node_id=node_id, kb_version=kb_version, top_k=top_k, query_type=query_type,
+                dense_chunk_ids=dense_chunk_ids, require_query_match=require_query_match,
+                enable_pageindex=enable_pageindex,
+            )
     tokens = query_tokens(query)
     router_signals = {**build_router_signals(query, tokens), "pageIndexEnabled": enable_pageindex}
     selected_route = classify_retrieval_route(query, tokens, enable_pageindex=enable_pageindex)

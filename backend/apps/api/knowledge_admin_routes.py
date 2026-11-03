@@ -13,6 +13,7 @@ import hashlib
 import mimetypes
 import os
 import re
+from functools import wraps
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -1296,7 +1297,33 @@ def canonical_content_group_scope(
     return scoped
 
 
+def platform_standard_fallback(handler):
+    """各特检院共用平台标准库：本院没有、平台院有的**标准**文件，这次读取在平台院执行。
+
+    依据条款、标准原文在院里打开时读的就是下面这几个只读接口，而标准只在平台院维护
+    （各院 knowledge:manage 一律 403）。只放行标准文件——平台院知识库里还有平台自己的
+    项目资料，那些不切。鉴权、加载本院照旧在中间件里完成，这里只切读取的院
+    （2026-11-02 多特检院）。
+    """
+    from libs import institutes
+    from libs.security.tenant import configured_tenant_id as platform_tenant_id
+    from libs.security.tenant import current_tenant_id
+
+    @wraps(handler)
+    def wrapped(request: Request, file_id: str, *args: Any, **kwargs: Any):
+        if current_tenant_id() != platform_tenant_id():
+            resolved = routes_module.resolve_knowledge_file_id(file_id)
+            if not repo.find_one("knowledge_files", resolved) and institutes.platform_standard_file_exists(resolved):
+                request.state.platform_standard_read = True  # request_tenant_id 据此认平台院
+                with institutes.platform_scope():
+                    return handler(request, file_id, *args, **kwargs)
+        return handler(request, file_id, *args, **kwargs)
+
+    return wrapped
+
+
 @router.get("/knowledge/files/{file_id}/canonical")
+@platform_standard_fallback
 def knowledge_file_canonical(
     request: Request,
     file_id: str,
@@ -1328,6 +1355,7 @@ def knowledge_file_canonical(
 
 
 @router.get("/knowledge/files/{file_id}/canonical/sources/{source_id}")
+@platform_standard_fallback
 def knowledge_file_canonical_source(request: Request, file_id: str, source_id: str):
     file, _, _, context_error = knowledge_file_original_context(request, file_id)
     if context_error:
@@ -1345,6 +1373,7 @@ def knowledge_file_canonical_source(request: Request, file_id: str, source_id: s
 
 
 @router.get("/knowledge/files/{file_id}")
+@platform_standard_fallback
 def knowledge_file_detail(request: Request, file_id: str):
     file, document, _, context_error = knowledge_file_original_context(request, file_id)
     if context_error:
@@ -1690,6 +1719,7 @@ async def replace_knowledge_file_version(
 
 
 @router.get("/knowledge/files/{file_id}/chunks")
+@platform_standard_fallback
 def knowledge_file_chunks(
     request: Request,
     file_id: str,
@@ -1730,6 +1760,7 @@ def knowledge_file_chunks(
 
 
 @router.get("/knowledge/files/{file_id}/original")
+@platform_standard_fallback
 def knowledge_file_original(request: Request, file_id: str, disposition: str = Query(default="inline")):
     _, document, version, context_error = knowledge_file_original_context(request, file_id)
     if context_error:
@@ -1919,6 +1950,7 @@ def knowledge_file_vectors(request: Request, file_id: str):
 
 
 @router.get("/knowledge/files/{file_id}/reasoning-references")
+@platform_standard_fallback
 def knowledge_file_reasoning_refs(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
     file_id = resolve_knowledge_file_id(file_id)
     file = repo.find_one("knowledge_files", file_id)

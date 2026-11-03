@@ -198,3 +198,49 @@ def test_registration_links_from_an_institute_land_applicants_in_that_institute(
 
     # 平台院的旧格式链接不受影响；伪造一个没登记的院前缀则找不到
     assert client.get("/api/registration-links/TENANT-GHOST.abc").json()["code"] != 0
+
+
+# ── 第三阶段：标准知识库共用平台的 ─────────────────────────────────────────────
+
+def _seed_platform_knowledge():
+    repo.state.setdefault("knowledge_sources", []).extend([
+        {"id": "KS-STANDARD-RULES", "name": "标准规范库", "sourceType": "standard", "status": "active"},
+        {"id": "KS-PROJECT-FILE", "name": "项目文件知识库", "sourceType": "project-file", "status": "active"},
+    ])
+    repo.state.setdefault("knowledge_files", []).extend([
+        {"id": "KF-STD-1", "sourceId": "KS-STANDARD-RULES", "sourceType": "standard", "fileName": "GB 50184-2011.pdf",
+         "status": "active"},
+        {"id": "KF-PROJ-1", "sourceId": "KS-PROJECT-FILE", "sourceType": "project-file", "fileName": "平台项目资料.pdf",
+         "projectId": "P-PLATFORM-ONLY", "status": "active"},
+    ])
+    repo.state.setdefault("knowledge_chunks", []).extend([
+        {"id": "KC-STD-1", "fileId": "KF-STD-1", "pageNo": 46, "chunkNo": 1, "text": "8.5.7 泄漏性试验应按设计文件的规定进行"},
+        {"id": "KC-PROJ-1", "fileId": "KF-PROJ-1", "pageNo": 1, "chunkNo": 1, "text": "平台项目的内部资料"},
+    ])
+
+
+def test_institutes_read_platform_standard_files_but_never_platform_project_files():
+    _seed_platform_knowledge()
+    token = open_gdtj()
+    chunks = data(client.get("/api/knowledge/files/KF-STD-1/chunks", headers=bearer(token), params={"pageNo": 46}))
+    assert [row["id"] for row in chunks["items"]] == ["KC-STD-1"]
+    leaked = client.get("/api/knowledge/files/KF-PROJ-1/chunks", headers=bearer(token)).json()
+    assert leaked["code"] != 0 or not (leaked.get("data") or {}).get("items")
+    # 院里读完，本院的数据和上下文都没被换成平台院的
+    from libs import institutes
+
+    with institutes.tenant_scope(GD) as state:
+        assert not state.get("knowledge_chunks")
+
+
+def test_institute_review_basis_search_uses_the_platform_standard_library():
+    from libs import institutes
+    from libs.knowledge_retrieval import retrieve_knowledge_clauses
+
+    _seed_platform_knowledge()
+    open_gdtj()
+    expected = retrieve_knowledge_clauses(repo.state, query="泄漏性试验 审查依据", top_k=5)
+    with institutes.tenant_scope(GD) as state:
+        got = retrieve_knowledge_clauses(state, query="泄漏性试验 审查依据", top_k=5)
+    assert expected["clauses"] and got["clauses"] == expected["clauses"]  # 非空：真检到了平台的标准
+    assert all("KF-PROJ-1" not in str(row) for row in got["clauses"])

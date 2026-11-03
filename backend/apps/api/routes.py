@@ -2021,6 +2021,8 @@ def request_user_id(request: Request) -> str | None:
 
 
 def request_tenant_id(request: Request) -> str:
+    if getattr(request.state, "platform_standard_read", False):  # 院里读平台标准库（knowledge_admin_routes）
+        return configured_tenant_id()
     claims = getattr(request.state, "auth", None) or {}
     auth_user = getattr(request.state, "auth_user", None) or {}
     return str(claims.get("tid") or tenant_id_for_record(auth_user) or configured_tenant_id())
