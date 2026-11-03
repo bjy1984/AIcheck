@@ -329,6 +329,7 @@ export const checkReasonLabels: Record<string, string> = {
   business_failed_without_grounded_facts:
     '业务工具已发现不符合项，但这些事实还没有页码和引文可核，需人工确认',
   unclassified_documents_may_contain_it: '有认不出类型的文件，缺的类型可能就在其中',
+  catalog_pages_not_all_submitted: '交的页数少于图纸目录所列，缺页见明细',
   document_pipeline_link_missing: '文件没有标明对应哪条管线，无法判定是否要求四级签字',
   // 标准版本在线核验（libs/standard_online_lookup.py）没核成时的原因
   invalid_ref: '标准编号格式无法识别',
@@ -968,6 +969,7 @@ export const checkCodeLabels: Record<string, string> = {
   valve_test_result_accepted: '阀门试验结论合格',
   witness_type_accepted: '见证方式符合要求',
   all_values_equal: '三处单位名一致',
+  catalog_pages_submitted: '图纸目录所列页数已交全',
   not_expired_on_reference_date: '证书在参考日未过期',
   validity_dates_consistent: '有效期起止日期一致（截止不早于起始）',
   scope_covers_required: '许可范围覆盖所需级别',

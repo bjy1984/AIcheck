@@ -314,6 +314,7 @@ def build_tool_arguments(
         arguments.setdefault("uploadedDocumentTypes", document_set.get("uploadedDocumentTypes") or [])
         arguments.setdefault("parseableDocumentTypes", document_set.get("parseableDocumentTypes") or [])
         arguments.setdefault("unclassifiedDocumentCount", len(document_set.get("unclassified") or []))
+        arguments.setdefault("catalogCompleteness", document_set.get("catalogCompleteness"))
     if tool_name == "evaluate_design_document_approval":
         document_container = "calculationDocuments" if str(arguments.get("argumentProfile") or "").startswith("r06_") else "designDocuments"
         arguments.setdefault("documents", nested_dict(facts, document_container).get("documents") or [])

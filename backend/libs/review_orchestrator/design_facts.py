@@ -31,6 +31,7 @@ from libs.regulatory_tables import (
 from libs.review_grounding import REGULATION_CODE_RE, regulation_code
 from libs.review_input_data import current_selected_parse_results, ocr_parse_usable
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
+from libs.review_orchestrator.design_catalog import catalog_completeness
 from libs.review_orchestrator.design_judgment import (
     special_requirement_judgment,
     standard_reference_judgment,
@@ -498,9 +499,13 @@ def build_design_business_facts(
                 "evidenceRefs": [{"documentVersionId": version_id, "pageNo": page_no, "quotedText": file_name}],
             }
         )
+    content_keys = {str(version.get("id") or ""): str(version.get("hash") or version.get("id") or "")
+                    for version in state.get("versions") or [] if isinstance(version, dict) and version.get("id")}
     facts = {
         "designDocumentSet": {
             "catalogListedDocumentTypes": list(dict.fromkeys(catalog)),
+            # 目录逐份对页数（design_catalog）：缺几页、缺的是哪几份；读不出目录为 None
+            "catalogCompleteness": catalog_completeness(list(parse_by_version.values()), content_keys),
             "uploadedDocumentTypes": list(dict.fromkeys(uploaded)),
             "parseableDocumentTypes": list(dict.fromkeys(parseable)),
             "unclassified": unclassified,

@@ -1273,9 +1273,22 @@ def check_document_set_completeness(arguments: dict[str, Any]) -> dict[str, Any]
             if not item["passed"]:
                 item["missing"] = True
                 item["reason"] = "unclassified_documents_may_contain_it"
+    # 设计单位自己的图纸目录写了每份文件几页：交的页数少于目录合计就是缺页。
+    # 缺资料按证据不足（missing），不判不符合；缺哪几份、各少几页写进 actual 交监检去要。
+    catalog = arguments.get("catalogCompleteness") if isinstance(arguments.get("catalogCompleteness"), dict) else None
+    if catalog:
+        short = catalog.get("shortDocuments") or []
+        item = check("catalog_pages_submitted", not catalog.get("missingPageCount"),
+                     {"submittedPageCount": catalog.get("submittedPageCount"), "unplacedPageCount": catalog.get("unplacedPageCount"),
+                      "shortDocuments": short},
+                     {"catalogDocumentNo": catalog.get("catalogDocumentNo"), "catalogPageTotal": catalog.get("catalogPageTotal")})
+        if not item["passed"]:
+            item.update({"missing": True, "reason": "catalog_pages_not_all_submitted"})
+        checks.append(item)
     return checked_result(
         "check_document_set_completeness",
-        {"requiredDocumentTypes": sorted(required), "uploadedDocumentTypes": sorted(uploaded), "parseableDocumentTypes": sorted(parseable)},
+        {"requiredDocumentTypes": sorted(required), "uploadedDocumentTypes": sorted(uploaded), "parseableDocumentTypes": sorted(parseable),
+         **({"catalogCompleteness": catalog} if catalog else {})},
         checks,
     )
 
