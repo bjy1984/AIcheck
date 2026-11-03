@@ -172,3 +172,13 @@ def test_supplements_do_not_whitelist_conclusion_words() -> None:
         ),
     )
     assert grounded[0]["groundingStatus"] == "grounded"
+
+
+def test_tilde_year_separator_is_read_as_a_versioned_code() -> None:
+    from libs.review_grounding import REGULATION_CODE_RE, regulation_code
+
+    codes = [regulation_code(match.group(0)) for match in REGULATION_CODE_RE.finditer(
+        "GB/T 20801.1~2025、GB/T20801.1～2025、HG/T 20592~20635-2009、GB/T 20801.1~.6-2020")]
+    assert codes[:2] == ["GB/T 20801.1-2025", "GB/T20801.1-2025"]
+    # 编号区间和分部区间不能被当成年份
+    assert codes[2:] == ["HG/T 20592", "GB/T 20801.1"]

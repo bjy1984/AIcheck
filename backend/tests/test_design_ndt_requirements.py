@@ -54,6 +54,31 @@ def test_equivalent_exact_levels_reach_real_rule_pass(level):
     assert review_ndt(text, PIPELINE)["result"] == "passed"
 
 
+def test_pipe_table_cell_without_ratio_keyword_is_read():
+    # ECD202 管道特性表 p32：表头「检验比例%」在上一行，单元格只写「RT10%」
+    row = "A01-PL-02 | Φ89x3.0 | M1E | GC2 | 甲醇 | 水 | 0.413 | RT10% | III级 | √ | 水"
+    details = design_ndt_requirements(row)
+    assert details["coveragePercent"] == 10
+    assert details["methodRequirements"][0]["acceptanceLevel"] == "III"
+
+
+def test_method_mentioned_elsewhere_without_values_does_not_erase_table_values():
+    # 图签只写「损伤比例 | RT10%」没有合格等级；不能因此把特性表里的 Ⅲ 级抹掉
+    text = "介质名称 | 甲醇 | 损伤比例 | RT10%\nA01-PL-02 | GC2 | 水 | 0.413 | RT10% | III级 | √"
+    details = design_ndt_requirements(text)
+    assert details["acceptanceLevelMeetsRequirement"] is True
+    from libs.review_orchestrator.design_ndt_requirements import method_value_summary
+    assert method_value_summary(details["methodRequirements"], "acceptanceLevel", "级") == "III级"
+    assert method_value_summary(details["methodRequirements"], "coveragePercent", "%") == "10%"
+
+
+def test_method_with_no_value_anywhere_still_counts_as_missing():
+    from libs.review_orchestrator.design_ndt_requirements import method_value_summary
+    details = design_ndt_requirements("RT10%，III级；UT 检测")
+    assert method_value_summary(details["methodRequirements"], "acceptanceLevel", "级") is None
+    assert details["acceptanceLevelMeetsRequirement"] is None
+
+
 @pytest.mark.parametrize("level", ["VIII", "12", "SMARTII", "Ⅰ/Ⅱ", "Ⅲ或Ⅱ", "Ⅲ或者Ⅱ", "不符合Ⅱ", "未达到Ⅱ", "不低于Ⅱ", "Ⅱ级不合格"])
 def test_unresolved_level_expression_cannot_be_extracted_as_passing_grade(level):
     text = f"GB/T 20801.1-2025。RT，检测比例100%，验收等级{level}级"

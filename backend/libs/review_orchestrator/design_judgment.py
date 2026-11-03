@@ -23,7 +23,7 @@ import json
 import re
 from typing import Any
 
-from libs.review_grounding import REGULATION_CODE_RE
+from libs.review_grounding import REGULATION_CODE_RE, regulation_code
 
 _QUOTE_RADIUS = 40
 
@@ -60,7 +60,7 @@ def locate_standard_codes(parse_result: dict[str, Any]) -> dict[str, dict[str, A
     found: dict[str, dict[str, Any]] = {}
     for page_no, text, bbox, confidence in sorted(_page_sources(parse_result), key=lambda item: item[0]):
         for match in REGULATION_CODE_RE.finditer(text or ""):
-            code = " ".join(match.group(0).split())
+            code = regulation_code(match.group(0))
             if code in found:
                 continue
             start, end = max(match.start() - _QUOTE_RADIUS, 0), match.end() + _QUOTE_RADIUS

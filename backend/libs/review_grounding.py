@@ -544,10 +544,20 @@ def _supplied_identifiers(grounding_input: dict[str, Any]) -> list[str]:
 # HG/T 20519-2009、SY/T 0407-2012、市监特设发〔2026〕85号。只抓编号，不抓条文。
 REGULATION_CODE_RE = re.compile(
     r"(?:TSG\s*[A-Z]{0,2}\s?\d{2,5}(?:\s*[-—–－]\s*\d{4})?"
-    r"|(?:GB|NB|JB|HG|SY|SH|DL|CJJ|API|ASME)\s*/?\s*T?\s*\d{2,6}(?:\.\d{1,2})?(?:\s*[-—–－]\s*\d{4})?"
+    # 设计说明里常把年份连接符写成波浪线（"GB/T 20801.1~2025"）；只认 19xx/20xx 四位年，
+    # 免得 "HG/T 20592~20635" 这种编号区间被截成年份
+    r"|(?:GB|NB|JB|HG|SY|SH|DL|CJJ|API|ASME)\s*/?\s*T?\s*\d{2,6}(?:\.\d{1,2})?"
+    r"(?:\s*[-—–－]\s*\d{4}|\s*[~～]\s*(?:19|20)\d{2}(?!\d))?"
     r"|[\u4e00-\u9fff]{2,6}〔\d{4}〕\s*\d{1,4}\s*号)",
     re.IGNORECASE,
 )
+
+
+def regulation_code(raw: str) -> str:
+    """匹配到的编号统一写法：折叠空白，波浪线年份连接符改成 "-"。"""
+    return re.sub(r"\s*[~～]\s*", "-", " ".join(raw.split()))
+
+
 _PROJECT_IDENTIFIER_KEYS = (
     "name",
     "projectName",
@@ -567,7 +577,7 @@ _PROJECT_IDENTIFIER_KEYS = (
 
 
 def _regulation_codes(text: str) -> list[str]:
-    return [re.sub(r"\s+", " ", match.group(0)).strip() for match in REGULATION_CODE_RE.finditer(text or "")]
+    return [regulation_code(match.group(0)) for match in REGULATION_CODE_RE.finditer(text or "")]
 
 
 _ISO_DATE_RE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")

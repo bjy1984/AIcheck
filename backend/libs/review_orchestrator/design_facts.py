@@ -28,7 +28,7 @@ from libs.regulatory_tables import (
     pressure_test_ratios,
     volumetric_ndt_ratio,
 )
-from libs.review_grounding import REGULATION_CODE_RE
+from libs.review_grounding import REGULATION_CODE_RE, regulation_code
 from libs.review_input_data import current_selected_parse_results, ocr_parse_usable
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
 from libs.review_orchestrator.design_judgment import (
@@ -703,7 +703,7 @@ _STD_ID_FIXES = {"GB/T": "GBT", "GB": "GB", "NB/T": "NBT", "JB/T": "JBT", "HG/T"
 
 def standard_ref_id(code: str) -> str:
     """"GB/T 20801.1-2025" → "STD-GBT-20801.1-2025"，与规则包 standardRef 同一写法。"""
-    text = code.strip().upper().replace("—", "-").replace("–", "-")
+    text = regulation_code(code).upper().replace("—", "-").replace("–", "-")
     match = re.match(r"([A-Z]+(?:/T)?)\s*([A-Z0-9.\-]+)", text)
     if not match:
         return f"STD-{re.sub(r'[^A-Z0-9.]+', '-', text)}"
@@ -1067,7 +1067,7 @@ def design_standard_references(texts: dict[str, str], review_date: str | None) -
     codes: list[str] = []
     for text in texts.values():
         for match in REGULATION_CODE_RE.finditer(text or ""):
-            code = " ".join(match.group(0).split())
+            code = regulation_code(match.group(0))
             if code not in codes:
                 codes.append(code)
     references = [standard_reference_fact(code, review_date) for code in codes]
