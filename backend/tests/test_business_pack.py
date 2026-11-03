@@ -151,7 +151,8 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
         for clause in package["professionalClauses"]
     )
     professional_clauses = [clause for package in packages for clause in package["professionalClauses"]]
-    assert len(professional_clauses) == 120
+    # 2026-11-02 补绑 GB 50184（R09、R11）、TSG Z8001（R38）、GB 50460（R49）：120 → 124
+    assert len(professional_clauses) == 124
     assert all(clause["knowledgeFileId"] and clause["documentVersionId"] for clause in professional_clauses)
     assert all(clause["locators"] for clause in professional_clauses)
     assert all(
@@ -223,10 +224,11 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
 
 
 def test_node_standards_exposes_fixed_clause_page_locators() -> None:
-    assert len(repo.state["standard_document_versions"]) == 33
+    # 同上，标准目录多了这 3 个：33 → 36
+    assert len(repo.state["standard_document_versions"]) == 36
     assert len(repo.state["standard_clause_packages_db"]) == 69
-    assert len(repo.state["standard_clause_package_items"]) == 189
-    assert len(repo.state["standard_clause_locators"]) == 243
+    assert len(repo.state["standard_clause_package_items"]) == 193
+    assert len(repo.state["standard_clause_locators"]) == 253
     assert len(
         [item for item in repo.state["project_node_clause_packages"] if item["projectId"] == "P-2026-HDCP-001"]
     ) == 69
@@ -246,7 +248,7 @@ def test_node_standards_exposes_fixed_clause_page_locators() -> None:
 
     package_detail = assert_ok(client.get("/api/business-packs/engineering_inspection_v1"))
     assert len(package_detail["standardClausePackages"]) == 69
-    assert len(package_detail["standardCatalog"]) == 33
+    assert len(package_detail["standardCatalog"]) == 36
 
     node_binding = next(
         item
