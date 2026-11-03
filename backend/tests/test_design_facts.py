@@ -345,3 +345,18 @@ def test_printed_names_in_title_blocks_need_a_person_and_blank_cells_fail() -> N
     gc1 = evaluate_design_document_approval({**four_args, "pipelines": [{"pipelineId": "A01-PL-02", "pipelineGrade": "GC1"}, other]})
     assert gc1["result"] == "failed", "要四级签字，图签审定栏是「-」"
     assert gc1["documentResults"][0]["titleBlock"]["blankRoles"] == ["审定"]
+
+
+def test_title_block_name_read_cell_by_cell_classifies_a_scanned_layout_drawing() -> None:
+    # 2026-11-02 生产 GDLNG-002 节点 4：首页前 600 字全是出图专用章，图签逐格成段，
+    # 「图名」后第 7 段才是图名；原来整张布置图算「其他设计文件」，齐全性报缺布置图。
+    from libs.review_orchestrator.design_facts import classify_design_page, title_block_name
+
+    stamp = [{"pageNo": 1, "text": "压力管道设计出图专用章 TS1810648-2021 " + "业务范围" * 150}]
+    cells = ["图名", "设讨阶段", "工程名称", "PROJECT", "一、二期装车站新增两套卸车系统项目", "卸车站",
+             "DRANNG NAME", "卸车台配管平面图", "SIAGE", "校核"]
+    parse = {"fragments": stamp + [{"pageNo": 1, "text": text} for text in cells]}
+    assert title_block_name(parse) == "卸车台配管平面图"
+    assert classify_design_page(parse) == "pipeline_layout_drawing"
+    # 「图名」后面只有栏名和工程名、没有像图名的格子时，不硬认
+    assert title_block_name({"fragments": [{"pageNo": 1, "text": text} for text in cells[:6]]}) == ""

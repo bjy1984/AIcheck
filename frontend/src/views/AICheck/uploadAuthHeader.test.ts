@@ -14,7 +14,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const sfc = readFileSync(fileURLToPath(new URL('./Workbench.vue', import.meta.url)), 'utf8')
+// 2026-11-02 起上传函数在 workbenchUpload.ts，Workbench.vue 只负责把登录令牌交给它
+const sfc = readFileSync(fileURLToPath(new URL('./workbenchUpload.ts', import.meta.url)), 'utf8')
+const workbench = readFileSync(fileURLToPath(new URL('./Workbench.vue', import.meta.url)), 'utf8')
 
 assert.ok(sfc.includes('const isOwnApiUploadTarget'), '没有区分自家 API 与对象存储')
 
@@ -28,10 +30,13 @@ assert.ok(fn.includes('window.location.origin'), '同源绝对地址也要认出
 
 // Authorization 必须挂在条件里，不能无条件带
 const upload = sfc.slice(sfc.indexOf('const uploadFileToSignedUrl'))
-const body = upload.slice(0, upload.indexOf('const showSubmissionDialogError'))
 assert.ok(
-  /isOwnApiUploadTarget\(target\.url\)\s*\n?\s*\?\s*\{\s*\[userStore\.getTokenKey/.test(body),
+  /isOwnApiUploadTarget\(target\.url\)\s*\?\s*apiAuthHeader\s*:\s*\{\}/.test(upload),
   'Authorization 还是无条件带上了'
+)
+assert.ok(
+  /uploadToSignedUrl\(target, file, \{\s*\[userStore\.getTokenKey/.test(workbench),
+  '工作台没有把登录令牌交给上传函数'
 )
 
 console.log('Upload auth header contract passed')

@@ -157,6 +157,12 @@ import type {
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
+import {
+  extractBusinessBlockerReasons,
+  inferUploadFileType,
+  reportErrorTo,
+  uploadFileToSignedUrl as uploadToSignedUrl
+} from './workbenchUpload'
 import { buildDocumentSubmissionPayload, documentBindingSummary } from '@/utils/acceptanceFlows'
 import {
   reportBatchResultThenRefresh,
@@ -2053,42 +2059,6 @@ const getErrorMessage = (error: unknown) => {
   return getAicheckErrorMessage(error, '接口返回异常，请稍后重试。')
 }
 
-const stringifyBusinessReason = (value: unknown) => {
-  if (!value) return ''
-  if (typeof value === 'string') return value
-  if (typeof value !== 'object') return String(value)
-  const record = value as {
-    message?: unknown
-    code?: unknown
-    reportId?: unknown
-    requirementName?: unknown
-  }
-  return [record.reportId, record.requirementName, record.message || record.code]
-    .filter(Boolean)
-    .join('：')
-}
-
-const extractBusinessBlockerReasons = (data?: Record<string, unknown>) => {
-  if (!data) return []
-  const containers = [
-    data.evidenceReadiness,
-    data.evidenceValidation,
-    data.ndtReadiness,
-    data.dispatch
-  ] as Array<Record<string, unknown> | undefined>
-  const reasons: string[] = []
-  for (const container of containers) {
-    if (!container) continue
-    const blockingReasons = container.blockingReasons
-    if (Array.isArray(blockingReasons)) {
-      reasons.push(...blockingReasons.map(stringifyBusinessReason).filter(Boolean))
-    }
-    const message = stringifyBusinessReason(container.message || container.statusReason)
-    if (message) reasons.push(message)
-  }
-  return Array.from(new Set(reasons))
-}
-
 const rememberActionBlocker = (title: string, message?: string, reasons: string[] = []) => {
   actionBlocker.value = {
     title,
@@ -2105,108 +2075,22 @@ const showActionError = (fallback: string, error?: unknown) => {
   ElMessage.error(message)
 }
 
-const showUploadDrawerError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  uploadDrawerError.value = message
-  ElMessage.error(message)
-}
+const showUploadDrawerError = reportErrorTo(uploadDrawerError)
 
-const uploadMimeByExtension: Record<string, string> = {
-  pdf: 'application/pdf',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls: 'application/vnd.ms-excel',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  zip: 'application/zip'
-}
-
-const inferUploadFileType = (file: File) => {
-  if (file.type) return file.type
-  const extension = file.name.split('.').pop()?.toLowerCase() || ''
-  return uploadMimeByExtension[extension] || 'application/octet-stream'
-}
-
-const assertRealUploadTarget = (target: DocumentUploadTarget, file: File) => {
-  const url = String(target?.url || '')
-  if (!url) throw new Error(`${file.name} 未返回上传地址`)
-  if (url.startsWith('mock://')) {
-    throw new Error('真实上传地址不可用：后端返回 mock:// 地址，请配置对象存储后重试。')
-  }
-}
-
-/** 这个上传地址是不是我们自己的 API。
- *
- * 只有自家 API 才需要 JWT。发往对象存储的预签名 URL 绝不能带 Authorization：
- * S3/MinIO 一看到这个头就改用它来鉴权、不再认预签名参数，而 JWT 不是合法的
- * AWS 签名，直接回 400。
- *
- * 2026-08-15 实测就是这么卡住的：服务器侧用同一个预签名 URL curl（不带该头）
- * 返回 200，浏览器带着头 PUT 返回 400 Bad Request。
- */
-const isOwnApiUploadTarget = (url: string) =>
-  url.startsWith('/api/') || url.startsWith(`${window.location.origin}/api/`)
-
-const uploadFileToSignedUrl = async (target: DocumentUploadTarget, file: File) => {
-  assertRealUploadTarget(target, file)
-  // 登录态由本地会话补，不再依赖服务端在会话响应里回显 Authorization（M-3）——
-  // 把调用方自己的 JWT 写进响应体没有增益，却会随响应进入 devtools、前端日志、
-  // 错误上报和网关访问日志。target.headers 仍带本次上传专用的短时凭证。
-  const response = await fetch(target.url, {
-    method: target.method || 'PUT',
-    headers: {
-      ...(target.headers || {}),
-      ...(isOwnApiUploadTarget(target.url)
-        ? { [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? '' }
-        : {})
-    },
-    body: file
+const uploadFileToSignedUrl = (target: DocumentUploadTarget, file: File) =>
+  uploadToSignedUrl(target, file, {
+    [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? ''
   })
-  if (!response.ok) {
-    throw new Error(
-      `${file.name} 上传失败：${response.status} ${response.statusText || '存储服务拒绝写入'}`
-    )
-  }
-  const contentType = String(response.headers.get('content-type') || '').toLowerCase()
-  if (contentType.includes('application/json')) {
-    const payload = (await response.json()) as { code?: number; message?: string }
-    if (Number(payload.code ?? 0) !== 0) {
-      throw new Error(payload.message || `${file.name} 上传被业务规则拒绝`)
-    }
-  }
-}
 
-const showSubmissionDialogError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  submissionDialogError.value = message
-  ElMessage.error(message)
-}
+const showSubmissionDialogError = reportErrorTo(submissionDialogError)
 
-const showBindDialogError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  bindDialogError.value = message
-  ElMessage.error(message)
-}
+const showBindDialogError = reportErrorTo(bindDialogError)
 
-const showNdtFilmError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  ndtFilmError.value = message
-  ElMessage.error(message)
-}
+const showNdtFilmError = reportErrorTo(ndtFilmError)
 
-const showNdtRecordImportError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  ndtRecordImportError.value = message
-  ElMessage.error(message)
-}
+const showNdtRecordImportError = reportErrorTo(ndtRecordImportError)
 
-const showNdtReportUploadError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  ndtReportUploadError.value = message
-  ElMessage.error(message)
-}
+const showNdtReportUploadError = reportErrorTo(ndtReportUploadError)
 
 const showNdtSubmitError = (fallback: string, error?: unknown) => {
   const message = getAicheckErrorMessage(error, fallback)
@@ -2219,29 +2103,13 @@ const showNdtSubmitError = (fallback: string, error?: unknown) => {
   ElMessage.error(message)
 }
 
-const showNdtRectifyError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  ndtRectifyError.value = message
-  ElMessage.error(message)
-}
+const showNdtRectifyError = reportErrorTo(ndtRectifyError)
 
-const showReportDetailError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  reportDetailError.value = message
-  ElMessage.error(message)
-}
+const showReportDetailError = reportErrorTo(reportDetailError)
 
-const showArchiveDetailError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  archiveDetailError.value = message
-  ElMessage.error(message)
-}
+const showArchiveDetailError = reportErrorTo(archiveDetailError)
 
-const showExportTaskError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  exportTaskError.value = message
-  ElMessage.error(message)
-}
+const showExportTaskError = reportErrorTo(exportTaskError)
 
 const loadInspectionSubmittedDocuments = async () => {
   if (!activeProjectId.value || role.value !== 'inspection') {

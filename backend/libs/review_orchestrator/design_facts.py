@@ -59,7 +59,7 @@ _DESIGN_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("straight_pipe_strength_calculation", ("直管强度计算", "壁厚计算")),
     ("strength_calculation", ("强度计算", "计算书")),
     ("equipment_layout_drawing", ("设备布置图", "设备平面布置")),
-    ("pipeline_layout_drawing", ("管道布置图", "管道平面图", "配管图", "轴测图", "单线图", "布置图")),
+    ("pipeline_layout_drawing", ("管道布置图", "管道平面图", "配管平面图", "配管图", "轴测图", "单线图", "布置图")),
     ("pipeline_material_list", ("材料表", "材料清单", "综合材料表", "材料汇总")),
     ("design_change_document", ("设计变更", "变更通知", "修改通知单")),
     ("drawing_review_record", ("图纸会审", "施工图审查", "审图")),
@@ -171,11 +171,26 @@ def title_block_name(parse_result: dict[str, Any]) -> str:
             right = grid.get((int(cell.get("row") or 0), int(cell.get("col") or 0) + max(int(cell.get("colspan") or 1), 1)))
             if _cjk_label(right):
                 return _cjk_label(right)
-    for fragment in parse_result.get("fragments") or []:
+    fragments = list(parse_result.get("fragments") or [])
+    for fragment in fragments:
         match = _TITLE_TEXT_RE.search(_text_of(fragment))
         if match and match.group("name").strip(" :：\t"):
             return match.group("name").strip(" :：\t")
+    # 图签格子被逐格读成片段时，「图名」单独一段，图名本身隔着几格才出现（中间是「设计阶段」「工程名称」
+    # 和工程名）。2026-11-02 生产 GDLNG-002 节点 4：「图名」后第 7 段才是「卸车台配管平面图」，
+    # 原来认不出图名、首页前 600 字又全是出图章，整张布置图被当成「其他设计文件」，齐全性报缺布置图。
+    for index, fragment in enumerate(fragments):
+        if _cjk_label(_text_of(fragment)) != "图名":
+            continue
+        for following in fragments[index + 1:index + 11]:
+            name = _cjk_label(_text_of(following))
+            if 4 <= len(name) <= 30 and _DRAWING_NAME_TAIL_RE.search(name) and not _TITLE_FIELD_RE.search(name):
+                return name
     return ""
+
+
+_DRAWING_NAME_TAIL_RE = re.compile(r"(?:图|表|书|目录)$")
+_TITLE_FIELD_RE = re.compile(r"阶段|名称|单位|项目|图号|比例|版次")
 
 
 def title_block_roles(parse_result: dict[str, Any]) -> dict[str, list[str]] | None:
@@ -315,6 +330,9 @@ def build_design_business_facts(
         document = versions.get(version_id) or {}
         file_name = str(document.get("fileName") or parse_result.get("fileName") or "")
         design_type = classify_design_document(file_name, _first_page_text(parse_result))
+        if design_type == "design_document_other":
+            # 首页前 600 字认不出（扫描图首页先是出图专用章的文字）时，再按图签「图名」认一次
+            design_type = classify_design_page(parse_result) or design_type
         parsed_ok = ocr_parse_usable(parse_result)
         if parsed_ok:
             texts[version_id] = _all_text(parse_result)

@@ -158,6 +158,27 @@ standardCatalog:
   verificationMethod: source_pdf_visual_check
   knowledgeFileId: KF-KB-0E11194CB6
   documentVersionId: KDV-0E11194CB6-V1
+- id: STD-GB-50184-2011
+  code: GB 50184—2011
+  name: 工业金属管道工程施工质量验收规范
+  sourceFile: rules/standards/GB_50184-2011_工业金属管道工程施工质量验收规范(高清晰版).pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-C0476BBF81
+  documentVersionId: KDV-C0476BBF81-V1
+- id: STD-TSG-Z8001-2019
+  code: TSG Z8001—2019
+  name: 特种设备无损检测人员考核规则
+  sourceFile: rules/standards/TSG Z8001—2019.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-9214504E61
+  documentVersionId: KDV-9214504E61-V1
+- id: STD-GB-50460-2015
+  code: GB 50460—2015
+  name: 油气输送管道跨越工程施工规范
+  sourceFile: rules/standards/GB 50460-2015 油气输送管道跨越工程施工规范 高清晰版.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-E241A562DE
+  documentVersionId: KDV-E241A562DE-V1
 - id: STD-TSG-92-2026
   code: TSG 92—2026
   name: 承压类特种设备安全附件安全技术规程
