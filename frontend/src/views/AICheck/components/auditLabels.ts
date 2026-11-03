@@ -352,6 +352,7 @@ export const checkReasonLabels: Record<string, string> = {
   welder_qualifications_missing: '未抽到焊工资格项目',
   welding_work_records_missing: '缺少施焊记录',
   required_document_types_missing: '缺少必需的资料类型',
+  no_design_documents_uploaded: '还没有上传任何设计文件',
   condition_missing: '缺少判定条件',
   required_pipeline_grades_missing: '未抽到管道级别（GC1/GC2…）',
   fewer_than_two_comparable_values: '可比的值不足两处',

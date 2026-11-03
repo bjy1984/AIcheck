@@ -144,6 +144,7 @@ const PRODUCTION_REASONS = [
   'required_signature_roles_missing',
   'sampling_parameters_missing',
   'target_design_documents_missing',
+  'no_design_documents_uploaded',
   'validUntil_and_periodStart_and_periodEnd_missing',
   'welding_records_missing',
   'welding_work_records_missing',

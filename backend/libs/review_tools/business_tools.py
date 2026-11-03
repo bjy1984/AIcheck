@@ -1260,6 +1260,10 @@ def check_document_set_completeness(arguments: dict[str, Any]) -> dict[str, Any]
         return insufficient("check_document_set_completeness", arguments, "required_document_types_missing")
     # 有认不出是什么的设计文件（扫描件、照片）时，清单里缺的类型可能就在它们里面：只能说证据不足，不能说没传。
     unclassified = integer(arguments.get("unclassifiedDocumentCount")) or 0
+    if not uploaded and not unclassified:
+        # 一份设计文件都没有：说不上「缺哪几类」，和其余 68 条规则空输入的口径一样报证据不足。
+        # 只缺一部分时照旧判缺（10-30 口径：没有锚定事实的不符合交人工，不藏违规）。
+        return insufficient("check_document_set_completeness", arguments, "no_design_documents_uploaded")
     checks = []
     for document_type in sorted(required):
         checks.append(check(f"uploaded_{safe_code(document_type)}", document_type in uploaded, sorted(uploaded), document_type))
