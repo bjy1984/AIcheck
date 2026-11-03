@@ -849,6 +849,48 @@ standardClausePackages:
       endPage: 130
       precision: page_range
       verificationStatus: text_verified
+  - standardRef: STD-GB-50184-2011
+    clauseNo: 8.1.1、8.5.2、8.5.4、8.5.7
+    purpose: 焊缝检查等级划分及压力、泄漏性试验要求
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-C0476BBF81
+    documentVersionId: KDV-C0476BBF81-V1
+    sourcePage: 38
+    startPage: 38
+    endPage: 47
+    sourceLocatorId: LOC-164C78E61CD2
+    locatorPrecision: page_range
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-164C78E61CD2
+      clauseNo: 8.1.1
+      sourcePage: 38
+      startPage: 38
+      endPage: 38
+      precision: page
+      verificationStatus: text_verified
+    - locatorId: LOC-29BE59F1BAD4
+      clauseNo: 8.5.2
+      sourcePage: 44
+      startPage: 44
+      endPage: 45
+      precision: page_range
+      verificationStatus: text_verified
+    - locatorId: LOC-4114B7AA7731
+      clauseNo: 8.5.4
+      sourcePage: 45
+      startPage: 45
+      endPage: 46
+      precision: page_range
+      verificationStatus: text_verified
+    - locatorId: LOC-162B9B77FBA9
+      clauseNo: 8.5.7
+      sourcePage: 46
+      startPage: 46
+      endPage: 47
+      precision: page_range
+      verificationStatus: text_verified
   # N-16：四领域冻结判定规则。数值口径待法规核对（verifiedBy 为空前只作预警口径，见优化计划 §2.1）。
   designSpecialRequirementRules:
     ndt:
@@ -1253,6 +1295,27 @@ standardClausePackages:
       endPage: 18
       precision: page
       verificationStatus: visual_verified
+  - standardRef: STD-GB-50184-2011
+    clauseNo: 附录D 表D 质量管理第5项
+    purpose: 施工组织设计、施工方案及审批列入质量保证资料检查
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-C0476BBF81
+    documentVersionId: KDV-C0476BBF81-V1
+    sourcePage: 55
+    startPage: 55
+    endPage: 55
+    sourceLocatorId: LOC-5D7745F84AA0
+    locatorPrecision: page
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-5D7745F84AA0
+      clauseNo: 附录D 表D
+      sourcePage: 55
+      startPage: 55
+      endPage: 55
+      precision: page
+      verificationStatus: text_verified
   atomicCheckIds:
   - AC-R11-01
   - AC-R11-02
@@ -3939,6 +4002,34 @@ standardClausePackages:
       endPage: 7
       precision: page
       verificationStatus: visual_verified
+  - standardRef: STD-TSG-Z8001-2019
+    clauseNo: 第二条、第三条及表1、第五条
+    purpose: 持《检测人员证》上岗、方法项目代号级别及证书5年有效期
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-9214504E61
+    documentVersionId: KDV-9214504E61-V1
+    sourcePage: 3
+    startPage: 3
+    endPage: 4
+    sourceLocatorId: LOC-E3A4BF835178
+    locatorPrecision: page
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-E3A4BF835178
+      clauseNo: 第二条、第三条及表1
+      sourcePage: 3
+      startPage: 3
+      endPage: 3
+      precision: page
+      verificationStatus: text_verified
+    - locatorId: LOC-343FE52E622E
+      clauseNo: 第五条
+      sourcePage: 4
+      startPage: 4
+      endPage: 4
+      precision: page
+      verificationStatus: text_verified
   atomicCheckIds:
   - AC-R38-01
   - AC-R38-02
@@ -5493,6 +5584,41 @@ standardClausePackages:
       sourcePage: 49
       startPage: 49
       endPage: 51
+      precision: page_range
+      verificationStatus: visual_verified
+  - standardRef: STD-GB-50460-2015
+    clauseNo: 3.0.2、3.0.4、第13章、第14章
+    purpose: 跨越工程施工资质与人员资格、跨越管道安装焊接检验、清管试压
+    applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-E241A562DE
+    documentVersionId: KDV-E241A562DE-V1
+    sourcePage: 16
+    startPage: 16
+    endPage: 66
+    sourceLocatorId: LOC-1CFED3DBD958
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-1CFED3DBD958
+      clauseNo: 3.0.2、3.0.4
+      sourcePage: 16
+      startPage: 16
+      endPage: 16
+      precision: page
+      verificationStatus: visual_verified
+    - locatorId: LOC-DA6C4902B9B3
+      clauseNo: 第13章
+      sourcePage: 61
+      startPage: 61
+      endPage: 64
+      precision: page_range
+      verificationStatus: visual_verified
+    - locatorId: LOC-98F771C7DF21
+      clauseNo: 第14章
+      sourcePage: 65
+      startPage: 65
+      endPage: 66
       precision: page_range
       verificationStatus: visual_verified
   atomicCheckIds:

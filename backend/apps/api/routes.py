@@ -307,6 +307,7 @@ from libs.review_orchestrator.fact_builders import NODE_FACT_BUILDERS
 from libs.review_orchestrator.llm_tool_schemas import (
     CONVERSATION_AGENT_RUNTIME_TOOL_NAMES,
     EXTERNAL_REGISTRY_LLM_TOOLS,
+    REVIEW_CONVERSATION_CONTEXT_TOOLS,
     build_review_conversation_agent_tools,
     is_external_registry_tool,
 )
@@ -10134,86 +10135,6 @@ def create_node_review_session(
 def review_message_view(message: dict[str, Any]) -> dict[str, Any]:
     return repo.clone(message)
 
-
-REVIEW_CONVERSATION_CONTEXT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_review_context",
-            "description": "读取当前监检节点、固定规则、资料就绪度和 ReviewRun 状态。",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_node_evidence",
-            "description": "在当前项目节点授权范围内检索全部证据候选（不限会话已选），不会自动确认或采信证据。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "文件名或证据原文中的检索词。"},
-                    "manualStatus": {
-                        "type": "string",
-                        "description": "可选的人工状态筛选，例如 confirmed、pending。",
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_fixed_basis",
-            "description": "读取当前节点已经固化的标准条款，模型不能临时改选条款。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "条款号、标准名称或条款摘要关键词。"}
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "assemble_node_judgment_facts",
-            "description": (
-                "一次性聚合当前节点判定所需事实：项目参建单位名称、各证据文档的结构化字段、"
-                "印章名称与表格概览。适合用户只核查单个事项时，配合 check_* 工具使用；"
-                "整体核查请优先使用 run_node_formal_judgment。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "documentVersionIds": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "可选。仅聚合指定文档版本；缺省时聚合节点全部证据文档。",
-                    }
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_node_formal_judgment",
-            "description": (
-                "按当前节点固化规则执行正式判定链：复用正式 ReviewRun 的事实装配与原子项工具计划，"
-                "一次调用返回全部原子核查项的确定性判定结果（passed/failed/evidence_insufficient）。"
-                "用户要求对当前节点做整体核查或正式判定时应首选本工具，无需先聚合事实或逐个调用判定工具。"
-                "结果为辅助判定，未经过完整 ReviewRun 的质量门禁与人工确认环节。"
-            ),
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-    # 系统用法问答：不读任何节点数据，只查仓库里的使用教程（libs/help_center）。
-    help_center.TOOL_SCHEMA,
-]
 
 REVIEW_CONVERSATION_AGENT_TOOLS = build_review_conversation_agent_tools(
     context_tools=REVIEW_CONVERSATION_CONTEXT_TOOLS,
