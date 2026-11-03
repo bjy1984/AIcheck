@@ -64,7 +64,9 @@ def test_设计许可证事实从字段与正文里抽齐():
     assert any(ev["quotedText"].startswith("有效期至") for ev in item["evidence"])
     assert cert["expectedHolder"] == "广东政和工程有限公司"
     assert cert["period"] == {"periodStart": "2025-04-01", "periodEnd": "2026-04-30",
-                              "referenceDate": cert["period"]["referenceDate"], "referenceDateSource": "business_today"}
+                              "referenceDate": cert["period"]["referenceDate"], "referenceDateSource": "business_today",
+                              # 样本资料里没写施工起止：节点 1 标出来，有效期项不能凭它判符合（2026-11-03）
+                              "periodUnsourced": {"reason": "construction_period_not_in_node_documents"}}
     # 旧绑定表的命名也镜像了一份
     assert facts["designLicense"]["validUntil"] == "2028-01-17"
     assert facts["designLicense"]["holderName"] == "广东政和工程有限公司"

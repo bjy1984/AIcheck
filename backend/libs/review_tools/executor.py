@@ -151,11 +151,53 @@ def execute_node_tool_plan(
                 "warnings": pending_capability_warnings(item) + ([UNGROUNDED_FAILURE_WARNING] if ungrounded_business_failure(outputs) else []),
             }
         )
+    downgrade_unsourced_period_pass(plan, atomic_results, facts or {})
+    settle_evidence_trace_items(plan, atomic_results)
     return {
         "result": aggregate_atomic_results(atomic_results),
         "atomicResults": atomic_results,
         "summary": summarize(atomic_results),
     }
+
+
+_PERIOD_TOOLS = frozenset({"check_date_covers", "check_certificate_validity"})
+
+
+def downgrade_unsourced_period_pass(plan: list[dict[str, Any]], atomic_results: list[dict[str, Any]],
+                                    facts: dict[str, Any]) -> None:
+    """施工期只录在项目信息里、本节点资料没有出处时（certificate_facts 标 periodUnsourced），
+    用它核的有效期项不能判符合，降为证据不足；判出的不符合照旧（2026-11-03 用户定）。"""
+    period = nested_dict(nested_dict(facts, "certificateFacts"), "period")
+    if not period.get("periodUnsourced"):
+        return
+    period_items = {str(item.get("atomicCheckId")) for item in plan if set(item.get("tools") or []) & _PERIOD_TOOLS}
+    for item in atomic_results:
+        if str(item.get("atomicCheckId")) in period_items and item.get("result") == "passed":
+            item["result"] = "evidence_insufficient"
+            item["warnings"] = [*(item.get("warnings") or []), "construction_period_not_in_node_documents"]
+
+
+_EVIDENCE_TRACE_TOOLS = frozenset({"locate_evidence_fragment", "validate_evidence_grounding"})
+
+
+def settle_evidence_trace_items(plan: list[dict[str, Any]], atomic_results: list[dict[str, Any]]) -> None:
+    """只做证据追溯的原子项（如 AC-R01-05，工具只有定位＋锚定）不自己下业务结论。
+
+    它通过只说明「事实都有页码引文」；同节点别的项还没定（证据不足/需人工）时，
+    追溯项判符合就是替它们放行（2026-11-03 ECD202 节点 1：03 缺施工期出处，05 却判了符合）。
+    """
+    tools_by_id = {str(item.get("atomicCheckId")): set(item.get("tools") or []) for item in plan}
+    trace_ids = {identity for identity, tools in tools_by_id.items() if tools and tools <= _EVIDENCE_TRACE_TOOLS}
+    unsettled = [item["atomicCheckId"] for item in atomic_results
+                 if str(item.get("atomicCheckId")) not in trace_ids and item.get("result") not in {"passed", "not_applicable"}]
+    if not unsettled:
+        return
+    for item in atomic_results:
+        # 已标 evidence_gate 的门本来就不算业务结论，它的 passed 是给别处读的门状态，不动
+        if (str(item.get("atomicCheckId")) in trace_ids and item.get("result") == "passed"
+                and item.get("resultRole") != "evidence_gate"):
+            item["result"] = "evidence_insufficient"
+            item["warnings"] = [*(item.get("warnings") or []), "evidence_trace_waits_for:" + ",".join(map(str, unsettled))]
 
 
 def resolve_atomic_arguments(

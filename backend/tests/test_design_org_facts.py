@@ -349,3 +349,51 @@ def test_特性表读出别的级别或不在本节点输入里_不算佐证(mon
     _table_rows(monkeypatch, ("DV-OTHER", 32, "GC2"))
     facts = merge_certificate_facts(_with_grades(_state(), 23), _run(), {})
     assert not any("corroboration" in item for item in facts["judgment"]["claimedFacts"] if item.get("label") == "设计文件管道级别")
+
+
+# ---- 2026-11-03 用户定：施工期只在项目信息里、资料里没出处 → AC-R01-03 证据不足 ----
+
+def _with_period(state: dict) -> dict:
+    state["projects"][0].update({"constructionStart": "2026-03-25", "plannedConstructionEnd": "2026-06-30"})
+    return state
+
+
+def test_施工期在本节点资料里找不到出处_标出来但照旧给工具():
+    merged = merge_certificate_facts(_with_period(_state()), _run(), {})
+    period = merged["certificateFacts"]["period"]
+    assert period["periodStart"] == "2026-03-25", "过期等不符合不能因为没出处藏掉"
+    assert period["periodUnsourced"] == {"reason": "construction_period_not_in_node_documents"}
+
+
+def test_施工期没出处时_有效期项只能证据不足_不符合照旧():
+    from libs.review_tools.executor import downgrade_unsourced_period_pass
+
+    facts = {"certificateFacts": {"period": {"periodUnsourced": {"reason": "x"}}}}
+    plan = [{"atomicCheckId": "AC-R01-03", "tools": ["check_date_covers", "check_certificate_validity"]},
+            {"atomicCheckId": "AC-R01-01", "tools": ["check_all_equal"]},
+            {"atomicCheckId": "AC-R01-09", "tools": ["check_certificate_validity"]}]
+    results = [{"atomicCheckId": "AC-R01-03", "result": "passed"}, {"atomicCheckId": "AC-R01-01", "result": "passed"},
+               {"atomicCheckId": "AC-R01-09", "result": "failed"}]
+    downgrade_unsourced_period_pass(plan, results, facts)
+    assert [item["result"] for item in results] == ["evidence_insufficient", "passed", "failed"]
+
+
+def test_资料里写了施工起止日期_照常用项目施工期():
+    state = _with_period(_state())
+    state["ocr_parse_results"][0]["fragments"] = [{"pageNo": 5, "text": "计划开工 2026年3月25日，计划竣工 2026.6.30"}]
+    merged = merge_certificate_facts(state, _run(), {})
+    assert "periodUnsourced" not in merged["certificateFacts"]["period"]
+
+
+def test_只做证据追溯的原子项_别的项没定时不判符合():
+    from libs.review_tools.executor import settle_evidence_trace_items
+
+    plan = [{"atomicCheckId": "AC-R01-03", "tools": ["check_date_covers"]},
+            {"atomicCheckId": "AC-R01-05", "tools": ["locate_evidence_fragment", "validate_evidence_grounding"]}]
+    results = [{"atomicCheckId": "AC-R01-03", "result": "evidence_insufficient"}, {"atomicCheckId": "AC-R01-05", "result": "passed"}]
+    settle_evidence_trace_items(plan, results)
+    assert results[1]["result"] == "evidence_insufficient"
+    assert results[1]["warnings"] == ["evidence_trace_waits_for:AC-R01-03"]
+    settled = [{"atomicCheckId": "AC-R01-03", "result": "passed"}, {"atomicCheckId": "AC-R01-05", "result": "passed"}]
+    settle_evidence_trace_items(plan, settled)
+    assert settled[1]["result"] == "passed"

@@ -81,6 +81,9 @@ CERTIFICATE_NODE_PROFILES: dict[int, dict[str, Any]] = {
         "holderFactKey": "holderName",
         "scopeFactKey": "scopeCodes",
         "expectedHolderProjectField": "designOrgName",
+        # 2026-11-03 用户定：施工期只录在项目信息里、本节点资料里找不到出处时，
+        # 不拿它判许可证覆盖施工期（AC-R01-03 证据不足）
+        "requirePeriodInDocuments": True,
     },
     2: {
         "certificateType": "installation_license",
@@ -175,6 +178,19 @@ def certificate_profile_for_node(node_id: int) -> dict[str, Any] | None:
     return deepcopy(CERTIFICATE_NODE_PROFILES.get(int(node_id or 0)))
 
 
+def _parse_text(parse_result: dict[str, Any]) -> str:
+    parts = [str(item.get("text") or "") for item in parse_result.get("fragments") or [] if isinstance(item, dict)]
+    parts += [str(item.get("fieldValue") or item.get("value") or "") for item in parse_result.get("fields") or [] if isinstance(item, dict)]
+    return "\n".join(parts)
+
+
+def _date_mentioned(texts: list[str], iso_date: str) -> bool:
+    """资料里写了这个日期（2026-03-25 / 2026年3月25日 / 2026.3.25 / 2026/03/25 都算）。"""
+    year, month, day = (int(part) for part in iso_date.split("-"))
+    pattern = re.compile(rf"{year}\s*[年./\-]\s*0?{month}\s*[月./\-]\s*0?{day}(?!\d)")
+    return any(pattern.search(text) for text in texts)
+
+
 def project_certificate_period(project: dict[str, Any] | None) -> dict[str, Any]:
     """证书应覆盖的业务期间。项目没填施工起止时返回空，交给工具按今日判断并告警。"""
     project = project or {}
@@ -259,6 +275,12 @@ def build_certificate_facts(
     certificates = verify_certificate_records(state, profile, certificates, review_run=review_run)
     project = _project_record(state, project_id)
     period = project_certificate_period(project)
+    if profile.get("requirePeriodInDocuments") and (period["periodStart"] or period["periodEnd"]):
+        texts = [_parse_text(parse_result) for parse_result in latest_usable_selected_parses(state, source_run, requested)]
+        if not all(_date_mentioned(texts, value) for value in (period["periodStart"], period["periodEnd"]) if value):
+            # 施工期照旧给工具：证过期等「不符合」不能因为没出处就藏掉；只是不能凭它判「符合」
+            # （executor.downgrade_unsourced_period_pass）
+            period = {**period, "periodUnsourced": {"reason": "construction_period_not_in_node_documents"}}
     expected_holder = None
     if profile.get("expectedHolderProjectField"):
         expected_holder = str(project.get(profile["expectedHolderProjectField"]) or "").strip() or None
