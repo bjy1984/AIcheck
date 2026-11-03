@@ -30,37 +30,9 @@ const form = reactive({
   confirmPassword: ''
 })
 
-const passwordProblems = (value: string) => {
-  const classes = [
-    /[a-z]/.test(value),
-    /[A-Z]/.test(value),
-    /\d/.test(value),
-    /[^A-Za-z0-9]/.test(value)
-  ]
-  const problems: string[] = []
-  if (value.length < 12) problems.push('至少 12 位')
-  if (classes.filter(Boolean).length < 3) problems.push('至少包含三类字符')
-  if (
-    userStore.getUserInfo?.username &&
-    value.toLowerCase().includes(userStore.getUserInfo.username.toLowerCase())
-  ) {
-    problems.push('不得包含用户名')
-  }
-  return problems
-}
-
 const rules: FormRules = {
   currentPassword: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
-  newPassword: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    {
-      validator: (_rule, value: string, callback) => {
-        const problems = passwordProblems(value || '')
-        callback(problems.length ? new Error(problems.join('，')) : undefined)
-      },
-      trigger: 'blur'
-    }
-  ],
+  newPassword: [{ required: true, message: '请输入新密码', trigger: 'blur' }],
   confirmPassword: [
     { required: true, message: '请再次输入新密码', trigger: 'blur' },
     {
@@ -155,9 +127,6 @@ const logout = async () => {
             autocomplete="new-password"
             aria-label="新密码"
           />
-          <p class="password-help"
-            >至少 12 位，并包含大写字母、小写字母、数字、特殊字符中的三类。</p
-          >
         </ElFormItem>
         <ElFormItem label="确认新密码" prop="confirmPassword">
           <ElInput

@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -22,23 +21,6 @@ JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "aicheck-api"
 JWT_AUDIENCE = "aicheck-frontend"
 DEFAULT_INITIAL_PASSWORD = "anyuekeji.123"
-COMMON_PASSWORDS = {
-    "123456",
-    "12345678",
-    "123456789",
-    "admin",
-    "admin123",
-    "aicheck",
-    "changeme",
-    "letmein",
-    "password",
-    "password123",
-    "qwerty",
-    "qwerty123",
-    "welcome",
-    "welcome123",
-}
-
 ROLE_DEFAULT_PATHS = {
     "inspection": "/ai-review-b",
     "contractor": "/workbench/contractor",
@@ -158,25 +140,8 @@ def hash_password(password: str) -> str:
 
 
 def password_strength_errors(username: str, password: str) -> list[str]:
-    errors: list[str] = []
-    normalized_username = username.strip().lower()
-    if len(password) < 12:
-        errors.append("密码长度至少为 12 位")
-    if normalized_username and normalized_username in password.lower():
-        errors.append("密码不得包含用户名")
-    classes = (
-        bool(re.search(r"[a-z]", password)),
-        bool(re.search(r"[A-Z]", password)),
-        bool(re.search(r"\d", password)),
-        bool(re.search(r"[^A-Za-z0-9]", password)),
-    )
-    if sum(classes) < 3:
-        errors.append("密码至少包含大写字母、小写字母、数字、特殊字符中的三类")
-    normalized_password = re.sub(r"[^a-z0-9]", "", password.lower())
-    normalized_username_password = re.sub(r"[^a-z0-9]", "", normalized_username)
-    if normalized_password in COMMON_PASSWORDS or normalized_password == normalized_username_password:
-        errors.append("密码过于常见")
-    return errors
+    """Accept any non-empty password; keep the shared validation entry point."""
+    return [] if password else ["口令不能为空"]
 
 
 def jwt_secret() -> str:

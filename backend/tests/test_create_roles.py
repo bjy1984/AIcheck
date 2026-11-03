@@ -20,17 +20,14 @@ def setup_function() -> None:
     repo.reset()
 
 
-def test_create_roles_strong_password_validation_rejects_default_passwords() -> None:
+def test_create_roles_accepts_default_passwords() -> None:
     roles = ["admin", "inspection"]
-    passwords = resolve_role_passwords(roles)
+    validate_strong_passwords(roles, resolve_role_passwords(roles))
 
-    with pytest.raises(SystemExit) as exc:
-        validate_strong_passwords(roles, passwords)
 
-    message = str(exc.value)
-    assert "admin" in message
-    assert "inspection" in message
-    assert "contains username/default" in message
+def test_create_roles_rejects_empty_password() -> None:
+    with pytest.raises(SystemExit, match="password is required"):
+        validate_strong_passwords(["admin"], {"admin": ""})
 
 
 def test_create_roles_password_file_overrides_and_redacts_output(tmp_path) -> None:

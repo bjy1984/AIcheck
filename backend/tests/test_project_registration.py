@@ -351,14 +351,28 @@ def test_不能自选管理员角色():
         assert _apply(token, username=f"applicant-{role}", role=role)["code"] != 0
 
 
-def test_弱口令被拒并且用后台同一套规则():
+@pytest.mark.parametrize("password", ["1", "123456", "applicant-weak", "中文"])
+def test_允许自由指定非空口令(password):
     token = _make_link()["data"]["token"]
     body = client.post(
         f"/api/registration-links/{token}/apply",
-        json={"username": "applicant-weak", "role": "contractor", "password": "123456"},
+        json={"username": "applicant-weak", "role": "contractor", "password": password},
+    ).json()
+    assert body["code"] == 0
+    record = next(r for r in repo.state["registration_requests"] if r.get("username") == "applicant-weak")
+    from libs.security.auth import verify_password
+    assert verify_password(password, record["passwordHash"])
+
+
+def test_空口令仍然被拒():
+    token = _make_link()["data"]["token"]
+    body = client.post(
+        f"/api/registration-links/{token}/apply",
+        json={"username": "applicant-empty", "role": "contractor", "password": ""},
     ).json()
     assert body["code"] != 0
-    assert not any(r.get("username") == "applicant-weak" for r in repo.state["registration_requests"])
+    assert body["data"]["problems"] == ["口令不能为空"]
+    assert not any(r.get("username") == "applicant-empty" for r in repo.state["registration_requests"])
 
 
 def test_同一用户名不能重复申请():

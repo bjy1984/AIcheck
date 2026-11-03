@@ -27702,11 +27702,6 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             "ndt": "ndtOrgName",
             "inspection": "inspectionOrgName",
         }
-        required_fields = ["name"] + [
-            role_org_fields[item["userRole"]]
-            for item in assignments
-            if item["userRole"] in role_org_fields
-        ]
         normalized = {
             "name": name,
             "region": region,
@@ -27715,14 +27710,6 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
                 for field in role_org_fields.values()
             },
         }
-        missing_fields = list(dict.fromkeys(field for field in required_fields if not normalized.get(field)))
-        if missing_fields:
-            return fail(
-                errors.VALIDATION_ERROR,
-                request,
-                message="项目基本信息、参建单位和初始成员必须使用真实配置，不能留空。",
-                data={"missingFields": missing_fields},
-            )
         requested_type = str(body.get("type") or "").strip()
         if requested_type and requested_type != project_type:
             return fail(errors.VALIDATION_ERROR, request, message="项目类型必须与所选业务类型一致。")
@@ -27731,6 +27718,7 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
         except ValueError as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         project_id = str(body.get("code") or f"P-{datetime.now(UTC).year}-{uuid4().hex[:6].upper()}").strip()
+        name = name or f"未命名项目-{project_id}"
         if repo.require_project(project_id):
             return fail(errors.CONFLICT, request, message="项目编号已存在。")
         member_user_ids = body.get("memberUserIds") if isinstance(body.get("memberUserIds"), dict) else {}
@@ -27739,6 +27727,8 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
         for assignment in assignments:
             user_role = assignment["userRole"]
             user_id = str(member_user_ids.get(user_role) or member_user_ids.get(assignment.get("code")) or "").strip()
+            if not user_id:
+                continue
             user = exact_admin_user(user_id)
             expected_org = normalized.get(role_org_fields.get(user_role, ""), "")
             expected_org_record = find_org_unit(org_name=expected_org) if expected_org else None
@@ -28362,7 +28352,7 @@ def update_admin_user(
                     data={"field": "password", "problems": password_errors},
                 )
         elif not existing.get("passwordHash"):
-            return fail(errors.VALIDATION_ERROR, request, message="该账号缺少有效密码，请先设置强密码。")
+            return fail(errors.VALIDATION_ERROR, request, message="该账号缺少有效密码，请先设置密码。")
         changed = []
         before = repo.clone(existing)
         updated = build_admin_user_record({**existing, **body, "id": user_id, "role": role, "username": username}, existing=existing, org=org)

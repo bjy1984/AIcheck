@@ -156,11 +156,7 @@ import {
   formatParticipantType,
   formatProjectRegion
 } from './utils/projectDetailPresentation'
-import {
-  findFirstRoleWithoutCandidates,
-  missingWizardMemberMessage,
-  userBelongsToOrganization
-} from './utils/projectWizardMembers'
+import { userBelongsToOrganization } from './utils/projectWizardMembers'
 import { explicitJevSetting, reviewPluginPatch } from './reviewPlugins'
 
 const emptyOverview = (): AdminConfigOverviewPayload => ({
@@ -2205,6 +2201,8 @@ const resetProjectWizardForm = () => {
   projectWizardForm.code = ''
   projectWizardForm.name = ''
   projectWizardForm.region = ''
+  projectWizardForm.constructionStart = ''
+  projectWizardForm.plannedConstructionEnd = ''
   applyBusinessPackDefaultsToWizard()
   ;(['inspection', 'contractor', 'ndt', 'owner'] as ProjectWizardMemberRole[]).forEach((role) => {
     projectWizardForm.memberUserIds[role] = ''
@@ -2234,57 +2232,11 @@ const openProjectWizard = () => {
   projectWizardVisible.value = true
 }
 
-const validateProjectWizardStep = () => {
-  if (projectWizardStep.value === 0) {
-    if (!projectWizardForm.businessPackId) {
-      ElMessage.warning('请选择压力管道类别')
-      return false
-    }
-    if (!projectWizardForm.type.trim()) {
-      projectWizardForm.type = projectTypeForPack(selectedWizardBusinessPack.value)
-    }
-    if (!projectWizardForm.name.trim()) {
-      ElMessage.warning('请填写项目名称')
-      return false
-    }
-    if (!projectWizardForm.type.trim()) {
-      ElMessage.warning('项目类型生成失败，请重新选择压力管道类别')
-      return false
-    }
-  }
-  if (projectWizardStep.value === 1) {
-    const orgNames = projectWizardRoles.value.map(wizardOrgNameByRole)
-    if (orgNames.some((name) => !name.trim())) {
-      ElMessage.warning('请补齐参建单位')
-      return false
-    }
-    const unavailableRole = findFirstRoleWithoutCandidates(
-      projectWizardRoles.value,
-      wizardUsersByRole
-    )
-    if (unavailableRole) {
-      ElMessage.warning(
-        missingWizardMemberMessage(roleLabel(unavailableRole), wizardOrgNameByRole(unavailableRole))
-      )
-      return false
-    }
-  }
-  if (projectWizardStep.value === 2) {
-    if (projectWizardRoles.value.some((role) => !projectWizardForm.memberUserIds[role])) {
-      ElMessage.warning('请为业务类型要求的角色选择初始成员')
-      return false
-    }
-  }
-  return true
-}
-
 const handleProjectWizardNext = () => {
-  if (!validateProjectWizardStep()) return
   projectWizardStep.value = Math.min(projectWizardStep.value + 1, 2)
 }
 
 const handleCreateProject = async () => {
-  if (!validateProjectWizardStep()) return
   const payload: AdminProjectCreatePayload = {
     code: projectWizardForm.code || undefined,
     businessPackId: projectWizardForm.businessPackId,
@@ -2633,22 +2585,6 @@ const handleSaveUser = async () => {
   }
   // 新增时留空：后端用预设初始密码建账号，并要求首次登录先改密。
   const initialPassword = userForm.password.trim()
-  if (initialPassword) {
-    const classes = [
-      /[a-z]/.test(initialPassword),
-      /[A-Z]/.test(initialPassword),
-      /\d/.test(initialPassword),
-      /[^A-Za-z0-9]/.test(initialPassword)
-    ]
-    if (
-      initialPassword.length < 12 ||
-      classes.filter(Boolean).length < 3 ||
-      initialPassword.toLowerCase().includes(userForm.username.toLowerCase())
-    ) {
-      ElMessage.warning('密码至少 12 位、包含三类字符且不得包含用户名')
-      return
-    }
-  }
   userSaving.value = true
   userOperationError.value = ''
   try {
@@ -5686,6 +5622,12 @@ onMounted(() => {
           <ElStep title="初始授权" />
         </ElSteps>
 
+        <ElAlert
+          type="info"
+          :closable="false"
+          title="可直接创建项目，参建单位、成员和日期均可稍后补充；名称留空将自动生成。"
+          class="mt-12px"
+        />
         <ElForm label-position="top" class="wizard-form">
           <div v-if="projectWizardError" class="local-error local-error--compact">
             <ElAlert type="error" show-icon :closable="false" :title="projectWizardError" />
@@ -5730,8 +5672,8 @@ onMounted(() => {
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="项目名称">
-                  <ElInput v-model="projectWizardForm.name" placeholder="请输入项目名称" />
+                <ElFormItem label="项目名称（选填）">
+                  <ElInput v-model="projectWizardForm.name" placeholder="留空自动生成" />
                 </ElFormItem>
               </ElCol>
             </ElRow>
@@ -5758,10 +5700,11 @@ onMounted(() => {
           <div v-show="projectWizardStep === 1">
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="建设单位">
+                <ElFormItem label="建设单位（选填）">
                   <ElSelect
                     v-model="projectWizardForm.ownerOrgName"
                     filterable
+                    clearable
                     placeholder="请选择已启用建设单位"
                     @change="handleWizardOrgChange('owner')"
                   >
@@ -5775,10 +5718,11 @@ onMounted(() => {
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="施工单位">
+                <ElFormItem label="施工单位（选填）">
                   <ElSelect
                     v-model="projectWizardForm.contractorOrgName"
                     filterable
+                    clearable
                     placeholder="请选择已启用施工单位"
                     @change="handleWizardOrgChange('contractor')"
                   >
@@ -5794,10 +5738,11 @@ onMounted(() => {
             </ElRow>
             <ElRow :gutter="12">
               <ElCol v-if="wizardUsesRole('ndt')" :xs="24" :sm="12">
-                <ElFormItem label="无损检测单位">
+                <ElFormItem label="无损检测单位（选填）">
                   <ElSelect
                     v-model="projectWizardForm.ndtOrgName"
                     filterable
+                    clearable
                     placeholder="请选择已启用无损检测单位"
                     @change="handleWizardOrgChange('ndt')"
                   >
@@ -5811,10 +5756,11 @@ onMounted(() => {
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="监检机构">
+                <ElFormItem label="监检机构（选填）">
                   <ElSelect
                     v-model="projectWizardForm.inspectionOrgName"
                     filterable
+                    clearable
                     placeholder="请选择已启用监检机构"
                     @change="handleWizardOrgChange('inspection')"
                   >
@@ -5828,7 +5774,7 @@ onMounted(() => {
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="施工开始日期">
+                <ElFormItem label="施工开始日期（选填）">
                   <ElDatePicker
                     v-model="projectWizardForm.constructionStart"
                     type="date"
@@ -5839,7 +5785,7 @@ onMounted(() => {
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="计划完工日期">
+                <ElFormItem label="计划完工日期（选填）">
                   <ElDatePicker
                     v-model="projectWizardForm.plannedConstructionEnd"
                     type="date"
@@ -5868,12 +5814,13 @@ onMounted(() => {
               <ElTableColumn prop="__self" label="角色" width="120" sortable="custom">
                 <template #default="{ row }">{{ roleLabel(row) }}</template>
               </ElTableColumn>
-              <ElTableColumn label="初始成员" min-width="260">
+              <ElTableColumn label="初始成员（选填）" min-width="260">
                 <template #default="{ row }">
                   <ElSelect
                     v-model="projectWizardForm.memberUserIds[row]"
                     filterable
-                    placeholder="请选择所属单位的启用用户"
+                    clearable
+                    placeholder="选填，可稍后授权"
                     no-data-text="该单位暂无可用用户"
                   >
                     <ElOption
@@ -5915,7 +5862,7 @@ onMounted(() => {
           <ElButton v-if="projectWizardStep < 2" type="primary" @click="handleProjectWizardNext">
             下一步
           </ElButton>
-          <ElButton v-else type="primary" :loading="projectCreating" @click="handleCreateProject">
+          <ElButton type="primary" :loading="projectCreating" @click="handleCreateProject">
             创建项目
           </ElButton>
         </template>

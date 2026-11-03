@@ -11123,20 +11123,31 @@ def test_project_creation_routes_are_idempotent_and_return_initial_members() -> 
     assert all_contracts["summary"]["aligned"] == all_contracts["summary"]["total"]
 
 
-def test_project_creation_rejects_missing_or_invalid_real_configuration_without_partial_writes() -> None:
+@pytest.mark.parametrize("endpoint", ["/admin/projects", "/projects"])
+@pytest.mark.parametrize("body", [{}, {"name": "简单项目"}, {"name": "部分资料", "ownerOrgName": "建设单位"}])
+def test_project_creation_accepts_optional_details(endpoint, body) -> None:
+    created = assert_ok(client.post(endpoint, json=body))
+    project = created["project"]
+    assert project["name"] == (body.get("name") or f"未命名项目-{project['id']}")
+    assert project["ownerOrgName"] == body.get("ownerOrgName", "")
+    assert project["contractorOrgName"] == ""
+    assert created["detail"]["members"] == []
+    assert created["createdNodeCount"] > 0
+    assert created["createdRequirementCount"] > 0
+    assert_ok(client.get(f"/projects/{project['id']}"))
+
+
+def test_project_creation_accepts_partial_initial_members() -> None:
+    body = admin_project_create_payload("P-PARTIAL-MEMBERS", "部分成员项目")
+    body["memberUserIds"] = {"inspection": body["memberUserIds"]["inspection"], "owner": ""}
+    created = assert_ok(client.post("/admin/projects", json=body))
+    assert len(created["detail"]["members"]) == 1
+    assert created["detail"]["members"][0]["role"] == "inspection"
+
+
+def test_project_creation_rejects_invalid_member_without_partial_writes() -> None:
     initial_projects = len(repo.state["projects"])
     initial_members = len(repo.state["project_members"])
-    missing = assert_error(
-        client.post("/admin/projects", json={"code": "P-INVALID-EMPTY", "name": "缺配置项目"}),
-        "VALIDATION_ERROR",
-    )
-    missing_fields = missing["data"]["missingFields"]
-    assert "region" not in missing_fields
-    assert "ownerOrgName" in missing_fields
-    assert "contractorOrgName" in missing_fields
-    assert len(repo.state["projects"]) == initial_projects
-    assert len(repo.state["project_members"]) == initial_members
-
     invalid_payload = admin_project_create_payload("P-INVALID-MEMBER", "成员无效项目")
     invalid_payload["memberUserIds"] = {
         **invalid_payload["memberUserIds"],

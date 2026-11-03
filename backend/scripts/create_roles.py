@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -206,24 +205,7 @@ def resolve_role_passwords(roles: list[str], overrides: dict[str, str] | None = 
 
 
 def password_strength_errors(role: str, password: str) -> list[str]:
-    spec = ROLE_SPECS[role]
-    username = spec["username"]
-    errors: list[str] = []
-    if len(password) < 12:
-        errors.append("length < 12")
-    if password == username or username.lower() in password.lower():
-        errors.append("contains username/default")
-    classes = [
-        bool(re.search(r"[a-z]", password)),
-        bool(re.search(r"[A-Z]", password)),
-        bool(re.search(r"\d", password)),
-        bool(re.search(r"[^A-Za-z0-9]", password)),
-    ]
-    if sum(classes) < 3:
-        errors.append("requires at least 3 character classes")
-    if password.lower() in {"password", "password123", "admin", "aicheck", role, username}:
-        errors.append("common password")
-    return errors
+    return [] if password else ["password is required"]
 
 
 def validate_strong_passwords(roles: list[str], passwords: dict[str, str]) -> None:

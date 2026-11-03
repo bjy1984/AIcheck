@@ -95,6 +95,10 @@ const handleSubmit = async () => {
     ElMessage.warning('请选择你在本项目中的角色。')
     return
   }
+  if (!form.value.password) {
+    ElMessage.warning('请填写口令。')
+    return
+  }
   /* 两次口令不一致要在提交前拦住：交给服务端的话，申请提上去了但口令
      不是他以为的那个，等审核通过去登录才发现——那时已经改不了了。 */
   if (form.value.password !== form.value.confirm) {
@@ -113,8 +117,7 @@ const handleSubmit = async () => {
     if (!res) return
     submitted.value = true
   } catch (error) {
-    // 口令强度这类校验由服务端说了算，原样转述；
-    // 前端另写一套提示，两边一旦不一致，用户会照着前端的提示反复失败
+    // 展示服务端返回的申请失败原因。
     ElMessage.error(getAicheckErrorMessage(error, '提交失败，请检查填写内容。'))
   } finally {
     submitting.value = false

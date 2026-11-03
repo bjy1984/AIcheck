@@ -177,19 +177,21 @@ def test_strict_mode_hides_mock_routes(monkeypatch) -> None:
     assert response.status_code == 404
 
 
-def test_admin_user_creation_requires_strong_password() -> None:
+def test_admin_user_creation_accepts_short_password() -> None:
     response = client.post(
         "/api/admin/users",
         headers={"If-Match": "*", "Idempotency-Key": "weak-user"},
         json={
             "username": "weak-user",
             "name": "Weak",
-            "role": "owner",
+            "role": "admin",
             "password": "weak",
         },
     )
-    assert payload(response)["data"]["reason"] == "VALIDATION_ERROR"
-    assert payload(response)["data"]["field"] == "password"
+    assert payload(response)["code"] == 0
+    user = next(u for u in repo.state["users"] if u.get("username") == "weak-user")
+    from libs.security.auth import verify_password
+    assert verify_password("weak", user["passwordHash"])
 
 
 def test_admin_user_created_with_the_default_password_must_change_it_first() -> None:
@@ -252,8 +254,13 @@ def test_disabled_missing_password_user_does_not_block_strict_startup(monkeypatc
     assert security_runtime_problems() == []
 
 
-def test_password_policy_rejects_decorated_common_password() -> None:
-    assert "密码过于常见" in password_strength_errors("secure-user", "Password123!")
+@pytest.mark.parametrize("password", ["1", "123456", "Password123!", "secure-user", "中文"])
+def test_password_policy_accepts_any_nonempty_password(password: str) -> None:
+    assert password_strength_errors("secure-user", password) == []
+
+
+def test_password_policy_requires_password() -> None:
+    assert password_strength_errors("secure-user", "") == ["口令不能为空"]
 
 
 def test_strict_security_runtime_rejects_malformed_allowlists(monkeypatch) -> None:
