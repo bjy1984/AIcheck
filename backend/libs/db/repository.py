@@ -5150,6 +5150,22 @@ class InMemoryRepository:
                     watermarks.get(collection_name) or _EPOCH_WATERMARK
                 )
 
+    def persisted_tenant_ids(self) -> list[str]:
+        """库里有数据的全部院（租户），部署默认院排第一。定时任务逐院跑要用（2026-11-02）。"""
+        from libs.security.tenant import configured_tenant_id as deployment_tenant_id
+
+        default = deployment_tenant_id()
+        found = {default}
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is not None:
+                # 只认库里真有数据的院：内存里的院可能是有人带了个不存在的院名登录时凭空建的
+                rows = self.sync_postgres.execute("SELECT DISTINCT tenant_id FROM aicheck_state").fetchall()
+                found.update(str(row[0]) for row in rows if row and row[0])
+            else:
+                found.update(self._tenant_states)  # 没接数据库（本机演示、测试）：内存就是全部
+        return sorted(found, key=lambda tenant: (tenant != default, tenant))
+
     def load_from_sync_postgres(
         self, selected_state_keys: set[str] | None = None, tenant_id: str | None = None
     ) -> None:
@@ -5197,7 +5213,7 @@ class InMemoryRepository:
                       AND collection <> ALL(%s)
                     ORDER BY collection, object_id
                     """,
-                    (configured_tenant_id(), sorted(deferred_bulk_collections())),
+                    (effective_tenant_id, sorted(deferred_bulk_collections())),
                 ).fetchall()
             else:
                 rows = self.sync_postgres.execute(

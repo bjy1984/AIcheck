@@ -154,3 +154,11 @@ def isolate_repository_persistence_backend():
     repo.postgres_enabled = False
     repo.sync_postgres = None
     repo.postgres_dsn = None
+    # 用例里建出来的其他院也要清掉：repo.reset() 只清当前院（生产里失败请求的复原
+    # 也走它，不能顺手清别的院）。不清的话，没接数据库时定时任务会把上一个用例
+    # 留下的院也逐个跑一遍（2026-11-02 定时任务改为逐院执行）。
+    from libs.security.tenant import configured_tenant_id
+
+    for tenant_id in [tenant for tenant in repo._tenant_states if tenant != configured_tenant_id()]:
+        repo._tenant_states.pop(tenant_id, None)
+        repo._loaded_tenants.discard(tenant_id)

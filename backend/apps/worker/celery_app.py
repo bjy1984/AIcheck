@@ -97,3 +97,6 @@ celery_app.conf.update(
     },
     result_backend_transport_options={"visibility_timeout": VISIBILITY_TIMEOUT_SECONDS},
 )
+
+# 发布与执行都挂上「带上院」的钩子：凡是加载了这个 app 的进程（API 投递、worker 执行）都生效。
+from apps.worker import tenant_propagation  # noqa: F401

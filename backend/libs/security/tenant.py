@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from contextvars import ContextVar, Token
 from typing import Any
 
@@ -23,6 +24,30 @@ def tenant_is_allowed(tenant_id: str) -> bool:
     if not canonical:
         return False
     return tenant_mode() != "isolated" or canonical == configured_tenant_id()
+
+
+TENANT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+
+
+def valid_tenant_id(value: Any) -> str | None:
+    """形如 TENANT-xxx 的院 id 原样返回，其余返回 None（任务消息头、登录体都是外来值）。"""
+    text = str(value or "").strip()
+    return text if TENANT_ID_RE.fullmatch(text) else None
+
+
+def tenant_scoped_name(name: str, tenant_id: str | None = None) -> str:
+    """部署默认院以外的院，存储路径、锁键前面加 tenants/<院>/。
+
+    2026-11-02 多特检院：两个院的项目号、文档版本号可能相同，对象存储路径
+    documents/{project}/{version} 和任务锁会互相覆盖、互相挡住。默认院不加前缀，
+    已有的文件和锁不用迁移；已经带了本院前缀的不再重复加。
+    """
+    tenant = str(tenant_id or current_tenant_id())
+    normalized = str(name or "").lstrip("/")
+    if tenant == configured_tenant_id():
+        return normalized
+    prefix = f"tenants/{tenant}/"
+    return normalized if normalized.startswith(prefix) else f"{prefix}{normalized}"
 
 
 def current_tenant_id() -> str:

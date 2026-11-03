@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import unquote, urlencode, urlparse
 
 from libs.contracts.responses import SERVER_TZ
+from libs.security.tenant import tenant_scoped_name
 
 LOGICAL_BUCKETS = (
     "documents",
@@ -140,9 +141,13 @@ class ObjectStorage:
 
     def object_name(self, object_name: str) -> str:
         normalized = str(object_name or "").lstrip("/")
-        if not self.object_namespace or normalized == self.object_namespace or normalized.startswith(f"{self.object_namespace}/"):
-            return normalized
-        return f"{self.object_namespace}/{normalized}"
+        namespace = self.object_namespace
+        if namespace and (normalized == namespace or normalized.startswith(f"{namespace}/")):
+            return normalized  # 已经是物理路径（put 返回的 minio:// 引用里存的就是它）
+        # 默认院以外的院再套一层 tenants/<院>/：两个院项目号相同时文件不会互相覆盖（2026-11-02）。
+        # 默认院不加，已有文件不用搬；已带本院前缀的不重复加。
+        scoped = tenant_scoped_name(normalized)
+        return f"{namespace}/{scoped}" if namespace else scoped
 
     def namespace_status(self) -> dict[str, Any]:
         return {

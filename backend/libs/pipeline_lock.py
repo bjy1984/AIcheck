@@ -10,6 +10,8 @@ from contextvars import ContextVar
 from functools import wraps
 from typing import Any
 
+from libs.security.tenant import tenant_scoped_name
+
 
 class PipelineLockUnavailable(RuntimeError):
     pass
@@ -128,7 +130,8 @@ def pipeline_task_lock(
     def decorator(function: Callable[..., dict[str, Any]]):
         @wraps(function)
         def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            key = f"aicheck:{scope}:{key_builder(*args, **kwargs)}"
+            # 两个院的文档版本号可能相同：默认院以外的锁键带上院，免得互相挡住（2026-11-02）
+            key = f"aicheck:{scope}:{tenant_scoped_name(key_builder(*args, **kwargs))}"
             try:
                 with pipeline_lock(key, idle_timeout_seconds=idle_timeout_seconds, **({"keepalive": True} if keepalive else {})) as acquired:
                     if not acquired:

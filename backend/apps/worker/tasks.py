@@ -92,11 +92,11 @@ from libs.knowledge_indexing import (
 from libs.llm_document_classification import classify_document_text
 from libs.material_targeting import latest_parse_result
 from libs.mineru_ocr import (
+    MinerUArtifact,
     MinerUNormalizationError,
     MinerUNormalizedBundle,
-    MinerUArtifact,
-    normalize_mineru_zip,
     finalize_mineru_after_seals,
+    normalize_mineru_zip,
     validated_zip_members,
 )
 from libs.model_usage import model_cost_cny, normalize_model_usage
@@ -130,16 +130,19 @@ from libs.ocr_accuracy_pipeline import (
     validate_batch_output,
     validated_ocr_fields,
 )
+from libs.ocr_failover import MinerUPendingTimeout, observe_provider, select_qwen
 from libs.ocr_runtime import (
     ocr_runtime_config,
     official_ocr_enabled,
     official_ocr_primary_enabled,
 )
-from libs.pipeline_lock import assert_pipeline_lock_owned, PipelineLockUnavailable
 from libs.official_ocr_control import OfficialOcrControlUnavailable
-from libs.ocr_failover import MinerUPendingTimeout, observe_provider, select_qwen
 from libs.official_ocr_pipeline import official_ocr_extract, profile_result_complete
-from libs.pipeline_lock import pipeline_task_lock
+from libs.pipeline_lock import (
+    PipelineLockUnavailable,
+    assert_pipeline_lock_owned,
+    pipeline_task_lock,
+)
 from libs.project_analysis import (
     ProjectAnalysisOutputError,
     advance_project_analysis_phase,
@@ -174,6 +177,9 @@ from libs.seal_local_reader import (
     scan_document_seals_via_service,
 )
 from libs.seal_vision import read_seal_texts
+from libs.security.tenant import (
+    configured_tenant_id as deployment_tenant_id,
+)
 from libs.security.tenant import (
     current_tenant_id,
     reset_request_tenant_id,
@@ -5518,6 +5524,30 @@ def review_conversation_execute(
     return {"executionId": execution_id, "sessionId": session_id}
 
 
+
+def _for_each_tenant(job: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """定时任务由 beat 在默认院发出，这里逐院各跑一遍（2026-11-02 多特检院）。
+
+    返回值：默认院的结果原样放在最外层，其他院放在 otherTenants 里——只有一个院时
+    与原来完全一样。某个院出错不拦其他院，全部跑完后再抛第一个错，交给任务的自动重试。
+    """
+    results: dict[str, dict[str, Any]] = {}
+    errors: list[Exception] = []
+    for tenant_id in repo.persisted_tenant_ids():
+        token = set_request_tenant_id(tenant_id)
+        try:
+            results[tenant_id] = job()
+        except Exception as exc:  # noqa: BLE001 - 收齐后统一抛出
+            logging.getLogger(__name__).exception("periodic job failed for tenant %s", tenant_id)
+            errors.append(exc)
+        finally:
+            reset_request_tenant_id(token)
+    if errors:
+        raise errors[0]
+    main = results.pop(deployment_tenant_id(), {})
+    return {**main, "otherTenants": results} if results else main
+
+
 AUTO_REVIEW_STATE_KEYS = {
     "auto_review_policies",
     "auto_review_candidates",
@@ -5565,6 +5595,10 @@ def _auto_review_idle(kind: str, now: datetime) -> bool:
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_consume_evidence_events")
 def auto_review_consume_evidence_events(self) -> dict[str, Any]:
+    return _for_each_tenant(_auto_review_consume_evidence_events_one_tenant)
+
+
+def _auto_review_consume_evidence_events_one_tenant() -> dict[str, Any]:
     if _auto_review_idle("events", datetime.now(UTC)):
         return {"completedEventIds": [], "skippedEventIds": [], "createdCandidateIds": []}
     load_state(AUTO_REVIEW_STATE_KEYS)
@@ -5586,6 +5620,10 @@ def auto_review_consume_evidence_events(self) -> dict[str, Any]:
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_scan_due_projects")
 def auto_review_scan_due_projects(self) -> dict[str, Any]:
+    return _for_each_tenant(_auto_review_scan_due_projects_one_tenant)
+
+
+def _auto_review_scan_due_projects_one_tenant() -> dict[str, Any]:
     if _auto_review_idle("scan", datetime.now(UTC)):
         return {"dueProjectIds": [], "createdCandidateIds": []}
     load_state(AUTO_REVIEW_STATE_KEYS)
@@ -5664,6 +5702,10 @@ def _start_auto_review_node(project_id: str, node_id: int, metadata: dict[str, A
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_start_pending_candidates")
 def auto_review_start_pending_candidates(self) -> dict[str, Any]:
+    return _for_each_tenant(_auto_review_start_pending_candidates_one_tenant)
+
+
+def _auto_review_start_pending_candidates_one_tenant() -> dict[str, Any]:
     if _auto_review_idle("candidates", datetime.now(UTC)):
         return {"projectReviewRunIds": [], "skippedCandidateIds": []}
     load_state()
@@ -5683,6 +5725,10 @@ def auto_review_start_pending_candidates(self) -> dict[str, Any]:
 )
 @pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_finalize_project_runs")
 def auto_review_finalize_project_runs(self) -> dict[str, Any]:
+    return _for_each_tenant(_auto_review_finalize_project_runs_one_tenant)
+
+
+def _auto_review_finalize_project_runs_one_tenant() -> dict[str, Any]:
     if _auto_review_idle("finalize", datetime.now(UTC)):
         return {"finalizedProjectReviewRunIds": [], "runningProjectReviewRunIds": []}
     load_state(AUTO_REVIEW_STATE_KEYS)
@@ -6102,6 +6148,10 @@ def run_blind_review_weekly_sample(state: dict[str, Any], *, now: datetime | Non
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
 @pipeline_task_lock("blind-review-periodic", lambda _self: "blind_review_weekly_sample")
 def blind_review_weekly_sample(self) -> dict[str, Any]:
+    return _for_each_tenant(_blind_review_weekly_sample_one_tenant)
+
+
+def _blind_review_weekly_sample_one_tenant() -> dict[str, Any]:
     if not blind_review_weekly_sample_enabled():
         return {"skipped": "disabled"}
     load_state(BLIND_REVIEW_STATE_KEYS)
