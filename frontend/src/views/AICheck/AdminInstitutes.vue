@@ -18,7 +18,12 @@ import {
   ElTag
 } from 'element-plus'
 import StaticPageShell from './components/StaticPageShell.vue'
-import { createInstituteApi, getInstitutesApi, setInstituteStatusApi } from '@/api/aicheck'
+import {
+  createInstituteApi,
+  getInstitutesApi,
+  setInstituteStatusApi,
+  syncPlatformRulesApi
+} from '@/api/aicheck'
 import type { Institute } from '@/api/aicheck/platform'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
@@ -134,6 +139,23 @@ const toggleStatus = async (item: Institute) => {
   }
 }
 
+/* 平台改了通用规则（业务规则与流程）后，各院要同步一次才用上；各院自己的项目规则不动 */
+const syncing = ref(false)
+const syncRules = async () => {
+  syncing.value = true
+  try {
+    const res = await syncPlatformRulesApi({ idempotencyKey: `institute-sync-rules-${Date.now()}` })
+    const results = Object.values(res.data?.results || {})
+    const synced = results.reduce((sum, item) => sum + item.synced, 0)
+    const removed = results.reduce((sum, item) => sum + item.removed, 0)
+    ElMessage.success(`已同步到 ${results.length} 家特检院：更新 ${synced} 条，移除 ${removed} 条`)
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '同步失败，请稍后重试。'))
+  } finally {
+    syncing.value = false
+  }
+}
+
 const rightCards = computed(() => [
   {
     title: '开通流程',
@@ -141,7 +163,7 @@ const rightCards = computed(() => [
       { label: '已开通', value: String(items.value.length) },
       { label: '启用中', value: String(activeCount.value) }
     ],
-    note: '开通时建好院管理员；院管理员登录后在本院建用户、发项目邀请。用户名全平台唯一，登录不用选单位。'
+    note: '开通时建好院管理员并带上平台的通用规则；院管理员登录后在本院建用户、发项目邀请。用户名全平台唯一，登录不用选单位。标准库和通用规则由平台维护，改了之后点「同步平台规则」。'
   }
 ])
 
@@ -181,7 +203,10 @@ onMounted(load)
             <h2 id="institutes-heading">特检院管理</h2>
             <p>给需要的特检院开通账号空间并指定院管理员，各院的项目、用户和资料互相隔离。</p>
           </div>
-          <ElButton v-if="platformAdmin" type="primary" @click="openCreate">开通特检院</ElButton>
+          <div v-if="platformAdmin" class="heading-actions">
+            <ElButton :loading="syncing" @click="syncRules">同步平台规则</ElButton>
+            <ElButton type="primary" @click="openCreate">开通特检院</ElButton>
+          </div>
         </div>
         <ElAlert
           v-if="!platformAdmin"
@@ -287,6 +312,12 @@ onMounted(load)
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
+}
+
+.heading-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
 }
 
 .heading-row h2 {

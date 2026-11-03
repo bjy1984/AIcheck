@@ -102,7 +102,9 @@ def create_platform_institute(
             state.setdefault(institutes.INSTITUTES, []).append(institute)
             institutes.save_in_current_tenant(institutes.INSTITUTES, institute)
         institutes.register_username(username, tenant_id)
-        audit_id = repo.add_audit("开通特检院", "Institute", tenant_id, after={"name": name, "admin": username})
+        # 新院一开通就带上平台的通用规则，否则复核找不到已发布的规则
+        rules = institutes.sync_platform_rules(tenant_id)
+        audit_id = repo.add_audit("开通特检院", "Institute", tenant_id, after={"name": name, "admin": username, "rules": rules})
         request.state.scoped_flush_records = dict  # 只落本次审计；院、账号、目录上面已各自落库
         return ok({"institute": _institute_view(institute), "auditLogId": audit_id}, request)
 
@@ -136,3 +138,22 @@ def set_platform_institute_status(
         return ok({"institute": view, "auditLogId": audit_id}, request)
 
     return api.idempotent(request, idempotency_key, produce, fingerprint_source={"tenantId": tenant_id, "body": body})
+
+
+@platform_router.post("/platform/institutes/sync-rules")
+def sync_platform_rules_to_institutes(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """平台改了通用规则后，把最新版同步到所有特检院（各院自己的项目规则不动）。"""
+    if error := _guard(request):
+        return error
+
+    def produce():
+        results = {row["id"]: institutes.sync_platform_rules(str(row["id"])) for row in institutes.list_institutes()}
+        audit_id = repo.add_audit("同步平台规则到各特检院", "Institute", "ALL", after=results)
+        request.state.scoped_flush_records = dict
+        return ok({"results": results, "auditLogId": audit_id}, request)
+
+    return api.idempotent(request, idempotency_key, produce, fingerprint_source={"body": body})

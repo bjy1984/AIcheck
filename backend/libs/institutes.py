@@ -19,6 +19,7 @@ from typing import Any
 from libs.contracts.responses import server_time
 from libs.db.repository import (
     flush_mutation_records,
+    flush_state,
     load_state,
     postgres_persistence_configured,
     repo,
@@ -115,3 +116,44 @@ def username_conflict_message(username: str, for_tenant: str | None = None) -> s
     if owner and owner != current:
         return "该用户名已被其他单位使用，请换一个。"
     return None
+
+
+def ensure_tenant_loaded(tenant_id: str) -> None:
+    """公开接口（注册链接）按链接切到院时，那个院在本进程可能还没加载过。"""
+    with tenant_scope(tenant_id):
+        pass
+
+
+# ── 平台通用规则下发到各院（第三阶段）──────────────────────────────────────
+#
+# 规则版本有 17 处读取，不少是边读边改（发布、回滚），挨个改成「本院 + 平台」合并读太险。
+# 改为把平台的通用规则（不属于任何项目的）同步一份给各院，打上 syncedFromPlatform：
+# 院管理员不能改这些（knowledge:manage 在非平台院一律 403），平台改了再同步一次即可；
+# 院自己的项目规则不动。效果上仍是「平台维护、各院只读」。
+
+SYNCED_FROM_PLATFORM = "syncedFromPlatform"
+
+
+def _platform_owned_rules(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from libs.rule_scope import rule_scope
+
+    return [repo.clone(row) for row in rows if isinstance(row, dict) and not rule_scope(row)[0]]
+
+
+def sync_platform_rules(tenant_id: str) -> dict[str, int]:
+    """把平台院的通用规则版本同步到某个院：新增、更新，平台已删的也从院里删掉。"""
+    if tenant_id == platform_tenant_id():
+        return {"synced": 0, "removed": 0}
+    with platform_scope() as state:
+        platform_rules = _platform_owned_rules(state.get("rule_versions") or [])
+    platform_ids = {str(row.get("id")) for row in platform_rules}
+    with tenant_scope(tenant_id) as state:
+        rows = state.setdefault("rule_versions", [])
+        own = [row for row in rows if not row.get(SYNCED_FROM_PLATFORM)]
+        own_ids = {str(row.get("id")) for row in own}
+        removed = [row for row in rows if row.get(SYNCED_FROM_PLATFORM) and str(row.get("id")) not in platform_ids]
+        synced = [{**row, SYNCED_FROM_PLATFORM: True} for row in platform_rules if str(row.get("id")) not in own_ids]
+        rows[:] = own + synced
+        # 和加载时的基线比对落库：新增、更新、删除一次写完；只碰 rule_versions
+        flush_state({"rule_versions"}, selected_singleton_keys=set())
+    return {"synced": len(synced), "removed": len(removed)}

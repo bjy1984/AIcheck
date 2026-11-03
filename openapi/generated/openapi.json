@@ -17882,6 +17882,62 @@
         "summary": "Create Platform Institute"
       }
     },
+    "/api/platform/institutes/sync-rules": {
+      "post": {
+        "description": "平台改了通用规则后，把最新版同步到所有特检院（各院自己的项目规则不动）。",
+        "operationId": "sync_platform_rules_to_institutes_api_platform_institutes_sync_rules_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Platform Rules To Institutes"
+      }
+    },
     "/api/platform/institutes/{tenant_id}/status": {
       "post": {
         "description": "停用后这个院的人立即登不进来（已发的令牌也失效），数据保留；启用即恢复。",
@@ -42814,6 +42870,62 @@
           }
         },
         "summary": "Create Platform Institute"
+      }
+    },
+    "/platform/institutes/sync-rules": {
+      "post": {
+        "description": "平台改了通用规则后，把最新版同步到所有特检院（各院自己的项目规则不动）。",
+        "operationId": "sync_platform_rules_to_institutes_platform_institutes_sync_rules_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Platform Rules To Institutes"
       }
     },
     "/platform/institutes/{tenant_id}/status": {

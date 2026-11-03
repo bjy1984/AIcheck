@@ -48,6 +48,7 @@ from libs import institutes
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import repo
+from libs.security.tenant import configured_tenant_id as platform_tenant_id
 from libs.security.tenant import current_tenant_id
 
 project_registration_router = APIRouter()
@@ -157,6 +158,9 @@ def create_registration_link(
 
     def produce():
         token = secrets.token_urlsafe(24)
+        if current_tenant_id() != platform_tenant_id():
+            # 公开链接不带登录，靠前缀知道是哪个院的（main.py 按它切院）
+            token = f"{current_tenant_id()}.{token}"
         invite = {
             "id": f"PINV-{secrets.token_hex(8).upper()}",
             "token": token,
@@ -237,6 +241,8 @@ def _invite_usable(invite: dict[str, Any] | None) -> bool:
 
 
 def _find_invite(token: str) -> dict[str, Any] | None:
+    # 公开接口按链接前缀切到了某个院，那个院在本进程可能还没加载过
+    institutes.ensure_tenant_loaded(current_tenant_id())
     return next(
         (i for i in repo.state.get(INVITES, []) if str(i.get("token")) == str(token)), None
     )

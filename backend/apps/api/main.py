@@ -110,6 +110,7 @@ from libs.security.tenant import (
 )
 
 logger = logging.getLogger("aicheck.api")
+REGISTRATION_LINK_PATH = re.compile(r"/registration-links/([^/]+)(?:/apply)?")
 _tenant_mutation_locks: dict[tuple[int, str], asyncio.Lock] = {}
 PUBLIC_REGISTRATION_LINK_PATTERN = re.compile(
     r"^(?:/api)?/registration-links/[^/]+(?:/apply)?$"
@@ -263,6 +264,11 @@ async def attach_operation_id(request: Request, call_next):
             requested_tenant_id = institutes.tenant_for_username(str((login_payload or {}).get("username") or "")) or ""
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", requested_tenant_id):
             claimed_tenant_id = requested_tenant_id
+    elif predecoded_claims is None and (link := REGISTRATION_LINK_PATH.fullmatch(canonical_path(request.url.path))):
+        # 公开的项目注册链接不带登录：非平台院发的链接写成「院.随机串」，按前缀切到那个院
+        link_tenant = link.group(1).split(".", 1)[0] if "." in link.group(1) else ""
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", link_tenant):
+            claimed_tenant_id = link_tenant
     # 只认平台院和登记过、启用中的特检院：原来带任意院名都会在内存里凭空建一个院
     tenant_allowed = tenant_is_allowed(claimed_tenant_id) and institutes.tenant_login_allowed(claimed_tenant_id)
     tenant_id = claimed_tenant_id if tenant_allowed else configured_tenant_id()
@@ -1025,6 +1031,9 @@ def inferred_action_error(request: Request) -> JSONResponse | None:
             return fail(errors.FORBIDDEN, request, message="FDE 只能管理 AI 能力和治理流程，不能执行正式业务写操作。")
         if action_code and action_code not in allowed_actions:
             return fail(errors.FORBIDDEN, request, message=f"角色 {role} 无权执行 {action_code}。")
+        # 多特检院：标准库和通用规则由平台统一维护，各院只读（2026-11-02）
+        if action_code == "knowledge:manage" and current_tenant_id() != configured_tenant_id():
+            return fail(errors.FORBIDDEN, request, message="标准库和通用规则由平台统一维护，各特检院只读。")
     return None
 
 

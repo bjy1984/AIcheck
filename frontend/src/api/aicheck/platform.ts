@@ -40,6 +40,17 @@ export const createPlatformApi = (adapter: RequestAdapter, mutationHeaders: Head
       headers: mutationHeaders(options)
     }),
 
+  syncPlatformRulesApi: (options?: {
+    idempotencyKey?: string
+  }): Promise<
+    IResponse<{ results: Record<string, { synced: number; removed: number }>; auditLogId: string }>
+  > =>
+    adapter.post({
+      url: '/api/platform/institutes/sync-rules',
+      data: {},
+      headers: mutationHeaders(options)
+    }),
+
   setInstituteStatusApi: (
     tenantId: string,
     status: 'active' | 'disabled',

@@ -140,3 +140,61 @@ def test_an_unregistered_tenant_name_at_login_does_not_conjure_a_tenant():
     response = client.post("/api/auth/login", json={"username": "admin", "password": "x", "tenantId": "TENANT-GHOST"})
     assert response.json()["code"] != 0
     assert "TENANT-GHOST" not in set(repo._tenant_states) - before
+
+
+# ── 第三阶段：平台通用规则下发、标准与规则只读、注册链接找得到院 ───────────────
+
+PLATFORM_RULE = {"id": "RULE-PLATFORM-R09", "name": "R09 设计文件检验试验要求", "status": "已发布", "nodeIds": [9],
+                 "businessPackId": "engineering_inspection_v1", "version": "v1"}
+
+
+def test_a_new_institute_gets_the_platform_rules_and_later_updates_by_sync():
+    repo.state.setdefault("rule_versions", []).extend([
+        dict(PLATFORM_RULE),
+        {**PLATFORM_RULE, "id": "RULE-PLATFORM-PROJECT", "projectId": "P-PLATFORM-ONLY"},  # 项目规则不下发
+    ])
+    open_gdtj()
+    from libs import institutes
+
+    with institutes.tenant_scope(GD) as state:
+        ids = {row["id"]: row for row in state["rule_versions"]}
+    assert set(ids) == {"RULE-PLATFORM-R09"} and ids["RULE-PLATFORM-R09"]["syncedFromPlatform"] is True
+
+    repo.state["rule_versions"].append({**PLATFORM_RULE, "id": "RULE-PLATFORM-R11", "nodeIds": [11]})
+    repo.state["rule_versions"] = [row for row in repo.state["rule_versions"] if row["id"] != "RULE-PLATFORM-R09"]
+    result = data(client.post("/api/platform/institutes/sync-rules", headers=PLATFORM, json={}))["results"][GD]
+    assert result == {"synced": 1, "removed": 1}
+    with institutes.tenant_scope(GD) as state:
+        assert {row["id"] for row in state["rule_versions"]} == {"RULE-PLATFORM-R11"}
+
+
+def test_institute_admins_cannot_edit_standards_or_platform_rules():
+    token = open_gdtj()
+    blocked = client.post("/api/rules/versions", headers=bearer(token, "gd-rule"), json={"name": "自定义规则"})
+    assert blocked.json()["code"] != 0 and "平台统一维护" in blocked.json()["message"]
+    # 平台自己照常能维护（这里只看没被这条拦下）
+    platform = client.post("/api/rules/versions", headers={**PLATFORM, "Idempotency-Key": "p-rule"}, json={"name": "x"})
+    assert "平台统一维护" not in platform.json().get("message", "")
+
+
+def test_registration_links_from_an_institute_land_applicants_in_that_institute():
+    token = open_gdtj()
+    project = data(client.post("/api/projects", headers=bearer(token, "gd-p"), json={
+        "name": "广东院注册试点", "inspectionOrgName": "广东特检院"}))
+    project_id = (project.get("project") or project)["id"]
+    link = data(client.post(f"/api/projects/{project_id}/registration-links", headers=bearer(token, "gd-link"), json={}))
+    assert link["token"].startswith(f"{GD}.")
+
+    # 公开接口不带登录：按链接前缀找到院
+    assert data(client.get(f"/api/registration-links/{link['token']}"))["projectId"] == project_id
+    applied = data(client.post(f"/api/registration-links/{link['token']}/apply", json={
+        "username": "gd-applicant", "role": "inspection", "password": "applicant-1", "displayName": "申请人"}))
+    pending = data(client.get(f"/api/projects/{project_id}/registration-requests", headers=bearer(token)))["items"]
+    assert [row["id"] for row in pending] == [applied["requestId"]]
+    data(client.post(f"/api/projects/{project_id}/registration-requests/{applied['requestId']}/review",
+                     headers=bearer(token, "gd-review"), json={"approved": True}))
+    # 审核通过的人按用户名直接登进广东院
+    assert data(login("gd-applicant", "applicant-1"))["user"]["tenantId"] == GD
+
+    # 平台院的旧格式链接不受影响；伪造一个没登记的院前缀则找不到
+    assert client.get("/api/registration-links/TENANT-GHOST.abc").json()["code"] != 0
