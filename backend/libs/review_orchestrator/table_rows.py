@@ -1,7 +1,7 @@
-"""表格行過濾：去掉表頭、小標題與空白模板行，只留業務數據行（核心邏輯，不依賴任何插件）。
+"""表格行过滤：去掉表头、小标题与空白模板行，只留业务数据行（核心逻辑，不依赖任何插件）。
 
-固定規則永遠生效；審查若選用了表格分類插件（Jev），插件寫在審查任務上的行角色預測
-只在「表格內容雜湊一致、表類與行角色把握值都達 0.90」時才採用，否則逐行退回固定規則。
+固定规则永远生效；审查若选用了表格分类插件（Jev），插件写在审查任务上的行角色预测
+只在「表格内容杂凑一致、表类与行角色把握值都达 0.90」时才采用，否则逐行退回固定规则。
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 CONFIDENCE_FLOOR = 0.90
-# 表類選項；插件出題時用同一組鍵（見 jev_tables._TABLE_TYPES）。
+# 表类选项；插件出题时用同一组键（见 jev_tables._TABLE_TYPES）。
 TABLE_TYPE_CHOICES = frozenset({"mech_test", "wps_parameters", "welder_certificate", "material_certificate", "other"})
 
 # A narrow, deterministic fallback for the one-cell title/blank-template rows
@@ -51,7 +51,7 @@ def business_rows(parse: dict[str, Any], classifications: dict[str, Any] | None,
                   *, skip_mechanical: bool = False) -> list[dict[str, Any]]:
     """Keep only confidently classified data rows; fall back row by row."""
     version_id = str(parse.get("documentVersionId") or "")
-    # 預測只由插件步驟寫在伺服器端的審查任務上；逐表再按內容雜湊核對，內容一變就不採用。
+    # 预测只由插件步骤写在伺服器端的审查任务上；逐表再按内容杂凑核对，内容一变就不采用。
     valid_snapshot = classifications if isinstance(classifications, dict) and isinstance(classifications.get("tables"), dict) else {}
     predictions = valid_snapshot.get("tables", {}).get(version_id, [])
     output: list[dict[str, Any]] = []

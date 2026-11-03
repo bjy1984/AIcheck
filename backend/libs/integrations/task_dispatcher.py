@@ -489,7 +489,7 @@ def dispatch_ai_recheck(
             review_run = prepare_review_run_for_async_dispatch(run_id)
             if review_run is not None:
                 # 运行此刻已经以 queued 落库。入队再抛异常的话，它就永远停在「处理中」
-                # ——2026-09-13 实测：磁盘写满那阵子 27 个运行这样擱淺，界面上一直转圈，
+                # ——2026-09-13 实测：磁盘写满那阵子 27 个运行这样搁浅，界面上一直转圈，
                 # 直到两小时后有人手工跑 reconcile_orphan_ai_runs 才落终态。
                 # 入队失败必须当场落 failed_to_start，让人看得见、能重来。
                 try:

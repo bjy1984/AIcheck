@@ -1,4 +1,4 @@
-"""表頭全部取自生產庫真實資料（2026-09-10 抽出），不是造的。"""
+"""表头全部取自生产库真实资料（2026-09-10 抽出），不是造的。"""
 
 import pytest
 
@@ -11,7 +11,7 @@ from libs.table_schema_mapping import (
 
 SIGNATURES = load_signatures()
 
-# 廣東 LNG 支線改造的材料質量證明文件匯總表，原樣。
+# 广东 LNG 支线改造的材料质量证明文件汇总表，原样。
 CERTIFICATE_ROW = {
     "厂家": "福建宁德正上管业科技有限公司",
     "序号": "1",
@@ -22,9 +22,9 @@ CERTIFICATE_ROW = {
     "型式试验证书编号": "TSX71101004320260043",
     "产品质量证明书编号": "20260213951",
 }
-# 生產庫裡形似無損檢測比例表的資料，但追來源後確認是種子資料（tableId 為
-# TABLE-PARSE-FDE-*，被掛在焊工資格證等不相干文件下）。這裡留著它，是要釘住
-# **不得**因為表頭看起來合理就認出來——沒有對應簽名時就該認不出。
+# 生产库里形似无损检测比例表的资料，但追来源后确认是种子资料（tableId 为
+# TABLE-PARSE-FDE-*，被挂在焊工资格证等不相干文件下）。这里留著它，是要钉住
+# **不得**因为表头看起来合理就认出来——没有对应签名时就该认不出。
 SEEDED_NDT_ROW = {"介质": "天然气", "管道号": "PL8301", "公称直径": "DN100", "检测比例": "10%"}
 
 
@@ -41,7 +41,7 @@ def test_real_certificate_table_is_recognised():
 
 
 def test_a_table_with_no_signature_is_not_recognised():
-    """簽名撤掉之後就該認不出來；表頭再像也不能猜。"""
+    """签名撤掉之后就该认不出来；表头再像也不能猜。"""
     assert classify_table(table([SEEDED_NDT_ROW]), SIGNATURES) is None
 def test_domain_rows_carry_the_scope_and_evidence_the_checks_require():
     rows = build_domain_rows(
@@ -73,7 +73,7 @@ def test_a_row_with_no_object_identity_produces_nothing():
 
 
 def test_the_judgment_booleans_are_still_absent_after_mapping():
-    """第 1、2 層補完，第 3 層仍然空著——這是預期的，不是遺漏。"""
+    """第 1、2 层补完，第 3 层仍然空著——这是预期的，不是遗漏。"""
     rows = build_domain_rows(
         table([CERTIFICATE_ROW]),
         signature("material_certificate_domains"),
@@ -94,8 +94,8 @@ def test_signature_headers_are_normalised_across_ocr_punctuation():
     assert classify_table(table([row]), SIGNATURES) == "material_certificate_domains"
 
 
-# 百分比解析器目前沒有簽名在用（ndt_plan_items 撤掉了），但程式還在，
-# 而且是「不猜」規矩最容易破功的地方，所以直接測它。
+# 百分比解析器目前没有签名在用（ndt_plan_items 撤掉了），但程式还在，
+# 而且是「不猜」规矩最容易破功的地方，所以直接测它。
 PERCENT_SIGNATURE = {
     "businessSchema": "probe",
     "fields": [{"path": "ratioPercent", "columns": ["检测比例"], "parse": "percent"}],
@@ -110,5 +110,5 @@ def test_a_clean_percentage_becomes_a_number():
     "value", ["约10%", "10~20%", "10", "", "百分之十", "-5%", "120%", True, None, "10%%"]
 )
 def test_anything_that_is_not_a_clean_percentage_is_refused(value):
-    """約數和範圍不是數；工具要的是數，猜一個進去比缺著更糟。"""
+    """约数和范围不是数；工具要的是数，猜一个进去比缺著更糟。"""
     assert "ratioPercent" not in map_row({"检测比例": value}, PERCENT_SIGNATURE)

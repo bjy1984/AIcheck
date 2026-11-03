@@ -810,7 +810,7 @@ from libs.review_tools.executor import FROZEN_DOMAIN_INPUTS, build_tool_argument
 
 @_pytest.mark.parametrize("tool_name", sorted(FROZEN_DOMAIN_INPUTS))
 def test_frozen_domain_tools_receive_scope_domains_and_rules(tool_name):
-    """2026-09-10 生产乾跑：这批工具只收到 binding.parameters，一律 *_scope_missing。"""
+    """2026-09-10 生产干跑：这批工具只收到 binding.parameters，一律 *_scope_missing。"""
     namespace, fact_key = FROZEN_DOMAIN_INPUTS[tool_name]
     facts = {namespace: {fact_key: {
         "projectId": "P1",
@@ -834,7 +834,7 @@ def test_frozen_domain_tools_receive_scope_domains_and_rules(tool_name):
 
 
 def test_every_frozen_domain_tool_is_wired_and_names_match_its_fact_builder():
-    """新增一个 frozen-domain 工具而不接线，这里要红——不能再靠生产乾跑发现。"""
+    """新增一个 frozen-domain 工具而不接线，这里要红——不能再靠生产干跑发现。"""
     from libs.review_orchestrator.installation_domain_facts import _NODES as INSTALLATION_NODES
     from libs.review_orchestrator.r63_r68_facts import _NODES as R63_R68_NODES
     from libs.review_tools.installation_domain_rules import _SPECS

@@ -14,7 +14,7 @@ from typing import Any
 from libs.review_input_data import latest_selected_parses
 from libs.review_orchestrator.jev_client import MODEL, ask_jev, jev_stage_enabled
 from libs.review_orchestrator.jev_state import scoped_document_states
-from libs.review_orchestrator.table_rows import (  # noqa: F401 -- 舊呼叫方相容
+from libs.review_orchestrator.table_rows import (  # noqa: F401 -- 旧呼叫方相容
     CONFIDENCE_FLOOR,
     TABLE_TYPE_CHOICES,
     business_rows,
@@ -85,4 +85,4 @@ def classify_review_tables(state: dict[str, Any], review_run: dict[str, Any]) ->
     return output
 
 
-assert set(_TABLE_TYPES) == TABLE_TYPE_CHOICES, "表類選項要與核心 table_rows 一致"
+assert set(_TABLE_TYPES) == TABLE_TYPE_CHOICES, "表类选项要与核心 table_rows 一致"

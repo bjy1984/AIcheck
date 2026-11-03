@@ -1,7 +1,7 @@
-"""掃描件固定表格的重建：只按簽名宣告的表名與表頭，只用 OCR 原字。
+"""扫描件固定表格的重建：只按签名宣告的表名与表头，只用 OCR 原字。
 
-版面取自七項目快照裡恒基達鑫交工資料第 16、18 頁的真實片段座標（macOS Vision），
-包括 OCR 把相鄰兩格認成一個片段、表尾簽字與日期、同名表頭這些真實情況。
+版面取自七项目快照里恒基达鑫交工资料第 16、18 页的真实片段座标（macOS Vision），
+包括 OCR 把相邻两格认成一个片段、表尾签字与日期、同名表头这些真实情况。
 """
 
 import pytest
@@ -32,7 +32,7 @@ GROUNDING_PAGE = [
     _frag("PL8306-100", 75, 226, 122, 237, 0.5), _frag("螺拴接头", 139, 226, 176, 239),
     _frag("M10*25", 182, 227, 218, 237, 0.5), _frag("不锈钢螺栓", 232, 227, 277, 239), _frag("0.019", 290, 226, 320, 239, 0.3),
     _frag("6mm？", 352, 226, 372, 239, 0.5), _frag("铜芯软绞线", 400, 227, 445, 239), _frag("0.029", 472, 227, 500, 239, 0.3),
-    # 表尾：簽字落在行鍵欄的正下方，不能被當成一列。
+    # 表尾：签字落在行键栏的正下方，不能被当成一列。
     _frag("施工人员：王超", 80, 716, 160, 741, 0.3), _frag("2021 年4月1", 422, 736, 508, 749, 0.3),
 ]
 
@@ -79,9 +79,9 @@ def test_grounding_record_is_rebuilt_row_by_row_from_the_scanned_page():
     assert (first["接头型式"], first["跨线接头电阻值"], first["接地线材质"], first["对地电阻值"]) == (
         "螺拴接头", "0.029", "铜芯软绞线", "0.029")
     assert table["normalizedRows"][1]["跨线接头电阻值"] == "0.019"
-    # 置信度取整列最低的片段，交給證據門：0.30 會交人工，不會被當成可靠讀數。
+    # 置信度取整列最低的片段，交给证据门：0.30 会交人工，不会被当成可靠读数。
     assert first["confidence"] == 0.3
-    # 表的範圍不含表尾簽字。
+    # 表的范围不含表尾签字。
     assert table["pageNo"] == 16 and table["bbox"][3] < 300
 
 
@@ -102,7 +102,7 @@ def test_cells_merged_by_ocr_are_split_back_into_their_columns():
     assert (rows[0]["起点"], rows[0]["终点"]) == ("P8301A", "四区交换站")
     assert (rows[0]["吹洗压力Mpa"], rows[0]["吹洗介质"], rows[0]["吹洗鉴定"]) == ("0.2", "洁净水", "合格")
     assert rows[0]["化学清洗介质"] == "/"
-    # 表尾那行字落不進管线号欄，也不符合管線號的樣子。
+    # 表尾那行字落不进管线号栏，也不符合管线号的样子。
     assert len(rows) == 2
 
 
@@ -175,7 +175,7 @@ def test_selected_pipeline_gets_its_own_values_with_page_and_quote():
     ref = domain["evidenceRefs"][0]
     assert ref["documentVersionId"] == "V" and ref["pageNo"] == 16 and ref["confidence"] == 0.3
     assert "PL8306-100 | 螺拴接头" in ref["quotedText"]
-    # 表上沒寫的接地位置不出現，也不宣告適用：規則維持證據不足，不因多讀了記錄就變嚴或放寬。
+    # 表上没写的接地位置不出现，也不宣告适用：规则维持证据不足，不因多读了记录就变严或放宽。
     assert "groundingLocation" not in domain["installation"] and "applicable" not in domain
     result = evaluate_r47_static_grounding({"projectId": "P", **{key: facts[key] for key in (
         "scope", "standardRules", "domains", "selectionIssues")}})
@@ -192,7 +192,7 @@ def test_an_ocr_table_of_the_same_kind_is_not_read_twice():
     assert len(facts["domains"]) == 1 and facts["domains"][0]["evidenceRefs"][0]["tableId"] == "MINERU-1"
 
 
-# 第 17 頁：橫向表格直著掃描，文字由下往上讀（座標取自真實片段，只留表頭與兩列）。
+# 第 17 页：横向表格直著扫描，文字由下往上读（座标取自真实片段，只留表头与两列）。
 LEAK_PAGE = [
     _frag("A. 0.16管道系统压力试验和泄漏性试验记录", 66, 272, 86, 570, 0.5, page=17),
     _frag("工程名称：恒基达鑫一二期装车站新增两套卸车系统项目", 106, 207, 117, 445, page=17),
@@ -229,19 +229,19 @@ def test_a_form_scanned_sideways_is_turned_upright_before_reading():
     assert [row["管线号"] for row in rows] == ["PL8303-100", "PL8306-100"]
     assert (rows[0]["压力试验压力"], rows[0]["压力试验介质"], rows[0]["压力试验结论"]) == ("0.825Mpa", "洁净水", "合格")
     assert (rows[1]["泄漏性试验压力"], rows[1]["泄漏性试验介质"], rows[1]["泄漏性试验结论"]) == ("0.55Mpa", "空气", "合格")
-    # 範圍回到原頁座標：豎排的表頭與兩列，不含表名與工程名稱。
+    # 范围回到原页座标：竖排的表头与两列，不含表名与工程名称。
     assert table["bbox"] == [319, 77, 380, 782]
 
 
 def test_a_sideways_page_is_read_in_the_one_direction_its_headers_allow():
     turned = [{**fragment, "bbox": [500 - fragment["bbox"][2], 860 - fragment["bbox"][3],
                                     500 - fragment["bbox"][0], 860 - fragment["bbox"][1]]} for fragment in LEAK_PAGE]
-    # 整頁轉 180° 後文字改成由上往下讀：只有另一個方向對得上，照樣讀出同樣的兩列。
+    # 整页转 180° 后文字改成由上往下读：只有另一个方向对得上，照样读出同样的两列。
     assert [row["管线号"] for row in reconstruct_form_table(
         turned, _form("leak_test_method_domains"), page_no=17)["normalizedRows"]] == ["PL8303-100", "PL8306-100"]
     mirrored = [{**fragment, "bbox": [500 - fragment["bbox"][2], fragment["bbox"][1],
                                       500 - fragment["bbox"][0], fragment["bbox"][3]]} for fragment in LEAK_PAGE]
-    # 左右鏡像後表頭順序兩個方向都對不上：不重建。
+    # 左右镜像后表头顺序两个方向都对不上：不重建。
     assert reconstruct_form_table(mirrored, _form("leak_test_method_domains"), page_no=17) is None
 
 

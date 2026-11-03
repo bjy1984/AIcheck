@@ -1,15 +1,15 @@
-"""把按行排成文字的表格（MinerU 等把整頁輸出為一段文字）按簽名重建成表。
+"""把按行排成文字的表格（MinerU 等把整页输出为一段文字）按签名重建成表。
 
-設計文件裡的「管道特性表」常被 OCR 輸出成：表名一行、兩層表頭各一行、每條管線一行，
-儲存格以空白分隔、空格子寫「/」。沒有座標，只能靠行與格數對齊，所以規矩很嚴：
-- 表名、兩層表頭都要與簽名宣告的原字逐字相同（去掉空白後比），才認這張表；
-- 數據行以行鍵（管線號）開頭，且格數必須與簽名的葉子欄位數完全相同才收——
-  一格裡若 OCR 多出空白，格數就對不上，整行不收，寧可少讀，不把值錯位到別欄；
+设计文件里的「管道特性表」常被 OCR 输出成：表名一行、两层表头各一行、每条管线一行，
+储存格以空白分隔、空格子写「/」。没有座标，只能靠行与格数对齐，所以规矩很严：
+- 表名、两层表头都要与签名宣告的原字逐字相同（去掉空白后比），才认这张表；
+- 数据行以行键（管线号）开头，且格数必须与签名的叶子栏位数完全相同才收——
+  一格里若 OCR 多出空白，格数就对不上，整行不收，宁可少读，不把值错位到别栏；
 - 「$...$」公式（如 $\\phi 57\\times 4.0$）算一格；
-- 引文就是 OCR 記錄下來的那幾行原文。
+- 引文就是 OCR 记录下来的那几行原文。
 
-MinerU 的 markdown 版本則把同一張表嵌成 HTML（兩層表頭用 rowspan／colspan）。按原始
-順序讀出表頭格子逐字比對同一組簽名；數據行格數要對上，數據行裡有合併格就整行不收。
+MinerU 的 markdown 版本则把同一张表嵌成 HTML（两层表头用 rowspan／colspan）。按原始
+顺序读出表头格子逐字比对同一组签名；数据行格数要对上，数据行里有合并格就整行不收。
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _compact(text: str) -> str:
 
 
 def _fits(count: int, columns: list[str], variant: dict[str, Any]) -> bool:
-    """格數要與葉子欄位數相同；只許少掉簽名宣告可空的結尾欄（例如常空的「备注」）。"""
+    """格数要与叶子栏位数相同；只许少掉签名宣告可空的结尾栏（例如常空的「备注」）。"""
     return len(columns) - int(variant.get("optionalTrailing") or 0) <= count <= len(columns)
 
 
@@ -36,7 +36,7 @@ def _table_from_lines(lines: list[str], spec: dict[str, Any], variant: dict[str,
                       *, page_no: Any, name: str) -> dict[str, Any] | None:
     columns = list(variant["columns"])
     key = re.compile(spec["rowKeyPattern"])
-    # 引文：兩層表頭（上一行若就是含表名的那行，一併帶上）與收下的數據行，都是 OCR 原文。
+    # 引文：两层表头（上一行若就是含表名的那行，一并带上）与收下的数据行，都是 OCR 原文。
     head = start - 3 if start >= 3 and _compact(spec["title"]) in _compact(lines[start - 3]) else start - 2
     rows, quoted, rejected = [], lines[head:start], 0
     for line in lines[start:]:
@@ -62,7 +62,7 @@ _HTML_TABLE_RE = re.compile(r"<table[^>]*>.*?</table>", re.DOTALL | re.IGNORECAS
 
 
 def _html_rows(html: str) -> list[list[tuple[str, bool]]]:
-    """每一列的格子：(文字, 是否合併格)。"""
+    """每一列的格子：(文字, 是否合并格)。"""
     rows = []
     for row in _ROW_RE.findall(html):
         rows.append([(_TAG_RE.sub("", body).strip(), bool(re.search(r"(?:row|col)span", attrs, re.IGNORECASE)))
@@ -86,7 +86,7 @@ def _html_table(html: str, spec: dict[str, Any], *, page_no: Any, name: str) -> 
         records, rejected = [], 0
         for data in rows[index + 2:]:
             while data and not data[-1][0] and not data[-1][1]:
-                data = data[:-1]  # 行尾多出的空格子（MinerU 常補一格）不算欄
+                data = data[:-1]  # 行尾多出的空格子（MinerU 常补一格）不算栏
             if not data or not key.search(data[0][0]):
                 continue
             if not _fits(len(data), columns, variant) or any(span for _text, span in data):
@@ -102,10 +102,10 @@ def _html_table(html: str, spec: dict[str, Any], *, page_no: Any, name: str) -> 
 
 
 def text_line_tables(parse: dict[str, Any], signature: dict[str, Any]) -> list[dict[str, Any]]:
-    """一份 OCR 結果裡，簽名宣告過的按行文字或 HTML 表格。
+    """一份 OCR 结果里，签名宣告过的按行文字或 HTML 表格。
 
-    以兩層表頭逐字吻合認表；表名要出現在同一頁（同一個片段）裡——圖紙上表名常夾在
-    圖簽那一行，不一定獨佔一行。
+    以两层表头逐字吻合认表；表名要出现在同一页（同一个片段）里——图纸上表名常夹在
+    图签那一行，不一定独占一行。
     """
     spec = signature.get("textLines")
     if not isinstance(spec, dict):

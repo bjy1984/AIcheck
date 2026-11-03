@@ -1,15 +1,15 @@
-"""審查插件的開關：按工程設定，建立審查時凍結進任務。
+"""审查插件的开关：按工程设定，建立审查时冻结进任务。
 
-插件（目前只有 Jev）只做加強，不改結論。要不要用、哪個工程用，是工程設定
-`project["reviewPlugins"][插件]["enabled"]`；建立審查時凍結成
-`reviewRun["reviewPluginSnapshot"]`，之後改設定不影響已建立的審查。
+插件（目前只有 Jev）只做加强，不改结论。要不要用、哪个工程用，是工程设定
+`project["reviewPlugins"][插件]["enabled"]`；建立审查时冻结成
+`reviewRun["reviewPluginSnapshot"]`，之后改设定不影响已建立的审查。
 
-部署層仍有總開關（金鑰、出境批准、主機白名單、各階段開關），由插件自己檢查；
-這裡只回答「這個工程／這次審查有沒有選用」。本模組不得 import 任何插件實作。
+部署层仍有总开关（金钥、出境批准、主机白名单、各阶段开关），由插件自己检查；
+这里只回答「这个工程／这次审查有没有选用」。本模组不得 import 任何插件实作。
 
-舊資料相容：沒有明確設定的工程，沿用原來的環境變數白名單
-（AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS 等）；沒有快照的舊審查同樣按白名單判斷。
-明確設定一律優先。
+旧资料相容：没有明确设定的工程，沿用原来的环境变数白名单
+（AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS 等）；没有快照的旧审查同样按白名单判断。
+明确设定一律优先。
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from typing import Any
 
 PLUGIN_IDS = ("jev",)
 PLUGIN_LABELS = {"jev": "Jev 加强（外部模型，只做提示与事实核对，不改结论）"}
-# 各插件在「沒有明確設定」時沿用的舊白名單。
+# 各插件在「没有明确设定」时沿用的旧白名单。
 _LEGACY_ALLOWLIST = {"jev": "AICHECK_JEV_PRIMARY_ALLOWED_PROJECTS"}
 
 
@@ -28,7 +28,7 @@ def _allowlisted(project_id: Any, env_name: str) -> bool:
 
 
 def explicit_project_setting(project: dict[str, Any] | None, plugin_id: str) -> bool | None:
-    """工程上明確寫了開或關就回 True/False；沒寫回 None。"""
+    """工程上明确写了开或关就回 True/False；没写回 None。"""
     settings = (project or {}).get("reviewPlugins")
     entry = settings.get(plugin_id) if isinstance(settings, dict) else None
     enabled = entry.get("enabled") if isinstance(entry, dict) else None
@@ -36,7 +36,7 @@ def explicit_project_setting(project: dict[str, Any] | None, plugin_id: str) -> 
 
 
 def project_plugin_enabled(project: dict[str, Any] | None, plugin_id: str, *, legacy_env: str | None = None) -> bool:
-    """這個工程現在有沒有選用插件（上傳時的文件歸屬等沒有審查任務的場合用）。"""
+    """这个工程现在有没有选用插件（上传时的文件归属等没有审查任务的场合用）。"""
     explicit = explicit_project_setting(project, plugin_id)
     if explicit is not None:
         return explicit
@@ -44,7 +44,7 @@ def project_plugin_enabled(project: dict[str, Any] | None, plugin_id: str, *, le
 
 
 def freeze_review_plugins(project: dict[str, Any] | None) -> dict[str, Any]:
-    """建立審查時的插件快照：{插件: {"enabled": bool, "source": 來源}}。"""
+    """建立审查时的插件快照：{插件: {"enabled": bool, "source": 来源}}。"""
     snapshot: dict[str, Any] = {}
     for plugin_id in PLUGIN_IDS:
         explicit = explicit_project_setting(project, plugin_id)
@@ -58,7 +58,7 @@ def freeze_review_plugins(project: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def run_plugin_enabled(run: dict[str, Any] | None, plugin_id: str, *, legacy_env: str | None = None) -> bool:
-    """這次審查有沒有選用插件：以凍結快照為準；沒有快照的舊審查按舊白名單。"""
+    """这次审查有没有选用插件：以冻结快照为准；没有快照的旧审查按旧白名单。"""
     snapshot = (run or {}).get("reviewPluginSnapshot")
     if isinstance(snapshot, dict):
         entry = snapshot.get(plugin_id)
@@ -72,7 +72,7 @@ def any_plugin_enabled(snapshot: dict[str, Any] | None) -> bool:
 
 
 def validated_plugin_settings(value: Any) -> dict[str, Any]:
-    """工程設定介面收到的 reviewPlugins：只收已知插件與布林 enabled，其餘一律拒絕。"""
+    """工程设定介面收到的 reviewPlugins：只收已知插件与布林 enabled，其余一律拒绝。"""
     if not isinstance(value, dict):
         raise ValueError("reviewPlugins 必须是对象")  # noqa: TRY004 -- 接口按 ValueError 回 400
     settings: dict[str, Any] = {}

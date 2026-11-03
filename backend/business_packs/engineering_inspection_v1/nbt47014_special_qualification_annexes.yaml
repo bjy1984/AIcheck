@@ -23,7 +23,7 @@ annexes:
   - C.8
   extractionStatus: text_with_figure_dependencies
   automatedDecisionSupported: false
-  limitation: 圖示幾何、公式及表格須結合原 PDF 核對；本資料提供條文定位，不宣稱已完成特殊接頭自動判定。
+  limitation: 图示几何、公式及表格须结合原 PDF 核对；本资料提供条文定位，不宣称已完成特殊接头自动判定。
   pages:
   - pdfPage: 67
     text: "NB/T 47014—2023 \n67 \n附  录  C \n（规范性） \n带堆焊隔离层的对接焊缝焊接工艺评定 \nC.1  带堆焊隔离层的焊缝按本附录的规定。 \nC.2  带隔离层焊接接头示意图，如图C.1\
@@ -60,7 +60,7 @@ annexes:
   - D.3.3
   extractionStatus: text_with_figure_dependencies
   automatedDecisionSupported: false
-  limitation: 圖示幾何、公式及表格須結合原 PDF 核對；本資料提供條文定位，不宣稱已完成特殊接頭自動判定。
+  limitation: 图示几何、公式及表格须结合原 PDF 核对；本资料提供条文定位，不宣称已完成特殊接头自动判定。
   pages:
   - pdfPage: 69
     text: "NB/T 47014—2023 \n69 \n附  录  D \n（规范性） \n不锈钢-钢复合板焊接工艺评定 \nD.1  不锈钢-钢复合板（包括轧制复合法、爆炸焊接法和堆焊法生产的复合板）的焊接工艺评定除遵\n\
@@ -109,7 +109,7 @@ annexes:
   - E.5.4.5
   extractionStatus: text_with_figure_dependencies
   automatedDecisionSupported: false
-  limitation: 圖示幾何、公式及表格須結合原 PDF 核對；本資料提供條文定位，不宣稱已完成特殊接頭自動判定。
+  limitation: 图示几何、公式及表格须结合原 PDF 核对；本资料提供条文定位，不宣称已完成特殊接头自动判定。
   pages:
   - pdfPage: 71
     text: "NB/T 47014—2023 \n71 \n附  录  E \n（规范性） \n换热管与管板焊接工艺评定 \nE.1  本附录规定了换热管与管板的焊接工艺评定方法。 \nE.2  当相应标准或设计文件没有规定试件类别时，换热管与管板的焊接工艺评定试件采用下列类别\n\
@@ -158,7 +158,7 @@ annexes:
   - F.4.3
   extractionStatus: text_with_figure_dependencies
   automatedDecisionSupported: false
-  limitation: 圖示幾何、公式及表格須結合原 PDF 核對；本資料提供條文定位，不宣稱已完成特殊接頭自動判定。
+  limitation: 图示几何、公式及表格须结合原 PDF 核对；本资料提供条文定位，不宣称已完成特殊接头自动判定。
   pages:
   - pdfPage: 74
     text: "NB/T 47014—2023 \n74 \n附  录  F \n（规范性） \n螺柱电弧焊工艺评定 \nF.1  承受载荷的螺柱电弧焊工艺评定规则按本附录规定，但对于不承受载荷的螺柱，当采用自动化方\n\

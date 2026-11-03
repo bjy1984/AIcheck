@@ -1,4 +1,4 @@
-"""審查插件：按工程選用、建立時凍結、沒選用就不載入也不外發；核心不直接依賴插件實作。"""
+"""审查插件：按工程选用、建立时冻结、没选用就不载入也不外发；核心不直接依赖插件实作。"""
 from __future__ import annotations
 
 import ast
@@ -105,23 +105,23 @@ def test_plugin_choice_is_frozen_at_creation_and_only_a_selected_plugin_changes_
     default_run, off_run, on_run = create(), create(**OFF), create(**ON)
     assert default_run["reviewPluginSnapshot"] == {"jev": {"enabled": False, "source": "default_off"}}
     assert on_run["reviewPluginSnapshot"] == {"jev": {"enabled": True, "source": "project_setting"}}
-    # 沒選用插件的審查，雜湊與改造前的公式一致，既有任務照常複用。
+    # 没选用插件的审查，杂凑与改造前的公式一致，既有任务照常复用。
     assert default_run["inputHash"] == off_run["inputHash"] == ex.stable_hash_payload({
         "documentVersionIds": ["V"], "businessPackId": "engineering_inspection_v1",
         "clausePackageSnapshotHash": None, "promptVersion": None, "ruleSetVersion": None,
         "atomicCheckToolBindingSetHash": None})
     assert on_run["inputHash"] != default_run["inputHash"]
-    # 之後改工程設定，不影響已建立的審查。
+    # 之后改工程设定，不影响已建立的审查。
     project["reviewPlugins"] = {"jev": {"enabled": False}}
     assert run_plugin_enabled(on_run, "jev") is True
     replay = ex.clone_review_run_for_replay(on_run, run_mode="replay", reason="offline test")
     assert replay["reviewPluginSnapshot"] == on_run["reviewPluginSnapshot"]
 
 
-# 只有插件自己、Jev 模組彼此、以及上傳時文件歸屬的背景任務（Celery 任務必須登記在 worker）
-# 可以直接 import Jev 實作；其餘核心一律經 libs.review_plugins 登記表。
+# 只有插件自己、Jev 模组彼此、以及上传时文件归属的背景任务（Celery 任务必须登记在 worker）
+# 可以直接 import Jev 实作；其余核心一律经 libs.review_plugins 登记表。
 _ALLOWED_IMPORTERS = {
-    "libs/review_plugins/__init__.py",  # 登記表本身：只在審查選用時延遲載入
+    "libs/review_plugins/__init__.py",  # 登记表本身：只在审查选用时延迟载入
     "libs/review_plugins/jev.py",
     "apps/worker/tasks.py",
     "libs/integrations/task_dispatcher.py",

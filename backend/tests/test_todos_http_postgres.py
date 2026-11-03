@@ -106,7 +106,7 @@ def test_todo_summary_is_consistent_across_two_http_processes(isolated_postgres_
             clients = [stack.enter_context(api_process(isolated_postgres_url, tmp_path / f'todo-api-{i}.log'))
                        for i in range(2)]
 
-            # 两个进程对同一批待办的汇总必须一致——这是「彙總接口」最基本的一条。
+            # 两个进程对同一批待办的汇总必须一致——这是「汇总接口」最基本的一条。
             listings = [client.get('/api/todos?page=1&pageSize=50').json() for client in clients]
             for payload in listings:
                 assert payload['code'] == 0, payload

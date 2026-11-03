@@ -1,10 +1,10 @@
-"""施工記錄的適用性：按管線號到設計管線事實裡找依據，只宣告「適用」，不宣告「不適用」。
+"""施工记录的适用性：按管线号到设计管线事实里找依据，只宣告「适用」，不宣告「不适用」。
 
-2026-09-24 業務確認的口徑：
-- R66／R67 泄漏試驗：設計表的泄漏試驗要求打 √，或介質有毒／有泄漏危害性（設計資料明寫）即適用；
-- R47 靜電接地：介質火災危險性為甲、乙類，或設計表寫明介質特性可燃／易燃即適用；
-- 判不了就維持「適用性未知 → 證據不足」，不按不適用放過；介質名稱本身不拿來猜。
-設計文件寫明靜電接地要求這一路，要等設計事實能交接到這些節點再接。
+2026-09-24 业务确认的口径：
+- R66／R67 泄漏试验：设计表的泄漏试验要求打 √，或介质有毒／有泄漏危害性（设计资料明写）即适用；
+- R47 静电接地：介质火灾危险性为甲、乙类，或设计表写明介质特性可燃／易燃即适用；
+- 判不了就维持「适用性未知 → 证据不足」，不按不适用放过；介质名称本身不拿来猜。
+设计文件写明静电接地要求这一路，要等设计事实能交接到这些节点再接。
 """
 from __future__ import annotations
 
@@ -26,10 +26,10 @@ _DN_SUFFIX_RE = re.compile(r"^(?P<line>.+?)[-－_](?P<dn>\d{2,4})$")
 
 
 def _matching_pipeline(object_id: Any, by_line: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-    """記錄上的管線號對到設計管線：先原樣比；對不上再去掉結尾的公稱直徑（PL8303-100 → PL8303）。
+    """记录上的管线号对到设计管线：先原样比；对不上再去掉结尾的公称直径（PL8303-100 → PL8303）。
 
-    2026-09-24 業務確認「-100」是公稱直徑。設計資料若寫了公稱直徑且與去掉的數不同，
-    就不是同一條，不配對——寧可判不了，也不把別的管線的依據套過來。
+    2026-09-24 业务确认「-100」是公称直径。设计资料若写了公称直径且与去掉的数不同，
+    就不是同一条，不配对——宁可判不了，也不把别的管线的依据套过来。
     """
     exact = by_line.get(_key(object_id))
     if exact is not None:
@@ -38,7 +38,7 @@ def _matching_pipeline(object_id: Any, by_line: dict[str, dict[str, Any]]) -> di
     pipeline = by_line.get(_key(match.group("line"))) if match else None
     if pipeline is None:
         return None
-    # 只拿乾淨的公稱直徑（「100」「DN100」）來核；「Φ108X8」是外徑×壁厚，不是公稱直徑，不拿來擋。
+    # 只拿干净的公称直径（「100」「DN100」）来核；「Φ108X8」是外径×壁厚，不是公称直径，不拿来挡。
     diameter = _DN_RE.match(str(pipeline.get("specification") or ""))
     return pipeline if not diameter or diameter.group(1) == match.group("dn") else None
 
@@ -71,7 +71,7 @@ _DOMAINS = {("r47", "staticGrounding"): _grounding_basis,
 
 
 def apply_record_applicability(facts: Any) -> Any:
-    """在已合併工程管線事實的業務事實上，為記錄領域補「適用」與依據；其餘一律不動。"""
+    """在已合并工程管线事实的业务事实上，为记录领域补「适用」与依据；其余一律不动。"""
     if not isinstance(facts, dict):
         return facts
     pipelines = ((facts.get("project") or {}).get("pipelines") or []) if isinstance(facts.get("project"), dict) else []

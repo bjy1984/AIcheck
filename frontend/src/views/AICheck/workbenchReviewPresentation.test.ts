@@ -518,7 +518,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(partialCoverageLabel({ failedEvidenceShardIds: ['A', 'B'] }), '部分分片未完成 2 片')
 }
 
-// Jev 第二意見只影響人工優先級；原規則結果仍原樣保留。
+// Jev 第二意见只影响人工优先级；原规则结果仍原样保留。
 {
   const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
   const [outcome] = workbenchCheckOutcomes({
@@ -539,7 +539,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     ]
   })
   assert.equal(outcome.secondOpinion?.priority, 'disagreement')
-  assert.equal(outcome.result, 'passed', '第二意見不得改寫確定性判定')
+  assert.equal(outcome.result, 'passed', '第二意见不得改写确定性判定')
 }
 
 // Jev 只作提示：结论仍是规则结果，Jev 选项、把握值和逐人结果挂在 jevHint 上。
@@ -606,7 +606,7 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   ])
 }
 
-// 历史运行（调整方向前）：Lab 主判定曾直接顯示 Jev 選擇，仍按原样读出。
+// 历史运行（调整方向前）：Lab 主判定曾直接显示 Jev 选择，仍按原样读出。
 {
   const { workbenchCheckOutcomes } = await import('./workbenchReviewPresentation')
   const [outcome] = workbenchCheckOutcomes({

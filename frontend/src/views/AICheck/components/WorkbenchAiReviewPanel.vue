@@ -591,7 +591,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                 tone="orange"
                 round
               >
-                出題／判題未完成 · 待人工核查
+                出题／判题未完成 · 待人工核查
               </AuditStatusTag>
               <AuditStatusTag v-if="outcome.jevFactCheck?.suspects.length" tone="orange" round>
                 Jev 核对：抽取值可疑 · 请先核对原文
@@ -611,9 +611,9 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                 {{
                   outcome.secondOpinion.agreesWithRuleEngine
                     ? outcome.secondOpinion.needsHumanReview
-                      ? '第二意見把握較低，建議人工'
-                      : '第二意見一致'
-                    : '第二意見分歧，建議人工'
+                      ? '第二意见把握较低，建议人工'
+                      : '第二意见一致'
+                    : '第二意见分歧，建议人工'
                 }}
               </AuditStatusTag>
               <span>{{ outcome.name }}</span>

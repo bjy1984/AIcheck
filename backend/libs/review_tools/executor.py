@@ -193,7 +193,7 @@ def resolve_atomic_arguments(
 
 # 走 frozen_domain_checks 的工具 → 事实里的 (命名空间, 键)。工具要的是顶层的
 # projectId / scope / domains / standardRules，事实构建把它们放在 facts[ns][key] 下。
-# 2026-09-10 生产乾跑抓到：这批工具一个都没接线，收到的只有 binding.parameters，
+# 2026-09-10 生产干跑抓到：这批工具一个都没接线，收到的只有 binding.parameters，
 # 于是不论事实建得多好，一律回 *_scope_missing——判据冻结了、事实建了、工具会判，
 # 唯独中间这根线没接。R11/R35~R40/R45/R64~R67 早有各自的特例，这批当时漏了。
 FROZEN_DOMAIN_INPUTS: dict[str, tuple[str, str]] = {

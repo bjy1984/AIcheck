@@ -1,19 +1,19 @@
-"""把掃描件上的固定表格按表頭錨點重建成表，只用 OCR 記錄下來的原字。
+"""把扫描件上的固定表格按表头锚点重建成表，只用 OCR 记录下来的原字。
 
-為什麼要有這一層：交工資料多是掃描件，OCR（macOS Vision、PaddleOCR）只給一個個帶
-座標的文字片段，不給表格；而安裝、試驗類規則的事實構建只讀表格，於是整本施工記錄
-一條都讀不到（2026-09-24 在七項目快照上，恒基達鑫交工資料 24 頁、1961 個片段、0 張表）。
+为什么要有这一层：交工资料多是扫描件，OCR（macOS Vision、PaddleOCR）只给一个个带
+座标的文字片段，不给表格；而安装、试验类规则的事实构建只读表格，于是整本施工记录
+一条都读不到（2026-09-24 在七项目快照上，恒基达鑫交工资料 24 页、1961 个片段、0 张表）。
 
-做法刻意保守，全部由簽名宣告，不靠猜：
-- 表名：簽名給出表號與表名的正則，頁上要有一個片段對得上，這一頁才重建。
-- 欄位：簽名按左到右列出表頭字樣；同名的表頭（兩個「材质」）用 occurrence 指第幾個。
-  任何一欄在頁上找不到表頭，整張表不重建——少一欄就可能把值放錯欄。
-- 列：只收「行鍵」欄有值且符合 rowKeyPattern 的列；表尾的簽字、日期落不進行鍵欄，
-  自然被排除。沒有行鍵的行只在緊貼某條數據行（折行的儲存格）時併回那一行，
-  離得遠的一律不收，不把別處的字併進來。
-- 儲存格：OCR 常把相鄰兩格認成一個片段（「0.2 洁净水」「2 PL8306-100」）。片段先按
-  空白與「|」切成詞，按字寬估每個詞的橫向位置，再歸到最近的表頭。
-- 引文：html 的每一格都是 OCR 原字，只做切分與拼接，不改寫、不正規化。
+做法刻意保守，全部由签名宣告，不靠猜：
+- 表名：签名给出表号与表名的正则，页上要有一个片段对得上，这一页才重建。
+- 栏位：签名按左到右列出表头字样；同名的表头（两个「材质」）用 occurrence 指第几个。
+  任何一栏在页上找不到表头，整张表不重建——少一栏就可能把值放错栏。
+- 列：只收「行键」栏有值且符合 rowKeyPattern 的列；表尾的签字、日期落不进行键栏，
+  自然被排除。没有行键的行只在紧贴某条数据行（折行的储存格）时并回那一行，
+  离得远的一律不收，不把别处的字并进来。
+- 储存格：OCR 常把相邻两格认成一个片段（「0.2 洁净水」「2 PL8306-100」）。片段先按
+  空白与「|」切成词，按字宽估每个词的横向位置，再归到最近的表头。
+- 引文：html 的每一格都是 OCR 原字，只做切分与拼接，不改写、不正规化。
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ _WIDE_RE = re.compile(r"[\u3000-\u9fff\uff00-\uffef]")
 
 
 def _width(text: str) -> float:
-    """字寬權重：全形字記 1，半形字記 0.55。只用來把片段按比例切成詞。"""
+    """字宽权重：全形字记 1，半形字记 0.55。只用来把片段按比例切成词。"""
     return sum(1.0 if _WIDE_RE.match(char) else 0.55 for char in text) or 1.0
 
 
@@ -61,7 +61,7 @@ def _middle(token: dict[str, Any]) -> float:
 
 def _anchors(tokens: list[dict[str, Any]], columns: list[dict[str, Any]], *, top: float, bottom: float
              ) -> list[dict[str, Any]] | None:
-    """每一欄的表頭詞；表頭區在表名之下、行鍵表頭之下不遠處。缺任何一欄就放棄整張表。"""
+    """每一栏的表头词；表头区在表名之下、行键表头之下不远处。缺任何一栏就放弃整张表。"""
     header = sorted((token for token in tokens if top <= _middle(token) <= bottom), key=_centre)
     anchors = []
     for column in columns:
@@ -75,7 +75,7 @@ def _anchors(tokens: list[dict[str, Any]], columns: list[dict[str, Any]], *, top
                         "pageBbox": hit["pageBbox"]})
     xs = [anchor["x"] for anchor in anchors]
     if xs != sorted(xs) or len({round(x) for x in xs}) != len(xs):
-        # 表頭順序和簽名不一致（或兩欄疊在一起）：版式不是簽名描述的那張表。
+        # 表头顺序和签名不一致（或两栏叠在一起）：版式不是签名描述的那张表。
         return None
     return anchors
 
@@ -99,8 +99,8 @@ def _nearest(anchors: list[dict[str, Any]], token: dict[str, Any]) -> dict[str, 
 
 
 def _html(anchors: list[dict[str, Any]], rows: list[dict[str, str]]) -> str:
-    """表頭寫頁上印的字（兩個「规格」就是兩個「规格」），不寫簽名裡的欄名——欄名是
-    為了對映起的，原文沒有這幾個字，放進引文就是編造。"""
+    """表头写页上印的字（两个「规格」就是两个「规格」），不写签名里的栏名——栏名是
+    为了对映起的，原文没有这几个字，放进引文就是编造。"""
     def cell(text: str) -> str:
         return "<td>" + text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</td>"
 
@@ -110,10 +110,10 @@ def _html(anchors: list[dict[str, Any]], rows: list[dict[str, str]]) -> str:
 
 
 def _turned(fragments: list[dict[str, Any]], direction: str) -> list[dict[str, Any]]:
-    """把豎排的頁轉正：橫向表格直著掃描時，文字沿頁高方向排。
+    """把竖排的页转正：横向表格直著扫描时，文字沿页高方向排。
 
-    ccw：文字由下往上讀（頁面逆時針轉了 90°）；cw：由上往下讀。轉正後的座標只用來
-    分欄分列，表格的 bbox 仍取片段在原頁上的位置（pageBbox）。
+    ccw：文字由下往上读（页面逆时针转了 90°）；cw：由上往下读。转正后的座标只用来
+    分栏分列，表格的 bbox 仍取片段在原页上的位置（pageBbox）。
     """
     boxes = [fragment["bbox"] for fragment in fragments if _box(fragment)]
     width = max(box[2] for box in boxes)
@@ -136,10 +136,10 @@ def _box(fragment: dict[str, Any]) -> bool:
 
 def reconstruct_form_table(fragments: list[dict[str, Any]], form: dict[str, Any], *, page_no: int
                            ) -> dict[str, Any] | None:
-    """一頁的片段 → 一張表；認不出表名、缺表頭、沒有數據列都回 None。
+    """一页的片段 → 一张表；认不出表名、缺表头、没有数据列都回 None。
 
-    表名是豎的（高大於寬），就兩個方向都轉正試一次；只有一個方向的表頭順序對得上
-    簽名才採用，兩個都對得上（或都對不上）就不重建。
+    表名是竖的（高大于宽），就两个方向都转正试一次；只有一个方向的表头顺序对得上
+    签名才采用，两个都对得上（或都对不上）就不重建。
     """
     title_re = re.compile(form["title"])
     titles = [fragment for fragment in fragments
@@ -183,9 +183,9 @@ def _reconstruct(fragments: list[dict[str, Any]], title: dict[str, Any], form: d
     for line in _rows([token for token in tokens if _middle(token) > body_top]):
         key = " ".join(token["text"] for token in line if _nearest(anchors, token)["name"] == form["rowKey"])
         (keyed if key_pattern.search(key) else loose).append(line)
-    # 折行的儲存格（「四区交／换站」）第二行沒有行鍵：緊貼某條數據行（間距不超過半個行高）的，
-    # 併回那一行；否則丟掉那半格會把「四区交换站」讀成「四区交」——那不是少讀，是讀錯。
-    # 離得遠的（表尾簽字、日期）照舊不收。
+    # 折行的储存格（「四区交／换站」）第二行没有行键：紧贴某条数据行（间距不超过半个行高）的，
+    # 并回那一行；否则丢掉那半格会把「四区交换站」读成「四区交」——那不是少读，是读错。
+    # 离得远的（表尾签字、日期）照旧不收。
     for line in loose:
         height = max(max(token["y1"] - token["y0"] for token in line), 1.0)
         gaps = [(max(min(item["y0"] for item in row) - max(token["y1"] for token in line),
@@ -205,7 +205,7 @@ def _reconstruct(fragments: list[dict[str, Any]], title: dict[str, Any], form: d
         confidences.append(min(scores) if scores else None)
     if not rows:
         return None
-    # 表的範圍：各欄表頭到最後一列，不含表名、表尾的簽字與日期。
+    # 表的范围：各栏表头到最后一列，不含表名、表尾的签字与日期。
     used = [anchor["pageBbox"] for anchor in anchors] + [token["pageBbox"] for token in kept]
     bbox = [min(box[0] for box in used), min(box[1] for box in used),
             max(box[2] for box in used), max(box[3] for box in used)]
@@ -224,7 +224,7 @@ def _reconstruct(fragments: list[dict[str, Any]], title: dict[str, Any], form: d
 
 
 def form_tables(parse: dict[str, Any], signatures: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """一份 OCR 結果裡所有簽名宣告過的表格：[(重建的表, 簽名)]。"""
+    """一份 OCR 结果里所有签名宣告过的表格：[(重建的表, 签名)]。"""
     pages: dict[int, list[dict[str, Any]]] = {}
     for fragment in parse.get("fragments") or []:
         page = fragment.get("pageNo") if isinstance(fragment, dict) else None

@@ -1,6 +1,6 @@
-"""生產庫裡真實的、沒有 businessSchema 的表，要能一路走到規則手上。
+"""生产库里真实的、没有 businessSchema 的表，要能一路走到规则手上。
 
-表格內容原樣取自生產庫 ocr_parse_results（2026-09-10 抽出），不是造的。
+表格内容原样取自生产库 ocr_parse_results（2026-09-10 抽出），不是造的。
 """
 
 from copy import deepcopy
@@ -93,10 +93,10 @@ def test_the_real_row_reaches_r43_as_a_scoped_domain():
 
 
 def test_a_table_ocr_already_labelled_is_left_alone():
-    """既有分類優先；簽名只補 OCR 沒認出來的表，不覆蓋既有結論。"""
+    """既有分类优先；签名只补 OCR 没认出来的表，不覆盖既有结论。"""
     state, run = state_and_run(business_schema="material_certificate_domains")
     rows = read_ndt_tables(state, run, {"material_certificate_domains": "domains"}, node_id=43)["domains"]
-    # 走既有分類時原樣讀取，中文列名保留，不經簽名對映。
+    # 走既有分类时原样读取，中文列名保留，不经签名对映。
     assert {row["产品质量证明书编号"] for row in rows} == {"ST202604061300001", "20260213951"}
 
 

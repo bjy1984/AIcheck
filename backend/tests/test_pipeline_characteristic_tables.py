@@ -1,7 +1,7 @@
-"""設計文件的管道特性表：OCR 只給按行文字或嵌入的 HTML，按簽名逐字認表頭、按格數重建。
+"""设计文件的管道特性表：OCR 只给按行文字或嵌入的 HTML，按签名逐字认表头、按格数重建。
 
-版面照七項目快照的真實輸出：7F7270 設計說明書（按行文字、含氣密，25 欄）、6B15AE 設計圖紙
-（按行文字，19 欄，後面接圖簽文字）、OCR-002 同一份圖紙的 MinerU HTML 版本。
+版面照七项目快照的真实输出：7F7270 设计说明书（按行文字、含气密，25 栏）、6B15AE 设计图纸
+（按行文字，19 栏，后面接图签文字）、OCR-002 同一份图纸的 MinerU HTML 版本。
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def test_a_design_note_table_is_rebuilt_row_by_row_with_every_column_in_place():
         "LS-04012-50-M1B", "$\\phi 57\\times 4.0$", "194", "1.25", "1.88")
     assert (first["气密介质"], first["检测比例"], first["管道级别"], first["材质"]) == ("/", "≥5%", "GC2", "20GB/T8163-2018")
     assert table["normalizedRows"][1]["管道长度"] == "/"
-    # 引文是 OCR 記錄下來的原文行：表名、兩層表頭與兩條管線。
+    # 引文是 OCR 记录下来的原文行：表名、两层表头与两条管线。
     assert table["contentMarkdown"].splitlines()[0] == "管道特性表" and len(table["contentMarkdown"].splitlines()) == 5
 
 
@@ -102,7 +102,7 @@ def _frag(text, x0, y0, x1, y1, confidence=1.0):
     return {"id": f"S-{x0}-{y0}", "pageNo": 4, "text": text, "bbox": [x0, y0, x1, y1], "confidence": confidence}
 
 
-# GDLNG 交工資料第 4 頁「压力管道汇总表」：直著掃描，終點「四区交／换站」折成兩行（真實座標）。
+# GDLNG 交工资料第 4 页「压力管道汇总表」：直著扫描，终点「四区交／换站」折成两行（真实座标）。
 SUMMARY_PAGE = [
     _frag("压力管道汇总表", 60, 360, 79, 488), _frag("备注", 125, 51, 138, 77), _frag("（图号）", 137, 46, 149, 84, 0.5),
     _frag("QX201903S", 167, 43, 182, 93, 0.5), _frag("13-Y-07", 181, 43, 197, 87),
@@ -158,7 +158,7 @@ def test_an_html_pipeline_table_is_read_as_rows_not_as_a_drawing_title_block():
     assert [item["pipelineId"] for item in build_project_pipelines(state, "P")] == ["NG-01"]
 
 
-# ECD202 施工圖第 32 頁：表名夾在圖簽行、「管道等级」是材料等級、備註欄空（OCR 原文節錄）。
+# ECD202 施工图第 32 页：表名夹在图签行、「管道等级」是材料等级、备注栏空（OCR 原文节录）。
 TANK_AREA = """广东政和工程有限公司 资质等级 甲级 建设单位 珠海海瑞德制药有限公司 图名DWG NAME 管道特性表 设计分项 2 / 2
 项目名称PROJ. 珠海海瑞德制药有限公司增资扩产项目 图号DWG NO. HZ026Y-112-02-S301 设计阶段PHASE 施工图
 管段号 外径x壁厚(mm) 管道等级 压力管道类别 介质 工作参数 设计参数 绝热及防腐 试压要求 焊缝检测要求 泄漏试验要求 吹扫清洗介质 备注

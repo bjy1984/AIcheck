@@ -152,7 +152,7 @@ def read_ndt_tables(state: dict[str, Any], run: dict[str, Any], schemas: dict[st
             schema = table.get("businessSchema")
             signature = None
             if schema not in schemas:
-                # OCR 沒認出來的表，用规则包里的签名再认一次。生产库里 1004 列真实
+                # OCR 没认出来的表，用规则包里的签名再认一次。生产库里 1004 列真实
                 # 表格数据就是躺在 businessSchema 为空的表里，而事实构建按名字取表，
                 # 于是规则永远拿不到它们。这里按读取时机补认，既有文件不必重跑 OCR。
                 signature = _signature_for(table, schemas)

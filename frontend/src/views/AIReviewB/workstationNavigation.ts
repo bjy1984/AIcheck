@@ -4,37 +4,37 @@ import type { ProjectTreePayload } from '@/api/aicheck'
 export const workstationNavigation = [
   {
     id: 'A',
-    name: '焊接與熱處理',
+    name: '焊接与热处理',
     nodeIds: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
   },
   {
     id: 'B',
-    name: '設計與技術基準',
+    name: '设计与技术基准',
     nodeIds: [1, 4, 5, 6, 7, 8, 9, 10, 63]
   },
   {
     id: 'C',
-    name: '施工組織與品質體系',
+    name: '施工组织与品质体系',
     nodeIds: [2, 11, 69]
   },
   {
     id: 'D',
-    name: '材料與管道元件',
+    name: '材料与管道元件',
     nodeIds: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
   },
   {
     id: 'E',
-    name: '無損檢測',
+    name: '无损检测',
     nodeIds: [3, 35, 36, 37, 38, 39, 40, 41, 42, 65]
   },
   {
     id: 'F',
-    name: '防腐、保溫與電氣保護',
+    name: '防腐、保温与电气保护',
     nodeIds: [43, 44, 45, 46, 47, 50]
   },
   {
     id: 'G',
-    name: '安裝與現場製作',
+    name: '安装与现场制作',
     nodeIds: [48, 49, 51, 52, 53, 54, 55]
   },
   {
@@ -44,7 +44,7 @@ export const workstationNavigation = [
   },
   {
     id: 'I',
-    name: '系統試驗與吹掃清洗',
+    name: '系统试验与吹扫清洗',
     nodeIds: [59, 60, 61, 62, 64, 66, 67, 68]
   }
 ]

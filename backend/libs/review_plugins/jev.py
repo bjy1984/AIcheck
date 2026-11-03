@@ -1,8 +1,8 @@
-"""Jev 插件：只做加強——逐項分歧提示、事實核對、表格行分類。
+"""Jev 插件：只做加强——逐项分歧提示、事实核对、表格行分类。
 
-結論只來自規則、平台核驗和計算（見 jev_usage_policy）。本模組只在審查選用 Jev
-時才被登記表載入；各函式內部仍逐一檢查部署層總開關（金鑰、出境批准、階段開關），
-沒開就回 disabled，不送出任何資料。
+结论只来自规则、平台核验和计算（见 jev_usage_policy）。本模组只在审查选用 Jev
+时才被登记表载入；各函式内部仍逐一检查部署层总开关（金钥、出境批准、阶段开关），
+没开就回 disabled，不送出任何资料。
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from libs.security.tenant import tenant_id_for_record
 
 
 def deployment_available() -> bool:
-    """部署上能不能用（總開關、出境批准、金鑰都到位）；只回布林，不洩露設定值。"""
+    """部署上能不能用（总开关、出境批准、金钥都到位）；只回布林，不泄露设定值。"""
     return jev_enabled()
 
 
@@ -43,7 +43,7 @@ def classify_tables_step(state: dict[str, Any], review_run: dict[str, Any], cont
     if review_run.get("workflowEngine") != "temporal":
         return {"status": "skipped_inline"}
     classified = classify_review_tables(state, review_run)
-    # 欄位名沿用舊名：R24–R34 的事實構建按表格內容雜湊讀這份行角色預測，缺了就用固定解析。
+    # 栏位名沿用旧名：R24–R34 的事实构建按表格内容杂凑读这份行角色预测，缺了就用固定解析。
     review_run["jevTableClassifications"] = classified
     return {"status": classified["status"], "classifiedTables": sum(
         len(rows) for rows in classified["tables"].values()),
@@ -85,7 +85,7 @@ STEPS = {
 
 
 def on_run_created(record: dict[str, Any], state: dict[str, Any]) -> None:
-    """同工程同節點上一次的人工排隊狀態，第二意見的升降門檻要用。"""
+    """同工程同节点上一次的人工排队状态，第二意见的升降门槛要用。"""
     previous = next((item.get("jevQueueStatus") for item in state.get("review_runs", [])
                      if isinstance(item, dict) and item.get("projectId") == record.get("projectId")
                      and tenant_id_for_record(item) == record.get("tenantId")

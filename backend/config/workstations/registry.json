@@ -6,7 +6,7 @@
     {
       "id": "A",
       "key": "welding",
-      "name": "焊接與熱處理",
+      "name": "焊接与热处理",
       "nodeIds": [
         24,
         25,
@@ -21,12 +21,12 @@
         34
       ],
       "promptFile": "prompts/A.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "B",
       "key": "design",
-      "name": "設計與技術基準",
+      "name": "设计与技术基准",
       "nodeIds": [
         1,
         4,
@@ -39,24 +39,24 @@
         63
       ],
       "promptFile": "prompts/B.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "C",
       "key": "quality_system",
-      "name": "施工組織與品質體系",
+      "name": "施工组织与品质体系",
       "nodeIds": [
         2,
         11,
         69
       ],
       "promptFile": "prompts/C.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "D",
       "key": "materials",
-      "name": "材料與管道元件",
+      "name": "材料与管道元件",
       "nodeIds": [
         12,
         13,
@@ -72,12 +72,12 @@
         23
       ],
       "promptFile": "prompts/D.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "E",
       "key": "ndt",
-      "name": "無損檢測",
+      "name": "无损检测",
       "nodeIds": [
         3,
         35,
@@ -91,12 +91,12 @@
         65
       ],
       "promptFile": "prompts/E.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "F",
       "key": "protection",
-      "name": "防腐、保溫與電氣保護",
+      "name": "防腐、保温与电气保护",
       "nodeIds": [
         43,
         44,
@@ -106,12 +106,12 @@
         50
       ],
       "promptFile": "prompts/F.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "G",
       "key": "installation",
-      "name": "安裝與現場製作",
+      "name": "安装与现场制作",
       "nodeIds": [
         48,
         49,
@@ -122,7 +122,7 @@
         55
       ],
       "promptFile": "prompts/G.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "H",
@@ -134,12 +134,12 @@
         58
       ],
       "promptFile": "prompts/H.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     },
     {
       "id": "I",
       "key": "system_tests",
-      "name": "系統試驗與吹掃清洗",
+      "name": "系统试验与吹扫清洗",
       "nodeIds": [
         59,
         60,
@@ -151,7 +151,7 @@
         68
       ],
       "promptFile": "prompts/I.md",
-      "promptVersion": "1.0.0"
+      "promptVersion": "1.0.1"
     }
   ]
 }

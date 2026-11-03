@@ -1,4 +1,4 @@
-"""R47／R68 等施工記錄（選定對象後）抽出的值，也請 Jev 對原文核一遍；推導的旗標不問。"""
+"""R47／R68 等施工记录（选定对象后）抽出的值，也请 Jev 对原文核一遍；推导的旗标不问。"""
 from __future__ import annotations
 
 from libs.review_orchestrator.jev_fact_check import domain_record_fact_items

@@ -1,11 +1,11 @@
-"""把 OCR 表格認成 businessSchema，並把表頭對映成判據讀的欄位路徑。
+"""把 OCR 表格认成 businessSchema，并把表头对映成判据读的栏位路径。
 
-這是凍結判據的**生產側**。判據宣告要讀什麼（actualPath），fact builder 宣告要哪
-張表（businessSchema），這個模組把真實的 OCR 表格接到那兩者上。
+这是冻结判据的**生产侧**。判据宣告要读什么（actualPath），fact builder 宣告要哪
+张表（businessSchema），这个模组把真实的 OCR 表格接到那两者上。
 
-貫穿全檔的一條規矩：**對映不上就不寫**。判據那邊「該寫沒寫」判不符合、「取不到
-值」判證據不足，兩種結果都比塞一個猜的值進去好。所以每個 parse 函式在拿不準時
-一律回 None，讓欄位缺席，而不是回一個看起來合理的東西。
+贯穿全档的一条规矩：**对映不上就不写**。判据那边「该写没写」判不符合、「取不到
+值」判证据不足，两种结果都比塞一个猜的值进去好。所以每个 parse 函式在拿不准时
+一律回 None，让栏位缺席，而不是回一个看起来合理的东西。
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def load_signatures(pack_id: str = "engineering_inspection_v1") -> list[dict[str
 
 
 def normalize_header(value: Any) -> str:
-    """去掉空白與全形標點差異；OCR 的表頭常帶零寬空白和不同的括號。"""
+    """去掉空白与全形标点差异；OCR 的表头常带零宽空白和不同的括号。"""
     text = str(value or "")
     for wide, narrow in (("（", "("), ("）", ")"), ("：", ":"), ("／", "/"), ("，", ","), ("、", "/")):
         text = text.replace(wide, narrow)
@@ -46,7 +46,7 @@ def normalize_header(value: Any) -> str:
 
 
 def table_headers(table: dict[str, Any]) -> set[str]:
-    """表頭以第一列的鍵為準——normalizedRows 的鍵就是 OCR 認出的欄名。"""
+    """表头以第一列的键为准——normalizedRows 的键就是 OCR 认出的栏名。"""
     rows = [row for row in table.get("normalizedRows") or [] if isinstance(row, dict)]
     return {normalize_header(key) for row in rows[:1] for key in row}
 
@@ -62,10 +62,10 @@ def _matches(signature: dict[str, Any], headers: set[str]) -> bool:
 
 
 def classify_table(table: dict[str, Any], signatures: list[dict[str, Any]]) -> str | None:
-    """認不出、或同時符合兩條簽名，都回 None。
+    """认不出、或同时符合两条签名，都回 None。
 
-    含糊的時候寧可不貼標籤：貼錯的表會被 fact builder 當成真資料讀，
-    比沒有這張表更難查。
+    含糊的时候宁可不贴标签：贴错的表会被 fact builder 当成真资料读，
+    比没有这张表更难查。
     """
     headers = table_headers(table)
     if not headers:
@@ -74,7 +74,7 @@ def classify_table(table: dict[str, Any], signatures: list[dict[str, Any]]) -> s
     return hits[0]["businessSchema"] if len(hits) == 1 else None
 
 
-# 表格裡的「/」「—」是「本欄不填」的記號，不是值；當成有值會讓「該寫沒寫」看起來寫了。
+# 表格里的「/」「—」是「本栏不填」的记号，不是值；当成有值会让「该写没写」看起来写了。
 _BLANK_MARKS = frozenset({"/", "／", "-", "—", "--", "——", "\\"})
 _NUMBER_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(.*?)\s*$")
 
@@ -85,10 +85,10 @@ def _parse_text(value: Any, _field: dict[str, Any]) -> Any:
 
 
 def _parse_number(value: Any, field: dict[str, Any]) -> Any:
-    """只收一個乾淨的數，後面只許跟簽名宣告的單位（units，不分大小寫）。
+    """只收一个干净的数，后面只许跟签名宣告的单位（units，不分大小写）。
 
-    「约」「≤」「0.02~0.03」、單位不對（壓力欄寫了 kPa）與 OCR 夾雜的字一律不收——
-    換算單位是判據的事，這裡不代算。
+    「约」「≤」「0.02~0.03」、单位不对（压力栏写了 kPa）与 OCR 夹杂的字一律不收——
+    换算单位是判据的事，这里不代算。
     """
     if isinstance(value, bool):
         return None
@@ -103,7 +103,7 @@ def _parse_number(value: Any, field: dict[str, Any]) -> Any:
 
 
 def _parse_percent(value: Any, _field: dict[str, Any]) -> Any:
-    """只收乾淨的「10%」。「约10%」「10~20%」這種一律不收——範圍和約數不是判據要的數。"""
+    """只收干净的「10%」。「约10%」「10~20%」这种一律不收——范围和约数不是判据要的数。"""
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -117,7 +117,7 @@ def _parse_percent(value: Any, _field: dict[str, Any]) -> Any:
 
 
 def _parse_labelled(value: Any, field: dict[str, Any]) -> Any:
-    """從「材质:S30408标准:GB/T14976-2025」這種黏在一起的值裡切出指定標籤的部分。"""
+    """从「材质:S30408标准:GB/T14976-2025」这种黏在一起的值里切出指定标签的部分。"""
     text = normalize_header(value)
     label = normalize_header(field.get("label"))
     if not text or not label:
@@ -163,7 +163,7 @@ def _assign(target: dict[str, Any], path: str, value: Any) -> None:
 
 
 def map_row(row: dict[str, Any], signature: dict[str, Any]) -> dict[str, Any]:
-    """只放對映得到的欄位；取不到的路徑整個不出現。"""
+    """只放对映得到的栏位；取不到的路径整个不出现。"""
     headers = {normalize_header(key): value for key, value in row.items()}
     mapped: dict[str, Any] = {}
     for field in signature.get("fields") or []:
@@ -188,11 +188,11 @@ def build_domain_rows(
     project_id: str,
     document_version_id: str,
 ) -> list[dict[str, Any]]:
-    """把一張認出來的表轉成 frozen_domain_checks 收的 domain row。
+    """把一张认出来的表转成 frozen_domain_checks 收的 domain row。
 
-    scope 四欄、domain 名、evidenceRefs 都由這裡補齊；判據欄位只放對映得到的。
-    `applicable` 只有簽名裡明寫 `applicableWhen: table_present` 才給 True——
-    適用性是判斷，不能因為「表在」就默默當成適用而不留痕跡。
+    scope 四栏、domain 名、evidenceRefs 都由这里补齐；判据栏位只放对映得到的。
+    `applicable` 只有签名里明写 `applicableWhen: table_present` 才给 True——
+    适用性是判断，不能因为「表在」就默默当成适用而不留痕迹。
     """
     rows = [item for item in table.get("normalizedRows") or [] if isinstance(item, dict)]
     object_columns = [normalize_header(item) for item in signature.get("objectIdColumns") or []]
@@ -204,7 +204,7 @@ def build_domain_rows(
             "",
         )
         if not object_id:
-            # 沒有對象識別，這一列無法歸屬到任何被審查對象，寧可不產生。
+            # 没有对象识别，这一列无法归属到任何被审查对象，宁可不产生。
             continue
         reference = {
             "documentVersionId": document_version_id,
@@ -218,8 +218,8 @@ def build_domain_rows(
             "objectId": object_id,
             "recordVersionId": document_version_id,
             **({"domain": signature["domain"]} if signature.get("domain") else {}),
-            # applicable 只屬於 frozen_domain_checks 的 domain row；plan item 這類
-            # 表沒有 domain，掛上去只會多一個沒人讀的欄位。
+            # applicable 只属于 frozen_domain_checks 的 domain row；plan item 这类
+            # 表没有 domain，挂上去只会多一个没人读的栏位。
             **({"applicable": True}
                if signature.get("domain") and signature.get("applicableWhen") == "table_present"
                else {}),

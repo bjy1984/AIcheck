@@ -1,4 +1,4 @@
-"""施工記錄的適用性（2026-09-24 業務確認）與「未抽取」守門。"""
+"""施工记录的适用性（2026-09-24 业务确认）与「未抽取」守门。"""
 from __future__ import annotations
 
 from copy import deepcopy

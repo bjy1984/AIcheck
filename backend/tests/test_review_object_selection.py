@@ -1,4 +1,4 @@
-"""一張記錄表多個對象：列出候選、由監檢員指定、凍結進審查。"""
+"""一张记录表多个对象：列出候选、由监检员指定、冻结进审查。"""
 from __future__ import annotations
 
 from copy import deepcopy

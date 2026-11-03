@@ -1,13 +1,13 @@
-"""審查插件登記表：核心流程只經這裡呼叫插件，不直接 import 插件實作。
+"""审查插件登记表：核心流程只经这里呼叫插件，不直接 import 插件实作。
 
-插件只做加強（提示、事實核對、表格行分類、文件歸屬候選），不產生、也不改寫結論。
-每個插件宣告它擁有的流程步驟，以及可選的鉤子：
-- steps：{步驟鍵: fn(state, review_run, context) -> 步驟結果}
-- on_run_created(record, state)：建立審查時補插件自己的欄位（只在選用時呼叫）
-- suggestion_fields(review_run) -> dict：節點建議卡上的提示
-- prompt_requirements(review_run) -> list[str]、prompt_payload(review_run) -> dict：撰寫發現時的說明
+插件只做加强（提示、事实核对、表格行分类、文件归属候选），不产生、也不改写结论。
+每个插件宣告它拥有的流程步骤，以及可选的钩子：
+- steps：{步骤键: fn(state, review_run, context) -> 步骤结果}
+- on_run_created(record, state)：建立审查时补插件自己的栏位（只在选用时呼叫）
+- suggestion_fields(review_run) -> dict：节点建议卡上的提示
+- prompt_requirements(review_run) -> list[str]、prompt_payload(review_run) -> dict：撰写发现时的说明
 
-插件實作延遲載入：沒有任何審查選用時，插件模組根本不會被 import。
+插件实作延迟载入：没有任何审查选用时，插件模组根本不会被 import。
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any
 
 from libs.review_plugins.settings import run_plugin_enabled
 
-# 各插件擁有的步驟鍵（沿用原有鍵名，歷史審查與進行中的工作流不受影響）。
+# 各插件拥有的步骤键（沿用原有键名，历史审查与进行中的工作流不受影响）。
 PLUGIN_STEPS = {
     "classify_ocr_tables": "jev",
     "qwen_compose_jev_questions": "jev",
@@ -38,7 +38,7 @@ def _enabled(review_run: dict[str, Any]) -> list[Any]:
 
 def run_plugin_step(step_key: str, state: dict[str, Any], review_run: dict[str, Any],
                     context: dict[str, Any]) -> dict[str, Any]:
-    """流程走到插件的步驟：沒選用就略過，規則結果原樣往下走。"""
+    """流程走到插件的步骤：没选用就略过，规则结果原样往下走。"""
     plugin_id = PLUGIN_STEPS[step_key]
     if not run_plugin_enabled(review_run, plugin_id):
         return {"status": "skipped", "reason": "review_plugin_not_enabled", "plugin": plugin_id}
@@ -71,7 +71,7 @@ def prompt_payload(review_run: dict[str, Any]) -> dict[str, Any]:
 
 
 def plugin_catalog() -> list[dict[str, Any]]:
-    """給工程設定頁：有哪些插件、部署上能不能用（不含任何金鑰或內部設定值）。"""
+    """给工程设定页：有哪些插件、部署上能不能用（不含任何金钥或内部设定值）。"""
     from libs.review_plugins.settings import PLUGIN_IDS, PLUGIN_LABELS
 
     return [{"id": plugin_id, "label": PLUGIN_LABELS[plugin_id],

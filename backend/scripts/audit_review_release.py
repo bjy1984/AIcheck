@@ -60,14 +60,14 @@ def audit(pack: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def markdown(report: dict[str, Any]) -> str:
-    lines = ['# 69 條規則發布驗收矩陣', '',
-             '此表由 `backend/scripts/audit_review_release.py` 產生。空輸入探針只驗證防誤通過；工具註冊及編譯不代表業務驗收完成。', '',
-             '四情境（符合／不符合／證據不足／不適用）及文件證據定位尚需逐條留存真實驗收記錄。全量發布門檻尚未達成。', '',
-             '| 規則 | 原試點 | 原子項 | 註冊完整 | 空輸入結果 | 未配置規則檔案的通用工具 | 尚未完成能力 |',
+    lines = ['# 69 条规则发布验收矩阵', '',
+             '此表由 `backend/scripts/audit_review_release.py` 产生。空输入探针只验证防误通过；工具注册及编译不代表业务验收完成。', '',
+             '四情境（符合／不符合／证据不足／不适用）及文件证据定位尚需逐条留存真实验收记录。全量发布门槛尚未达成。', '',
+             '| 规则 | 原试点 | 原子项 | 注册完整 | 空输入结果 | 未配置规则档案的通用工具 | 尚未完成能力 |',
              '|---|---|---:|---|---|---|---|']
     for row in report['rules']:
         lines.append(f"| {row['rule']} | {'是' if row['pilotEnabled'] else '否'} | {row['atomicChecks']} | {row['allToolsRegistered']} | {row['emptyInputResult']} | {', '.join(row['unconfiguredInterpreters']) or '—'} | {', '.join(row['pendingCapabilities']) or '—'} |")
-    lines += ['', '完整必要事實、綁定及證據工具欄位見同目錄 JSON。`—` 只代表沒有發現此類靜態缺口，仍須業務情境驗收。', '']
+    lines += ['', '完整必要事实、绑定及证据工具栏位见同目录 JSON。`—` 只代表没有发现此类静态缺口，仍须业务情境验收。', '']
     return '\n'.join(lines)
 
 

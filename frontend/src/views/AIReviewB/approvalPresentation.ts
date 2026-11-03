@@ -20,7 +20,7 @@ export const approvalMessage = (row: ReviewApprovalCheck): string => {
     if (/^r11_signature_(编制|审核|审批)$/.test(row.code))
       return '记录明确标为未签名，请核对原文并确认是否需要补签。'
     if (row.code === 'r11_owner_reply')
-      return '记录中的建设单位回覆为拒绝，请核对后续是否有新的有效批复。'
+      return '记录中的建设单位回复为拒绝，请核对后续是否有新的有效批复。'
   }
   if (row.code === 'r11_usage_inventory')
     return '采用清单或记录还对不上，请检查漏项、重复项及清单来源。'

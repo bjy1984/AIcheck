@@ -1,7 +1,7 @@
-"""審查插件（Jev 等）：列出可選插件，並按工程開關。
+"""审查插件（Jev 等）：列出可选插件，并按工程开关。
 
-開關會決定本工程之後新建的審查要不要把 OCR 送到外部模型，所以只許系統管理員操作；
-已建立的審查按建立時凍結的快照執行，不受影響。插件只做加強，不改結論。
+开关会决定本工程之后新建的审查要不要把 OCR 送到外部模型，所以只许系统管理员操作；
+已建立的审查按建立时冻结的快照执行，不受影响。插件只做加强，不改结论。
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ review_plugin_router = APIRouter()
 
 @review_plugin_router.get("/review-plugins")
 def list_review_plugins(request: Request):
-    """可選的審查插件，以及本部署能不能用（只有布林值，不含金鑰或內部設定）。"""
+    """可选的审查插件，以及本部署能不能用（只有布林值，不含金钥或内部设定）。"""
     return ok({"items": plugin_catalog()}, request)
 
 
