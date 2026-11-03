@@ -50,6 +50,7 @@ const ACTION_LABELS: Record<string, string> = {
   // 协作
   'todo:update': '处理待办',
   'message:update': '处理消息',
+  'feedback:submit': '提交意见反馈',
 
   // 知识库与审计
   'knowledge:view': '查看知识库',

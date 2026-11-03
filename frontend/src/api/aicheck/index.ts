@@ -2,6 +2,7 @@ import request from '@/axios'
 import { validateOriginalBlob } from './originalBlob'
 import { createAutoReviewApi } from './autoReview'
 import { createProjectAnalysisApi } from './projectAnalysis'
+import { createUserFeedbackApi } from './userFeedback'
 export type {
   ProjectAnalysisMutationOptions,
   ProjectAnalysisPhase,
@@ -4370,6 +4371,13 @@ export const {
   getProjectReviewRunApi,
   runProjectAutoReviewApi
 } = autoReviewApi
+
+export const {
+  submitUserFeedbackApi,
+  getMyUserFeedbackApi,
+  getAdminUserFeedbackApi,
+  replyUserFeedbackApi
+} = createUserFeedbackApi(request, mutationHeaders)
 
 const projectAnalysisApi = createProjectAnalysisApi(request, mutationHeaders)
 export const {

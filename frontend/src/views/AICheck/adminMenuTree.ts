@@ -161,7 +161,8 @@ const SECTION_DEFS: Array<{ title: string; items: AdminMenuItem[] }> = [
         route: '/admin/integration'
       },
       { index: 'a12', label: 'Skill 请求记录', route: '/admin/skill-requests' },
-      { index: 'a11', label: '审计日志', route: '/admin/audit' }
+      { index: 'a11', label: '审计日志', route: '/admin/audit' },
+      { index: 'a13', label: '意见反馈', route: '/admin/feedback' }
     ]
   }
 ]

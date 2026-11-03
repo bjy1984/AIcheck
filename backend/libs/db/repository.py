@@ -131,6 +131,7 @@ STATE_COLLECTIONS = {
     "rule_check_results": "rule_check_results",
     "cnse_lookup_cache": "cnse_lookup_cache",
     "ai_feedback": "ai_feedback",
+    "user_feedback": "user_feedback",
     "access_grants": "access_grants",
     "ai_trace_steps": "ai_trace_steps",
     "ai_run_replays": "ai_run_replays",

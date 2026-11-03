@@ -104,6 +104,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/todos/[^/]+/(complete|defer)$", "todo:update"),
     ("POST", r"/messages/[^/]+/read$", "message:update"),
     ("POST", r"/messages/read-all$", "message:update"),
+    # 意见反馈：所有业务角色都能提给管理员；管理员处理走 /admin/ 下的 admin:config
+    ("POST", r"/user-feedback$", "feedback:submit"),
     ("POST", r"/workflow/commands$", "admin:config"),
     ("POST", r"/review/findings$", "review:save"),
     ("POST", r"/review/findings/[^/]+/(accept|reject)$", "review:save"),

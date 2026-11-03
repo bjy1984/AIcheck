@@ -394,6 +394,12 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
           noCache: true,
           roles: ['admin']
         }
+      },
+      {
+        path: 'feedback',
+        component: () => import('@/views/AICheck/AdminUserFeedback.vue'),
+        name: 'AdminUserFeedback',
+        meta: { title: '意见反馈', noCache: true, roles: ['admin'] }
       }
     ]
   },
