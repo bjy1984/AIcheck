@@ -5101,20 +5101,21 @@ onBeforeUnmount(() => {
           >
             注册链接与审核
           </ElButton>
-          <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
-            <button class="user" type="button" aria-label="打开用户菜单">
-              <span class="avatar"></span>
-              <span>{{ roleUserLabel }}</span>
-              <span class="user-caret">⌄</span>
-            </button>
-            <template #dropdown>
-              <ElDropdownMenu>
-                <ElDropdownItem disabled>{{ roleUserLabel }}</ElDropdownItem>
-                <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
-              </ElDropdownMenu>
-            </template>
-          </ElDropdown>
         </div>
+        <!-- 用户菜单固定在顶栏右上角：不跟操作按钮一起换行（2026-11-03 用户） -->
+        <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
+          <button class="user" type="button" aria-label="打开用户菜单">
+            <span class="avatar"></span>
+            <span>{{ roleUserLabel }}</span>
+            <span class="user-caret">⌄</span>
+          </button>
+          <template #dropdown>
+            <ElDropdownMenu>
+              <ElDropdownItem disabled>{{ roleUserLabel }}</ElDropdownItem>
+              <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
+            </ElDropdownMenu>
+          </template>
+        </ElDropdown>
       </header>
 
       <div v-if="pageIssue" class="static-issue">
@@ -6828,7 +6829,7 @@ onBeforeUnmount(() => {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
-  grid-template-columns: minmax(280px, 404px) minmax(44px, max-content) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 404px) minmax(44px, max-content) minmax(0, 1fr) max-content;
   gap: 18px;
   align-items: center;
 }
@@ -7341,6 +7342,12 @@ onBeforeUnmount(() => {
 
 .user-menu {
   flex: 0 0 auto;
+}
+
+.topbar > .user-menu {
+  grid-row: 1;
+  grid-column: -2 / -1;
+  justify-self: end;
 }
 
 .user {
