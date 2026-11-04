@@ -257,6 +257,7 @@ from libs.ocr_expected_geometry import (
 )
 from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.ocr_structured_view import build_ocr_structured_view
+from libs.probe_projects import is_probe_project
 from libs.project_analysis.domain import (
     project_analysis_status_view,  # noqa: F401 -- public re-export and monkeypatch compatibility
 )
@@ -5084,7 +5085,7 @@ def list_workbench_projects(
     resolved_role, role_error = resolved_role_for_read(request, role, x_role)
     if role_error:
         return role_error
-    items = [item for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
+    items = [item for item in repo.state["projects"] if project_visible_for_request(request, item["id"]) and not is_probe_project(item)]
     contractor_priority = {
         "退回补正中": 0,
         "资料提交中": 1,
@@ -5112,7 +5113,8 @@ def list_projects(
     keyword: str | None = None,
     status: str | None = None,
 ):
-    items = [versioned_project(item) for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
+    items = [versioned_project(item) for item in repo.state["projects"]
+             if project_visible_for_request(request, item["id"]) and not is_probe_project(item)]
     items = filter_keyword(items, keyword, ["name", "code", "region"])
     if status:
         items = [item for item in items if item.get("status") == status]
@@ -6022,7 +6024,10 @@ def build_inspection_audit_workspace(
     role: str | None = None,
     document_repo: Any = None,
     submitted_binding_ids: set[str] | None = None,
+    project_cache: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
+    # project_cache：总览一次算好全项目的挂载和文件清单给 69 个节点共用（2026-11-04 生产剖析：
+    # 每个节点各算一遍占总览一半以上的时间）。两份都是副本，节点只再复制自己用到的那几份
     project = repo.require_project(project_id)
     node = repo.node(project_id, node_id)
     if not project or not node:
@@ -6033,7 +6038,7 @@ def build_inspection_audit_workspace(
         submitted_binding_ids = submitted_binding_ids_for(project_id, scope, document_repo)
     project_bindings = [
         binding
-        for binding in repo.bindings_for_project(project_id)
+        for binding in (project_cache["bindings"] if project_cache else repo.bindings_for_project(project_id))
         if record_visible_for_scope(binding, scope, project_id=project_id)
         and str(binding.get("id") or "") in submitted_binding_ids
     ]
@@ -6045,7 +6050,7 @@ def build_inspection_audit_workspace(
     binding_document_ids = {str(binding.get("documentId")) for binding in bindings if binding.get("documentId")}
     documents = [
         attach_document_ocr_readiness(repo, document)
-        for document in repo.project_documents(project_id)
+        for document in (project_cache["documents"] if project_cache else repo.project_documents(project_id))
         if str(document.get("id")) in binding_document_ids and document_visible_in_scope(document, scope)
     ]
     document_by_id = {str(document.get("id")): document for document in documents}
@@ -6425,8 +6430,9 @@ def build_inspection_audit_workspace(
         "schemaVersion": "InspectionAuditWorkspace@1.0.0",
         # 去掉 businessPackSnapshot（实测约 393KB）：本接口每次点击节点都会被调用，
         # 而前端只用 businessPackSnapshotHash 判断快照版本，整包快照无人消费。
+        # 总览模式（include_content=False）不用这份项目视图，算它要 8ms×69 个节点
         "project": {
-            **repo.project_for_role(project, "inspection"),
+            **(repo.project_for_role(project, "inspection") if include_content else {"id": project.get("id")}),
             "businessPackSnapshot": None,
         },
         "node": enriched_node,
@@ -6505,6 +6511,7 @@ def _inspection_audit_overview(request: Request, project_id: str, keyword: str |
     # 项目级视图构造一次给全部节点复用，而不是每个节点各建一次
     shared_document_repo = repo.project_document_read_view(project_id)
     shared_binding_ids = submitted_binding_ids_for(project_id, scope, shared_document_repo)
+    project_cache = {"bindings": repo.bindings_for_project(project_id), "documents": repo.project_documents(project_id)}
     overview_role = effective_role_for_request(request)[0]
     for node in nodes:
         projection = build_inspection_audit_workspace(
@@ -6515,6 +6522,7 @@ def _inspection_audit_overview(request: Request, project_id: str, keyword: str |
             role=overview_role,
             document_repo=shared_document_repo,
             submitted_binding_ids=shared_binding_ids,
+            project_cache=project_cache,
         )
         if not projection:
             continue
@@ -15813,7 +15821,7 @@ def operations_overview(request: Request, area: str = Query(default="workbench")
         audit_logs = repo.state.get("audit_logs", [])
         source_items = [*users, *orgs, *audit_logs]
         metrics = [
-            {"key": "projects", "label": "项目", "value": len(repo.state["projects"]), "route": "/admin/projects"},
+            {"key": "projects", "label": "项目", "value": sum(1 for item in repo.state["projects"] if not is_probe_project(item)), "route": "/admin/projects"},
             {"key": "users", "label": "用户", "value": len(users), "route": "/admin/org"},
             {"key": "pending", "label": "待发布配置", "value": len(pending_rules), "route": "/admin/rules"},
             {"key": "audits", "label": "审计记录", "value": len(audit_logs), "route": "/admin/audit"},
