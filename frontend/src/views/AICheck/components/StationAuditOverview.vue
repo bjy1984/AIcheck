@@ -568,6 +568,17 @@ const toggle = async (nodeId: number) => {
 .station-node-card.is-expanded {
   box-shadow: 0 2px 8px rgb(16 24 40 / 6%);
 }
+/* 边框颜色表示节点当前结论（2026-11-03 用户）：绿＝通过、红＝不通过、黄＝证据不足；
+   需人工确认和未开始审核保持中性灰。仍是 1px 细边，不加粗（用户不要粗边框）。 */
+.station-group.is-passed .station-node-card {
+  border-color: #86d7a5;
+}
+.station-group.is-failed .station-node-card {
+  border-color: #f4a3a0;
+}
+.station-group.is-needs_materials .station-node-card {
+  border-color: #f5c96b;
+}
 .station-node-card + .station-node-card {
   margin-top: 6px;
 }
@@ -838,9 +849,28 @@ const toggle = async (nodeId: number) => {
   border-radius: 6px;
   cursor: pointer;
 }
+/* 悬停不再改成蓝色边框：会盖掉状态色；改用阴影提示可点 */
 .station-node-card:hover,
 .station-node-card:focus-within {
-  border-color: var(--el-color-primary, #2f6bff);
+  box-shadow: 0 2px 8px rgb(16 24 40 / 8%);
+}
+.station-group.is-passed .station-node-card:hover,
+.station-group.is-passed .station-node-card:focus-within {
+  border-color: #3fb46f;
+}
+.station-group.is-failed .station-node-card:hover,
+.station-group.is-failed .station-node-card:focus-within {
+  border-color: #e5534b;
+}
+.station-group.is-needs_materials .station-node-card:hover,
+.station-group.is-needs_materials .station-node-card:focus-within {
+  border-color: #e0a526;
+}
+.station-group.is-needs_human .station-node-card:hover,
+.station-group.is-needs_human .station-node-card:focus-within,
+.station-group.is-not_started .station-node-card:hover,
+.station-group.is-not_started .station-node-card:focus-within {
+  border-color: #b8c0cc;
 }
 .station-node:focus-visible {
   outline: none;
