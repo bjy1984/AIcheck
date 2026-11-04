@@ -277,6 +277,7 @@ from libs.reasoning_budget import (
     conversation_max_output_tokens,
     output_budget_exhausted_by_reasoning,
 )
+from libs.request_profile import request_profile
 from libs.requirements_summary_view import overview_node_view, slim_requirements_summary
 from libs.review_conversation_blocks import review_message_source_references
 from libs.review_conversation_fallback import fallback_answer_text
@@ -6477,6 +6478,13 @@ def inspection_audit_overview(
     page_no: int = Query(default=1, alias="page", ge=1),
     page_size: int = Query(default=50, alias="pageSize", ge=1, le=200),
 ):
+    # 平台管理员加 ?_profile=1 时剖析这一次请求，结果写服务器日志（libs.request_profile）
+    with request_profile(request, f"audit-overview {project_id}"):
+        return _inspection_audit_overview(request, project_id, keyword, status, page_no, page_size)
+
+
+def _inspection_audit_overview(request: Request, project_id: str, keyword: str | None, status: str | None,
+                               page_no: int, page_size: int):
     role_error = _inspection_audit_role_error(request)
     if role_error:
         return role_error
