@@ -8,7 +8,16 @@
  * 「进入节点」才跳。顶部一行细条给全项目合计。数的是节点，不是审计项（标题写明）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
-import { ElButton, ElEmpty, ElIcon, ElSegmented, ElSkeleton, ElTag } from 'element-plus'
+import {
+  ElButton,
+  ElEmpty,
+  ElIcon,
+  ElOption,
+  ElSegmented,
+  ElSelect,
+  ElSkeleton,
+  ElTag
+} from 'element-plus'
 import {
   ArrowRight,
   Check,
@@ -31,7 +40,9 @@ import {
   conclusionReason,
   conclusionSourceTag,
   filterMaterials,
+  nodeBorderTone,
   nodeDetail,
+  requiredMaterials,
   type MaterialFilter
 } from './stationOverview'
 
@@ -152,37 +163,59 @@ const toggle = async (nodeId: number) => {
       </div>
 
       <div class="station-body">
-        <nav class="station-list" aria-label="工位">
-          <h3>工位</h3>
-          <button
-            v-for="station in overview.stations"
-            :key="station.stationId"
-            type="button"
-            :class="['station-item', { 'is-selected': station.stationId === selectedStationId }]"
-            :aria-pressed="station.stationId === selectedStationId"
-            @click="selectedStationId = station.stationId"
-          >
-            <span class="station-item-name">
-              <span v-if="station.counts.failed" class="failure-dot" aria-label="有未通过"></span>
-              {{ station.stationId }} {{ station.stationName }}
-            </span>
-            <span class="station-bar station-bar--mini" aria-hidden="true">
+        <div v-if="selectedStation" class="station-detail">
+          <!-- 工位改成顶部下拉（2026-11-04 用户）：节点区独占一行，不再左右分栏 -->
+          <div class="station-detail-head">
+            <span class="station-picker-label">工位</span>
+            <ElSelect
+              v-model="selectedStationId"
+              class="station-picker"
+              aria-label="选择工位"
+              :fit-input-width="false"
+              popper-class="station-picker-popper"
+            >
+              <template #label>
+                <span class="station-option-name">
+                  <span
+                    v-if="selectedStation.counts.failed"
+                    class="failure-dot"
+                    aria-label="有未通过"
+                  ></span>
+                  {{ selectedStation.stationId }} {{ selectedStation.stationName }}
+                </span>
+              </template>
+              <ElOption
+                v-for="station in overview.stations"
+                :key="station.stationId"
+                :value="station.stationId"
+                :label="`${station.stationId} ${station.stationName}`"
+              >
+                <span class="station-option">
+                  <span class="station-option-name">
+                    <span
+                      v-if="station.counts.failed"
+                      class="failure-dot"
+                      aria-label="有未通过"
+                    ></span>
+                    {{ station.stationId }} {{ station.stationName }}
+                  </span>
+                  <small>{{ stationLine(station.counts) }}</small>
+                </span>
+              </ElOption>
+            </ElSelect>
+            <span class="station-bar station-bar--mini station-detail-bar" aria-hidden="true">
               <span
-                v-for="group in STATION_GROUP_ORDER.filter((key) => station.counts[key])"
+                v-for="group in STATION_GROUP_ORDER.filter((key) => selectedStation?.counts[key])"
                 :key="group"
                 :class="`is-${group}`"
-                :style="{ flexGrow: station.counts[group] }"
+                :style="{ flexGrow: selectedStation?.counts[group] }"
               ></span>
             </span>
-            <small>{{ stationLine(station.counts) }}</small>
-          </button>
-        </nav>
-
-        <div v-if="selectedStation" class="station-detail">
-          <h3>
-            {{ selectedStation.stationId }} {{ selectedStation.stationName }}
-            <small>· {{ selectedStation.nodes.length }} 个节点</small>
-          </h3>
+            <small class="station-detail-count"
+              >{{ selectedStation.nodes.length }} 个节点 ·
+              {{ stationLine(selectedStation.counts) }}</small
+            >
+          </div>
           <section
             v-for="section in groupsOf(selectedStation)"
             :key="section.group"
@@ -192,7 +225,11 @@ const toggle = async (nodeId: number) => {
             <div
               v-for="row in section.nodes"
               :key="row.node.nodeId"
-              :class="['station-node-card', { 'is-expanded': expanded.has(row.node.nodeId) }]"
+              :class="[
+                'station-node-card',
+                `tone-${nodeBorderTone(row)}`,
+                { 'is-expanded': expanded.has(row.node.nodeId) }
+              ]"
             >
               <div
                 class="station-node"
@@ -216,6 +253,27 @@ const toggle = async (nodeId: number) => {
                   :type="conclusionSourceTag(row)!.tone"
                   >{{ conclusionSourceTag(row)!.text }}</ElTag
                 >
+                <!-- 必传资料进度放在折叠行（2026-11-04 用户）：不展开就能看出缺不缺文件 -->
+                <span
+                  v-if="requiredMaterials(row)"
+                  :class="[
+                    'station-node-materials',
+                    { 'is-missing': requiredMaterials(row)!.done < requiredMaterials(row)!.total }
+                  ]"
+                  :aria-label="`必传资料 ${requiredMaterials(row)!.done} / ${requiredMaterials(row)!.total} 已齐`"
+                >
+                  <span class="station-materials-count"
+                    >必传 <strong>{{ requiredMaterials(row)!.done }}</strong> /
+                    {{ requiredMaterials(row)!.total }}</span
+                  >
+                  <span class="station-materials-meter" aria-hidden="true">
+                    <i
+                      v-for="index in requiredMaterials(row)!.total"
+                      :key="index"
+                      :class="{ 'is-done': index <= requiredMaterials(row)!.done }"
+                    ></i>
+                  </span>
+                </span>
                 <ElButton
                   v-if="STATION_GROUP_ACTIONS[row.group]"
                   size="small"
@@ -266,17 +324,6 @@ const toggle = async (nodeId: number) => {
                           <dt>资料</dt>
                           <dd class="station-materials">
                             <div class="station-materials-head">
-                              <span class="station-materials-count">
-                                必传 <strong>{{ detail.materials.done }}</strong> /
-                                {{ detail.materials.total }} 已齐
-                              </span>
-                              <span class="station-materials-meter" role="presentation">
-                                <i
-                                  v-for="index in detail.materials.total"
-                                  :key="index"
-                                  :class="{ 'is-done': index <= detail.materials.done }"
-                                ></i>
-                              </span>
                               <ElSegmented
                                 class="station-materials-tabs"
                                 size="small"
@@ -487,12 +534,8 @@ const toggle = async (nodeId: number) => {
   background: var(--st-not_started);
 }
 .station-body {
-  display: grid;
-  grid-template-columns: minmax(220px, 30%) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
+  min-width: 0;
 }
-.station-list,
 .station-detail {
   min-width: 0;
   padding: 12px;
@@ -500,41 +543,46 @@ const toggle = async (nodeId: number) => {
   border: 1px solid var(--aicheck-border, #e5e7eb);
   border-radius: 8px;
 }
-.station-list h3,
-.station-detail h3 {
-  margin: 4px 4px 10px;
-  font-size: 15px;
-}
-.station-detail h3 small {
-  color: var(--aicheck-text-subtle, #667085);
-  font-weight: 400;
-}
-.station-item {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-  padding: 10px 8px;
-  text-align: left;
-  background: none;
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.station-item + .station-item {
-  border-top: 1px solid #f1f2f4;
-}
-.station-item.is-selected {
-  background: #eef4ff;
-}
-.station-item-name {
+.station-detail-head {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 500;
+  margin: 2px 4px 14px;
 }
-.station-item small {
+.station-picker-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+.station-picker {
+  width: 260px;
+  max-width: 100%;
+}
+.station-detail-bar {
+  flex: 1 1 160px;
+  min-width: 120px;
+  max-width: 320px;
+}
+.station-detail-count {
   color: var(--aicheck-text-subtle, #667085);
+  white-space: nowrap;
+}
+.station-option {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.station-option small {
+  color: var(--aicheck-text-subtle, #667085);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.station-option-name {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 .station-group + .station-group {
   margin-top: 14px;
@@ -568,15 +616,15 @@ const toggle = async (nodeId: number) => {
 .station-node-card.is-expanded {
   box-shadow: 0 2px 8px rgb(16 24 40 / 6%);
 }
-/* 边框颜色表示节点当前结论（2026-11-03 用户）：绿＝通过、红＝不通过、黄＝证据不足；
-   需人工确认和未开始审核保持中性灰。仍是 1px 细边，不加粗（用户不要粗边框）。 */
-.station-group.is-passed .station-node-card {
+/* 边框颜色（2026-11-04 用户）：绿＝通过、红＝不通过、黄＝缺资料（证据不足或必传资料没交齐，
+   没审的节点也算）；其余中性灰。仍是 1px 细边，不加粗（用户不要粗边框）。 */
+.station-node-card.tone-passed {
   border-color: #86d7a5;
 }
-.station-group.is-failed .station-node-card {
+.station-node-card.tone-failed {
   border-color: #f4a3a0;
 }
-.station-group.is-needs_materials .station-node-card {
+.station-node-card.tone-missing {
   border-color: #f5c96b;
 }
 .station-node-card + .station-node-card {
@@ -671,9 +719,28 @@ const toggle = async (nodeId: number) => {
 .station-materials-meter i.is-done {
   background: var(--st-passed);
 }
-/* 和「已齐」同一行，靠右 */
+/* 进度挪到折叠行后，这一行只剩筛选，靠右 */
 .station-materials-tabs {
   margin-left: auto;
+}
+.station-node-materials {
+  display: inline-flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  color: var(--aicheck-text-subtle, #667085);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.station-node-materials strong {
+  color: var(--st-passed);
+}
+.station-node-materials.is-missing strong {
+  color: var(--st-needs_materials);
+}
+.station-node-materials .station-materials-meter i {
+  width: 10px;
+  height: 5px;
 }
 .station-materials-list {
   display: grid;
@@ -854,22 +921,20 @@ const toggle = async (nodeId: number) => {
 .station-node-card:focus-within {
   box-shadow: 0 2px 8px rgb(16 24 40 / 8%);
 }
-.station-group.is-passed .station-node-card:hover,
-.station-group.is-passed .station-node-card:focus-within {
+.station-node-card.tone-passed:hover,
+.station-node-card.tone-passed:focus-within {
   border-color: #3fb46f;
 }
-.station-group.is-failed .station-node-card:hover,
-.station-group.is-failed .station-node-card:focus-within {
+.station-node-card.tone-failed:hover,
+.station-node-card.tone-failed:focus-within {
   border-color: #e5534b;
 }
-.station-group.is-needs_materials .station-node-card:hover,
-.station-group.is-needs_materials .station-node-card:focus-within {
+.station-node-card.tone-missing:hover,
+.station-node-card.tone-missing:focus-within {
   border-color: #e0a526;
 }
-.station-group.is-needs_human .station-node-card:hover,
-.station-group.is-needs_human .station-node-card:focus-within,
-.station-group.is-not_started .station-node-card:hover,
-.station-group.is-not_started .station-node-card:focus-within {
+.station-node-card.tone-neutral:hover,
+.station-node-card.tone-neutral:focus-within {
   border-color: #b8c0cc;
 }
 .station-node:focus-visible {
@@ -903,13 +968,11 @@ const toggle = async (nodeId: number) => {
   font-size: 14px;
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
-@media (max-width: 900px) {
-  .station-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 /* 窄屏：标签放到内容上方、去掉缩进，流程图留给横向滚动 */
 @media (max-width: 640px) {
+  .station-node-materials .station-materials-meter {
+    display: none;
+  }
   .station-node-detail {
     padding: 4px 12px 12px;
   }
