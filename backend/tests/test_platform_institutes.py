@@ -321,6 +321,9 @@ def assert_every_institute_persists():
 
 
 def test_平台对特检院的每个操作都不留标错院的记录():
+    # 平台院要有通用规则可复制：生产就是在复制规则这一步报错的，空平台测不出来
+    repo.state.setdefault("rule_versions", []).append(
+        {"id": "RV-PLATFORM-T1", "ruleId": "R24", "status": "published", "tenantId": configured_tenant_id()})
     data(client.post("/api/platform/institutes", headers=PLATFORM, json={
         "code": "QDTJ", "name": "青岛特检院", "adminUsername": "qdns", "adminName": "牛帅"}))
     assert_every_institute_persists()

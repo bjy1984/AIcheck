@@ -173,7 +173,10 @@ def sync_platform_rules(tenant_id: str) -> dict[str, int]:
         own = [row for row in rows if not row.get(SYNCED_FROM_PLATFORM)]
         own_ids = {str(row.get("id")) for row in own}
         removed = [row for row in rows if row.get(SYNCED_FROM_PLATFORM) and str(row.get("id")) not in platform_ids]
-        synced = [{**row, SYNCED_FROM_PLATFORM: True} for row in platform_rules if str(row.get("id")) not in own_ids]
+        # 复制过来的规则要改标成本院：带着平台院的 tenantId 落库会被拒（Cross-tenant persistence，
+        # 2026-11-04 生产上开通特检院在这一步报错，测试平台院没规则可复制，没测出来）
+        synced = [{**{k: v for k, v in row.items() if k != "tenant_id"}, SYNCED_FROM_PLATFORM: True, "tenantId": tenant_id}
+                  for row in platform_rules if str(row.get("id")) not in own_ids]
         rows[:] = own + synced
         # 和加载时的基线比对落库：新增、更新、删除一次写完；只碰 rule_versions
         flush_state({"rule_versions"}, selected_singleton_keys=set())
