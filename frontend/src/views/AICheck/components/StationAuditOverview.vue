@@ -7,8 +7,8 @@
  * 点整行在原地展开详情（结论分布、不过的检查项、缺的资料、流程各步），不跳页；只有动作按钮和
  * 「进入节点」才跳。顶部一行细条给全项目合计。数的是节点，不是审计项（标题写明）。
  */
-import { computed, ref, watch } from 'vue'
-import { ElButton, ElEmpty, ElIcon, ElSkeleton, ElTag } from 'element-plus'
+import { computed, nextTick, ref, watch } from 'vue'
+import { ElButton, ElEmpty, ElIcon, ElSegmented, ElSkeleton, ElTag } from 'element-plus'
 import {
   ArrowRight,
   Check,
@@ -95,17 +95,29 @@ const setMaterialFilter = (nodeId: number, filter: MaterialFilter) => {
   materialFilters.value = { ...materialFilters.value, [nodeId]: filter }
 }
 const materialTabs = (items: { uploaded: boolean }[]) => [
-  { key: 'all' as const, label: '全部', count: items.length },
-  { key: 'uploaded' as const, label: '已传', count: items.filter((item) => item.uploaded).length },
-  { key: 'missing' as const, label: '未传', count: items.filter((item) => !item.uploaded).length }
+  { value: 'all', label: `全部 ${items.length}` },
+  { value: 'uploaded', label: `已传 ${items.filter((item) => item.uploaded).length}` },
+  { value: 'missing', label: `未传 ${items.filter((item) => !item.uploaded).length}` }
 ]
 // 展开是本地状态：切工位不收起，回来还是原样
 const expanded = ref(new Set<number>())
-const toggle = (nodeId: number) => {
+// 展开过一次的详情留在 DOM 里，收起时才有过渡；没展开过的不渲染，69 个节点不白算
+const rendered = ref(new Set<number>())
+const toggle = async (nodeId: number) => {
   const next = new Set(expanded.value)
-  if (next.has(nodeId)) next.delete(nodeId)
-  else next.add(nodeId)
-  expanded.value = next
+  if (next.has(nodeId)) {
+    next.delete(nodeId)
+    expanded.value = next
+    return
+  }
+  if (!rendered.value.has(nodeId)) {
+    rendered.value = new Set(rendered.value).add(nodeId)
+    // 先以收起态挂上，读一次布局把收起态提交给浏览器，再展开，过渡才有起点。
+    // 不等 requestAnimationFrame：后台或被节流的页面里它可能十几秒才来，面板就迟迟不开。
+    await nextTick()
+    void document.body.offsetHeight
+  }
+  expanded.value = new Set(expanded.value).add(nodeId)
 }
 </script>
 
@@ -214,164 +226,169 @@ const toggle = (nodeId: number) => {
                 >
                 <ElIcon class="station-node-chevron" aria-hidden="true"><ArrowRight /></ElIcon>
               </div>
-              <div v-if="expanded.has(row.node.nodeId)" class="station-node-detail">
-                <template
-                  v-for="detail in [nodeDetail(row)]"
-                  :key="`${row.node.nodeId}-${detail.process.length}`"
-                >
-                  <dl>
-                    <div v-if="detail.atomicSummary">
-                      <dt>审计项结论</dt>
-                      <dd>{{ detail.atomicSummary }}</dd>
-                    </div>
-                    <div v-if="detail.humanOpinion">
-                      <dt>监检意见</dt>
-                      <dd>{{ detail.humanOpinion }}</dd>
-                    </div>
-                    <div v-if="detail.failedChecks.length">
-                      <dt>未满足</dt>
-                      <dd>
-                        <ul>
-                          <li v-for="check in detail.failedChecks" :key="check">{{ check }}</li>
-                        </ul>
-                      </dd>
-                    </div>
-                    <div v-else-if="detail.reasonText">
-                      <dt>原因</dt>
-                      <dd>{{ detail.reasonText }}</dd>
-                    </div>
-                    <div v-if="detail.materials">
-                      <dt>资料</dt>
-                      <dd class="station-materials">
-                        <div class="station-materials-head">
-                          <span class="station-materials-count">
-                            必传 <strong>{{ detail.materials.done }}</strong> /
-                            {{ detail.materials.total }} 已齐
-                          </span>
-                          <span class="station-materials-meter" role="presentation">
-                            <i
-                              v-for="index in detail.materials.total"
-                              :key="index"
-                              :class="{ 'is-done': index <= detail.materials.done }"
-                            ></i>
-                          </span>
+              <div
+                v-if="rendered.has(row.node.nodeId)"
+                :class="['station-node-collapse', { 'is-open': expanded.has(row.node.nodeId) }]"
+                :inert="!expanded.has(row.node.nodeId)"
+              >
+                <div class="station-node-collapse-inner">
+                  <div class="station-node-detail">
+                    <template
+                      v-for="detail in [nodeDetail(row)]"
+                      :key="`${row.node.nodeId}-${detail.process.length}`"
+                    >
+                      <dl>
+                        <div v-if="detail.atomicSummary">
+                          <dt>审计项结论</dt>
+                          <dd>{{ detail.atomicSummary }}</dd>
                         </div>
-                        <div
-                          class="station-materials-tabs"
-                          role="tablist"
-                          :aria-label="`${row.node.name}资料`"
-                        >
-                          <button
-                            v-for="tab in materialTabs(detail.materials.items)"
-                            :key="tab.key"
-                            type="button"
-                            role="tab"
-                            :aria-selected="materialFilterOf(row.node.nodeId) === tab.key"
-                            :class="{ 'is-active': materialFilterOf(row.node.nodeId) === tab.key }"
-                            @click="setMaterialFilter(row.node.nodeId, tab.key)"
-                            >{{ tab.label }} <span>{{ tab.count }}</span></button
-                          >
+                        <div v-if="detail.humanOpinion">
+                          <dt>监检意见</dt>
+                          <dd>{{ detail.humanOpinion }}</dd>
                         </div>
-                        <ul class="station-materials-list">
-                          <li
-                            v-for="item in filterMaterials(
-                              detail.materials.items,
-                              materialFilterOf(row.node.nodeId)
-                            )"
-                            :key="item.key"
-                            :class="{ 'is-missing': !item.uploaded }"
-                          >
-                            <span class="station-materials-name">
-                              {{ item.name }}
-                              <small v-if="item.requiredType !== '必传'">{{
-                                item.requiredType
-                              }}</small>
-                            </span>
-                            <span v-if="item.uploaded" class="station-materials-files">
-                              <template
-                                v-for="file in item.files"
-                                :key="file.documentId || file.fileName"
+                        <div v-if="detail.failedChecks.length">
+                          <dt>未满足</dt>
+                          <dd>
+                            <ul>
+                              <li v-for="check in detail.failedChecks" :key="check">{{ check }}</li>
+                            </ul>
+                          </dd>
+                        </div>
+                        <div v-else-if="detail.reasonText">
+                          <dt>原因</dt>
+                          <dd>{{ detail.reasonText }}</dd>
+                        </div>
+                        <div v-if="detail.materials">
+                          <dt>资料</dt>
+                          <dd class="station-materials">
+                            <div class="station-materials-head">
+                              <span class="station-materials-count">
+                                必传 <strong>{{ detail.materials.done }}</strong> /
+                                {{ detail.materials.total }} 已齐
+                              </span>
+                              <span class="station-materials-meter" role="presentation">
+                                <i
+                                  v-for="index in detail.materials.total"
+                                  :key="index"
+                                  :class="{ 'is-done': index <= detail.materials.done }"
+                                ></i>
+                              </span>
+                              <ElSegmented
+                                class="station-materials-tabs"
+                                size="small"
+                                :model-value="materialFilterOf(row.node.nodeId)"
+                                :options="materialTabs(detail.materials.items)"
+                                :aria-label="`${row.node.name}资料筛选`"
+                                @change="
+                                  (value) =>
+                                    setMaterialFilter(row.node.nodeId, value as MaterialFilter)
+                                "
+                              />
+                            </div>
+                            <ul class="station-materials-list">
+                              <li
+                                v-for="item in filterMaterials(
+                                  detail.materials.items,
+                                  materialFilterOf(row.node.nodeId)
+                                )"
+                                :key="item.key"
+                                :class="{ 'is-missing': !item.uploaded }"
                               >
-                                <button
-                                  v-if="file.documentId"
-                                  type="button"
-                                  class="station-file-link"
-                                  :title="`在线预览 ${file.fileName}`"
-                                  @click="emit('preview', file.documentId, file.fileName)"
-                                >
-                                  <ElIcon aria-hidden="true"><Document /></ElIcon
-                                  >{{ file.fileName }}
-                                </button>
-                                <span v-else class="station-file-name">{{ file.fileName }}</span>
-                              </template>
-                            </span>
-                            <span v-else class="station-materials-state">未传</span>
-                          </li>
-                          <li
-                            v-if="
-                              !filterMaterials(
-                                detail.materials.items,
-                                materialFilterOf(row.node.nodeId)
-                              ).length
-                            "
-                            class="station-materials-empty"
-                          >
-                            {{
-                              materialFilterOf(row.node.nodeId) === 'uploaded'
-                                ? '还没有已传资料'
-                                : '没有未传资料'
-                            }}
-                          </li>
-                        </ul>
-                      </dd>
-                    </div>
-                    <div v-if="detail.process.length">
-                      <dt>流程</dt>
-                      <dd>
-                        <ol class="station-flow" aria-label="节点流程">
-                          <li
-                            v-for="step in detail.process"
-                            :key="step.key"
-                            :class="`is-${step.status}`"
-                            :title="step.summary"
-                          >
-                            <span class="station-flow-node" aria-hidden="true">
-                              <ElIcon v-if="step.status === 'completed'"><Check /></ElIcon>
-                              <ElIcon v-else-if="step.status === 'failed'"><Close /></ElIcon>
-                              <ElIcon v-else-if="step.status === 'needs_attention'"
-                                ><WarningFilled
-                              /></ElIcon>
-                              <ElIcon v-else-if="step.status === 'in_progress'"
-                                ><MoreFilled
-                              /></ElIcon>
-                            </span>
-                            <span class="station-flow-label">{{ step.label }}</span>
-                            <small class="station-flow-status">{{ step.statusLabel }}</small>
-                          </li>
-                        </ol>
-                        <ul
-                          v-if="detail.process.some((step) => step.needsAction)"
-                          class="station-flow-notes"
-                        >
-                          <li
-                            v-for="step in detail.process.filter((item) => item.needsAction)"
-                            :key="step.key"
-                          >
-                            <strong>{{ step.label }}</strong
-                            >{{ step.summary }}
-                          </li>
-                        </ul>
-                      </dd>
-                    </div>
-                  </dl>
-                  <ElButton
-                    class="station-node-enter"
-                    link
-                    type="primary"
-                    @click="emit('open', row.node, row.group)"
-                    >进入节点<ElIcon class="el-icon--right"><ArrowRight /></ElIcon
-                  ></ElButton>
-                </template>
+                                <span class="station-materials-name">
+                                  {{ item.name }}
+                                  <small v-if="item.requiredType !== '必传'">{{
+                                    item.requiredType
+                                  }}</small>
+                                </span>
+                                <span v-if="item.uploaded" class="station-materials-files">
+                                  <template
+                                    v-for="file in item.files"
+                                    :key="file.documentId || file.fileName"
+                                  >
+                                    <button
+                                      v-if="file.documentId"
+                                      type="button"
+                                      class="station-file-link"
+                                      :title="`在线预览 ${file.fileName}`"
+                                      @click="emit('preview', file.documentId, file.fileName)"
+                                    >
+                                      <ElIcon aria-hidden="true"><Document /></ElIcon
+                                      >{{ file.fileName }}
+                                    </button>
+                                    <span v-else class="station-file-name">{{
+                                      file.fileName
+                                    }}</span>
+                                  </template>
+                                </span>
+                                <span v-else class="station-materials-state">未传</span>
+                              </li>
+                              <li
+                                v-if="
+                                  !filterMaterials(
+                                    detail.materials.items,
+                                    materialFilterOf(row.node.nodeId)
+                                  ).length
+                                "
+                                class="station-materials-empty"
+                              >
+                                {{
+                                  materialFilterOf(row.node.nodeId) === 'uploaded'
+                                    ? '还没有已传资料'
+                                    : '没有未传资料'
+                                }}
+                              </li>
+                            </ul>
+                          </dd>
+                        </div>
+                        <div v-if="detail.process.length">
+                          <dt>流程</dt>
+                          <dd>
+                            <ol class="station-flow" aria-label="节点流程">
+                              <li
+                                v-for="step in detail.process"
+                                :key="step.key"
+                                :class="`is-${step.status}`"
+                                :title="step.summary"
+                              >
+                                <span class="station-flow-node" aria-hidden="true">
+                                  <ElIcon v-if="step.status === 'completed'"><Check /></ElIcon>
+                                  <ElIcon v-else-if="step.status === 'failed'"><Close /></ElIcon>
+                                  <ElIcon v-else-if="step.status === 'needs_attention'"
+                                    ><WarningFilled
+                                  /></ElIcon>
+                                  <ElIcon v-else-if="step.status === 'in_progress'"
+                                    ><MoreFilled
+                                  /></ElIcon>
+                                </span>
+                                <span class="station-flow-label">{{ step.label }}</span>
+                                <small class="station-flow-status">{{ step.statusLabel }}</small>
+                              </li>
+                            </ol>
+                            <ul
+                              v-if="detail.process.some((step) => step.needsAction)"
+                              class="station-flow-notes"
+                            >
+                              <li
+                                v-for="step in detail.process.filter((item) => item.needsAction)"
+                                :key="step.key"
+                              >
+                                <strong>{{ step.label }}</strong
+                                >{{ step.summary }}
+                              </li>
+                            </ul>
+                          </dd>
+                        </div>
+                      </dl>
+                      <ElButton
+                        class="station-node-enter"
+                        link
+                        type="primary"
+                        @click="emit('open', row.node, row.group)"
+                        >进入节点<ElIcon class="el-icon--right"><ArrowRight /></ElIcon
+                      ></ElButton>
+                    </template>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -540,6 +557,12 @@ const toggle = (nodeId: number) => {
 .station-node-card {
   border: 1px solid var(--aicheck-border, #e5e7eb);
   border-radius: 6px;
+  transition:
+    border-color 0.15s ease-out,
+    box-shadow 0.2s ease-out;
+}
+.station-node-card.is-expanded {
+  box-shadow: 0 2px 8px rgb(16 24 40 / 6%);
 }
 .station-node-card + .station-node-card {
   margin-top: 6px;
@@ -547,9 +570,40 @@ const toggle = (nodeId: number) => {
 .station-node-card.is-expanded .station-node-chevron {
   transform: rotate(90deg);
 }
+/* 开合：高度用 grid 行 0fr→1fr 过渡（不用写死高度），内容同时淡入；收起时一样平滑 */
+.station-node-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease-out;
+}
+.station-node-collapse.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.station-node-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.station-node-collapse .station-node-detail {
+  transform: translateY(-4px);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.station-node-collapse.is-open .station-node-detail {
+  transform: none;
+}
 .station-node-detail {
   padding: 4px 16px 12px 48px;
   border-top: 1px dashed var(--aicheck-border, #e5e7eb);
+}
+@media (prefers-reduced-motion: reduce) {
+  .station-node-collapse,
+  .station-node-collapse .station-node-detail,
+  .station-node-chevron {
+    transition: none;
+  }
 }
 .station-node-detail dl {
   display: grid;
@@ -602,37 +656,9 @@ const toggle = (nodeId: number) => {
 .station-materials-meter i.is-done {
   background: var(--st-passed);
 }
+/* 和「已齐」同一行，靠右 */
 .station-materials-tabs {
-  display: inline-flex;
-  justify-self: start;
-  padding: 2px;
-  background: #f2f4f7;
-  border-radius: 6px;
-  gap: 2px;
-}
-.station-materials-tabs button {
-  padding: 2px 10px;
-  color: #475467;
-  font: inherit;
-  font-size: 12px;
-  line-height: 20px;
-  background: none;
-  border: 0;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.station-materials-tabs button span {
-  color: #98a2b3;
-  font-variant-numeric: tabular-nums;
-}
-.station-materials-tabs button.is-active {
-  color: #101828;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(16 24 40 / 10%);
-}
-.station-materials-tabs button:focus-visible {
-  outline: 2px solid var(--el-color-primary, #2f6bff);
-  outline-offset: 1px;
+  margin-left: auto;
 }
 .station-materials-list {
   display: grid;
@@ -839,7 +865,7 @@ const toggle = (nodeId: number) => {
   flex: none;
   color: #98a2b3;
   font-size: 14px;
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (max-width: 900px) {
   .station-body {
