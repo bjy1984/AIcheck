@@ -1070,12 +1070,12 @@ const DESIGN_DOMAIN_SUFFIXES: Record<string, string> = {
   coverage_specified: '已明确检测比例',
   method_specified: '已明确检测方法',
   protection_method_specified: '已明确防护方法',
-  requirements_acceptancecriteria: '要求·合格标准',
-  requirements_coverage: '要求·检测比例',
-  requirements_method: '要求·方法',
-  requirements_protectionmethod: '要求·防护方法',
-  requirements_testpressure: '要求·试验压力',
-  specified: '设计是否提出要求',
+  requirements_acceptancecriteria: '已写明合格标准',
+  requirements_coverage: '已写明检测比例',
+  requirements_method: '已写明检测方法',
+  requirements_protectionmethod: '已写明防护方法',
+  requirements_testpressure: '已写明试验压力',
+  specified: '设计已提出要求',
   test_pressure_specified: '已明确试验压力'
 }
 
@@ -1146,6 +1146,8 @@ const generatedCheckLabel = (code: string): string => {
   return ''
 }
 
+const STANDARD_CODE_RE = /^[A-Z]{2,5}(?:\/[A-Z]{1,2})?\s*[A-Z]?\d[\d.~～-]*$/
+
 export const friendlyCheckCode = (value?: string | null) => {
   const raw = String(value || '').trim()
   if (!raw) return ''
@@ -1154,6 +1156,9 @@ export const friendlyCheckCode = (value?: string | null) => {
   if (checkCodeLabels[code]) return withPrefix(checkCodeLabels[code])
   const generated = generatedCheckLabel(code)
   if (generated) return withPrefix(generated)
+  // 标准版本核对（check_standard_version_active）的检查码就是标准号本身，
+  // 光印编号看不出哪里不对；它要的条件是「审查日该标准有效」。
+  if (STANDARD_CODE_RE.test(code)) return withPrefix(`${code} 在审查日有效`)
   const indexed = indexedCheckLabel(code)
   if (indexed) return withPrefix(indexed)
   const scope = code.match(/^scope_covers_(.+)$/)

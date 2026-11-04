@@ -17,7 +17,8 @@ export const STATION_GROUP_ORDER: InspectionNodeConclusionGroup[] = [
 
 export const STATION_GROUP_LABELS: Record<InspectionNodeConclusionGroup, string> = {
   failed: '未通过',
-  needs_materials: '待补资料',
+  // 原名「待补资料」：节点 1 资料全传了，证据不足来自施工期在资料里找不到出处，名字把人引去补传（2026-11-03 线上审计）
+  needs_materials: '证据不足',
   needs_human: '需人工确认',
   passed: '通过',
   not_started: '未开始审核'
@@ -117,8 +118,16 @@ export const nodeDetail = (row: InspectionAuditOverviewNode) => {
     .map(([key, value]) => `${ATOMIC_RESULT_LABELS[key] || key} ${value}`)
     .join(' · ')
   const requirements = row.node.requirementsSummary
+  const materialsComplete = Boolean(
+    requirements?.requiredCount && requirements.satisfiedCount >= requirements.requiredCount
+  )
   return {
     atomicSummary,
+    // 资料全传了还归「证据不足」时说清楚缺的是什么：不是文件，是文件里能支撑结论的内容
+    evidenceGapNote:
+      row.conclusion?.group === 'needs_materials' && materialsComplete
+        ? '必传资料已齐。证据不足是因为资料里找不到能支撑结论的内容（例如施工期在资料中没有出处），需补充说明或由监检人工判定。'
+        : '',
     failedChecks: failedCheckLabels(row),
     humanOpinion: row.conclusion?.reason?.humanOpinion || '',
     reasonText:
@@ -200,7 +209,9 @@ export const conclusionReason = (row: InspectionAuditOverviewNode): string => {
   // 检查项名称写的是「应满足的条件」（如「图纸目录所列页数已交全」），前缀用「未满足」才读得通
   if (checks.length) {
     const more = failedCheckLabels(row).length - checks.length
-    return `未满足：${checks.join('；')}${more > 0 ? ` 等 ${more + checks.length} 项` : ''}`
+    // 检查项自带「领域：条件」的冒号，接在「未满足：」后面会出现两个冒号，行内改用间隔号
+    const text = checks.map((label) => label.replace(/：/g, '·')).join('；')
+    return `未满足：${text}${more > 0 ? ` 等 ${more + checks.length} 项` : ''}`
   }
   return reason.reasonCode ? friendlyCheckReason(reason.reasonCode) : ''
 }
@@ -222,10 +233,10 @@ export const conclusionSourceTag = (
     : { text: 'AI 判定·待确认', tone: 'info' }
 }
 
-/** 每组的动作：未通过写意见、待补资料去看缺什么、需人工去确认、未审开始审核；通过不放按钮。 */
+/** 每组的动作：未通过写意见、证据不足去看原因、需人工去确认、未审开始审核；通过不放按钮。 */
 export const STATION_GROUP_ACTIONS: Partial<Record<InspectionNodeConclusionGroup, string>> = {
   failed: '写监检意见',
-  needs_materials: '查看缺项',
+  needs_materials: '查看原因',
   needs_human: '去确认',
   not_started: '开始审核'
 }

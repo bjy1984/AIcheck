@@ -3,7 +3,7 @@
  * 监检项目总览：按工位分组看节点通过与否（2026-11-03 用户确认的效果图第三版）。
  *
  * 左边固定 A～I 工位，每个带一条小进度条和计数，有未通过的加红点；右边是选中工位的节点，
- * 按「未通过 → 待补资料 → 需人工确认 → 通过 → 未开始审核」分组，每行一句原因、一个动作、
+ * 按「未通过 → 证据不足 → 需人工确认 → 通过 → 未开始审核」分组，每行一句原因、一个动作、
  * 点整行在原地展开详情（结论分布、不过的检查项、缺的资料、流程各步），不跳页；只有动作按钮和
  * 「进入节点」才跳。顶部一行细条给全项目合计。数的是节点，不是审计项（标题写明）。
  */
@@ -257,6 +257,10 @@ const toggle = async (nodeId: number) => {
                         <div v-else-if="detail.reasonText">
                           <dt>原因</dt>
                           <dd>{{ detail.reasonText }}</dd>
+                        </div>
+                        <div v-if="detail.evidenceGapNote">
+                          <dt>说明</dt>
+                          <dd>{{ detail.evidenceGapNote }}</dd>
                         </div>
                         <div v-if="detail.materials">
                           <dt>资料</dt>
@@ -681,7 +685,9 @@ const toggle = async (nodeId: number) => {
   background: #fffbeb;
 }
 .station-materials-name small {
+  display: inline-block;
   margin-left: 6px;
+  white-space: nowrap;
   color: #98a2b3;
   font-size: 11px;
 }

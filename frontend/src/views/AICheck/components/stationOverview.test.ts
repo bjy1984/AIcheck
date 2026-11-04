@@ -74,7 +74,7 @@ assert.equal(
       reason: { checkCodes: ['410521198609180550:holder_matches_registry'] }
     })
   ),
-  '未满足：4105**********0550：持证人与平台登记一致'
+  '未满足：4105**********0550·持证人与平台登记一致'
 )
 
 // 行内展开的详情：审计项结论分布、全部不过的检查项、缺的资料、流程各步
@@ -118,6 +118,15 @@ assert.equal(
   assert.equal(detail.failedChecks.length, 3)
   assert.equal(detail.materials?.done, 2)
   assert.deepEqual(detail.materials?.missing, ['设计说明及管道特性表'])
+  assert.equal(detail.evidenceGapNote, '', '还缺资料时不说「资料已齐」')
+  const complete = nodeDetail({
+    ...expandRow,
+    node: {
+      ...expandRow.node,
+      requirementsSummary: { requiredCount: 3, satisfiedCount: 3, missingCount: 0 }
+    }
+  } as unknown as InspectionAuditOverviewNode)
+  assert.match(complete.evidenceGapNote, /^必传资料已齐/)
   assert.deepEqual(
     detail.process.map((step) => step.statusLabel),
     ['已完成']
@@ -125,7 +134,7 @@ assert.equal(
   // 折叠时那一行只写前两项，后面写「等 n 项」
   assert.match(
     conclusionReason(expandRow),
-    /^未满足：图纸目录所列页数已交全；防腐蚀：要求·合格标准 等 3 项$/
+    /^未满足：图纸目录所列页数已交全；防腐蚀·已写明合格标准 等 3 项$/
   )
 }
 
@@ -174,3 +183,9 @@ assert.equal(
   assert.equal(filterMaterials(items, 'all').length, 2)
   assert.equal(items[0].files[0].documentId, 'DOC-1')
 }
+
+// 标准版本核对的检查码就是标准号：要说出它要的条件，不能只印编号
+assert.equal(
+  conclusionReason(row(9, { group: 'failed', reason: { checkCodes: ['GB/T 12459-2025'] } })),
+  '未满足：GB/T 12459-2025 在审查日有效'
+)

@@ -28,7 +28,7 @@ inspectionProjectNodeRows）。明细在 /nodes/{id}/package 里另发一份，
 
 from __future__ import annotations
 
-from apps.api.routes import slim_requirements_summary
+from libs.requirements_summary_view import slim_requirements_summary
 
 FULL = {
     "requiredCount": 3,
@@ -171,3 +171,20 @@ def test_树接口用瘦身版而详情不用():
     # 详情侧（节点包）不能带 slim=True
     package_block = inspect.getsource(routes.node_package)
     assert "slim=True" not in package_block, "详情页仍需完整明细"
+
+
+def test_监检总览节点只留展开详情要的需求字段():
+    from libs.requirements_summary_view import overview_node_view
+
+    node = {"nodeId": 1, "name": "设计", "requirementsSummary": {
+        "requiredCount": 1, "satisfiedCount": 1, "missingCount": 0, "hasRequirementDetails": True,
+        "requirements": [{"id": "R1", "materialTypeName": "设计文件", "requiredType": "必传", "fulfilled": True,
+                          "matchedFiles": [{"documentId": "D1", "fileName": "a.pdf"}], "matchedFileNames": ["a.pdf"],
+                          "source": {"path": "x" * 500}, "evidenceItems": [{"big": "y" * 500}]}],
+        "missingRequirements": [],
+    }}
+    view = overview_node_view(node)
+    item = view["requirementsSummary"]["requirements"][0]
+    assert set(item) == {"id", "materialTypeName", "requiredType", "fulfilled", "matchedFiles", "matchedFileNames"}
+    assert view["requirementsSummary"]["satisfiedCount"] == 1 and view["name"] == "设计"
+    assert "source" in node["requirementsSummary"]["requirements"][0], "不改原对象"
