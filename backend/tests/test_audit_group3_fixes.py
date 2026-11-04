@@ -18,6 +18,7 @@ from tests.test_platform_institutes import (  # noqa: F401 -- isolated 是自动
     data,
     isolated,
     open_gdtj,
+    restore_repo_after_module,
 )
 
 

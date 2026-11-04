@@ -18,6 +18,14 @@ PLATFORM = {"Authorization": "Bearer dev-token-admin"}
 GD = "TENANT-GDTJ"
 
 
+@pytest.fixture(scope="module", autouse=True)
+def restore_repo_after_module():
+    """isolated 按生产不带演示数据重置；整个文件跑完按原来的环境（带演示数据）再重置一次，
+    否则按字母序紧跟的文件拿不到演示项目（2026-11-05 CI：test_audit_item_status_semantics 404）。"""
+    yield
+    repo.reset()
+
+
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
     # 和生产一样不带演示数据：新开的院应当是空的

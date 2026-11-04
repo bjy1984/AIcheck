@@ -21,6 +21,7 @@ from tests.test_platform_institutes import (  # noqa: F401 -- isolated 是自动
     data,
     isolated,
     open_gdtj,
+    restore_repo_after_module,
 )
 
 EXPIRED_CERT = {"certificates": [{"certificateNo": "TS3-1", "holder": "某安装公司", "validFrom": "2020-01-01",

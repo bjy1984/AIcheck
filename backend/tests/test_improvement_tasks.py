@@ -17,6 +17,7 @@ from tests.test_platform_institutes import (  # noqa: F401 -- isolated 是自动
     data,
     isolated,
     open_gdtj,
+    restore_repo_after_module,
 )
 
 ID_NUMBER = "110101199003071237"  # 校验位正确的示例号
