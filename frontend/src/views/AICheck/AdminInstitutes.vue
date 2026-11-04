@@ -145,13 +145,28 @@ const toggleStatus = async (item: Institute) => {
   }
 }
 
-/* 删除（2026-11-04 用户：开通错了、测试建的院删不掉）：只能删没有项目的院 */
+/* 删除（2026-11-04 用户：开通错了、测试建的院删不掉）：只能删没有项目的院，删前二次确认 */
 const removeInstitute = async (item: Institute) => {
   try {
     await ElMessageBox.confirm(
-      `删除后「${item.name}」从列表中移除、院内账号全部停用并让出用户名，可以在别处再用。数据和审计记录保留，单位代码 ${item.code} 不能再用。`,
+      `删除后「${item.name}」从列表中移除，院内账号全部停用并让出用户名。数据和审计记录保留；单位代码 ${item.code} 可以给新开的院再用（新院的数据另存，不接手这个院的）。`,
       '删除特检院',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      { confirmButtonText: '下一步', cancelButtonText: '取消', type: 'warning' }
+    )
+    // 二次确认（2026-11-04 用户）：手输单位代码，误点「确定」删不掉
+    await ElMessageBox.prompt(
+      `请输入单位代码 ${item.code} 确认删除「${item.name}」。`,
+      '再次确认',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+        inputPlaceholder: item.code,
+        inputValidator: (value: string) =>
+          String(value || '')
+            .trim()
+            .toUpperCase() === item.code.toUpperCase() || '单位代码不一致'
+      }
     )
   } catch {
     return

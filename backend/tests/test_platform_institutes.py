@@ -365,13 +365,17 @@ def test_没有项目的特检院可以删除_用户名让出_有项目的不能
     assert code_of(login("test2", _default_password())) != 0, "删了的院登不进来"
     assert code_of(client.post("/api/platform/institutes/TENANT-UYS/status", headers=PLATFORM,
                                json={"status": "active"})) != 0, "删了不能再启用"
-    again = client.post("/api/platform/institutes", headers=PLATFORM, json={
-        "code": "UYS", "name": "test2", "adminUsername": "x-admin"})
-    assert code_of(again) != 0 and "不能再用" in again.json()["message"]
+    # 删了的院代码可以再用：新院另开分区，不接手旧院的数据
+    again = data(client.post("/api/platform/institutes", headers=PLATFORM, json={
+        "code": "UYS", "name": "test2 再开", "adminUsername": "x-admin"}))["institute"]
+    assert again["id"] == "TENANT-UYS-2" and again["code"] == "UYS" and again["userCount"] == 1
+    clash = client.post("/api/platform/institutes", headers=PLATFORM, json={
+        "code": "UYS", "name": "撞代码", "adminUsername": "y-admin"})
+    assert code_of(clash) != 0 and "用过了" in clash.json()["message"], "没删除的院代码仍唯一"
     # 用户名让出了，另开一个院可以用回 test2
     data(client.post("/api/platform/institutes", headers=PLATFORM, json={
-        "code": "UYS2", "name": "test2 重开", "adminUsername": "test2"}))
-    assert data(login("test2", _default_password()))["user"]["tenantId"] == "TENANT-UYS2"
+        "code": "UYS3", "name": "test2 重开", "adminUsername": "test2"}))
+    assert data(login("test2", _default_password()))["user"]["tenantId"] == "TENANT-UYS3"
 
     token = open_gdtj()
     data(client.post("/api/projects", headers=bearer(token, "gd-del-p1"), json={"name": "有项目的院"}))

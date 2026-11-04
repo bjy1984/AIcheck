@@ -86,7 +86,7 @@ export const createPlatformApi = (adapter: RequestAdapter, mutationHeaders: Head
       headers: mutationHeaders(options)
     }),
 
-  /** 只能删没有项目的院：停用、从列表隐藏、让出院内用户名；数据与审计保留，单位代码不能再用 */
+  /** 只能删没有项目的院：停用、从列表隐藏、让出院内用户名；数据与审计保留，单位代码可给新院再用 */
   deleteInstituteApi: (
     tenantId: string,
     options?: { idempotencyKey?: string }

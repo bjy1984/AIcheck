@@ -97,10 +97,17 @@ def create_platform_institute(
         return fail(errors.VALIDATION_ERROR, request, message="单位代码用 2–32 位大写字母、数字或连字符，例如 GDTJ。")
     if not name or not username:
         return fail(errors.VALIDATION_ERROR, request, message="请填写特检院名称和院管理员用户名。")
-    tenant_id = f"TENANT-{code}"
-    if tenant_id == platform_tenant_id() or institutes.find_institute(tenant_id):
-        return fail(errors.CONFLICT, request, http_status=409,
-                    message="这个单位代码已经用过了（删除过的特检院数据仍保留，代码不能再用）。")
+    # 单位代码只在「没删除的院」里唯一（2026-11-04 用户：删了的院代码要能再用）。删过的院数据还在
+    # 原分区里，新院另开一个分区（TENANT-QDTJ-2……），旧数据和审计记录不会被新院接手
+    existing = institutes.list_institutes()
+    if code == "PLATFORM" or any(str(row.get("code") or "").upper() == code and row.get("status") != institutes.DELETED
+                                 for row in existing):
+        return fail(errors.CONFLICT, request, http_status=409, message="这个单位代码已经用过了。")
+    taken = {str(row.get("id")) for row in existing} | {platform_tenant_id()}
+    tenant_id, suffix = f"TENANT-{code}", 1
+    while tenant_id in taken:
+        suffix += 1
+        tenant_id = f"TENANT-{code}-{suffix}"
     if conflict := institutes.username_conflict_message(username, for_tenant=tenant_id):
         return fail(errors.CONFLICT, request, http_status=409, message=conflict)
     password = str(body.get("adminPassword") or "").strip() or DEFAULT_INITIAL_PASSWORD
@@ -266,7 +273,7 @@ def delete_platform_institute(
     """删除没有项目的特检院（2026-11-04 用户：开通错了、测试建的院删不掉）。
 
     只做「停用 + 从列表隐藏 + 让出院内用户名」，数据和审计记录都留在库里：审计是哈希链，
-    不能删。还有项目的院只能停用。单位代码不能再用——它就是这个院的数据分区。
+    不能删。还有项目的院只能停用。单位代码可以给新开的院再用，新院另开数据分区。
     """
     if error := _guard(request):
         return error
