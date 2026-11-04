@@ -189,3 +189,26 @@ assert.equal(
   conclusionReason(row(9, { group: 'failed', reason: { checkCodes: ['GB/T 12459-2025'] } })),
   '未满足：GB/T 12459-2025 在审查日有效'
 )
+
+// 边框：不通过红、缺资料黄（没审但必传没交齐也算）、通过绿、其余灰
+{
+  const { nodeBorderTone, requiredMaterials } = await import('./stationOverview')
+  const withReq = (group: string, done: number, total: number) =>
+    ({
+      ...row(30, { group: group as never }),
+      group,
+      node: {
+        nodeId: 30,
+        name: '节点30',
+        requirementsSummary: { requiredCount: total, satisfiedCount: done }
+      }
+    }) as unknown as InspectionAuditOverviewNode
+  assert.equal(nodeBorderTone(withReq('not_started', 0, 6)), 'missing', '没审但缺文件也是黄')
+  assert.equal(nodeBorderTone(withReq('not_started', 6, 6)), 'neutral')
+  assert.equal(nodeBorderTone(withReq('not_started', 0, 0)), 'neutral', '没有资料要求的不算缺')
+  assert.equal(nodeBorderTone(withReq('failed', 0, 6)), 'failed', '不通过优先于缺资料')
+  assert.equal(nodeBorderTone(withReq('passed', 6, 6)), 'passed')
+  assert.equal(nodeBorderTone(withReq('needs_materials', 6, 6)), 'missing')
+  assert.deepEqual(requiredMaterials(withReq('not_started', 2, 6)), { done: 2, total: 6 })
+  assert.equal(requiredMaterials(withReq('not_started', 0, 0)), null)
+}

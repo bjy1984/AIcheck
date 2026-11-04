@@ -240,3 +240,30 @@ export const STATION_GROUP_ACTIONS: Partial<Record<InspectionNodeConclusionGroup
   needs_human: '去确认',
   not_started: '开始审核'
 }
+
+/** 折叠行上的必传资料进度：没有资料要求的节点不显示。 */
+export const requiredMaterials = (row: InspectionAuditOverviewNode) => {
+  const summary = row.node.requirementsSummary
+  const total = Number(summary?.requiredCount || 0)
+  if (!total) return null
+  return { done: Math.min(Number(summary?.satisfiedCount || 0), total), total }
+}
+
+export type NodeBorderTone = 'passed' | 'failed' | 'missing' | 'neutral'
+
+/**
+ * 卡片边框颜色（2026-11-04 用户：绿＝通过、红＝不通过、黄＝缺资料）。
+ * 「缺资料」不只看审计结论：还没审、但必传资料没交齐的节点也是黄色——原来按结论分组上色，
+ * 未开始审核的一律灰色，用户看到明明缺文件却是灰框。不通过优先于缺资料。
+ */
+export const nodeBorderTone = (
+  row: InspectionAuditOverviewNode & { group?: InspectionNodeConclusionGroup }
+): NodeBorderTone => {
+  const group = row.group || row.conclusion?.group
+  if (group === 'failed') return 'failed'
+  const materials = requiredMaterials(row)
+  if (group === 'needs_materials' || (materials && materials.done < materials.total))
+    return 'missing'
+  if (group === 'passed') return 'passed'
+  return 'neutral'
+}
