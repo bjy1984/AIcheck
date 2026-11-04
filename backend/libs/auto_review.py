@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from libs.contracts.responses import server_time
+from libs.contracts.responses import SERVER_TZ, server_time
 from libs.review_evidence import active_node_document_versions, build_evidence_snapshot
 
 TRIGGER_MODES = {"ocr_mounted", "daily_schedule"}
@@ -16,12 +16,24 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_DAILY_TIME = "02:00"
 DEFAULT_DEBOUNCE_SECONDS = 300
 MAX_DEBOUNCE_SECONDS = 3600
+# 派发失败的节点隔一段时间再试（5、10 分钟），连同第一次最多 3 次；之后才算失败（2026-11-03 审计）
+MAX_DISPATCH_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 300
 
 
 def _stable_id(prefix: str, value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16].upper()
     return f"{prefix}-{digest}"
+
+
+def _server_time_after(seconds: int) -> str:
+    """与 server_time() 同格式的「现在 + N 秒」，字符串可直接比大小。"""
+    return (datetime.now(SERVER_TZ) + timedelta(seconds=max(0, int(seconds)))).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _candidate_due(candidate: dict[str, Any], now: str) -> bool:
+    return str(candidate.get("availableAt") or "") <= now
 
 
 def default_auto_review_policy(project_id: str, tenant_id: str) -> dict[str, Any]:
@@ -124,7 +136,14 @@ def upsert_auto_review_candidate(
     evidence_snapshot_hash: str,
     policy_revision: int,
     trigger_type: str,
+    debounce_seconds: int = 0,
 ) -> tuple[dict[str, Any], bool]:
+    """同一节点只留最新证据状态的一个待派候选。
+
+    防抖（2026-11-03 审计：debounceSeconds 原来只存不用，一个节点连传 15 份资料会被复核 15 次）：
+    新候选 availableAt = 现在 + debounceSeconds，同节点更早的待派候选标 superseded，
+    于是一阵上传只审最后那个证据状态一次。
+    """
     if str(trigger_type) not in TRIGGER_MODES:
         raise ValueError("unsupported trigger mode")
     candidate_key = auto_review_candidate_key(
@@ -139,13 +158,20 @@ def upsert_auto_review_candidate(
         (row for row in rows if str(row.get("candidateKey") or "") == candidate_key),
         None,
     )
+    available_at = _server_time_after(debounce_seconds)
     if existing:
         trigger_types = {str(item) for item in existing.get("triggerTypes") or [] if item}
         trigger_types.add(str(trigger_type))
         existing["triggerTypes"] = sorted(trigger_types)
         existing["updatedAt"] = server_time()
+        if existing.get("status") == "superseded":
+            # 证据改回了之前的状态（A→B→A）：A 重新成为这个节点的待派候选
+            _supersede_pending(rows, existing, tenant_id, project_id, node_id)
+            existing.update({"status": "pending", "availableAt": available_at})
+            existing.pop("supersededAt", None)
         return existing, False
 
+    _supersede_pending(rows, None, tenant_id, project_id, node_id)
     now = server_time()
     candidate = {
         "id": candidate_key.replace("ARCKEY-", "ARC-", 1),
@@ -159,12 +185,24 @@ def upsert_auto_review_candidate(
         "triggerTypes": [str(trigger_type)],
         "status": "pending",
         "attemptCount": 0,
-        "availableAt": now,
+        "availableAt": available_at,
         "createdAt": now,
         "updatedAt": now,
     }
     rows.append(candidate)
     return candidate, True
+
+
+def _supersede_pending(rows: list[dict[str, Any]], keep: dict[str, Any] | None,
+                       tenant_id: str, project_id: str, node_id: int) -> None:
+    for row in rows:
+        if (row is not keep and row.get("status") == "pending"
+                and str(row.get("tenantId") or "") == str(tenant_id)
+                and str(row.get("projectId") or "") == str(project_id)
+                and int(row.get("nodeId") or 0) == int(node_id)):
+            row["status"] = "superseded"
+            row["supersededAt"] = server_time()
+            row["updatedAt"] = row["supersededAt"]
 
 
 def active_mounted_node_ids(state: dict[str, Any], project_id: str) -> list[int]:
@@ -758,6 +796,7 @@ def consume_auto_review_evidence_events(
                 evidence_snapshot_hash=str(snapshot["snapshotHash"]),
                 policy_revision=int(policy.get("revision") or 1),
                 trigger_type="ocr_mounted",
+                debounce_seconds=int(policy.get("debounceSeconds") or 0),
             )
             if created:
                 created_candidate_ids.append(str(candidate["id"]))
@@ -778,10 +817,11 @@ def dispatch_pending_auto_review_candidates(
     start_node_review,
     limit: int = 100,
 ) -> dict[str, Any]:
+    now = server_time()
     pending = [
         row
         for row in state.get("auto_review_candidates") or []
-        if isinstance(row, dict) and str(row.get("status") or "") == "pending"
+        if isinstance(row, dict) and str(row.get("status") or "") == "pending" and _candidate_due(row, now)
     ][: max(1, min(int(limit), 500))]
     groups: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
     for candidate in pending:
@@ -831,13 +871,24 @@ def dispatch_pending_auto_review_candidates(
             start_node_review=start_node_review,
         )
         failed_nodes = {int(item) for item in parent.get("failedNodeIds") or []}
+        failure_types = {int(item.get("nodeId") or 0): item.get("errorType")
+                         for item in parent.get("dispatchFailures") or [] if isinstance(item, dict)}
         for candidate in candidates:
+            node_id = int(candidate.get("nodeId") or 0)
             candidate["projectReviewRunId"] = parent["projectReviewRunId"]
-            candidate["status"] = (
-                "failed" if int(candidate.get("nodeId") or 0) in failed_nodes else "dispatched"
-            )
+            candidate["attemptCount"] = int(candidate.get("attemptCount") or 0) + 1
             candidate["dispatchedAt"] = server_time()
             candidate["updatedAt"] = candidate["dispatchedAt"]
+            if node_id not in failed_nodes:
+                candidate["status"] = "dispatched"
+                continue
+            candidate["lastErrorType"] = failure_types.get(node_id)
+            # 原来派发一次失败就永久 failed，同一证据状态再也不会自动复核（生产 08-31 两条至今卡着）
+            if candidate["attemptCount"] < MAX_DISPATCH_ATTEMPTS:
+                candidate["status"] = "pending"
+                candidate["availableAt"] = _server_time_after(RETRY_BACKOFF_SECONDS * candidate["attemptCount"])
+            else:
+                candidate["status"] = "failed"
         project_run_ids.append(str(parent["projectReviewRunId"]))
     return {
         "projectReviewRunIds": project_run_ids,

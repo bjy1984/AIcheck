@@ -5593,7 +5593,7 @@ def _auto_review_idle(kind: str, now: datetime) -> bool:
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_consume_evidence_events")
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_consume_evidence_events", keepalive=True)
 def auto_review_consume_evidence_events(self) -> dict[str, Any]:
     return _for_each_tenant(_auto_review_consume_evidence_events_one_tenant)
 
@@ -5618,7 +5618,7 @@ def _auto_review_consume_evidence_events_one_tenant() -> dict[str, Any]:
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_scan_due_projects")
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_scan_due_projects", keepalive=True)
 def auto_review_scan_due_projects(self) -> dict[str, Any]:
     return _for_each_tenant(_auto_review_scan_due_projects_one_tenant)
 
@@ -5700,7 +5700,7 @@ def _start_auto_review_node(project_id: str, node_id: int, metadata: dict[str, A
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_start_pending_candidates")
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_start_pending_candidates", keepalive=True)
 def auto_review_start_pending_candidates(self) -> dict[str, Any]:
     return _for_each_tenant(_auto_review_start_pending_candidates_one_tenant)
 
@@ -5723,7 +5723,7 @@ def _auto_review_start_pending_candidates_one_tenant() -> dict[str, Any]:
     retry_backoff=True,
     retry_kwargs={"max_retries": 3},
 )
-@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_finalize_project_runs")
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_finalize_project_runs", keepalive=True)
 def auto_review_finalize_project_runs(self) -> dict[str, Any]:
     return _for_each_tenant(_auto_review_finalize_project_runs_one_tenant)
 
