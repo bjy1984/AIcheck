@@ -972,6 +972,7 @@ export const checkCodeLabels: Record<string, string> = {
   witness_type_accepted: '见证方式符合要求',
   all_values_equal: '三处单位名一致',
   catalog_pages_submitted: '图纸目录所列页数已交全',
+  r11_approval_scope_incomplete: '施工方案的审批范围完整',
   standard_scope_matches_project_medium: '引用标准的适用介质与本工程介质一致',
   not_expired_on_reference_date: '证书在参考日未过期',
   validity_dates_consistent: '有效期起止日期一致（截止不早于起始）',

@@ -87,13 +87,20 @@ export const buildStationOverview = (
   return { totals, confirmedPassed, stations: result }
 }
 
+/** 总览一行一句原因，身份证号（焊工、检测人员证的检查码前缀）不全量展示：留前 4 后 4。 */
+export const maskIdentityNumbers = (text: string) =>
+  text.replace(/(?<!\d)(\d{4})\d{10}(\d{3}[\dXx])(?!\d)/g, '$1**********$2')
+
 /** 行内一句原因：人工意见原文优先，其次不过的检查项（翻成中文），再次原因码。 */
 export const conclusionReason = (row: InspectionAuditOverviewNode): string => {
   const reason = row.conclusion?.reason
   if (!reason) return ''
   if (reason.humanOpinion) return `监检意见：${reason.humanOpinion}`
-  const checks = (reason.checkCodes || []).map((code) => friendlyCheckCode(code)).filter(Boolean)
-  if (checks.length) return `未过：${checks.join('；')}`
+  const checks = (reason.checkCodes || [])
+    .map((code) => maskIdentityNumbers(friendlyCheckCode(code)))
+    .filter(Boolean)
+  // 检查项名称写的是「应满足的条件」（如「图纸目录所列页数已交全」），前缀用「未满足」才读得通
+  if (checks.length) return `未满足：${checks.join('；')}`
   return reason.reasonCode ? friendlyCheckReason(reason.reasonCode) : ''
 }
 

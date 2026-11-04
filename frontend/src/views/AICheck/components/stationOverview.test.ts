@@ -49,7 +49,7 @@ assert.equal(overview.confirmedPassed, 1)
 assert.equal(overview.stations[1].counts.not_started, 1)
 
 // 行内原因翻成中文；人工意见原文优先
-assert.equal(conclusionReason(rows[2]), '未过：引用标准的适用介质与本工程介质一致')
+assert.equal(conclusionReason(rows[2]), '未满足：引用标准的适用介质与本工程介质一致')
 assert.equal(
   conclusionReason(row(5, { group: 'failed', reason: { humanOpinion: '壁厚表缺第 1 页' } })),
   '监检意见：壁厚表缺第 1 页'
@@ -65,3 +65,14 @@ assert.deepEqual(conclusionSourceTag(row(7, { runState: 'running' })), {
   tone: 'info'
 })
 assert.equal(conclusionSourceTag(row(8)), null)
+
+// 身份证号不在总览里全量展示
+assert.equal(
+  conclusionReason(
+    row(6, {
+      group: 'failed',
+      reason: { checkCodes: ['410521198609180550:holder_matches_registry'] }
+    })
+  ),
+  '未满足：4105**********0550：持证人与平台登记一致'
+)
