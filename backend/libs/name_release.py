@@ -34,13 +34,24 @@ def released_org_name(org: dict[str, Any]) -> str:
 
 
 def release_username(user: dict[str, Any]) -> str | None:
-    """改用户名，返回被让出的原名；已经让过的返回 None。"""
+    """改用户名，返回被让出的原名；已经让过的返回 None。
+
+    同时把版本号加一：这个账号已发的令牌立即失效。再建同名账号时版本号从这里往上起
+    （auth_version_floor），没带 uid 的旧令牌也对不上新账号（2026-11-04 审计）。"""
     original = str(user.get("username") or "")
     if not original or is_released(original):
         return None
     user["releasedUsername"] = original
     user["username"] = released_username(user)
+    user["authVersion"] = int(user.get("authVersion") or 0) + 1
     return original
+
+
+def auth_version_floor(users: list[dict[str, Any]], username: str) -> int:
+    """新建账号的起始版本号：这个用户名以前被让出过，就比所有旧账号的版本号都大。"""
+    previous = [int(item.get("authVersion") or 0) for item in users
+                if isinstance(item, dict) and item.get("releasedUsername") == username]
+    return max(previous) + 1 if previous else 0
 
 
 def release_org_name(state: dict[str, Any], users: list[dict[str, Any]], org: dict[str, Any]) -> str | None:

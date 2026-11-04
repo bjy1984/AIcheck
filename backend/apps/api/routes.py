@@ -229,7 +229,7 @@ from libs.material_targeting import (
     targeting_input_versions_for_node,
 )
 from libs.model_usage import normalize_model_usage
-from libs.name_release import release_org_name, release_username
+from libs.name_release import auth_version_floor, release_org_name, release_username
 from libs.node_document_identity import (
     document_ai_shadow_run_summary,
     document_audit_pipeline_comparison_summary,
@@ -3777,7 +3777,7 @@ def build_admin_user_record(
         "name": name,
         "displayName": name,
         "passwordHash": password_hash,
-        "authVersion": int((existing or {}).get("authVersion") or 0),
+        "authVersion": int((existing or {}).get("authVersion") or 0) if existing else auth_version_floor(list_admin_users(), username),
         "mustChangePassword": (
             True
             if password and existing is not None
@@ -4457,7 +4457,7 @@ def project_requirements_for_node(project_id: str, node_id: int) -> list[dict[st
     scoped = [
         repo.clone(item)
         for item in repo.state["requirements"]
-        if int(item["nodeId"]) == int(node_id) and item.get("projectId") == project_id
+        if int(item["nodeId"]) == int(node_id) and item.get("projectId") == project_id and not item.get("retiredInPackVersion")
     ]
     if scoped:
         return scoped

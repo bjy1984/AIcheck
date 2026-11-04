@@ -137,3 +137,86 @@ def test_非管理员不能看也不能升级():
     token = data(client.post("/api/auth/login", json={"username": "gd-insp", "password": "gd-pass-1"}))["token"]
     assert code_of(client.get("/api/admin/business-pack/updates", headers=bearer(token))) != 0
     assert code_of(client.get("/api/admin/review-policies", headers=bearer(token))) != 0
+
+
+# ── 2026-11-04 审计：差异盲区、归档项目、资料清单行 ────────────────────────────
+
+def test_资料类型_标准目录_试点规则_字符串清单改了也能看出影响哪些节点():
+    current = load_business_pack(DEFAULT_BUSINESS_PACK_ID)
+    old = deepcopy(current)
+    material = current["nodeTemplates"][0]["requiredMaterials"][0]["materialTypeCode"]
+    next(item for item in old["materialTypes"] if item["code"] == material)["name"] = "旧资料名"
+    diff = pack_diff(old, current)
+    assert diff["sections"][0]["name"] == "materialTypes" and int(current["nodeTemplates"][0]["nodeId"]) in diff["affectedNodeIds"]
+
+    old = deepcopy(current)
+    standard = current["standardCatalog"][0]
+    old["standardCatalog"][0]["name"] = "旧标准名"
+    bound = {int(item["nodeId"]) for item in current["standardClauseBindings"]
+             if item.get("documentVersionId") == standard["documentVersionId"]}
+    assert bound and bound <= set(pack_diff(old, current)["affectedNodeIds"])
+
+    old = deepcopy(current)
+    dropped = old["atomicCheckToolBindingSet"]["pilotRules"].pop(0)
+    diff = pack_diff(old, current)
+    assert diff["otherChanges"] == ["atomicCheckToolBindingSet"] and diff["otherChangeLabels"] == ["检查工具绑定配置"]
+    rule = next(item for item in current["ruleSets"] if item["id"].endswith(f"-{dropped}"))
+    assert set(rule["nodeIds"]) <= set(diff["affectedNodeIds"]) and len(diff["affectedNodeIds"]) < len(current["nodeTemplates"])
+
+    old = deepcopy(current)
+    old["atomicCheckToolBindingSet"]["version"] = "2026.01.01"
+    assert pack_diff(old, current)["upToDate"] is True, "只改版本号不算"
+
+    old = deepcopy(current)
+    old["workflowActions"] = old["workflowActions"][:-1]
+    section = pack_diff(old, current)["sections"][0]
+    assert section["name"] == "workflowActions" and section["added"] == 1
+
+
+def _old_project(name: str, key: str, **fields) -> str:
+    created = data(client.post("/api/projects", headers={**PLATFORM, "Idempotency-Key": key}, json={"name": name}))
+    project_id = (created.get("project") or created)["id"]
+    current = load_business_pack(DEFAULT_BUSINESS_PACK_ID)
+    repo.require_project(project_id).update({"businessPackId": DEFAULT_BUSINESS_PACK_ID, "businessPackSnapshot": deepcopy(current),
+                                             "businessPackSnapshotHash": "old-hash", **fields})
+    return project_id
+
+
+def test_指纹不同就算旧版_算不出差异也能升级():
+    project_id = _old_project("只有指纹不同", "np2")
+    row = next(item for item in data(client.get("/api/admin/business-pack/updates", headers=PLATFORM))["items"]
+               if item["projectId"] == project_id)
+    assert row["upToDate"] is False and row["upgradable"] is True and row["diff"]["upToDate"] is True
+
+
+def test_归档项目不算可升级_强行升级给出真实原因():
+    project_id = _old_project("已归档项目", "np3", status="已归档")
+    listing = data(client.get("/api/admin/business-pack/updates", headers=PLATFORM))
+    row = next(item for item in listing["items"] if item["projectId"] == project_id)
+    assert row["archived"] is True and row["upgradable"] is False
+    assert listing["outdatedCount"] == sum(1 for item in listing["items"] if item["upgradable"])
+    result = data(client.post("/api/admin/business-pack/updates/apply", headers={**PLATFORM, "Idempotency-Key": "a3"},
+                              json={"projectIds": [project_id]}))
+    assert result["appliedCount"] == 0 and "归档" in result["results"][0]["reason"]
+
+
+def test_升级时没挂资料的清单行跟着新版改_挂了资料的不动_新版没有的标出来():
+    project_id = _old_project("清单行升级", "np4")
+    rows = [item for item in repo.state["requirements"] if item.get("projectId") == project_id]
+    assert len(rows) >= 2
+    unbound, bound = rows[0], rows[1]
+    unbound["name"], bound["name"] = "旧名称甲", "旧名称乙"
+    repo.state["bindings"].append({"id": "BIND-REQ-TEST", "projectId": project_id, "nodeId": bound["nodeId"],
+                                   "requirementId": bound["id"], "requirementName": "旧名称乙"})
+    repo.state["requirements"].append({"id": "REQ-GONE-01", "projectId": project_id, "nodeId": unbound["nodeId"],
+                                       "name": "新版已删除的资料", "requiredType": "必传"})
+    result = data(client.post("/api/admin/business-pack/updates/apply", headers={**PLATFORM, "Idempotency-Key": "a4"},
+                              json={"projectIds": [project_id]}))["results"][0]
+    assert result["applied"] is True
+    assert unbound["id"] in result["updatedRequirementIds"] and unbound["name"] != "旧名称甲"
+    assert result["boundRequirementIdsNotUpdated"] == [bound["id"]] and bound["name"] == "旧名称乙"
+    assert result["retiredRequirementIds"] == ["REQ-GONE-01"]
+    from apps.api.routes import project_requirements_for_node
+
+    names = {item["name"] for item in project_requirements_for_node(project_id, int(unbound["nodeId"]))}
+    assert "新版已删除的资料" not in names or repo.state["admin_config"].get("materialReviewPoints")

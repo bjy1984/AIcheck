@@ -192,8 +192,8 @@ const key = (verb: string) => `improvement-${verb}-${active.value?.id}-${Date.no
 
 const approve = () => {
   if (!active.value) return
-  if (!form.taskStatement.trim() || !form.acceptanceCriteria.trim()) {
-    actionError.value = '请写任务描述和验收标准：AI 只按这两段干活，不按用户原话。'
+  if (!form.title.trim() || !form.taskStatement.trim() || !form.acceptanceCriteria.trim()) {
+    actionError.value = '请写标题、任务描述和验收标准：AI 只按这几段干活，不按用户原话。'
     return
   }
   const taskId = active.value.id
@@ -252,7 +252,8 @@ const merge = () => {
     () => mergeImprovementTaskApi(taskId, into, { idempotencyKey: key('merge') }),
     '已合并：来源反馈都挂到目标任务上'
   ).then(() => {
-    drawerOpen.value = false
+    // 合并失败时留在抽屉里显示错误（2026-11-04 审计）
+    if (!actionError.value) drawerOpen.value = false
   })
 }
 
@@ -373,7 +374,9 @@ onMounted(load)
             </ElTableColumn>
             <ElTableColumn label="任务" min-width="300">
               <template #default="{ row }">
-                <p class="cell-title">{{ row.title || '（未命名）' }}</p>
+                <p class="cell-title">
+                  {{ row.title || row.sources?.[0]?.contentRedacted?.slice(0, 40) || '（未命名）' }}
+                </p>
                 <small class="muted">{{ row.scopeLabel }}</small>
               </template>
             </ElTableColumn>
@@ -427,7 +430,12 @@ onMounted(load)
           <h3 class="block-title">任务描述（AI 按这里干活）</h3>
           <div class="field">
             <span class="field-label">标题</span>
-            <ElInput v-model="form.title" maxlength="80" aria-label="标题" />
+            <ElInput
+              v-model="form.title"
+              maxlength="80"
+              placeholder="会显示给提交人；不要写工程名、人名"
+              aria-label="标题"
+            />
           </div>
           <div class="field">
             <span class="field-label">任务描述</span>
@@ -524,9 +532,13 @@ onMounted(load)
         <template v-if="active.result">
           <h3 class="block-title">AI 回报</h3>
           <p class="statement">
-            PR：<a :href="active.result.prUrl" target="_blank" rel="noopener noreferrer">{{
-              active.result.prUrl
-            }}</a>
+            PR：<a
+              v-if="/^https?:\/\//.test(active.result.prUrl)"
+              :href="active.result.prUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              >{{ active.result.prUrl }}</a
+            ><span v-else>{{ active.result.prUrl }}</span>
           </p>
           <p class="statement">测试：{{ active.result.tests }}</p>
           <p v-if="active.result.note" class="statement">说明：{{ active.result.note }}</p>

@@ -55,7 +55,7 @@ def _add_institute_admin(state: dict[str, Any], username: str, name: str, passwo
                          *, audit_action: str) -> dict[str, Any]:
     """在当前院（调用方已切进 tenant_scope）建一个院管理员并落库。"""
     admin = api.build_admin_user_record({"username": username, "role": "admin", "name": name, "password": password}, org=org)
-    admin["authVersion"] = 1
+    admin["authVersion"] = max(1, int(admin.get("authVersion") or 0))
     # 平台定的初始密码平台知道：院管理员首次登录必须先改成只有自己知道的
     admin["mustChangePassword"] = True
     state.setdefault("users", []).insert(0, admin)

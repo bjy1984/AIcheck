@@ -42,9 +42,40 @@ def session_path() -> Path:
     return Path(os.getenv("AICHECK_FEEDBACK_SESSION_FILE") or Path.home() / ".config/aicheck-feedback/session.json").expanduser()
 
 
+def claims_path() -> Path:
+    return session_path().with_name("claims.json")
+
+
+def remember_claim(task_id: str, claim_id: str | None) -> None:
+    path = claims_path()
+    try:
+        claims = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        claims = {}
+    if claim_id:
+        claims[task_id] = claim_id
+    else:
+        claims.pop(task_id, None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(claims), encoding="utf-8")
+    path.chmod(0o600)
+
+
+def recall_claim(task_id: str) -> str:
+    try:
+        return str(json.loads(claims_path().read_text(encoding="utf-8")).get(task_id) or "")
+    except (OSError, ValueError):
+        return ""
+
+
 def base_url() -> str:
     session = load_session()
-    base = (os.getenv("AICHECK_BASE_URL") or session.get("baseUrl") or DEFAULT_BASE).rstrip("/")
+    session_base = str(session.get("baseUrl") or "").rstrip("/")
+    env_base = str(os.getenv("AICHECK_BASE_URL") or "").rstrip("/")
+    # 令牌只发给登录时的那台服务器（2026-11-04 审计）：环境变量指向别处时拒绝，免得把平台管理员令牌发出去
+    if session_base and env_base and env_base != session_base:
+        raise ClientError("baseUrlMismatch", f"登录的是 {session_base}，现在要连 {env_base}；换服务器请先重新 login。")
+    base = (session_base or env_base or DEFAULT_BASE).rstrip("/")
     parts = urllib.parse.urlparse(base)
     loopback = parts.hostname in {"127.0.0.1", "localhost", "::1"}
     if parts.scheme == "http" and not loopback and os.getenv("AICHECK_ALLOW_HTTP", "").lower() not in {"1", "true", "yes"}:
@@ -78,12 +109,18 @@ def call(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
             payload = {}
         if exc.code == 401:
             raise ClientError("loginRequired", "令牌过期或无效：重新 login。") from None
+        if exc.code == 403:
+            raise ClientError("forbidden", "要平台管理员授权：请用户用平台院的管理员账号重新 login。") from None
         raise ClientError(f"HTTP_{exc.code}", str(payload.get("message") or exc.reason)) from None
+    except ValueError:
+        raise ClientError("badResponse", "服务器返回的不是 JSON：检查 AICHECK_BASE_URL 是否指向 AIcheck。") from None
     except urllib.error.URLError as exc:
         raise ClientError("unreachable", f"连不上服务器：{exc.reason}") from None
+    if payload.get("code") == 401:
+        raise ClientError("loginRequired", "令牌过期或无效：重新 login。")
     if payload.get("code") not in (0, None):
         message = str(payload.get("message") or "")
-        if "平台管理员" in message:
+        if payload.get("code") == 403 or "平台管理员" in message:
             raise ClientError("forbidden", "要平台管理员授权：请用户用平台院的管理员账号重新 login。")
         raise ClientError("refused", message or "服务器拒绝了这个操作。")
     return payload.get("data")
@@ -129,15 +166,22 @@ def _act(task_id: str, verb: str, body: dict[str, Any]) -> Any:
 
 
 def cmd_claim(args: argparse.Namespace) -> Any:
-    return _act(args.task_id, "claim", {"agent": args.agent})
+    result = _act(args.task_id, "claim", {"agent": args.agent})
+    remember_claim(args.task_id, (result.get("claim") or {}).get("id"))
+    return result
 
 
 def cmd_release(args: argparse.Namespace) -> Any:
-    return _act(args.task_id, "release", {"note": args.note or ""})
+    result = _act(args.task_id, "release", {"note": args.note or "", "claimId": recall_claim(args.task_id)})
+    remember_claim(args.task_id, None)
+    return result
 
 
 def cmd_done(args: argparse.Namespace) -> Any:
-    return _act(args.task_id, "submit", {"prUrl": args.pr, "tests": args.tests, "commit": args.commit or "", "note": args.note or ""})
+    result = _act(args.task_id, "submit", {"prUrl": args.pr, "tests": args.tests, "commit": args.commit or "",
+                                           "note": args.note or "", "claimId": recall_claim(args.task_id)})
+    remember_claim(args.task_id, None)
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:

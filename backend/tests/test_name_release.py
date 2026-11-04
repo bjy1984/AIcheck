@@ -7,7 +7,8 @@ from libs.name_release import release_org_name, release_username
 def test_用户停用时改名并留原名_再次删除不重复改名():
     user = {"id": "USER-24536D0B", "username": "qdns", "status": "停用"}
     assert release_username(user) == "qdns"
-    assert user == {"id": "USER-24536D0B", "username": "qdns~已删除-24536D0B", "status": "停用", "releasedUsername": "qdns"}
+    assert user == {"id": "USER-24536D0B", "username": "qdns~已删除-24536D0B", "status": "停用", "releasedUsername": "qdns",
+                    "authVersion": 1}
     assert release_username(user) is None and user["username"] == "qdns~已删除-24536D0B"
 
 
@@ -41,3 +42,27 @@ def test_被项目引用的用户删除后用户名可以再建():
     assert deleted["deleted"] is False and deleted["user"]["username"].startswith("qdns_release_case~已删除-")
     again = client.post("/admin/users", json=body).json()
     assert again.get("data", {}).get("user", {}).get("username") == "qdns_release_case", again
+
+
+def test_删除后同名重建_旧账号的令牌不能当新账号用(monkeypatch):
+    """2026-11-04 审计：令牌只认用户名时，旧账号没过期的令牌能直接操作同名新账号。"""
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import app
+
+    client = TestClient(app)
+    body = {"username": "token_reuse_case", "name": "复用测试", "role": "admin", "password": "Reuse!2026"}
+    created = client.post("/admin/users", json=body).json()["data"]["user"]
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    old_token = client.post("/api/auth/login", json={"username": body["username"], "password": body["password"]}).json()["data"]["token"]
+    old_headers = {"Authorization": f"Bearer {old_token}"}
+    assert client.get("/api/auth/me", headers=old_headers).json()["code"] == 0
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "false")
+    client.delete(f"/admin/users/{created['id']}", headers={"If-Match": created["etag"]})
+    recreated = client.post("/admin/users", json=body).json()["data"]["user"]
+    assert recreated["id"] != created["id"]
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    assert client.get("/api/auth/me", headers=old_headers).json()["code"] != 0, "旧令牌不能用在同名新账号上"
+    new_token = client.post("/api/auth/login", json={"username": body["username"], "password": body["password"]}).json()["data"]["token"]
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_token}"}).json()
+    assert me["code"] == 0 and me["data"]["id"] == recreated["id"], me

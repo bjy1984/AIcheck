@@ -128,6 +128,20 @@ def auto_review_candidate_key(
     )
 
 
+IN_FLIGHT_NODE_REVIEW_STATUSES = {"queued", "running", "pending"}
+
+
+def _node_review_in_flight(state: dict[str, Any], project_id: str, node_id: int) -> bool:
+    return any(
+        isinstance(row, dict)
+        and str(row.get("projectId") or "") == str(project_id)
+        and int(row.get("nodeId") or 0) == int(node_id)
+        and str(row.get("status") or "") in IN_FLIGHT_NODE_REVIEW_STATUSES
+        for collection in ("review_runs", "ai_runs")
+        for row in state.get(collection) or []
+    )
+
+
 def upsert_auto_review_candidate(
     state: dict[str, Any],
     *,
@@ -165,11 +179,17 @@ def upsert_auto_review_candidate(
         trigger_types.add(str(trigger_type))
         existing["triggerTypes"] = sorted(trigger_types)
         existing["updatedAt"] = server_time()
-        if existing.get("status") == "superseded":
+        rearm = existing.get("status") == "superseded" or (
+            # 已派过的候选：调用方已确认这份证据没审过（A→B→A 改回来，或上次失败），节点上没有在跑的复核就重新排
+            existing.get("status") in {"dispatched", "skipped", "failed"}
+            and not _node_review_in_flight(state, project_id, node_id)
+        )
+        if rearm:
             # 证据改回了之前的状态（A→B→A）：A 重新成为这个节点的待派候选
             _supersede_pending(rows, existing, tenant_id, project_id, node_id)
-            existing.update({"status": "pending", "availableAt": available_at})
+            existing.update({"status": "pending", "availableAt": available_at, "attemptCount": 0})
             existing.pop("supersededAt", None)
+            existing.pop("skipReason", None)
         return existing, False
 
     _supersede_pending(rows, None, tenant_id, project_id, node_id)
@@ -284,6 +304,26 @@ def _latest_successful_snapshot_hash(
     return str(row.get("evidenceSnapshotHash") or "") or None if row else None
 
 
+def _partial_selection_run(row: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+    """只审了一部分的运行：挑了对象、按条件映射选了对象、指定了页码，或只选了部分资料。
+
+    这种运行不能拿来跳过整节点的自动复核（2026-11-04 审计）。开始运行时 conditionObjectMapping
+    会换成 conditionObjectMappingSnapshot，两个名字都看。显式选了资料但选全了，不算部分。
+    """
+    if any(row.get(key) for key in ("selectedObjectIds", "conditionObjectMapping", "conditionObjectMappingSnapshot",
+                                    "inputDocumentPageRanges")):
+        return True
+    selection = (row.get("evidenceReadiness") or {}).get("inputSelection") or {}
+    if not isinstance(selection, dict) or selection.get("mode") != "explicit":
+        return False
+    if selection.get("documentPageRanges") or selection.get("selectedObjectIds") or selection.get("conditionObjectMapping"):
+        return True
+    chosen = {str(item) for item in selection.get("documentVersionIds") or []}
+    current = {str(item.get("documentVersionId") or "") for item in snapshot.get("documentVersions") or []
+               if isinstance(item, dict)}
+    return not current <= chosen
+
+
 def evidence_already_reviewed(
     state: dict[str, Any], project_id: str, node_id: int, snapshot: dict[str, Any]
 ) -> bool:
@@ -295,7 +335,14 @@ def evidence_already_reviewed(
     from libs.review_evidence import evidence_content_hash
 
     row = _latest_successful_run(state, project_id, node_id)
-    if not row:
+    if not row or _partial_selection_run(row, snapshot):
+        return False
+    # 规则升级后按旧规则审过的不算（2026-11-04 审计）：两边都记了业务包指纹且不同，就要按新规则再审
+    project = next((item for item in state.get("projects") or []
+                    if isinstance(item, dict) and str(item.get("id") or "") == str(project_id)), None)
+    current_pack = str((project or {}).get("businessPackSnapshotHash") or "")
+    run_pack = str(row.get("businessPackSnapshotHash") or "")
+    if current_pack and run_pack and current_pack != run_pack:
         return False
     snapshot_id = str(row.get("evidenceSnapshotId") or "")
     previous = next(
@@ -718,8 +765,16 @@ def enqueue_auto_review_evidence_event(
     )
     rows = state.setdefault("auto_review_outbox", [])
     existing = next((row for row in rows if str(row.get("id") or "") == event_id), None)
-    if existing:
+    if existing and (not change_key or str(existing.get("status") or "") in {"pending", "retry_pending"}):
         return existing, False
+    if existing:
+        # 证据改回了已经处理过的状态（A→B→A，2026-11-04 审计）：原事件已消费，要再排一次；
+        # 消费时 evidence_already_reviewed 会判断是否真要重审
+        same = [row for row in rows if str(row.get("id") or "").startswith(event_id)]
+        pending = next((row for row in same if str(row.get("status") or "") in {"pending", "retry_pending"}), None)
+        if pending:
+            return pending, False
+        event_id = f"{event_id}-{len(same) + 1}"
     now = server_time()
     event = {
         "id": event_id,

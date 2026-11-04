@@ -8,13 +8,19 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
 
 from apps.api import routes as api
-from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, business_pack_snapshot, load_business_pack
-from libs.business_pack_diff import pack_diff
+from libs.business_pack import (
+    DEFAULT_BUSINESS_PACK_ID,
+    build_project_requirements,
+    business_pack_snapshot,
+    load_business_pack,
+)
+from libs.business_pack_diff import pack_diff, reconcile_requirements
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
@@ -47,6 +53,9 @@ def _update_info(project: dict[str, Any], packs: dict[str, dict[str, Any]]) -> d
         if run.get("projectId") == project.get("id") and int(run.get("nodeId") or 0) in affected
         and str(run.get("status") or "") in DONE_STATUSES
     )
+    archived = project.get("status") == "已归档"
+    # 指纹不同就算旧版（2026-11-04 审计）：原来差异算不出来时也判「已是最新」，升级入口就没了
+    up_to_date = (not frozen) or project.get("businessPackSnapshotHash") == current.get("snapshotHash")
     return {
         "projectId": project.get("id"),
         "projectName": project.get("name"),
@@ -56,10 +65,19 @@ def _update_info(project: dict[str, Any], packs: dict[str, dict[str, Any]]) -> d
         "currentVersion": current.get("version"),
         "snapshotHash": project.get("businessPackSnapshotHash"),
         "currentHash": current.get("snapshotHash"),
-        "upToDate": (not frozen) or project.get("businessPackSnapshotHash") == current.get("snapshotHash") or diff["upToDate"],
+        "upToDate": up_to_date,
+        "archived": archived,
+        "upgradable": not up_to_date and not archived,
         "diff": diff,
         "affectedConclusionCount": conclusions,
     }
+
+
+def _guard_reason(guard: Any) -> str:
+    try:
+        return str(json.loads(guard.body).get("message") or "") or "没有权限升级这个项目"
+    except (AttributeError, ValueError):
+        return "没有权限升级这个项目"
 
 
 @pack_update_router.get("/admin/business-pack/updates")
@@ -69,8 +87,10 @@ def list_business_pack_updates(request: Request):
     packs: dict[str, dict[str, Any]] = {}
     items = [_update_info(project, packs) for project in repo.state.get("projects") or []
              if isinstance(project, dict) and not is_probe_project(project)]
-    items.sort(key=lambda row: (row["upToDate"], -len(row["diff"]["affectedNodeIds"]), str(row["projectName"] or "")))
-    return ok({"items": items, "outdatedCount": sum(1 for row in items if not row["upToDate"])}, request)
+    items.sort(key=lambda row: (not row["upgradable"], row["upToDate"], -len(row["diff"]["affectedNodeIds"]),
+                                str(row["projectName"] or "")))
+    # 已归档的项目只读，升级不了，不算进「可升级」
+    return ok({"items": items, "outdatedCount": sum(1 for row in items if row["upgradable"])}, request)
 
 
 @pack_update_router.post("/admin/business-pack/updates/apply")
@@ -90,10 +110,13 @@ def apply_business_pack_updates(request: Request, body: dict[str, Any] = Body(de
             if not project:
                 results.append({"projectId": project_id, "applied": False, "reason": "项目不存在"})
                 continue
-            if api.mutation_guard(request, project_id, if_match="*"):
-                results.append({"projectId": project_id, "applied": False, "reason": "没有权限升级这个项目"})
+            if guard := api.mutation_guard(request, project_id, if_match="*"):
+                results.append({"projectId": project_id, "applied": False, "reason": _guard_reason(guard)})
                 continue
             info = _update_info(project, packs)
+            if info["upToDate"]:
+                results.append({"projectId": project_id, "applied": False, "reason": "已是现行规则"})
+                continue
             pack = packs[info["businessPackId"]]
             project.update({
                 "businessPackId": pack["id"],
@@ -103,6 +126,7 @@ def apply_business_pack_updates(request: Request, body: dict[str, Any] = Body(de
                 "businessPackSnapshot": business_pack_snapshot(pack),
             })
             nodes, requirements = api.attach_business_pack_project_scaffold(project, pack)
+            reconciled = reconcile_requirements(repo.state, project_id, build_project_requirements(pack, project_id=project_id))
             repo.touch_project(project_id)
             repo.add_audit("升级项目业务规则", "BusinessPack", pack["id"], project_id=project_id,
                            before={"version": info["frozenVersion"], "hash": info["snapshotHash"]},
@@ -110,7 +134,7 @@ def apply_business_pack_updates(request: Request, body: dict[str, Any] = Body(de
             results.append({"projectId": project_id, "applied": True, "fromVersion": info["frozenVersion"],
                             "toVersion": pack["version"], "affectedNodeIds": info["diff"]["affectedNodeIds"],
                             "affectedConclusionCount": info["affectedConclusionCount"],
-                            "createdNodeCount": nodes, "createdRequirementCount": requirements})
+                            "createdNodeCount": nodes, "createdRequirementCount": requirements, **reconciled})
         return ok({"results": results, "appliedCount": sum(1 for row in results if row["applied"])}, request)
 
     return api.idempotent(request, idempotency_key, produce, fingerprint_source={"body": body})

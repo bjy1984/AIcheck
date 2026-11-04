@@ -83,10 +83,17 @@ def _admin_config_from_db(tenant_id: str) -> dict[str, Any] | None:
             repo.configure_sync_postgres()
             if repo.sync_postgres is None:
                 return None
-            row = repo.sync_postgres.execute(
-                "SELECT payload FROM aicheck_singletons WHERE tenant_id = %s AND name = %s",
-                (tenant_id, "admin_config"),
-            ).fetchone()
+            try:
+                row = repo.sync_postgres.execute(
+                    "SELECT payload FROM aicheck_singletons WHERE tenant_id = %s AND name = %s",
+                    (tenant_id, "admin_config"),
+                ).fetchone()
+                # 共享连接不是自动提交：读完要结束事务，别在长时间的模型调用期间一直挂着
+                repo.sync_postgres.commit()
+            except Exception:
+                # 出错要回滚，否则连接停在失败状态，这次审查后面的写入全会失败（2026-11-04 审计）
+                repo.sync_postgres.rollback()
+                raise
     except Exception:  # noqa: BLE001 -- policy lookup falls back to in-memory state; a review must not fail on it
         return None
     if not row:
@@ -97,10 +104,17 @@ def _admin_config_from_db(tenant_id: str) -> dict[str, Any] | None:
 
 def _admin_config(tenant_id: str) -> dict[str, Any]:
     from libs import institutes
+    from libs.db.repository import repo
 
     fresh = _admin_config_from_db(tenant_id)
     if fresh is not None:
         return fresh
+    # 内存兜底只用已经加载的院：没加载就用代码默认，不在审查中途整院加载
+    if not repo.tenant_is_loaded(tenant_id):
+        from libs.db.repository import postgres_persistence_configured
+
+        if postgres_persistence_configured():
+            return {}
     with institutes.tenant_scope(tenant_id) as state:
         config = state.get("admin_config")
         return dict(config) if isinstance(config, dict) else {}

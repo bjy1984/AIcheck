@@ -59,16 +59,17 @@ const load = async () => {
 }
 
 const changeSummary = (row: BusinessPackUpdate) =>
-  row.diff.sections
-    .map((section) => {
+  [
+    ...row.diff.sections.map((section) => {
       const parts = [
         section.changed ? `改 ${section.changed}` : '',
         section.added ? `增 ${section.added}` : '',
         section.removed ? `删 ${section.removed}` : ''
       ].filter(Boolean)
       return `${section.label} ${parts.join('、')}`
-    })
-    .join('；')
+    }),
+    ...(row.diff.otherChangeLabels || []).map((label) => `${label}有变化`)
+  ].join('；')
 
 const nodeSummary = (row: BusinessPackUpdate) => {
   const nodes = row.diff.affectedNodeIds
@@ -79,7 +80,7 @@ const nodeSummary = (row: BusinessPackUpdate) => {
 }
 
 const apply = async () => {
-  const targets = selected.value.filter((row) => !row.upToDate)
+  const targets = selected.value.filter((row) => row.upgradable)
   if (!targets.length) return
   const conclusions = targets.reduce((sum, row) => sum + row.affectedConclusionCount, 0)
   try {
@@ -97,12 +98,24 @@ const apply = async () => {
       targets.map((row) => row.projectId),
       { idempotencyKey: `rule-updates-${Date.now()}` }
     )
-    const failed = (res.data?.results || []).filter((row) => !row.applied)
-    ElMessage.success(
-      failed.length
-        ? `已升级 ${res.data?.appliedCount || 0} 个，${failed.length} 个没升级：${failed.map((row) => row.reason).join('、')}`
-        : `已升级 ${res.data?.appliedCount || 0} 个项目，受影响节点建议重新复核。`
+    const results = res.data?.results || []
+    const failed = results.filter((row) => !row.applied)
+    /* 挂了资料的清单行不自动改名（会断开挂载），要人工看 */
+    const boundKept = results.reduce(
+      (sum, row) => sum + (row.boundRequirementIdsNotUpdated?.length || 0),
+      0
     )
+    const notes = [
+      failed.length
+        ? `${failed.length} 个没升级：${failed.map((row) => row.reason).join('、')}`
+        : '受影响节点建议重新复核',
+      boundKept ? `${boundKept} 条已挂资料的清单项没自动改，请人工核对` : ''
+    ].filter(Boolean)
+    ElMessage({
+      type: failed.length || boundKept ? 'warning' : 'success',
+      message: `已升级 ${res.data?.appliedCount || 0} 个项目；${notes.join('；')}。`,
+      duration: failed.length || boundKept ? 8000 : 3000
+    })
     selected.value = []
     await load()
   } catch (error) {
@@ -165,7 +178,7 @@ onMounted(load)
             <ElButton
               type="primary"
               :loading="applying"
-              :disabled="!selected.some((row) => !row.upToDate)"
+              :disabled="!selected.some((row) => row.upgradable)"
               @click="apply"
               >升级选中项目</ElButton
             >
@@ -184,7 +197,7 @@ onMounted(load)
           <ElTableColumn
             type="selection"
             width="44"
-            :selectable="(row: BusinessPackUpdate) => !row.upToDate"
+            :selectable="(row: BusinessPackUpdate) => row.upgradable"
           />
           <ElTableColumn label="项目" min-width="200">
             <template #default="{ row }">
@@ -197,6 +210,7 @@ onMounted(load)
               <ElTag v-if="row.upToDate" size="small" type="success"
                 >已是最新 {{ row.currentVersion }}</ElTag
               >
+              <ElTag v-else-if="row.archived" size="small" type="info">已归档，不能升级</ElTag>
               <span v-else>{{ row.frozenVersion || '旧版' }} → {{ row.currentVersion }}</span>
             </template>
           </ElTableColumn>

@@ -120,3 +120,67 @@ def test_确认和不采用证据_人工挂载提交三处都接上了触发():
     source = inspect.getsource(routes)
     assert 'reason=f"evidence_{manual_status}"' in source
     assert source.count('reason="manual_mount_submitted"') == 3
+
+
+# ── 2026-11-04 审计：A→B→A、只审了一部分、规则升级后 ───────────────────────────
+
+def _consume(state: dict) -> dict:
+    return consume_auto_review_evidence_events(state, now=datetime(2026, 11, 4, 3, 0, tzinfo=UTC))
+
+
+def test_证据改成别的再改回来_已消费的事件不吞掉第三次变化():
+    from libs.auto_review import enqueue_node_evidence_change
+
+    state = _state_with_node()
+    a = enqueue_node_evidence_change(state, tenant_id="TENANT-1", project_id="P-1", node_ids=[1], reason="x")[0]
+    _consume(state)
+    state["ocr_parse_results"][0]["artifactHash"] = "sha256:ocr-v2"
+    enqueue_node_evidence_change(state, tenant_id="TENANT-1", project_id="P-1", node_ids=[1], reason="x")
+    _consume(state)
+    state["ocr_parse_results"][0]["artifactHash"] = "sha256:ocr"
+    back = enqueue_node_evidence_change(state, tenant_id="TENANT-1", project_id="P-1", node_ids=[1], reason="x")[0]
+    assert back["id"] != a["id"] and back["id"].startswith(a["id"]) and back["status"] == "pending"
+    again = enqueue_node_evidence_change(state, tenant_id="TENANT-1", project_id="P-1", node_ids=[1], reason="y")[0]
+    assert again is back, "还没消费的照样去重"
+
+
+def test_已派过的候选_证据改回来且没有在跑的复核时重新排():
+    from libs.auto_review import upsert_auto_review_candidate
+
+    state = _state_with_node()
+
+    def upsert(hash_: str) -> dict:
+        return upsert_auto_review_candidate(state, tenant_id="TENANT-1", project_id="P-1", node_id=1,
+                                            evidence_snapshot_hash=hash_, policy_revision=2, trigger_type="ocr_mounted")[0]
+
+    a = upsert("HA")
+    a["status"] = "dispatched"
+    upsert("HB")["status"] = "dispatched"
+    state["ai_runs"].append({"id": "AI-RUN", "projectId": "P-1", "nodeId": 1, "status": "running"})
+    assert upsert("HA")["status"] == "dispatched", "节点上有在跑的复核：不重复派"
+    state["ai_runs"][0]["status"] = "failed"
+    assert upsert("HA") is a and a["status"] == "pending" and a["attemptCount"] == 0
+
+
+def test_只审了一部分对象的复核不算整节点审过():
+    state = _state_with_node()
+    _reviewed(state)
+    state["review_runs"][0]["conditionObjectMappingSnapshot"] = {"selection": {"welders": ["W1"]}}
+    assert [row["nodeId"] for row in dirty_nodes_for_project(state, "P-1")] == [1]
+    state["review_runs"][0].pop("conditionObjectMappingSnapshot")
+    state["review_runs"][0]["evidenceReadiness"] = {"inputSelection": {"mode": "explicit", "documentVersionIds": ["DV-1"]}}
+    assert dirty_nodes_for_project(state, "P-1") == [], "显式选了资料但选全了，算审过"
+    state["review_runs"][0]["evidenceReadiness"]["inputSelection"]["documentPageRanges"] = {"DV-1": [1, 2]}
+    assert [row["nodeId"] for row in dirty_nodes_for_project(state, "P-1")] == [1], "只审了几页"
+
+
+def test_规则升级后按旧规则审过的要重审():
+    state = _state_with_node()
+    _reviewed(state)
+    state["review_runs"][0]["businessPackSnapshotHash"] = "sha256:old-pack"
+    state["projects"] = [{"id": "P-1", "businessPackSnapshotHash": "sha256:old-pack"}]
+    assert dirty_nodes_for_project(state, "P-1") == []
+    state["projects"][0]["businessPackSnapshotHash"] = "sha256:new-pack"
+    assert [row["nodeId"] for row in dirty_nodes_for_project(state, "P-1")] == [1]
+    _event(state)
+    assert _consume(state)["createdCandidateIds"], "升级后的挂载事件要排自动复核"

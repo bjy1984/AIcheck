@@ -263,6 +263,9 @@ def issue_token(user: dict[str, Any]) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": user["username"],
+        # 用户 id 也进令牌（2026-11-04 审计）：删除时让出的用户名可以再建，只认用户名的话
+        # 旧令牌能冒用同名新账号；中间件核对 uid
+        "uid": user.get("id"),
         "role": user.get("role", "inspection"),
         "ver": user_auth_version(user.get("username")),
         "iss": jwt_issuer(),

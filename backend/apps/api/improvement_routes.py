@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Body, Header, Request
 
@@ -55,6 +56,12 @@ def _mirror(task: dict[str, Any], *, sources: list[dict[str, Any]] | None = None
                 row["status"] = "resolved"
             elif task.get("status") == "declined":
                 row["status"] = "declined"
+            elif task.get("status") in {"pending_review", "approved", "claimed", "in_review"}:
+                # 重新打开（2026-11-04 审计）：已解决的反馈回到「已送平台」，旧的确认作废，
+                # 上线后提交人才能再确认；否则确认接口 409、任务永远关不掉
+                if row.get("status") == "resolved":
+                    row["status"] = "escalated"
+                row.pop("submitterConfirmation", None)
             if reply:
                 row["reply"] = {"content": reply, "repliedBy": "平台", "repliedByUserId": None, "repliedAt": server_time()}
             row["updatedAt"] = server_time()
@@ -72,6 +79,14 @@ def _view(task: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
     item["sourceInstitutes"] = sorted({names.get(str(src.get("sourceTenantId")), str(src.get("sourceTenantId")))
                                        for src in task.get("sources") or []})
     return item
+
+
+def _claim_mismatch(task: dict[str, Any], body: dict[str, Any]) -> tuple[int, str] | None:
+    """回报、释放要带领取时拿到的领取号；对不上说明领取已过期、被别的 agent 领走了。"""
+    claim_id = str((task.get("claim") or {}).get("id") or "")
+    if claim_id and str(body.get("claimId") or "") != claim_id:
+        return 409, "领取号对不上：这条任务的领取已过期并被别人领走，请重新领取。"
+    return None
 
 
 def _finish(request: Request, payload: dict[str, Any]):
@@ -196,8 +211,11 @@ def approve_improvement_task(request: Request, task_id: str, body: dict[str, Any
         priority, scope = str(body.get("priority") or task.get("priority") or "P2"), str(body.get("scope") or task.get("scope"))
         if priority not in it.PRIORITIES or scope not in it.SCOPES:
             return (400, "优先级或归属不支持。"), "", ""
+        title = it.text(body.get("title"), "title") or str(task.get("title") or "")
+        if not title:
+            return (400, "请写一个标题：会显示给提交人，不要写工程名、人名。"), "", ""
         task.update({"status": "approved", "taskStatement": statement, "acceptanceCriteria": criteria, "priority": priority,
-                     "scope": scope, "title": it.text(body.get("title"), "title") or task.get("title"),
+                     "scope": scope, "title": title,
                      "approvedBy": actor, "approvedAt": server_time()})
         return None, "审批通过", ""
     return _mutate(request, task_id, idempotency_key, body, change)
@@ -261,7 +279,9 @@ def set_improvement_task_status(request: Request, task_id: str, body: dict[str, 
             return (400, "重新打开要写原因，AI 会照着重修。"), "", ""
         task["status"] = target
         if target == "approved":
-            task.update({"claim": None, "reopenNote": it.text(body.get("note"), "note")})
+            task.update({"claim": None, "reopenNote": it.redact(it.text(body.get("note"), "note"))})
+            for src in task.get("sources") or []:
+                src.pop("submitterConfirmation", None)
         reply = f"平台已修复并上线：{task.get('title') or task_id}" if target == "closed" else ""
         return None, {"deployed": "标为已上线", "closed": "关闭", "approved": "重新打开"}[target], reply
     return _mutate(request, task_id, idempotency_key, body, change)
@@ -275,7 +295,9 @@ def claim_improvement_task(request: Request, task_id: str, body: dict[str, Any] 
     def change(state, task, actor):
         if it.effective_status(task) != "approved":
             return (409, f"这条任务现在是「{it.STATUSES.get(it.effective_status(task))}」，不能领取。"), "", ""
-        task.update({"status": "claimed", "claim": {"by": actor, "agent": it.text(body.get("agent"), "agent") or "agent",
+        # 领取号（2026-11-04 审计）：回报、释放要带同一个号，领取过期被别人领走后，旧 agent 的回报会被拒
+        task.update({"status": "claimed", "claim": {"id": f"CLM-{uuid4().hex[:12].upper()}", "by": actor,
+                                                    "agent": it.text(body.get("agent"), "agent") or "agent",
                                                     "at": server_time(), "expiresAt": it.now_plus(it.CLAIM_SECONDS)}})
         return None, "AI 领取", ""
     return _mutate(request, task_id, idempotency_key, body, change)
@@ -287,6 +309,8 @@ def release_improvement_task(request: Request, task_id: str, body: dict[str, Any
     def change(state, task, actor):
         if task.get("status") != "claimed":
             return (409, "这条任务没有被领取。"), "", ""
+        if failure := _claim_mismatch(task, body):
+            return failure, "", ""
         task.update({"status": "approved", "claim": None})
         return None, "释放", ""
     return _mutate(request, task_id, idempotency_key, body, change)
@@ -298,6 +322,8 @@ def submit_improvement_task(request: Request, task_id: str, body: dict[str, Any]
     def change(state, task, actor):
         if task.get("status") != "claimed":
             return (409, "先领取再回报；领取超时被别人领走的要重新领。"), "", ""
+        if failure := _claim_mismatch(task, body):
+            return failure, "", ""
         pr_url = it.text(body.get("prUrl"), "prUrl")
         tests = it.text(body.get("tests"), "tests")
         if not pr_url or not tests:
@@ -337,7 +363,6 @@ def confirm_user_feedback(
         return fail(errors.VALIDATION_ERROR, request, message="请写一句哪里还不对，平台会照着重修。")
 
     def produce():
-        actor = api.request_actor_name(request)
         with institutes.platform_scope() as state:
             task = _find(state, task_id)
             if task is None or it.effective_status(task) != "deployed":
@@ -352,11 +377,11 @@ def confirm_user_feedback(
             else:
                 task.update({"status": "approved", "claim": None, "reopenNote": f"提交人反馈仍有问题：{it.redact(note)}"})
                 action = "提交人说仍有问题，重新打开"
-            task.setdefault("history", []).append(it.history_entry(action, actor, after=task["status"], note=it.redact(note)))
+            # 平台记录里只写「提交人」，不写姓名：送平台时承诺不带提交人姓名
+            task.setdefault("history", []).append(it.history_entry(action, "提交人", after=task["status"], note=it.redact(note)))
             _save(task)
             snapshot = repo.clone(task)
-        if resolved:
-            row["status"] = "resolved"
+        # 「已解决」只记确认，反馈等任务关闭时才变成已解决（2026-11-04 审计：提前标已解决会被院管理员再送平台）
         row["submitterConfirmation"] = {"resolved": resolved, "at": server_time(), "note": note}
         institutes.save_in_current_tenant(FEEDBACK_COLLECTION, row)
         closed_reply = f"平台已修复并上线：{snapshot.get('title') or task_id}" if snapshot["status"] == "closed" else ""

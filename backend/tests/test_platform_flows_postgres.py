@@ -71,11 +71,13 @@ def test_开通院_反馈审批_AI修复_口径_删除院_全程按真库落库(
                                      json={"category": "bug", "content": "真库测试：总览很慢"}))["feedback"]["id"]
         task_id = ok(client.post(f"/api/admin/user-feedback/{feedback_id}/escalate", headers=keyed(institute, "f2"),
                                  json={"scope": "public"}))["taskId"]
-        for verb, body, key in (("approve", {"taskStatement": "修", "acceptanceCriteria": "过"}, "t1"),
-                                ("claim", {"agent": "ci"}, "t2"),
-                                ("submit", {"prUrl": "https://example.com/pr/1", "tests": "ok"}, "t3"),
-                                ("status", {"status": "deployed"}, "t4")):
-            ok(client.post(f"/api/platform/improvement-tasks/{task_id}/{verb}", headers=keyed(PLATFORM, key), json=body))
+        def act(verb: str, body: dict, key: str) -> dict:
+            return ok(client.post(f"/api/platform/improvement-tasks/{task_id}/{verb}", headers=keyed(PLATFORM, key), json=body))
+
+        act("approve", {"title": "总览慢", "taskStatement": "修", "acceptanceCriteria": "过"}, "t1")
+        claim_id = act("claim", {"agent": "ci"}, "t2")["task"]["claim"]["id"]
+        act("submit", {"prUrl": "https://example.com/pr/1", "tests": "ok", "claimId": claim_id}, "t3")
+        act("status", {"status": "deployed"}, "t4")
         assert ok(client.post(f"/api/user-feedback/{feedback_id}/confirm", headers=keyed(institute, "f3"),
                               json={"resolved": True}))["taskStatus"] == "closed"
 

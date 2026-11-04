@@ -355,7 +355,8 @@ async def handle_request(
         user_record = user_record_by_username(claims.get("sub"), tenant_id=str(claims.get("tid") or ""))
         if user_record is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), "AUTH_USER_NOT_FOUND")
-        if claims.get("role") != user_record.get("role") or int(claims.get("ver") or 0) != int(user_record.get("authVersion") or 0):
+        if (claims.get("uid") and claims.get("uid") != user_record.get("id")) or claims.get("role") != user_record.get("role") \
+                or int(claims.get("ver") or 0) != int(user_record.get("authVersion") or 0):
             return audit_rejected_request(
                 request,
                 fail(errors.AUTH_REQUIRED, request, message="登录身份已变化，请重新登录。"),

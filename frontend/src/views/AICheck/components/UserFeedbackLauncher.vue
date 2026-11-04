@@ -69,7 +69,12 @@ const contextLabel = computed(() => {
 })
 /* 平台标为已上线后，提交人确认（2026-11-04）：已解决就关闭；仍有问题写原因，任务重新打开 */
 const awaitingConfirm = (item: UserFeedback) =>
-  item.status === 'escalated' && item.platformTask?.status === 'deployed'
+  item.status === 'escalated' &&
+  item.platformTask?.status === 'deployed' &&
+  !item.submitterConfirmation?.resolved
+/* 已确认解决、但同一任务还有别的提交人没确认：反馈要等任务关闭才变成已解决 */
+const confirmedWaiting = (item: UserFeedback) =>
+  item.status === 'escalated' && Boolean(item.submitterConfirmation?.resolved)
 const confirming = ref('')
 const confirmFix = async (item: UserFeedback, resolved: boolean) => {
   let note = ''
@@ -246,6 +251,9 @@ const statusTagType = (status: string) =>
                   >仍有问题</ElButton
                 >
               </div>
+              <p v-else-if="confirmedWaiting(item)" class="mine-platform">
+                你已确认解决，等平台关闭这条任务。
+              </p>
               <p v-if="item.reply" class="mine-reply">
                 <strong>{{ item.reply.repliedBy }} 回复：</strong>{{ item.reply.content }}
               </p>

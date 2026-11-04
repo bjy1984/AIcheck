@@ -24,6 +24,8 @@ export type BusinessPackUpdate = {
   frozenVersion: string | null
   currentVersion: string
   upToDate: boolean
+  archived: boolean
+  upgradable: boolean
   affectedConclusionCount: number
   diff: {
     fromVersion: string | null
@@ -38,6 +40,7 @@ export type BusinessPackUpdate = {
       sample: string[]
     }>
     otherChanges: string[]
+    otherChangeLabels?: string[]
     affectedNodeIds: number[]
   }
 }
@@ -91,6 +94,9 @@ export const createReviewPolicyApi = (adapter: RequestAdapter, mutationHeaders: 
         toVersion?: string
         affectedNodeIds?: number[]
         affectedConclusionCount?: number
+        updatedRequirementIds?: string[]
+        boundRequirementIdsNotUpdated?: string[]
+        retiredRequirementIds?: string[]
       }>
     }>
   > =>
