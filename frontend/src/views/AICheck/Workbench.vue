@@ -29,6 +29,7 @@ import {
 } from 'element-plus'
 import {
   ArrowLeft,
+  ArrowRight,
   Document,
   DocumentChecked,
   FolderOpened,
@@ -490,6 +491,8 @@ const reviewPolling = ref(false)
 const POST_UPLOAD_PIPELINE_RECHECK_DELAY_MS = 10000
 // AI 复核触发后单次补拉的延迟（不是轮询周期）
 const REVIEW_RECHECK_DELAY_MS = 5000
+// 已提交审查资料默认折叠（2026-11-04 用户）：总览先看工位结论，资料表点开再看
+const overviewFilesOpen = ref(false)
 const overviewFileKeyword = ref('')
 const overviewFilePage = ref(1)
 const overviewFilePageSize = ref(8)
@@ -5416,116 +5419,134 @@ onBeforeUnmount(() => {
 
                 <article
                   id="inspection-overview-files"
-                  class="inspection-overview-panel inspection-overview-panel--files"
+                  :class="[
+                    'inspection-overview-panel inspection-overview-panel--files',
+                    { 'is-collapsed': !overviewFilesOpen }
+                  ]"
                 >
-                  <div class="inspection-chart-head">
-                    <div>
+                  <button
+                    type="button"
+                    class="inspection-chart-head overview-files-toggle"
+                    :aria-expanded="overviewFilesOpen"
+                    aria-controls="inspection-overview-files-body"
+                    @click="overviewFilesOpen = !overviewFilesOpen"
+                  >
+                    <span>
                       <strong>已提交审查资料</strong>
                       <small>仅展示施工方和无损检测机构已正式提交监检审查的资料。</small>
+                    </span>
+                    <span class="overview-files-toggle-end">
+                      <AuditStatusTag tone="blue" round>
+                        {{ inspectionOverviewFileTotal }} 份文件
+                      </AuditStatusTag>
+                      <ElIcon class="overview-files-chevron"><ArrowRight /></ElIcon>
+                    </span>
+                  </button>
+
+                  <div v-if="overviewFilesOpen" id="inspection-overview-files-body">
+                    <div class="overview-file-toolbar">
+                      <ElInput
+                        v-model="overviewFileKeyword"
+                        clearable
+                        placeholder="查找文件名、提交单位、提交人、资料类别或审查状态"
+                        aria-label="查找已提交审查资料"
+                      />
                     </div>
-                    <AuditStatusTag tone="blue" round>
-                      {{ inspectionOverviewFileTotal }} 份文件
-                    </AuditStatusTag>
-                  </div>
 
-                  <div class="overview-file-toolbar">
-                    <ElInput
-                      v-model="overviewFileKeyword"
-                      clearable
-                      placeholder="查找文件名、提交单位、提交人、资料类别或审查状态"
-                      aria-label="查找已提交审查资料"
-                    />
-                  </div>
-
-                  <ElTable
-                    class="overview-file-table"
-                    :data="pagedInspectionOverviewFiles"
-                    row-key="id"
-                    empty-text="暂无已提交审查资料"
-                  >
-                    <!-- 序号和文件名固定在左：表格比内容区宽，横向滚到右边的「查看原文」时，
-                         不固定的话文件名早滚出视野，点的是哪份文件自己都不知道。 -->
-                    <ElTableColumn
-                      prop="rowNo"
-                      label="序号"
-                      width="72"
-                      align="center"
-                      fixed="left"
-                    />
-                    <ElTableColumn
-                      prop="fileName"
-                      label="文件名"
-                      width="240"
-                      fixed="left"
-                      show-overflow-tooltip
+                    <ElTable
+                      class="overview-file-table"
+                      :data="pagedInspectionOverviewFiles"
+                      row-key="id"
+                      empty-text="暂无已提交审查资料"
                     >
-                      <template #default="{ row }">
-                        <span class="file-name-with-icon">
-                          <FileTypeIcon
-                            :file-name="row.fileName"
-                            :file-type="row.fileType"
-                            :category="row.materialCategoryText"
-                          />
-                          <span>{{ row.fileName }}</span>
-                        </span>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn label="来源" min-width="150">
-                      <template #default="{ row }">
-                        <span>{{ row.sourceRole }}</span>
-                        <small class="overview-file-source">{{ row.sourceOrgName }}</small>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn prop="submitterName" label="提交人" width="112">
-                      <template #default="{ row }">{{ row.submitterName || '-' }}</template>
-                    </ElTableColumn>
-                    <ElTableColumn
-                      prop="materialCategoryText"
-                      label="资料类别"
-                      min-width="150"
-                      show-overflow-tooltip
-                    />
-                    <ElTableColumn label="审查/OCR 状态" min-width="176">
-                      <template #default="{ row }">
-                        <AuditStatusTag :tone="getPillClass(row.reviewStatus)" round>
-                          {{ row.reviewStatus }}
-                        </AuditStatusTag>
-                        <small
-                          :class="[
-                            'overview-ocr-status',
-                            `is-${row.ocrReadiness?.status || 'unknown'}`
-                          ]"
-                        >
-                          {{ ocrReadinessLabel(row.ocrReadiness?.status) }}
-                          <template v-if="row.ocrReadiness?.status === 'ready'">
-                            · bbox {{ Math.round((row.ocrReadiness?.bboxCoverage || 0) * 100) }}%
-                          </template>
-                        </small>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn label="提交审查时间" width="170">
-                      <template #default="{ row }">
-                        {{ row.submittedAt || '提交时间缺失' }}
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn label="操作" width="96" fixed="right">
-                      <template #default="{ row }">
-                        <ElButton text type="primary" @click="handleOpenFileDetail(row.documentId)">
-                          查看原文
-                        </ElButton>
-                      </template>
-                    </ElTableColumn>
-                  </ElTable>
+                      <!-- 序号和文件名固定在左：表格比内容区宽，横向滚到右边的「查看原文」时，
+                         不固定的话文件名早滚出视野，点的是哪份文件自己都不知道。 -->
+                      <ElTableColumn
+                        prop="rowNo"
+                        label="序号"
+                        width="72"
+                        align="center"
+                        fixed="left"
+                      />
+                      <ElTableColumn
+                        prop="fileName"
+                        label="文件名"
+                        width="240"
+                        fixed="left"
+                        show-overflow-tooltip
+                      >
+                        <template #default="{ row }">
+                          <span class="file-name-with-icon">
+                            <FileTypeIcon
+                              :file-name="row.fileName"
+                              :file-type="row.fileType"
+                              :category="row.materialCategoryText"
+                            />
+                            <span>{{ row.fileName }}</span>
+                          </span>
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="来源" min-width="150">
+                        <template #default="{ row }">
+                          <span>{{ row.sourceRole }}</span>
+                          <small class="overview-file-source">{{ row.sourceOrgName }}</small>
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn prop="submitterName" label="提交人" width="112">
+                        <template #default="{ row }">{{ row.submitterName || '-' }}</template>
+                      </ElTableColumn>
+                      <ElTableColumn
+                        prop="materialCategoryText"
+                        label="资料类别"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn label="审查/OCR 状态" min-width="176">
+                        <template #default="{ row }">
+                          <AuditStatusTag :tone="getPillClass(row.reviewStatus)" round>
+                            {{ row.reviewStatus }}
+                          </AuditStatusTag>
+                          <small
+                            :class="[
+                              'overview-ocr-status',
+                              `is-${row.ocrReadiness?.status || 'unknown'}`
+                            ]"
+                          >
+                            {{ ocrReadinessLabel(row.ocrReadiness?.status) }}
+                            <template v-if="row.ocrReadiness?.status === 'ready'">
+                              · bbox {{ Math.round((row.ocrReadiness?.bboxCoverage || 0) * 100) }}%
+                            </template>
+                          </small>
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="提交审查时间" width="170">
+                        <template #default="{ row }">
+                          {{ row.submittedAt || '提交时间缺失' }}
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="操作" width="96" fixed="right">
+                        <template #default="{ row }">
+                          <ElButton
+                            text
+                            type="primary"
+                            @click="handleOpenFileDetail(row.documentId)"
+                          >
+                            查看原文
+                          </ElButton>
+                        </template>
+                      </ElTableColumn>
+                    </ElTable>
 
-                  <ElPagination
-                    v-model:current-page="overviewFilePage"
-                    v-model:page-size="overviewFilePageSize"
-                    class="overview-file-pagination"
-                    :page-sizes="[5, 8, 10, 20]"
-                    :total="inspectionOverviewFileTotal"
-                    layout="total, sizes, prev, pager, next"
-                    small
-                  />
+                    <ElPagination
+                      v-model:current-page="overviewFilePage"
+                      v-model:page-size="overviewFilePageSize"
+                      class="overview-file-pagination"
+                      :page-sizes="[5, 8, 10, 20]"
+                      :total="inspectionOverviewFileTotal"
+                      layout="total, sizes, prev, pager, next"
+                      small
+                    />
+                  </div>
                 </article>
               </div>
             </section>
@@ -8931,6 +8952,37 @@ h3 {
 .inspection-chart-head strong,
 .inspection-chart-head small {
   display: block;
+}
+
+.overview-files-toggle {
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+.overview-files-toggle:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--el-color-primary, #2f6bff);
+  outline-offset: 2px;
+}
+.inspection-overview-panel--files.is-collapsed .overview-files-toggle {
+  margin-bottom: 0;
+}
+.overview-files-toggle-end {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+}
+.overview-files-chevron {
+  color: #98a2b3;
+  transition: transform 0.2s ease-out;
+}
+.overview-files-toggle[aria-expanded='true'] .overview-files-chevron {
+  transform: rotate(90deg);
 }
 
 .inspection-chart-head strong {
