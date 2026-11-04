@@ -57,6 +57,10 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
     item = repo.clone(row)
     item["categoryLabel"] = CATEGORIES.get(str(item.get("category")), "其他")
     item["statusLabel"] = STATUSES.get(str(item.get("status")), "待处理")
+    if item.get("platformTask"):
+        from libs.improvement_tasks import mirror_view
+
+        item["platformTask"] = mirror_view(item["platformTask"])
     return item
 
 

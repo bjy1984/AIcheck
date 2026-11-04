@@ -17,7 +17,9 @@ const labelOf = (result: string) =>
       ? '核验未通过'
       : result === 'evidence_insufficient'
         ? '证据不足'
-        : result || '未核验'
+        : result === 'human_review_required'
+          ? '需人工确认'
+          : result || '未核验'
 
 // welder_certificate / design_license 这类代号不能直接印给监检看。
 const certificateTypeLabel = computed(() =>

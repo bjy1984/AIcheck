@@ -117,6 +117,7 @@ const CERT_RESULT_WORDS: Record<string, string> = {
   passed: '核验通过',
   failed: '核验未通过',
   evidence_insufficient: '证据不足',
+  human_review_required: '需人工确认',
   not_applicable: '不适用'
 }
 

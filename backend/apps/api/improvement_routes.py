@@ -11,13 +11,14 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Header, Request
 
 from apps.api import routes as api
-from apps.api.platform_routes import _guard as platform_guard
+from apps.api.platform_routes import _guard
 from apps.api.user_feedback_routes import COLLECTION as FEEDBACK_COLLECTION
 from libs import improvement_tasks as it
 from libs import institutes
@@ -26,6 +27,10 @@ from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import repo
 
 improvement_router = APIRouter()
+
+
+def platform_guard(request: Request):
+    return _guard(request, "只有平台管理员可以处理改进任务。")
 STATUS_ORDER = ["pending_review", "approved", "claimed", "in_review", "deployed", "closed", "declined", "merged"]
 
 
@@ -94,14 +99,26 @@ def _finish(request: Request, payload: dict[str, Any]):
     return ok(payload, request)
 
 
+# 改任务的「查状态 → 改 → 落库」要串行（2026-11-04 审计）：写锁按院分，提交人确认（所在院的锁）和平台改状态
+# （平台院的锁）能同时通过「已上线」检查，任务就可能同时被重开又被关闭。最内层的锁，里面不再拿别的锁
+_TASK_LOCK = threading.RLock()
+
+
+def _refused(request: Request, response):
+    """拒绝的请求只落审计：默认的请求收尾会把整个院落一遍盘（2026-11-04 审计）。"""
+    request.state.scoped_flush_records = dict
+    return response
+
+
 def _mutate(request: Request, task_id: str, idempotency_key: str | None, body: dict[str, Any], change):
     """平台侧对一条任务的修改：守卫 → 在平台院里改 → 落库 → 回写反馈 → 审计。change 返回 (错误, 审计动作, 回复)。"""
+    request.state.scoped_flush_records = dict  # 任务和反馈都由下面各自落库；拒绝时也不整院落盘
     if error := platform_guard(request):
         return error
 
     def produce():
         actor = api.request_actor_name(request)
-        with institutes.platform_scope() as state:
+        with _TASK_LOCK, institutes.platform_scope() as state:
             task = _find(state, task_id)
             if task is None:
                 return fail(errors.NOT_FOUND, request, message="没有这条改进任务。")
@@ -131,6 +148,7 @@ def escalate_user_feedback(
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    request.state.scoped_flush_records = dict  # 成功时下面换成只落这一条反馈
     actor_role, error = api.effective_role_for_request(request)
     if error:
         return error
@@ -214,6 +232,8 @@ def approve_improvement_task(request: Request, task_id: str, body: dict[str, Any
         title = it.text(body.get("title"), "title") or str(task.get("title") or "")
         if not title:
             return (400, "请写一个标题：会显示给提交人，不要写工程名、人名。"), "", ""
+        if it.claim_expired(task):
+            task["claim"] = None  # 过期的领取留着，抽屉里还会显示「开发中」
         task.update({"status": "approved", "taskStatement": statement, "acceptanceCriteria": criteria, "priority": priority,
                      "scope": scope, "title": title,
                      "approvedBy": actor, "approvedAt": server_time()})
@@ -346,6 +366,7 @@ def confirm_user_feedback(
 ):
     """提交人确认（2026-11-04）：「已解决」→ 这条反馈关闭，任务的来源都确认了任务就自动关闭；
     「仍有问题」→ 写明哪里不对，任务重新打开回到待开发，原因脱敏后给 AI 重修。"""
+    request.state.scoped_flush_records = dict  # 反馈行和任务都由下面各自落库；拒绝时也不整院落盘
     _, error = api.effective_role_for_request(request)
     if error:
         return error
@@ -357,13 +378,14 @@ def confirm_user_feedback(
     task_id = str((row.get("platformTask") or {}).get("taskId") or "")
     if row.get("status") != "escalated" or (row.get("platformTask") or {}).get("status") != "deployed" or not task_id:
         return fail(errors.CONFLICT, request, http_status=409, message="平台标为已上线后才能确认。")
-    resolved = bool(body.get("resolved"))
+    # 字符串 "false" 不能当成已解决（2026-11-04 审计）
+    resolved = body.get("resolved") is True or str(body.get("resolved")).strip().lower() in {"true", "1"}
     note = it.text(body.get("note"), "note")
     if not resolved and not note:
         return fail(errors.VALIDATION_ERROR, request, message="请写一句哪里还不对，平台会照着重修。")
 
     def produce():
-        with institutes.platform_scope() as state:
+        with _TASK_LOCK, institutes.platform_scope() as state:
             task = _find(state, task_id)
             if task is None or it.effective_status(task) != "deployed":
                 return fail(errors.CONFLICT, request, http_status=409, message="平台的任务状态已变化，请刷新。")

@@ -528,6 +528,7 @@ async def handle_request(
                         ),
                         selected_singleton_keys=set(singleton_keys) if singleton_keys is not None else None,
                     )
+            run_after_save_callbacks(request)
             return response
         except ConcurrentPersistenceError as exc:
             restore_failed_request_state(request)
@@ -554,6 +555,15 @@ async def handle_request(
                 reset_request_tenant_id(persistence_tenant_token)
     finally:
         reset_request_audit_context(audit_context_token)
+
+
+def run_after_save_callbacks(request: Request) -> None:
+    """请求自己的落库成功后才做的事（如让出目录里的用户名，libs.institutes.unregister_username_after_save）。"""
+    for callback in getattr(request.state, "after_save", None) or []:
+        try:
+            callback()
+        except Exception:  # the request already succeeded; a follow-up must not turn it into a 500
+            logger.exception("after_save_callback_failed")
 
 
 def restore_failed_request_state(request: Request) -> None:

@@ -306,6 +306,7 @@ def _certificate_verification_for_node(
         certificate_profile_for_node,
     )
     from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+    from libs.review_policies import effective_value
 
     if not certificate_profile_for_node(node_id):
         return None
@@ -321,6 +322,8 @@ def _certificate_verification_for_node(
             "referenceDate": period.get("referenceDate"),
             "expectedHolder": cert_facts.get("expectedHolder"),
             "requiredScopes": [],
+            # 一键分析也按本院口径判（2026-11-04 审计：原来固定判证据不足，和正式审查对不上）
+            "expiredWithoutPeriodPolicy": effective_value("certificate_expired_without_construction_period"),
         }
     )
     verified = output.get("facts") or {}

@@ -3841,7 +3841,7 @@ def unique_admin_value_conflict(
     mobile: str | None = None,
 ) -> str | None:
     for user in list_admin_users():
-        if user_id and user.get("id") == user_id:
+        if (user_id and user.get("id") == user_id) or user.get("releasedUsername"):  # 已删除让名的不占用户名和手机号
             continue
         if username and user.get("username") == username:
             return "用户名已存在，请更换用户名。"
@@ -28323,7 +28323,7 @@ def delete_admin_user(
             existing["deletedAt"] = server_time()
             # 停用但让出用户名，原名可以再建（libs.name_release）
             if released := release_username(existing):
-                institutes.unregister_username(released, tenant_id_for_record(existing))
+                institutes.unregister_username_after_save(request, released, tenant_id_for_record(existing))
             bump_record_revision(existing)
             upsert_admin_config_user(existing)
             sync_user_references(existing)
@@ -28332,6 +28332,7 @@ def delete_admin_user(
         else:
             repo.state["users"] = [item for item in repo.state.get("users", []) if item.get("id") != user_id]
             remove_admin_config_user(user_id)
+            institutes.unregister_username_after_save(request, record_for_etag.get("username"), request_tenant_id(request))
             deleted = True
             action = "删除用户"
         bump_singleton_revision(repo.state["admin_config"])

@@ -20,7 +20,7 @@ from libs.business_pack import (
     business_pack_snapshot,
     load_business_pack,
 )
-from libs.business_pack_diff import pack_diff, reconcile_requirements
+from libs.business_pack_diff import no_changes, pack_diff, reconcile_requirements
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
@@ -39,23 +39,47 @@ def _admin_error(request: Request):
     return None
 
 
-def _update_info(project: dict[str, Any], packs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _latest_done_runs(project_id: Any) -> dict[int, dict[str, Any]]:
+    """每个节点最近一次完成的复核：「已有结论」只数现行的，被后来的运行取代的历史结论不算（2026-11-04 审计）。"""
+    latest: dict[int, dict[str, Any]] = {}
+    for run in repo.state.get("review_runs") or []:
+        if run.get("projectId") != project_id or str(run.get("status") or "") not in DONE_STATUSES:
+            continue
+        node = int(run.get("nodeId") or 0)
+        stamp = str(run.get("finishedAt") or run.get("updatedAt") or run.get("createdAt") or "")
+        if node not in latest or stamp > str(latest[node].get("finishedAt") or latest[node].get("updatedAt")
+                                              or latest[node].get("createdAt") or ""):
+            latest[node] = run
+    return latest
+
+
+def _broken_info(project: dict[str, Any], pack_id: str, reason: str) -> dict[str, Any]:
+    """业务包读不出来的项目单独一行说明，别让整页 500（2026-11-04 审计）。"""
+    return {"projectId": project.get("id"), "projectName": project.get("name"), "projectStatus": project.get("status"),
+            "businessPackId": pack_id, "frozenVersion": None, "currentVersion": None, "snapshotHash": None,
+            "currentHash": None, "upToDate": False, "archived": project.get("status") == "已归档", "upgradable": False,
+            "error": reason, "diff": no_changes({}) | {"upToDate": False}, "affectedConclusionCount": 0}
+
+
+def _update_info(project: dict[str, Any], packs: dict[str, dict[str, Any] | str]) -> dict[str, Any]:
     pack_id = str(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
     if pack_id not in packs:
-        packs[pack_id] = load_business_pack(pack_id)
+        try:
+            packs[pack_id] = load_business_pack(pack_id)
+        except Exception as exc:  # noqa: BLE001 -- one bad pack id must not break the whole page
+            packs[pack_id] = f"业务包 {pack_id} 读不出来：{exc}"
+    if isinstance(packs[pack_id], str):
+        return _broken_info(project, pack_id, str(packs[pack_id]))
     current = packs[pack_id]
     stored = project.get("businessPackSnapshot")
     frozen = isinstance(stored, dict)
-    diff = pack_diff(stored if frozen else current, current)
-    affected = set(diff["affectedNodeIds"])
-    conclusions = sum(
-        1 for run in repo.state.get("review_runs") or []
-        if run.get("projectId") == project.get("id") and int(run.get("nodeId") or 0) in affected
-        and str(run.get("status") or "") in DONE_STATUSES
-    )
     archived = project.get("status") == "已归档"
     # 指纹不同就算旧版（2026-11-04 审计）：原来差异算不出来时也判「已是最新」，升级入口就没了
     up_to_date = (not frozen) or project.get("businessPackSnapshotHash") == current.get("snapshotHash")
+    # 已是最新的不用算差异（一份约 11 毫秒，项目多了就是整页的大头）
+    diff = no_changes(current) if up_to_date else pack_diff(stored, current)
+    affected = set(diff["affectedNodeIds"])
+    conclusions = sum(1 for node in _latest_done_runs(project.get("id")) if node in affected) if affected else 0
     return {
         "projectId": project.get("id"),
         "projectName": project.get("name"),
@@ -114,6 +138,9 @@ def apply_business_pack_updates(request: Request, body: dict[str, Any] = Body(de
                 results.append({"projectId": project_id, "applied": False, "reason": _guard_reason(guard)})
                 continue
             info = _update_info(project, packs)
+            if info.get("error"):
+                results.append({"projectId": project_id, "applied": False, "reason": info["error"]})
+                continue
             if info["upToDate"]:
                 results.append({"projectId": project_id, "applied": False, "reason": "已是现行规则"})
                 continue

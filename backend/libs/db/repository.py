@@ -780,6 +780,35 @@ class InMemoryRepository:
             if item.get("documentVersionId") in version_ids or item.get("objectId") in version_ids
         ]
 
+    def _stored_audit_chain_tail(self, tenant_id: str) -> dict[str, Any] | None:
+        """库里某院序号最大的那条审计（走 idx_audit_logs_tenant_sequence）；查不了返回 None。"""
+        if not postgres_persistence_configured():
+            return None
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return None
+            try:
+                row = self.sync_postgres.execute(
+                    """
+                    SELECT payload FROM aicheck_state
+                    WHERE tenant_id = %s AND collection = 'audit_logs' AND payload ? 'sequence'
+                    ORDER BY (CASE WHEN payload ->> 'sequence' ~ '^[0-9]+$' THEN (payload ->> 'sequence')::bigint
+                              ELSE NULL END) DESC NULLS LAST
+                    LIMIT 1
+                    """,
+                    (tenant_id,),
+                ).fetchone()
+                self.sync_postgres.commit()
+            except Exception as exc:  # noqa: BLE001 -- the in-memory tail is the fallback; flush still guards uniqueness
+                self.sync_postgres.rollback()
+                LOGGER.warning("audit_chain_tail_probe_failed: %s", exc)
+                return None
+        if not row:
+            return None
+        payload = row[0]
+        return payload if isinstance(payload, dict) else json.loads(payload or "{}")
+
     def add_audit(
         self,
         action: str,
@@ -839,6 +868,13 @@ class InMemoryRepository:
             if tenant_id_for_record(item) == tenant_id
         ]
         previous = max(tenant_events, key=lambda item: int(item.get("sequence") or 0), default=None)
+        if actor_tenant_id != tenant_id:
+            # 跨院写审计（平台管理员切进某院）：本进程只在服务那个院的请求开头刷新它，内存里的链尾
+            # 可能落后于 worker 新写的审计，重用序号会撞 audit_events (tenant_id, sequence) 唯一索引，
+            # 请求 500（2026-11-04 审计）。以库里的链尾为准，取两者较新的一条
+            stored = self._stored_audit_chain_tail(tenant_id)
+            if stored and int(stored.get("sequence") or 0) > int((previous or {}).get("sequence") or 0):
+                previous = stored
         sequence = int((previous or {}).get("sequence") or 0) + 1
         previous_hash = str((previous or {}).get("eventHash") or "GENESIS")
         before_hash = (

@@ -111,7 +111,8 @@ def call(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
             raise ClientError("loginRequired", "令牌过期或无效：重新 login。") from None
         if exc.code == 403:
             raise ClientError("forbidden", "要平台管理员授权：请用户用平台院的管理员账号重新 login。") from None
-        raise ClientError(f"HTTP_{exc.code}", str(payload.get("message") or exc.reason)) from None
+        # 其余（409 状态冲突、400 参数）一律 refused，和 SKILL.md 的说法一致（2026-11-04 审计）
+        raise ClientError("refused", f"HTTP {exc.code}：{payload.get('message') or exc.reason}") from None
     except ValueError:
         raise ClientError("badResponse", "服务器返回的不是 JSON：检查 AICHECK_BASE_URL 是否指向 AIcheck。") from None
     except urllib.error.URLError as exc:

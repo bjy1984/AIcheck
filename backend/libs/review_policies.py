@@ -120,6 +120,11 @@ def _admin_config(tenant_id: str) -> dict[str, Any]:
         return dict(config) if isinstance(config, dict) else {}
 
 
+def admin_config_for(tenant_id: str) -> dict[str, Any]:
+    """某院的 admin_config：先直接读库里那一行，读不了才用已加载的内存，不为它整院加载。"""
+    return _admin_config(tenant_id)
+
+
 def effective_policies(tenant_id: str | None = None) -> dict[str, dict[str, Any]]:
     """审查时用：当前院（或指定院）每个开关的生效值。缓存 30 秒。"""
     from libs.security.tenant import configured_tenant_id as platform_tenant_id

@@ -111,3 +111,72 @@ def test_开通院_反馈审批_AI修复_口径_删除院_全程按真库落库(
         repo.postgres_dsn = None
         repo.postgres_enabled = False
         repo.state, repo._persistence_baseline, repo._singleton_baseline, repo._idempotency_baseline = original
+
+
+def test_合并_不采纳_仍有问题重开_再确认关闭_都按真库落库(isolated_postgres_url: str, monkeypatch) -> None:
+    """2026-11-04 审计第三组：真库测试原来只走主流程；合并、不采纳、提交人说仍有问题重新打开都没在真库上跑过。"""
+    apply_migrations(isolated_postgres_url)
+    for name, value in {"AICHECK_ENABLE_DEMO_DATA": "false", "AICHECK_ENABLE_DEMO_USERS": "true",
+                        "AICHECK_REQUIRE_AUTH": "true", "AICHECK_ALLOW_DEV_TOKENS": "true",
+                        "AICHECK_TENANT_MODE": "shared"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("AICHECK_PLATFORM_ADMIN_USERNAMES", raising=False)
+    original = (repo.state, dict(repo._persistence_baseline), dict(repo._singleton_baseline),
+                dict(repo._idempotency_baseline))
+    reloaded: InMemoryRepository | None = None
+    try:
+        repo.reset()
+        repo.configure_sync_postgres(isolated_postgres_url)
+        ok(client.post("/api/platform/institutes", headers=keyed(PLATFORM, "i1"),
+                       json={"code": "PGT", "name": "真库测试院", "adminUsername": "pg-admin"}))
+        first = ok(client.post("/api/auth/login", json={"username": "pg-admin", "password": DEFAULT_INITIAL_PASSWORD}))
+        ok(client.post("/api/auth/change-password", headers={"Authorization": f"Bearer {first['token']}"},
+                       json={"currentPassword": DEFAULT_INITIAL_PASSWORD, "newPassword": "pg-secret-1"}))
+        institute = {"Authorization": f"Bearer {ok(client.post('/api/auth/login', json={'username': 'pg-admin', 'password': 'pg-secret-1'}))['token']}"}
+
+        def feedback(content: str, key: str) -> str:
+            return ok(client.post("/api/user-feedback", headers=keyed(institute, key),
+                                  json={"category": "bug", "content": content}))["feedback"]["id"]
+
+        def escalate(feedback_id: str, key: str) -> str:
+            return ok(client.post(f"/api/admin/user-feedback/{feedback_id}/escalate", headers=keyed(institute, key),
+                                  json={"scope": "public"}))["taskId"]
+
+        def act(task_id: str, verb: str, body: dict, key: str) -> dict:
+            return ok(client.post(f"/api/platform/improvement-tasks/{task_id}/{verb}", headers=keyed(PLATFORM, key), json=body))
+
+        main_feedback, dup_feedback, declined_feedback = (feedback("总览加载很慢", "f1"), feedback("总览打开也很慢", "f2"),
+                                                          feedback("想要换一个皮肤", "f3"))
+        main_task, dup_task, declined_task = escalate(main_feedback, "e1"), escalate(dup_feedback, "e2"), escalate(declined_feedback, "e3")
+        act(dup_task, "merge", {"intoTaskId": main_task}, "m1")
+        act(declined_task, "decline", {"reason": "院级配置，在院里改"}, "d1")
+        act(main_task, "approve", {"title": "总览慢", "taskStatement": "修", "acceptanceCriteria": "过"}, "a1")
+        for round_no in (1, 2):
+            claim_id = act(main_task, "claim", {"agent": "ci"}, f"c{round_no}")["task"]["claim"]["id"]
+            act(main_task, "submit", {"prUrl": f"https://example.com/pr/{round_no}", "tests": "ok", "claimId": claim_id}, f"s{round_no}")
+            act(main_task, "status", {"status": "deployed"}, f"u{round_no}")
+            if round_no == 1:
+                ok(client.post(f"/api/user-feedback/{main_feedback}/confirm", headers=keyed(institute, "k1"),
+                               json={"resolved": False, "note": "还是慢"}))
+        for feedback_id, key in ((main_feedback, "k2"), (dup_feedback, "k3")):
+            ok(client.post(f"/api/user-feedback/{feedback_id}/confirm", headers=keyed(institute, key), json={"resolved": True}))
+
+        repo.close_sync_postgres()
+        reloaded = InMemoryRepository(seed=False)
+        reloaded.configure_sync_postgres(isolated_postgres_url)
+        reloaded.load_from_sync_postgres(tenant_id=TENANT)
+        statuses = {row["id"]: row["status"] for row in reloaded.state["user_feedback"]}
+        assert statuses == {main_feedback: "resolved", dup_feedback: "resolved", declined_feedback: "declined"}
+        reloaded.load_from_sync_postgres()
+        tasks = {row["id"]: row for row in reloaded.state["improvement_tasks"]}
+        assert tasks[main_task]["status"] == "closed" and tasks[dup_task]["status"] == "merged"
+        assert tasks[declined_task]["status"] == "declined"
+        assert "还是慢" in tasks[main_task]["reopenNote"]
+        assert all(entry["by"] == "提交人" for entry in tasks[main_task]["history"] if "提交人" in entry["action"])
+    finally:
+        if reloaded is not None:
+            reloaded.close_sync_postgres()
+        repo.close_sync_postgres()
+        repo.postgres_dsn = None
+        repo.postgres_enabled = False
+        repo.state, repo._persistence_baseline, repo._singleton_baseline, repo._idempotency_baseline = original

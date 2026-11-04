@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Header, Request
 
 from apps.api import routes as api
-from apps.api.platform_routes import _guard as platform_guard
+from apps.api.platform_routes import _guard
 from libs import institutes
 from libs import review_policies as rp
 from libs.contracts import errors
@@ -23,6 +23,10 @@ from libs.db.repository import repo
 from libs.security.auth import is_platform_admin
 
 review_policy_router = APIRouter()
+
+
+def platform_guard(request: Request):
+    return _guard(request, "只有平台管理员可以改平台默认口径。")
 
 
 def _config(state: dict[str, Any]) -> dict[str, Any]:
@@ -46,8 +50,8 @@ def _adoption(platform_defaults: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ]
     adoption = {key: {value: [] for value in rp.options_for(key)} for key in rp.POLICIES}
     for tenant_id, name in tenants:
-        with institutes.tenant_scope(tenant_id) as state:
-            choices = _config(state).get("reviewPolicies")
+        # 直接读库里那一行（2026-11-04 审计：原来为读一行把每个院整院加载进内存）
+        choices = rp.admin_config_for(tenant_id).get("reviewPolicies")
         for key, item in rp.resolve(choices, platform_defaults).items():
             adoption[key].setdefault(item["value"], []).append({"name": name, "source": item["source"]})
     return adoption

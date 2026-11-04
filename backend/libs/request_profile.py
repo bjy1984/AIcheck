@@ -11,11 +11,15 @@ import cProfile
 import io
 import logging
 import pstats
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
 logger = logging.getLogger("aicheck.request_profile")
+# 同一时刻只剖一个请求（2026-11-04 审计）：Python 3.12 起 cProfile 挂在整个进程上，第二个同时开的
+# enable() 抛 ValueError，请求 500。拿不到锁的请求照常跑、不剖析
+_ACTIVE = threading.Lock()
 
 
 def _enabled(request: Any) -> bool:
@@ -34,12 +38,23 @@ def request_profile(request: Any, label: str, *, top: int = 25) -> Iterator[None
     if not _enabled(request):
         yield
         return
+    if not _ACTIVE.acquire(blocking=False):
+        logger.warning("request_profile %s skipped: another profile is running", label)
+        yield
+        return
     profiler = cProfile.Profile()
-    profiler.enable()
+    try:
+        profiler.enable()
+    except ValueError:  # 别的工具（调试器、覆盖率）占着剖析钩子
+        _ACTIVE.release()
+        logger.warning("request_profile %s skipped: profiler hook busy", label)
+        yield
+        return
     try:
         yield
     finally:
         profiler.disable()
+        _ACTIVE.release()
         out = io.StringIO()
         stats = pstats.Stats(profiler, stream=out)
         stats.sort_stats("cumulative").print_stats(r"(apps|libs)/", top)

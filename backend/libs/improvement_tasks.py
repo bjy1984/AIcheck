@@ -177,4 +177,18 @@ def feedback_mirror(task: dict[str, Any]) -> dict[str, Any]:
         return {"taskId": task.get("mergedInto"), "status": "merged", "statusLabel": "已和同类反馈合并处理"}
     # 标题只在平台审批写过之后才回写（审批前的标题可能来自某院的原文）
     title = task.get("title") or "" if task.get("approvedAt") else ""
-    return {"taskId": task["id"], "status": status, "statusLabel": STATUSES.get(status, status), "title": title}
+    mirror = {"taskId": task["id"], "status": status, "statusLabel": STATUSES.get(status, status), "title": title}
+    if status == "claimed":
+        # 领取过期时没有事件回写，读的时候按到期时间换回「待开发」（mirror_view）
+        mirror["claimExpiresAt"] = (task.get("claim") or {}).get("expiresAt")
+    return mirror
+
+
+def mirror_view(mirror: Any, now: str | None = None) -> Any:
+    """反馈里存的平台进度是写入时的快照；领取已过期的按「待开发」显示（2026-11-04 审计）。"""
+    if not isinstance(mirror, dict) or mirror.get("status") != "claimed" or not mirror.get("claimExpiresAt"):
+        return mirror
+    if str(mirror["claimExpiresAt"]) > (now or server_time()):
+        return mirror
+    return {**{k: v for k, v in mirror.items() if k != "claimExpiresAt"}, "status": "approved",
+            "statusLabel": STATUSES["approved"]}

@@ -8,12 +8,20 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 PROBE_PROJECT_PREFIX = "写操作审计-勿动-"
+PROBE_REGIONS = {"审计专用", "审计专用-已改"}
+# 探针建的名字是「前缀 + 8 位 UTC 时间（月日时分）」，地区「审计专用」，改项目那步改成「审计专用-已改」
+# （scripts/write_ops_audit.py；2026-11-04 生产 67 个全是后者）。
+# 只按前缀认的话，真实项目改成同样开头也会从所有人的列表里消失（2026-11-04 审计），所以名字格式和地区都要对上
+_PROBE_NAME = re.compile(rf"^{re.escape(PROBE_PROJECT_PREFIX)}\d{{8}}$")
 
 
 def is_probe_project(project: dict[str, Any] | None) -> bool:
     if not isinstance(project, dict):
         return False
-    return bool(project.get("probe")) or str(project.get("name") or "").startswith(PROBE_PROJECT_PREFIX)
+    if project.get("probe"):
+        return True
+    return bool(_PROBE_NAME.match(str(project.get("name") or ""))) and project.get("region") in PROBE_REGIONS

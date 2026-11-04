@@ -123,6 +123,21 @@ def unregister_username(username: str, tenant_id: str) -> None:
         save_in_current_tenant(USER_DIRECTORY, row)
 
 
+def unregister_username_after_save(request: Any, username: str | None, tenant_id: str) -> None:
+    """请求自己的落库成功后再让出目录里的用户名（2026-11-04 审计）。
+
+    unregister_username 立刻落库；若随后请求自己的落库失败（409），账号还叫原名，目录却已标成释放，
+    这个院的账号就登录不了了。所以挂到请求收尾（apps/api/main.py 落库成功后执行 after_save）。
+    """
+    if not username:
+        return
+    callbacks = getattr(request.state, "after_save", None)
+    if callbacks is None:
+        callbacks = []
+        request.state.after_save = callbacks
+    callbacks.append(lambda: unregister_username(str(username), str(tenant_id)))
+
+
 def username_conflict_message(username: str, for_tenant: str | None = None) -> str | None:
     """建账号前调用：平台上别的院已有同名账号就返回提示。账号所在院自己的重名由原来的检查负责。
 

@@ -149,6 +149,12 @@ def _set_nodes(name: str, before: Any, after: Any, old: dict[str, Any], new: dic
     return nodes
 
 
+def no_changes(pack: dict[str, Any]) -> dict[str, Any]:
+    """指纹相同时直接给「没有变化」，不用逐段比。"""
+    return {"fromVersion": pack.get("version"), "toVersion": pack.get("version"), "upToDate": True, "sections": [],
+            "otherChanges": [], "otherChangeLabels": [], "affectedNodeIds": []}
+
+
 def pack_diff(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
     old = old or {}
     index = _Index(old, new)

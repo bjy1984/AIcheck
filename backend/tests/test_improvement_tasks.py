@@ -230,3 +230,25 @@ def test_没上线不能确认_别人的反馈不能确认():
     escalate(gd, feedback_id, "e1")
     assert code_of(confirm(gd, feedback_id, "k1", resolved=True)) != 0
     assert code_of(confirm(PLATFORM, feedback_id, "k2", resolved=True)) != 0, "别的院的人看不到这条"
+
+
+def test_字符串false不算已解决_领取过期后审批清掉领取_反馈里显示待开发():
+    gd = bearer(open_gdtj())
+    _, gd_feedback, _ = _deployed_task_with_two_sources(gd)
+    assert code_of(confirm(gd, gd_feedback, "k1", resolved="false")) != 0, "\"false\" 是仍有问题，要写原因"
+    assert my_feedback(gd, gd_feedback)["status"] == "escalated"
+
+    feedback_id = submit(gd, "领取过期的显示测试", "x1")
+    other = escalate(gd, feedback_id, "x2")
+    data(act(other, "approve", {"title": "显示测试", "taskStatement": "修", "acceptanceCriteria": "过"}, "x3"))
+    claim(other, "codex", "x4")
+    assert my_feedback(gd, feedback_id)["platformTask"]["statusLabel"] == "开发中"
+    with institutes.platform_scope() as state:
+        next(row for row in state[it.COLLECTION] if row["id"] == other)["claim"]["expiresAt"] = "2000-01-01 00:00:00"
+    with institutes.tenant_scope(institutes.find_institute("TENANT-GDTJ")["id"]) as state:
+        row = next(item for item in state["user_feedback"] if item["id"] == feedback_id)
+        row["platformTask"]["claimExpiresAt"] = "2000-01-01 00:00:00"
+    assert my_feedback(gd, feedback_id)["platformTask"]["statusLabel"] == "待开发", "领取过期后不再显示开发中"
+    data(act(other, "approve", {"title": "显示测试", "taskStatement": "再修", "acceptanceCriteria": "过"}, "x5"))
+    detail = data(client.get(f"/api/platform/improvement-tasks/{other}", headers=PLATFORM))["task"]
+    assert detail["claim"] is None and detail["status"] == "approved"

@@ -220,3 +220,25 @@ def test_升级时没挂资料的清单行跟着新版改_挂了资料的不动_
 
     names = {item["name"] for item in project_requirements_for_node(project_id, int(unbound["nodeId"]))}
     assert "新版已删除的资料" not in names or repo.state["admin_config"].get("materialReviewPoints")
+
+
+def test_业务包读不出来的项目单独报错_不影响整页():
+    project_id = _old_project("业务包坏了", "np5", businessPackId="no-such-pack")
+    listing = data(client.get("/api/admin/business-pack/updates", headers=PLATFORM))
+    row = next(item for item in listing["items"] if item["projectId"] == project_id)
+    assert row["error"] and row["upgradable"] is False
+    result = data(client.post("/api/admin/business-pack/updates/apply", headers={**PLATFORM, "Idempotency-Key": "a5"},
+                              json={"projectIds": [project_id]}))
+    assert result["appliedCount"] == 0 and "读不出来" in result["results"][0]["reason"]
+
+
+def test_已有结论只数每个节点最新的一次():
+    current = load_business_pack(DEFAULT_BUSINESS_PACK_ID)
+    project_id = _old_project("结论计数", "np6", businessPackSnapshot=_older(current))
+    node = int(current["ruleSets"][0]["nodeIds"][0])
+    for index in range(3):
+        repo.state["review_runs"].append({"reviewRunId": f"RR-COUNT-{index}", "projectId": project_id, "nodeId": node,
+                                          "status": "waiting_human_review", "finishedAt": f"2026-11-0{index + 1} 10:00:00"})
+    row = next(item for item in data(client.get("/api/admin/business-pack/updates", headers=PLATFORM))["items"]
+               if item["projectId"] == project_id)
+    assert node in row["diff"]["affectedNodeIds"] and row["affectedConclusionCount"] == 1

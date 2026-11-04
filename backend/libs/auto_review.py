@@ -813,6 +813,13 @@ def enqueue_node_evidence_change(
     from libs.review_evidence import evidence_content_hash
 
     events: list[dict[str, Any]] = []
+    # 先看策略（2026-11-04 审计）：自动重审默认关，原来每次确认/不采用/挂载都先把节点证据整个算一遍，
+    # 还是在院的写锁里算
+    policy = next((row for row in state.get("auto_review_policies") or [] if isinstance(row, dict)
+                   and str(row.get("tenantId") or "") == str(tenant_id) and str(row.get("projectId") or "") == str(project_id)),
+                  None)
+    if not policy or not policy_allows_trigger(policy, "ocr_mounted"):
+        return events
     for node_id in sorted({int(item) for item in node_ids if int(item or 0) > 0}):
         try:
             snapshot = current_node_snapshot(state, project_id, node_id)

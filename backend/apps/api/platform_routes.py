@@ -30,12 +30,12 @@ platform_router = APIRouter()
 CODE_RE = re.compile(r"[A-Z0-9][A-Z0-9-]{1,31}")
 
 
-def _guard(request: Request):
+def _guard(request: Request, message: str = "只有平台管理员可以管理特检院。"):
     _, error = api.effective_role_for_request(request)
     if error:
         return error
     if not is_platform_admin(getattr(request.state, "auth_user", None)):
-        return fail(errors.FORBIDDEN, request, http_status=403, message="只有平台管理员可以管理特检院。")
+        return fail(errors.FORBIDDEN, request, http_status=403, message=message)
     return None
 
 
