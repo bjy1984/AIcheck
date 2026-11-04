@@ -87,7 +87,7 @@ def tenant_for_username(username: str | None) -> str | None:
         return None
     with platform_scope() as state:
         row = next((item for item in state.setdefault(USER_DIRECTORY, []) if item.get("id") == key), None)
-    return str(row["tenantId"]) if row else None
+    return str(row["tenantId"]) if row and not row.get("released") else None
 
 
 def register_username(username: str, tenant_id: str) -> None:
@@ -102,6 +102,20 @@ def register_username(username: str, tenant_id: str) -> None:
         save_in_current_tenant(USER_DIRECTORY, entry)
 
 
+def unregister_username(username: str, tenant_id: str) -> None:
+    """账号让出用户名（删除时只能停用、改了名）后，目录里原名那条标成已释放：登录不再按它找院、也不再占名。
+
+    落库只能写不能删，所以不删行；同名再注册时 register_username 会整条换掉。
+    """
+    key = _directory_key(username)
+    with platform_scope() as state:
+        row = next((item for item in state.setdefault(USER_DIRECTORY, []) if item.get("id") == key), None)
+        if row is None or row.get("tenantId") != tenant_id or row.get("released"):
+            return
+        row.update({"released": True, "releasedAt": server_time()})
+        save_in_current_tenant(USER_DIRECTORY, row)
+
+
 def username_conflict_message(username: str, for_tenant: str | None = None) -> str | None:
     """建账号前调用：平台上别的院已有同名账号就返回提示。账号所在院自己的重名由原来的检查负责。
 
@@ -110,7 +124,7 @@ def username_conflict_message(username: str, for_tenant: str | None = None) -> s
     key = _directory_key(username)
     current = str(for_tenant or current_tenant_id())
     with platform_scope() as state:
-        directory = {item.get("id"): item.get("tenantId") for item in state.setdefault(USER_DIRECTORY, [])}
+        directory = {item.get("id"): item.get("tenantId") for item in state.setdefault(USER_DIRECTORY, []) if not item.get("released")}
         in_platform = any(_directory_key(user.get("username")) == key for user in state.get("users") or [])
     owner = directory.get(key) or (platform_tenant_id() if in_platform else None)
     if owner and owner != current:

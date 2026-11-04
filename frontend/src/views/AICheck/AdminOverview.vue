@@ -2504,7 +2504,7 @@ const handleSaveOrg = async () => {
 const handleDeleteOrg = async (row: AdminOrgUnit) => {
   try {
     await ElMessageBox.confirm(
-      `确认删除组织「${row.name}」？仍被引用时后端会拒绝删除。`,
+      `确认删除组织「${row.name}」？仍被用户或项目引用时会改为停用，并让出组织名，可再建同名组织。`,
       '删除组织',
       {
         type: 'warning'
@@ -2524,7 +2524,7 @@ const handleDeleteOrg = async (row: AdminOrgUnit) => {
       )
       return
     }
-    ElMessage.success('组织已删除')
+    ElMessage.success(res.data?.deleted === false ? '组织仍有引用，已停用并让出名称' : '组织已删除')
     await Promise.all([loadData(), loadAuditLogs()])
   } catch (error) {
     orgOperationError.value = getRequestErrorMessage(
@@ -2634,7 +2634,7 @@ const handleSaveUser = async () => {
 const handleDeleteUser = async (row: AdminUser) => {
   try {
     await ElMessageBox.confirm(
-      `确认删除用户「${row.name}」？如用户已有项目授权，后端会转为停用。`,
+      `确认删除用户「${row.name}」？如用户已有项目授权，会改为停用，并让出用户名，可再建同名账号。`,
       '删除用户',
       { type: 'warning' }
     )
@@ -2652,7 +2652,7 @@ const handleDeleteUser = async (row: AdminUser) => {
       )
       return
     }
-    ElMessage.success(res.data.deleted ? '用户已删除' : '用户已停用')
+    ElMessage.success(res.data.deleted ? '用户已删除' : '用户已停用，用户名已让出')
     await Promise.all([loadData(), loadAuditLogs()])
   } catch (error) {
     userOperationError.value = getRequestErrorMessage(

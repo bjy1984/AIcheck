@@ -228,6 +228,7 @@ from libs.material_targeting import (
     targeting_input_versions_for_node,
 )
 from libs.model_usage import normalize_model_usage
+from libs.name_release import release_org_name, release_username
 from libs.node_document_identity import (
     document_ai_shadow_run_summary,
     document_audit_pipeline_comparison_summary,
@@ -28084,7 +28085,8 @@ def delete_admin_org_unit(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
-    enable_admin_identity_flush(request)
+    enable_admin_identity_flush(request, include_users=True, include_project_members=True)
+    request.state.flush_state_keys.add("projects")
     def produce():
         org = find_org_unit(org_id)
         if not org:
@@ -28097,13 +28099,18 @@ def delete_admin_org_unit(
             or any(org.get("name") in {project.get("ownerOrgName"), project.get("contractorOrgName"), project.get("ndtOrgName"), project.get("inspectionOrgName")} for project in repo.state["projects"])
         )
         if referenced:
-            return fail(errors.CONFLICT, request, message="组织仍被用户或项目引用，不能删除，请先停用。")
-        admin_org_units()[:] = [item for item in admin_org_units() if item.get("id") != org_id]
+            # 还有引用就停用、改名让出原名（libs.name_release），引用方跟着改名
+            org.update({"status": "停用", "deletedAt": server_time(), "updatedAt": server_time()})
+            release_org_name(repo.state, [*repo.state.get("users", []), *admin_config_users()], org)
+            bump_record_revision(org)
+        else:
+            admin_org_units()[:] = [item for item in admin_org_units() if item.get("id") != org_id]
         bump_singleton_revision(repo.state["admin_config"])
-        audit_id = repo.add_audit("删除组织", "OrgUnit", org_id)
+        audit_id = repo.add_audit("删除组织" if not referenced else "停用组织并释放名称", "OrgUnit", org_id)
         return ok(
             {
-                "deleted": True,
+                "deleted": not referenced,
+                "orgUnit": versioned_record("org-unit", org) if referenced else None,
                 "orgUnitId": org_id,
                 "auditLogId": audit_id,
                 "revision": singleton_revision(repo.state["admin_config"]),
@@ -28293,6 +28300,9 @@ def delete_admin_user(
                 repo.state["users"].append(existing)
             existing["status"] = "停用"
             existing["deletedAt"] = server_time()
+            # 停用但让出用户名，原名可以再建（libs.name_release）
+            if released := release_username(existing):
+                institutes.unregister_username(released, tenant_id_for_record(existing))
             bump_record_revision(existing)
             upsert_admin_config_user(existing)
             sync_user_references(existing)

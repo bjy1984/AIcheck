@@ -11292,10 +11292,15 @@ def test_admin_user_org_crud_and_project_member_batch_authorization_defaults() -
     assert "submission:submit" in member["actions"]
     assert len(member["nodeScope"]) > 10
 
-    assert_error(
-        client.delete(f"/admin/org-units/{org['id']}", headers={"If-Match": org["etag"]}),
-        "CONFLICT",
-    )
+    # 还被用户、项目成员引用：删除改为停用并让出名字（2026-11-04），引用方跟着改名
+    released = assert_ok(client.delete(f"/admin/org-units/{org['id']}", headers={"If-Match": org["etag"]}))
+    assert released["deleted"] is False
+    org = released["orgUnit"]
+    assert org["status"] == "停用" and org["releasedName"] == "合同测试施工组织"
+    assert "已删除" in org["name"]
+    assert all("已删除" in item["orgName"] for item in repo.state["project_members"] if item.get("orgId") == org["id"])
+    recreated = assert_ok(client.post("/admin/org-units", json={"name": "合同测试施工组织", "type": "contractor"}))
+    assert recreated["orgUnit"]["id"] != org["id"], "原名已让出，可以再建同名组织"
 
     removed = assert_ok(
         client.delete(
