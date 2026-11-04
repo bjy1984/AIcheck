@@ -8,7 +8,8 @@
  * 「进入节点」才跳。顶部一行细条给全项目合计。数的是节点，不是审计项（标题写明）。
  */
 import { computed, ref, watch } from 'vue'
-import { ElButton, ElEmpty, ElSkeleton, ElTag } from 'element-plus'
+import { ElButton, ElEmpty, ElIcon, ElSkeleton, ElTag } from 'element-plus'
+import { ArrowRight, Check, Close, MoreFilled, WarningFilled } from '@element-plus/icons-vue'
 import type {
   InspectionAuditOverviewNode,
   InspectionNodeConclusionGroup,
@@ -191,7 +192,7 @@ const toggle = (nodeId: number) => {
                   @click.stop="emit('open', row.node, row.group)"
                   >{{ STATION_GROUP_ACTIONS[row.group] }}</ElButton
                 >
-                <span class="station-node-chevron" aria-hidden="true">›</span>
+                <ElIcon class="station-node-chevron" aria-hidden="true"><ArrowRight /></ElIcon>
               </div>
               <div v-if="expanded.has(row.node.nodeId)" class="station-node-detail">
                 <template
@@ -221,29 +222,74 @@ const toggle = (nodeId: number) => {
                     </div>
                     <div v-if="detail.materials">
                       <dt>必传资料</dt>
-                      <dd>
-                        已齐 {{ detail.materials.done }} / {{ detail.materials.total }}
-                        <span v-if="detail.materials.missing.length" class="station-node-missing">
-                          · 缺：{{ detail.materials.missing.join('、') }}
+                      <dd class="station-materials">
+                        <span class="station-materials-count">
+                          <strong>{{ detail.materials.done }}</strong> /
+                          {{ detail.materials.total }} 已齐
                         </span>
+                        <span
+                          class="station-materials-meter"
+                          role="presentation"
+                          :style="{
+                            '--done': `${detail.materials.total ? (detail.materials.done / detail.materials.total) * 100 : 0}%`
+                          }"
+                        ></span>
+                        <template v-if="detail.materials.missing.length">
+                          <span class="station-materials-missing-title"
+                            >还缺 {{ detail.materials.missing.length }} 项</span
+                          >
+                          <ul class="station-materials-missing">
+                            <li v-for="item in detail.materials.missing" :key="item">{{ item }}</li>
+                          </ul>
+                        </template>
                       </dd>
                     </div>
                     <div v-if="detail.process.length">
                       <dt>流程</dt>
-                      <dd class="station-node-process">
-                        <span
-                          v-for="step in detail.process"
-                          :key="step.key"
-                          :class="`step-${step.status}`"
-                          :title="step.summary"
-                          >{{ step.label }}·{{ step.statusLabel }}</span
+                      <dd>
+                        <ol class="station-flow" aria-label="节点流程">
+                          <li
+                            v-for="step in detail.process"
+                            :key="step.key"
+                            :class="`is-${step.status}`"
+                            :title="step.summary"
+                          >
+                            <span class="station-flow-node" aria-hidden="true">
+                              <ElIcon v-if="step.status === 'completed'"><Check /></ElIcon>
+                              <ElIcon v-else-if="step.status === 'failed'"><Close /></ElIcon>
+                              <ElIcon v-else-if="step.status === 'needs_attention'"
+                                ><WarningFilled
+                              /></ElIcon>
+                              <ElIcon v-else-if="step.status === 'in_progress'"
+                                ><MoreFilled
+                              /></ElIcon>
+                            </span>
+                            <span class="station-flow-label">{{ step.label }}</span>
+                            <small class="station-flow-status">{{ step.statusLabel }}</small>
+                          </li>
+                        </ol>
+                        <ul
+                          v-if="detail.process.some((step) => step.needsAction)"
+                          class="station-flow-notes"
                         >
+                          <li
+                            v-for="step in detail.process.filter((item) => item.needsAction)"
+                            :key="step.key"
+                          >
+                            <strong>{{ step.label }}</strong
+                            >{{ step.summary }}
+                          </li>
+                        </ul>
                       </dd>
                     </div>
                   </dl>
-                  <ElButton link type="primary" @click="emit('open', row.node, row.group)"
-                    >进入节点 ›</ElButton
-                  >
+                  <ElButton
+                    class="station-node-enter"
+                    link
+                    type="primary"
+                    @click="emit('open', row.node, row.group)"
+                    >进入节点<ElIcon class="el-icon--right"><ArrowRight /></ElIcon
+                  ></ElButton>
                 </template>
               </div>
             </div>
@@ -337,12 +383,13 @@ const toggle = (nodeId: number) => {
 }
 .station-body {
   display: grid;
-  grid-template-columns: minmax(220px, 30%) 1fr;
+  grid-template-columns: minmax(220px, 30%) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
 .station-list,
 .station-detail {
+  min-width: 0;
   padding: 12px;
   background: var(--aicheck-surface, #fff);
   border: 1px solid var(--aicheck-border, #e5e7eb);
@@ -427,46 +474,161 @@ const toggle = (nodeId: number) => {
 }
 .station-node-detail dl > div {
   display: grid;
-  grid-template-columns: 84px 1fr;
+  grid-template-columns: 84px minmax(0, 1fr);
   gap: 8px;
 }
 .station-node-detail dt {
   color: var(--aicheck-text-subtle, #667085);
 }
 .station-node-detail dd {
+  min-width: 0;
   margin: 0;
 }
 .station-node-detail ul {
   margin: 0;
   padding-left: 18px;
 }
-.station-node-missing {
-  color: var(--st-needs_materials);
+.station-materials {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  align-items: center;
 }
-.station-node-process {
+.station-materials-count {
+  font-variant-numeric: tabular-nums;
+}
+.station-materials-count strong {
+  font-size: 15px;
+}
+.station-materials-meter {
+  display: block;
+  width: 100%;
+  max-width: 160px;
+  height: 4px;
+  background:
+    linear-gradient(var(--st-passed), var(--st-passed)) 0 0 / var(--done) 100% no-repeat,
+    #eceff3;
+  border-radius: 2px;
+}
+.station-materials-missing-title {
+  grid-column: 1 / -1;
+  color: var(--st-needs_materials);
+  font-size: 12px;
+}
+.station-materials-missing {
   display: flex;
   flex-wrap: wrap;
+  grid-column: 1 / -1;
   gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.station-node-process span {
-  padding: 1px 8px;
-  color: var(--aicheck-text-subtle, #667085);
+.station-materials-missing li {
+  padding: 2px 8px;
+  color: #92400e;
   font-size: 12px;
-  background: #f3f4f6;
-  border-radius: 10px;
+  line-height: 18px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
 }
-.station-node-process .step-completed {
-  color: var(--st-passed);
-  background: #ecfdf3;
+.station-flow {
+  --flow-node: 20px;
+  display: flex;
+  margin: 2px 0 0;
+  padding: 0;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-color: #d0d5dd transparent;
+  scrollbar-width: thin;
 }
-.station-node-process .step-needs_attention,
-.station-node-process .step-failed {
-  color: var(--st-failed);
-  background: #fef2f2;
+.station-flow li {
+  position: relative;
+  display: grid;
+  flex: 1 0 64px;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
 }
-.station-node-process .step-in_progress {
+/* 连接线：从上一个节点画到这一个；前一步做完了就是实线绿 */
+.station-flow li + li::before {
+  position: absolute;
+  top: calc(var(--flow-node) / 2 - 1px);
+  right: calc(50% + var(--flow-node) / 2 + 4px);
+  left: calc(-50% + var(--flow-node) / 2 + 4px);
+  height: 2px;
+  background: #e5e7eb;
+  border-radius: 1px;
+  content: '';
+}
+.station-flow li.is-completed + li::before {
+  background: var(--st-passed);
+}
+.station-flow-node {
+  display: grid;
+  width: var(--flow-node);
+  height: var(--flow-node);
+  place-items: center;
+  color: #fff;
+  font-size: 12px;
+  background: #fff;
+  border: 2px solid #d0d5dd;
+  border-radius: 50%;
+}
+.station-flow .is-completed .station-flow-node {
+  background: var(--st-passed);
+  border-color: var(--st-passed);
+}
+.station-flow .is-in_progress .station-flow-node {
   color: #2f6bff;
-  background: #eef4ff;
+  border-color: #2f6bff;
+}
+.station-flow .is-needs_attention .station-flow-node {
+  color: var(--st-needs_materials);
+  border-color: var(--st-needs_materials);
+}
+.station-flow .is-failed .station-flow-node {
+  background: var(--st-failed);
+  border-color: var(--st-failed);
+}
+.station-flow-label {
+  margin-top: 4px;
+  color: #344054;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.station-flow-status {
+  color: var(--aicheck-text-subtle, #667085);
+  font-size: 11px;
+}
+.station-flow .is-completed .station-flow-status {
+  color: var(--st-passed);
+}
+.station-flow .is-in_progress .station-flow-status {
+  color: #2f6bff;
+}
+.station-flow .is-needs_attention .station-flow-status {
+  color: var(--st-needs_materials);
+}
+.station-flow .is-failed .station-flow-status {
+  color: var(--st-failed);
+}
+.station-flow-notes {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  font-size: 12px;
+  list-style: none;
+}
+.station-flow-notes strong {
+  margin-right: 8px;
+  font-weight: 500;
+}
+.station-node-enter {
+  margin-top: 2px;
 }
 .station-node {
   display: flex;
@@ -506,13 +668,27 @@ const toggle = (nodeId: number) => {
   white-space: nowrap;
 }
 .station-node-chevron {
-  color: #c0c4cc;
-  font-size: 18px;
-  transition: transform 0.15s;
+  flex: none;
+  color: #98a2b3;
+  font-size: 14px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (max-width: 900px) {
   .station-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* 窄屏：标签放到内容上方、去掉缩进，流程图留给横向滚动 */
+@media (max-width: 640px) {
+  .station-node-detail {
+    padding: 4px 12px 12px;
+  }
+  .station-node-detail dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .station-flow li {
+    flex-basis: 56px;
   }
 }
 </style>

@@ -133,14 +133,37 @@ export const nodeDetail = (row: InspectionAuditOverviewNode) => {
           )
         }
       : null,
-    process: (row.items || []).map((item) => ({
-      key: item.key,
-      label: item.label,
-      status: item.status,
-      statusLabel: item.statusLabel,
-      summary: item.summary
-    }))
+    process: PROCESS_ORDER.map((key) => (row.items || []).find((item) => item.key === key))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .map((item) => ({
+        key: item.key,
+        label: PROCESS_LABELS[item.key] || item.label,
+        status: item.status,
+        statusLabel: item.statusLabel,
+        summary: item.summary,
+        needsAction: item.status === 'needs_attention' || item.status === 'failed'
+      }))
   }
+}
+
+/** 流程七步的顺序与短名，和节点页的状态条（WorkbenchNodeStatusStrip）一致。 */
+const PROCESS_ORDER = [
+  'submission',
+  'ocr',
+  'evidence',
+  'ai_review',
+  'human_review',
+  'report',
+  'archive'
+]
+const PROCESS_LABELS: Record<string, string> = {
+  submission: '资料提交',
+  ocr: '资料抽取',
+  evidence: '证据确认',
+  ai_review: 'AI 复核',
+  human_review: '人工结论',
+  report: '报告',
+  archive: '归档'
 }
 
 /** 行内一句原因：人工意见原文优先，其次不过的检查项（翻成中文），再次原因码。 */
