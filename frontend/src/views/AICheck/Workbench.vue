@@ -6,7 +6,6 @@ import {
   ElBreadcrumb,
   ElBreadcrumbItem,
   ElButton,
-  ElCheckbox,
   ElCollapse,
   ElCollapseItem,
   ElDrawer,
@@ -23,7 +22,6 @@ import {
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
-  ElSkeleton,
   ElTable,
   ElTableColumn,
   ElTooltip,
@@ -136,6 +134,7 @@ import type {
   InspectionAuditItem,
   InspectionAuditItemKey,
   InspectionAuditOverviewPayload,
+  InspectionNodeConclusionGroup,
   InspectionSubmittedDocumentsPayload,
   InspectionAuditWorkspacePayload,
   NdtFeedback,
@@ -210,11 +209,7 @@ import { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import AuditStatusTag from './components/AuditStatusTag.vue'
 import StatusTag from './components/StatusTag.vue'
 import { getStatusTone } from './components/status'
-import {
-  auditItemsMatchStatus,
-  aggregateStatusKey,
-  type InspectionStatusFilter
-} from './inspectionStatusOverview'
+import { auditItemsMatchStatus, type InspectionStatusFilter } from './inspectionStatusOverview'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
 import AutoReviewControl from './components/AutoReviewControl.vue'
 import ProjectAnalysisControl from './components/ProjectAnalysisControl.vue'
@@ -256,6 +251,7 @@ import { NDT_NODE_IDS, type NdtAtomicMaterial } from '@/utils/ndtAtomicMaterials
 import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSections.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import AuditItemDirectory from './components/AuditItemDirectory.vue'
+import StationAuditOverview from './components/StationAuditOverview.vue'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
 import ImportantReview from '@/views/ImportantReview/ImportantReview.vue'
 import InspectionViewTabs from './components/InspectionViewTabs.vue'
@@ -266,14 +262,10 @@ import { parseAiFindings } from '@/utils/aiFindings'
 import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
 import { opensAiAssistant, resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
 import { canLoadProjectNode, resolveLoadableProjectNodeId } from './projectNodeSelection'
-import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
+import { nodeNeedsAttention } from './nodeAggregateStatus'
 import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
-import {
-  getInspectionReviewProgress,
-  submittedFileCountLabel,
-  workbenchRolePresentation
-} from './workbenchRolePresentation'
+import { getInspectionReviewProgress, workbenchRolePresentation } from './workbenchRolePresentation'
 import { useWorkbenchUploadSession } from './useWorkbenchUploadSession'
 import {
   nodeRunFindingViews,
@@ -1089,18 +1081,6 @@ const { labNavigationEnabled, labStation, labNodeStatus } = useWorkstationFilter
   role,
   activeProjectId
 )
-const handleInspectionNodeTableSort = ({
-  prop,
-  order
-}: {
-  prop: string
-  order: 'ascending' | 'descending' | null
-}) => {
-  if (!order || !['nodeId', 'material'].includes(prop)) return
-  inspectionNodePage.value = 1
-  inspectionNodeSortKey.value = prop as InspectionNodeSortKey
-  inspectionNodeSortDirection.value = order === 'ascending' ? 'asc' : 'desc'
-}
 /* 只看需要我处理的。
  *
  * 69 个节点按 6 条/页 = 12 页，而需处理的那几个散在其中——实测首屏 6 行全是
@@ -1115,39 +1095,6 @@ const inspectionAuditStatusFilter = ref<InspectionStatusFilter | null>(null)
 const inspectionAuditSummaryTotal = computed(() =>
   inspectionAuditStatusSummaryRows.value.reduce((total, row) => total + row.value, 0)
 )
-const selectInspectionStatus = async (status: InspectionStatusFilter | null) => {
-  inspectionAuditStatusFilter.value = status
-  inspectionOnlyAttentionNodes.value = false
-  inspectionNodePage.value = 1
-  await nextTick()
-  document
-    .getElementById('inspection-overview-nodes')
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-const changeInspectionAttentionFilter = () => {
-  inspectionAuditStatusFilter.value = null
-  inspectionNodePage.value = 1
-}
-
-/* 需处理的「审计项」数——与需处理的「节点」数是两个单位。
- * 一个节点可能有两项需要处理，两个数字不相等是正常的；并排显示时必须写清楚
- * 单位，否则会被当成其中一个算错了。 */
-const inspectionAttentionItemCount = computed(() => {
-  let total = 0
-  for (const node of projectTreeNodes.value) {
-    const items = inspectionAuditOverviewNodeMap.value.get(node.nodeId)?.items || []
-    total += items.filter((item) => nodeNeedsAttention([item])).length
-  }
-  return total
-})
-
-const inspectionAttentionNodeCount = computed(
-  () =>
-    projectTreeNodes.value.filter((node) =>
-      nodeNeedsAttention(inspectionAuditOverviewNodeMap.value.get(node.nodeId)?.items)
-    ).length
-)
-
 const inspectionProjectNodeRows = computed(() => {
   const rows = projectTreeNodes.value.map((node) => {
     const reviewProgress = getInspectionReviewProgress(node.status)
@@ -1190,10 +1137,6 @@ const inspectionVisibleNodeRows = computed(() => {
   // 一个都没有时退回全量：给一张空表会让人以为数据没加载出来。
   // 「没有要处理的」这件事由开关旁边的计数说，不靠一张空表暗示。
   return filtered.length ? filtered : inspectionProjectNodeRows.value
-})
-const pagedInspectionProjectNodeRows = computed(() => {
-  const start = (inspectionNodePage.value - 1) * inspectionNodePageSize.value
-  return inspectionVisibleNodeRows.value.slice(start, start + inspectionNodePageSize.value)
 })
 const canShowWorkspace = computed(() => !pageIssue.value && !!activeProjectId.value)
 const roleUserLabel = computed(() => {
@@ -2179,6 +2122,7 @@ const loadInspectionAuditWorkspace = async (nodeId = activeNodeId.value) => {
           ? {
               node: res.data.node,
               items: res.data.items,
+              conclusion: res.data.conclusion ?? row.conclusion,
               latestActivityAt:
                 res.data.items
                   .map((item) => item.updatedAt || '')
@@ -2941,6 +2885,15 @@ const handleProjectChange = async () => {
   await loadProjectBundle()
 }
 
+/** 工位总览里点节点：进节点页；未通过 / 需人工直接停在人工结论，其余停在 AI 审查。 */
+const openStationOverviewNode = async (
+  node: ProjectTreeNode,
+  group: InspectionNodeConclusionGroup
+) => {
+  await handleNodeSelect(node)
+  activeInspectionReviewAuditItem.value =
+    group === 'failed' || group === 'needs_human' ? 'human_review' : 'ai_review'
+}
 const handleNodeSelect = async (node: ProjectTreeNode) => {
   mobileTreeOpen.value = false
   const routeItem = inspectionReviewItemKey(route.query.auditItem)
@@ -2984,31 +2937,6 @@ const handleProjectOverviewSelect = async () => {
 
 /* 节点的七项审计汇成一个状态。缓存按 nodeId——表格渲染每行会取三次
  * （状态词、卡点、进度），不缓存就是每行算三遍。 */
-const nodeAggregate = (nodeId: number) =>
-  aggregateNodeStatus(inspectionAuditOverviewNodeMap.value.get(nodeId)?.items)
-
-const handleInspectionMatrixSelect = async (
-  node: ProjectTreeNode,
-  auditItem: InspectionAuditItemKey
-) => {
-  mobileTreeOpen.value = false
-  const targetAuditItem = inspectionReviewItemKey(auditItem)
-  const switched = await runWorkbenchPageTransition(async () => {
-    activeInspectionAuditItem.value = targetAuditItem
-    inspectionAuditItemByNode.value = {
-      ...inspectionAuditItemByNode.value,
-      [node.nodeId]: targetAuditItem
-    }
-    activeWorkbenchSection.value = 'node'
-    activeNodeId.value = node.nodeId
-    await Promise.all([
-      updateInspectionRoute({ nodeId: node.nodeId, auditItem: targetAuditItem }),
-      loadNodePackage(node.nodeId)
-    ])
-  })
-  if (!switched) return
-}
-
 /**
  * 不可逆业务动作的二次确认。
  *
@@ -5451,219 +5379,15 @@ onBeforeUnmount(() => {
               aria-label="项目总览"
             >
               <div class="inspection-overview-main-grid">
-                <article
-                  id="inspection-overview-status"
-                  class="inspection-overview-panel inspection-overview-panel--status"
-                >
-                  <!-- 原先这里是四张数字卡片：471 未开始 / 1 处理中 / 9 需关注 / 2 已完成。
-                       471 是 69 节点 × 7 审计项里还没动过的——监检不会去「消灭 471」，
-                       这个数不驱动任何行动，却占着首屏最贵的位置。
-
-                       业务口径是「监检最好只需要知道状态，全程不需要人工干预」，
-                       那这块要回答的就一句话：现在有没有要我管的、在哪儿。
-                       全量数字降为次要信息，仍然保留——需要核对整体进度时还得看。 -->
-                  <div
-                    class="inspection-headline"
-                    :class="{
-                      'is-clear': !!inspectionAuditOverview && !inspectionAttentionItemCount,
-                      'is-pending': !inspectionAuditOverview
-                    }"
-                  >
-                    <div v-if="inspectionAuditOverview" class="inspection-headline-main">
-                      <strong v-if="inspectionAttentionItemCount">
-                        {{ inspectionAttentionItemCount }} 项需要你处理
-                      </strong>
-                      <strong v-else>暂无需要你处理的事项</strong>
-                      <small v-if="inspectionAttentionItemCount">
-                        分布在 {{ inspectionAttentionNodeCount }} 个节点，勾选“只看需处理”可查看
-                      </small>
-                      <small v-else>系统在跑的部分完成后会自动出现在这里</small>
-                    </div>
-                    <!-- 单位不同要写清楚：上面数的是「审计项」，清单里数的是「节点」。
-                         两个数字并排而不说明单位，会让人以为其中一个算错了。 -->
-                    <div v-else class="inspection-headline-main">
-                      <strong>{{
-                        inspectionAuditLoading ? '正在加载审计项状态' : '审计项状态尚未取得'
-                      }}</strong>
-                      <small>状态取得后会显示需要处理的事项和节点。</small>
-                    </div>
-                  </div>
-                  <div v-if="inspectionAuditOverview" class="inspection-status-overview">
-                    <p
-                      >全部 {{ inspectionAuditSummaryTotal }} 项审计项 ·
-                      点击状态查看包含该状态的节点</p
-                    >
-                    <div
-                      v-if="inspectionAuditSummaryTotal"
-                      class="inspection-status-track"
-                      aria-hidden="true"
-                    >
-                      <span
-                        v-for="row in inspectionAuditStatusSummaryRows"
-                        :key="row.key"
-                        :class="`status-segment--${row.key}`"
-                        :style="{ width: `${(row.value / inspectionAuditSummaryTotal) * 100}%` }"
-                      ></span>
-                    </div>
-                    <div class="inspection-status-legend" aria-label="按审计项状态筛选节点">
-                      <button
-                        v-for="row in inspectionAuditStatusSummaryRows"
-                        :key="row.key"
-                        type="button"
-                        :class="{ 'is-selected': inspectionAuditStatusFilter === row.key }"
-                        :aria-pressed="inspectionAuditStatusFilter === row.key"
-                        :disabled="!row.value"
-                        @click="selectInspectionStatus(row.key)"
-                      >
-                        <span
-                          :class="['status-legend-dot', `status-segment--${row.key}`]"
-                          aria-hidden="true"
-                        ></span>
-                        {{ row.label }} <strong>{{ row.value }}</strong
-                        ><span>项</span>
-                      </button>
-                      <ElButton
-                        v-if="inspectionAuditStatusFilter"
-                        link
-                        type="primary"
-                        @click="selectInspectionStatus(null)"
-                        >清除状态筛选</ElButton
-                      >
-                    </div>
-                  </div>
-                </article>
-
-                <article id="inspection-overview-nodes" class="inspection-overview-panel">
-                  <div class="inspection-chart-head">
-                    <div>
-                      <strong>节点处理清单</strong>
-                      <!-- 计数写在开关上：关着的时候也得知道有几个在等，
-                           否则筛选本身就成了新的隐藏 -->
-                      <ElCheckbox
-                        v-model="inspectionOnlyAttentionNodes"
-                        class="node-filter-toggle"
-                        @change="changeInspectionAttentionFilter"
-                      >
-                        只看需处理（{{ inspectionAttentionNodeCount }}）
-                      </ElCheckbox>
-                      <small>与左侧项目树一致，按节点查看资料、要求和审查进度。</small>
-                    </div>
-                    <AuditStatusTag tone="gray" round>
-                      {{ inspectionVisibleNodeRows.length }} 个节点
-                    </AuditStatusTag>
-                  </div>
-                  <ElTable
-                    class="inspection-node-table"
-                    :data="pagedInspectionProjectNodeRows"
-                    row-key="node.id"
-                    :row-class-name="
-                      ({ row }) => (row.node.nodeId === activeNodeId ? 'active' : '')
-                    "
-                    :default-sort="
-                      inspectionNodeSortKey === 'review'
-                        ? undefined
-                        : {
-                            prop: inspectionNodeSortKey,
-                            order:
-                              inspectionNodeSortDirection === 'asc' ? 'ascending' : 'descending'
-                          }
-                    "
-                    :empty-text="
-                      inspectionAuditStatusFilter ? '没有包含此状态审计项的节点' : '暂无节点'
-                    "
-                    @sort-change="handleInspectionNodeTableSort"
-                  >
-                    <ElTableColumn prop="nodeId" label="序号" width="68" sortable="custom">
-                      <template #default="{ row }">{{ row.node.nodeId }}</template>
-                    </ElTableColumn>
-                    <ElTableColumn label="节点名称" min-width="260">
-                      <template #default="{ row }">
-                        <ElButton
-                          class="inspection-node-name-button"
-                          link
-                          type="primary"
-                          @click="handleNodeSelect(row.node)"
-                        >
-                          <span class="file-name-with-icon inspection-node-name-content">
-                            <FileTypeIcon
-                              :file-name="row.node.name"
-                              :category="row.node.groupName"
-                            />
-                            <span>{{ row.node.name }}</span>
-                          </span>
-                        </ElButton>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn label="类别" width="72" align="center">
-                      <template #default="{ row }">
-                        <AuditStatusTag :tone="getPillClass(row.node.inspectionType)" round>
-                          {{ row.node.inspectionType }}
-                        </AuditStatusTag>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn prop="material" label="已提交文件" width="128" sortable="custom">
-                      <template #default="{ row }">
-                        <div class="inspection-node-material">
-                          <strong>{{ submittedFileCountLabel(row.submittedFileCount) }}</strong>
-                        </div>
-                      </template>
-                    </ElTableColumn>
-                    <!-- 原先这里平铺七个状态标签，一页 14 行 = 98 个标签、56 个可点元素，
-                         而实测 483 个审计项里 471 个是同一个值（未开始）——监检要在一屏
-                         几乎一样的标签里找出不一样的那几个。
-
-                         业务口径是「监检最好只需要知道状态，全程不需要人工干预」，
-                         所以列表只回答一个问题：这个节点要不要我管。七项明细点开详情再看。 -->
-                    <ElTableColumn label="状态" min-width="220">
-                      <template #default="{ row }">
-                        <button
-                          v-if="inspectionAuditOverviewNodeMap.get(row.node.nodeId)"
-                          type="button"
-                          class="node-status-cell"
-                          :title="`点击查看 ${row.node.name} 的七项审计明细`"
-                          @click="handleInspectionMatrixSelect(row.node, 'submission')"
-                        >
-                          <StatusTag
-                            :status="
-                              aggregateStatusKey(
-                                inspectionAuditOverviewNodeMap.get(row.node.nodeId)?.items
-                              )
-                            "
-                            :label="nodeAggregate(row.node.nodeId).label"
-                            size="small"
-                          />
-                          <!-- 卡在哪一步必须说出来。只说「需要处理」等于把问题原样
-                               丢回给人，他还得点进去逐项翻才知道是 OCR 没跑完还是等他签字。 -->
-                          <small
-                            v-if="nodeAggregate(row.node.nodeId).blockedAt"
-                            class="node-status-where"
-                          >
-                            {{ nodeAggregate(row.node.nodeId).blockedAt }}
-                          </small>
-                          <small class="node-status-progress">
-                            {{ nodeAggregate(row.node.nodeId).progress }}
-                          </small>
-                        </button>
-                        <ElSkeleton
-                          v-else
-                          class="inspection-audit-matrix-loading"
-                          :rows="1"
-                          animated
-                          aria-label="正在加载审计项状态"
-                        />
-                      </template>
-                    </ElTableColumn>
-                  </ElTable>
-                  <ElPagination
-                    v-model:current-page="inspectionNodePage"
-                    v-model:page-size="inspectionNodePageSize"
-                    class="inspection-node-pagination"
-                    :page-sizes="[6, 10, 20, 50]"
-                    :total="inspectionVisibleNodeRows.length"
-                    layout="total, sizes, prev, pager, next"
-                    small
-                  />
-                </article>
+                <!-- 2026-11-03 用户确认的第三版：按工位看节点通过与否，取代原来的审计项状态条与节点处理清单。 -->
+                <StationAuditOverview
+                  class="inspection-overview-stations"
+                  :items="inspectionAuditOverview?.items || []"
+                  :stations="inspectionAuditOverview?.stations"
+                  :loading="inspectionAuditLoading"
+                  :audit-item-total="inspectionAuditSummaryTotal"
+                  @open="openStationOverviewNode"
+                />
 
                 <article
                   id="inspection-overview-files"

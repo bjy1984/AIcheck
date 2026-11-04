@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { handler } from './workflowTestHarness'
 import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
 import {
@@ -11,7 +11,6 @@ import { indexCountScale, indexCountWidth, indexRecordCount } from './knowledgeI
 
 const inspectionAuditStatusFilter = ref<InspectionStatusFilter | null>(null)
 const inspectionOnlyAttentionNodes = ref(true)
-const inspectionNodePage = ref(5)
 const inspectionProjectNodeRows = ref([1, 2, 3, 4].map((nodeId) => ({ node: { nodeId } })))
 const inspectionAuditOverviewNodeMap = ref(
   new Map([
@@ -38,56 +37,18 @@ const visible = handler('./Workbench.vue', 'inspectionVisibleNodeRows', {
   auditItemsMatchStatus,
   nodeNeedsAttention
 })
-let scrollTarget = ''
-const select = handler('./Workbench.vue', 'selectInspectionStatus', {
-  inspectionAuditStatusFilter,
-  inspectionOnlyAttentionNodes,
-  inspectionNodePage,
-  nextTick,
-  document: {
-    getElementById: (id: string) => ({
-      scrollIntoView: () => {
-        scrollTarget = id
-      }
-    })
-  }
-})
-const attentionChanged = handler('./Workbench.vue', 'changeInspectionAttentionFilter', {
-  inspectionAuditStatusFilter,
-  inspectionNodePage
-})
 const visibleIds = () => visible.value.map((row: { node: { nodeId: number } }) => row.node.nodeId)
 assert.deepEqual(
   visibleIds(),
   [1, 2],
   'the existing default continues to show nodes needing action'
 )
-await select('completed')
-assert.deepEqual(
-  visibleIds(),
-  [1],
-  'a status matches any audit item in a node, not only its aggregate state'
-)
+// 状态图例筛选（selectInspectionStatus / changeInspectionAttentionFilter）随旧总览一起移除，
+// 2026-11-03 起项目总览按工位分组（StationAuditOverview，测试见 components/stationOverview.test.ts）。
 assert.equal(
   aggregateNodeStatus(inspectionAuditOverviewNodeMap.value.get(1)?.items).tone,
   'attention'
 )
-assert.equal(inspectionNodePage.value, 1, 'chart navigation returns to the first visible page')
-assert.equal(inspectionOnlyAttentionNodes.value, false)
-assert.equal(scrollTarget, 'inspection-overview-nodes')
-await select('failed')
-assert.deepEqual(visibleIds(), [2], 'failed is separate from needs-attention')
-await select('in_progress')
-assert.deepEqual(visibleIds(), [3])
-inspectionAuditOverviewNodeMap.value.delete(3)
-assert.deepEqual(visibleIds(), [], 'empty filtered results never fall back to unrelated nodes')
-await select(null)
-assert.deepEqual(visibleIds(), [1, 2, 3, 4], 'clearing chart filter restores all nodes')
-await select('not_started')
-inspectionOnlyAttentionNodes.value = true
-attentionChanged()
-assert.equal(inspectionAuditStatusFilter.value, null)
-assert.deepEqual(visibleIds(), [1, 2], 'the existing attention checkbox clears the chart filter')
 assert.equal(aggregateStatusKey(undefined), 'unknown')
 assert.equal(aggregateStatusKey([{ status: 'needs_attention' }]), 'needs_attention')
 assert.equal(aggregateStatusKey([{ status: 'needs_attention' }, { status: 'failed' }]), 'failed')

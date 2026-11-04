@@ -183,3 +183,19 @@ def test_non_inspection_role_cannot_open_inspection_audit_workspace() -> None:
     assert response.status_code == 200
     assert response.json()["code"] != 0
     assert response.json()["data"]["reason"] == "FORBIDDEN"
+
+
+def test_overview_groups_nodes_by_station_with_a_conclusion_each() -> None:
+    """2026-11-03 按工位分组的总览：工位清单 + 每个节点一个结论分组。"""
+    data = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/audit-overview?pageSize=200",
+            headers={"X-Role": "inspection"},
+        )
+    )
+    assert [item["stationId"] for item in data["stations"]] == list("ABCDEFGHI")
+    groups = {item["node"]["nodeId"]: item["conclusion"]["group"] for item in data["items"]}
+    assert len(groups) == data["total"]
+    assert set(groups.values()) <= {"failed", "needs_materials", "needs_human", "passed", "not_started"}
+    print("demo groups:", {group: list(groups.values()).count(group) for group in set(groups.values())},
+          "node24:", next(item["conclusion"] for item in data["items"] if item["node"]["nodeId"] == NODE_ID))

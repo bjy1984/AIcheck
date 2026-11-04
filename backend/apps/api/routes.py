@@ -187,6 +187,7 @@ from libs.fde_console_views import (
     fde_vector_correction_summary,
 )
 from libs.field_confidence import field_confirm_confidence, is_low_confidence
+from libs.inspection_node_conclusion import node_conclusion, station_groups
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import (
     EmbeddingClient,  # noqa: F401 -- public re-export and monkeypatch compatibility
@@ -6477,6 +6478,7 @@ def build_inspection_audit_workspace(
         },
         "node": enriched_node,
         "items": items,
+        "conclusion": node_conclusion(latest_review_run, latest_opinion),
         "latestActivityAt": max((str(item.get("updatedAt") or "") for item in items), default="") or None,
         "dataAsOf": server_time(),
     }
@@ -6559,6 +6561,7 @@ def inspection_audit_overview(
         row = {
             "node": projection["node"],
             "items": projection["items"],
+            "conclusion": projection.get("conclusion"),
             "latestActivityAt": projection.get("latestActivityAt"),
         }
         if normalized_keyword:
@@ -6588,6 +6591,7 @@ def inspection_audit_overview(
             "schemaVersion": "InspectionAuditOverview@1.0.0",
             "project": repo.project_for_role(project, "inspection"),
             "summary": {"nodeCount": total, **status_counts},
+            "stations": station_groups(),
             "items": rows[start : start + page_size],
             "page": page_no,
             "pageSize": page_size,

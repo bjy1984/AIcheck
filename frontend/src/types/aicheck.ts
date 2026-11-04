@@ -1183,9 +1183,42 @@ export type InspectionAuditItem = {
   availableActions: ActionCode[]
 }
 
+/** 节点级结论（后端 libs/inspection_node_conclusion.py）：按工位分组的总览用。 */
+export type InspectionNodeConclusionGroup =
+  | 'failed'
+  | 'needs_materials'
+  | 'needs_human'
+  | 'passed'
+  | 'not_started'
+
+export type InspectionNodeConclusion = {
+  group: InspectionNodeConclusionGroup
+  /** 人工已给结论（满足要求 / 需补正）；false 表示只是 AI 判定，待监检确认 */
+  confirmed: boolean
+  notApplicable?: boolean
+  runState?: 'running' | 'failed' | null
+  reviewRunId?: string | null
+  humanResult?: string | null
+  atomicCounts?: Record<string, number>
+  reason?: {
+    atomicCheckId?: string
+    result?: string
+    reasonCode?: string | null
+    checkCodes?: string[]
+    humanOpinion?: string | null
+  } | null
+}
+
+export type InspectionStation = {
+  stationId: string
+  stationName: string
+  nodeIds: number[]
+}
+
 export type InspectionAuditOverviewNode = {
   node: ProjectTreeNode
   items: InspectionAuditItem[]
+  conclusion?: InspectionNodeConclusion | null
   latestActivityAt?: string | null
 }
 
@@ -1195,6 +1228,7 @@ export type InspectionAuditOverviewPayload = {
   summary: Record<InspectionAuditItemStatus, number> & {
     nodeCount: number
   }
+  stations?: InspectionStation[]
   items: InspectionAuditOverviewNode[]
   page: number
   pageSize: number
@@ -1234,6 +1268,7 @@ export type InspectionAuditWorkspacePayload = {
   project: Project
   node: ProjectTreeNode
   items: InspectionAuditItem[]
+  conclusion?: InspectionNodeConclusion | null
   content: {
     submission: Record<string, unknown>
     ocr: Record<string, unknown>
