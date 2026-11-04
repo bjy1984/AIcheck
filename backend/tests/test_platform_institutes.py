@@ -33,6 +33,13 @@ def isolated(monkeypatch):
     monkeypatch.setenv("AICHECK_ENABLE_DEMO_USERS", "true")
     monkeypatch.setenv("AICHECK_TENANT_MODE", "shared")
     monkeypatch.delenv("AICHECK_PLATFORM_ADMIN_USERNAMES", raising=False)
+    # 平台院带一条通用规则：开通、同步都会真的复制规则（生产就是在这一步出的错）
+    repo.state.setdefault("rule_versions", []).append(
+        {"id": "RV-PLATFORM-SEED", "ruleId": "R24", "status": "published", "tenantId": configured_tenant_id()})
+    yield
+    # 每个测试结束都把各院全部记录过一遍落库前的院标记检查：测试不接数据库，
+    # 不这样查，标错院的记录要到生产才炸（2026-11-04 连续三次）
+    assert_every_institute_persists()
 
 
 def data(response):
@@ -149,6 +156,8 @@ PLATFORM_RULE = {"id": "RULE-PLATFORM-R09", "name": "R09 设计文件检验试�
 
 
 def test_a_new_institute_gets_the_platform_rules_and_later_updates_by_sync():
+    # 这里要数清下发了哪几条，去掉夹具里放的那条通用规则
+    repo.state["rule_versions"] = [row for row in repo.state.get("rule_versions", []) if row.get("id") != "RV-PLATFORM-SEED"]
     repo.state.setdefault("rule_versions", []).extend([
         dict(PLATFORM_RULE),
         {**PLATFORM_RULE, "id": "RULE-PLATFORM-PROJECT", "projectId": "P-PLATFORM-ONLY"},  # 项目规则不下发
@@ -365,6 +374,8 @@ def test_没有项目的特检院可以删除_用户名让出_有项目的不能
     assert_every_institute_persists()
     listing = {row["id"] for row in data(client.get("/api/platform/institutes", headers=PLATFORM))["items"]}
     assert "TENANT-UYS" not in listing
+    synced = data(client.post("/api/platform/institutes/sync-rules", headers=PLATFORM, json={}))["results"]
+    assert "TENANT-UYS" not in synced, "删除的院不再同步规则"
     assert code_of(login("test2", _default_password())) != 0, "删了的院登不进来"
     assert code_of(client.post("/api/platform/institutes/TENANT-UYS/status", headers=PLATFORM,
                                json={"status": "active"})) != 0, "删了不能再启用"

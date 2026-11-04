@@ -179,7 +179,9 @@ def sync_platform_rules_to_institutes(
         return error
 
     def produce():
-        results = {row["id"]: institutes.sync_platform_rules(str(row["id"])) for row in institutes.list_institutes()}
+        # 删除的院不再同步：没人能登录，白写一遍规则（2026-11-04 线上同步时连删除的 6 个院也同步了）
+        results = {row["id"]: institutes.sync_platform_rules(str(row["id"]))
+                   for row in institutes.list_institutes() if row.get("status") != institutes.DELETED}
         audit_id = repo.add_audit("同步平台规则到各特检院", "Institute", "ALL", after=results)
         request.state.scoped_flush_records = dict
         return ok({"results": results, "auditLogId": audit_id}, request)
