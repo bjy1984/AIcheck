@@ -306,6 +306,39 @@ def test_institute_knowledge_pages_list_platform_standards_read_only_and_never_p
     assert platform_sources.count("KS-STANDARD-RULES") == 1
 
 
+
+def assert_every_institute_persists():
+    """把每个院内存里的全部记录过一遍落库前的院标记检查（生产就在这一步拒绝跨院写入）。
+
+    测试不接数据库，flush 不会真的跑；不这样查，标错院的记录要到生产才炸——2026-11-04
+    开通特检院连续两次在生产报「服务内部错误」，两次都是这类问题（审计记录、用户名目录）。
+    """
+    from libs import institutes
+
+    for tenant_id in list(repo._tenant_states):
+        with institutes.tenant_scope(tenant_id):
+            repo.current_persistence_documents()
+
+
+def test_平台对特检院的每个操作都不留标错院的记录():
+    data(client.post("/api/platform/institutes", headers=PLATFORM, json={
+        "code": "QDTJ", "name": "青岛特检院", "adminUsername": "qdns", "adminName": "牛帅"}))
+    assert_every_institute_persists()
+    data(client.post("/api/platform/institutes/TENANT-QDTJ/admins", headers=PLATFORM,
+                     json={"username": "qdns-2", "name": "第二管理员"}))
+    data(client.post("/api/platform/institutes/TENANT-QDTJ/admins/qdns/reset-password", headers=PLATFORM, json={}))
+    data(client.post("/api/platform/institutes/TENANT-QDTJ/status", headers=PLATFORM, json={"status": "disabled"}))
+    data(client.post("/api/platform/institutes/TENANT-QDTJ/status", headers=PLATFORM, json={"status": "active"}))
+    data(client.post("/api/platform/institutes/sync-rules", headers=PLATFORM, json={}))
+    assert_every_institute_persists()
+    assert data(login("qdns", _default_password()))["user"]["tenantId"] == "TENANT-QDTJ", "院管理员按用户名登录进本院"
+
+
+def _default_password() -> str:
+    from libs.security.auth import DEFAULT_INITIAL_PASSWORD
+
+    return DEFAULT_INITIAL_PASSWORD
+
 def test_开通特检院后新院里的记录都能按新院落库():
     """2026-11-04 生产：开通特检院全部报「服务内部错误」。院管理员的审计记录标的是平台院，
     落库检查（persistence_tenant_document）拒绝跨院写入。测试不接数据库，原来测不出——
@@ -319,3 +352,29 @@ def test_开通特检院后新院里的记录都能按新院落库():
         audits = [row for row in state["audit_logs"] if row.get("objectType") == "User" or row.get("action", "").startswith("平台")]
         assert audits and all(row["tenantId"] == "TENANT-QDTJ" for row in audits)
         assert all(row.get("actorTenantId") == configured_tenant_id() for row in audits), "留下是谁从哪个院操作的"
+
+
+def test_没有项目的特检院可以删除_用户名让出_有项目的不能删():
+    data(client.post("/api/platform/institutes", headers=PLATFORM, json={
+        "code": "UYS", "name": "test2", "adminUsername": "test2", "adminName": "测试"}))
+    gone = data(client.delete("/api/platform/institutes/TENANT-UYS", headers=PLATFORM))
+    assert gone["releasedUsernames"] == ["test2"]
+    assert_every_institute_persists()
+    listing = {row["id"] for row in data(client.get("/api/platform/institutes", headers=PLATFORM))["items"]}
+    assert "TENANT-UYS" not in listing
+    assert code_of(login("test2", _default_password())) != 0, "删了的院登不进来"
+    assert code_of(client.post("/api/platform/institutes/TENANT-UYS/status", headers=PLATFORM,
+                               json={"status": "active"})) != 0, "删了不能再启用"
+    again = client.post("/api/platform/institutes", headers=PLATFORM, json={
+        "code": "UYS", "name": "test2", "adminUsername": "x-admin"})
+    assert code_of(again) != 0 and "不能再用" in again.json()["message"]
+    # 用户名让出了，另开一个院可以用回 test2
+    data(client.post("/api/platform/institutes", headers=PLATFORM, json={
+        "code": "UYS2", "name": "test2 重开", "adminUsername": "test2"}))
+    assert data(login("test2", _default_password()))["user"]["tenantId"] == "TENANT-UYS2"
+
+    token = open_gdtj()
+    data(client.post("/api/projects", headers=bearer(token, "gd-del-p1"), json={"name": "有项目的院"}))
+    blocked = client.delete(f"/api/platform/institutes/{GD}", headers=PLATFORM)
+    assert code_of(blocked) != 0 and "只能停用" in blocked.json()["message"]
+    assert_every_institute_persists()

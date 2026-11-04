@@ -17,6 +17,7 @@ type RequestConfig = { url: string; data?: unknown; headers?: Record<string, str
 type RequestAdapter = {
   get: (config: RequestConfig) => Promise<any>
   post: (config: RequestConfig) => Promise<any>
+  delete: (config: RequestConfig) => Promise<any>
 }
 type HeaderFactory = (options?: { idempotencyKey?: string }) => Record<string, string> | undefined
 
@@ -82,6 +83,16 @@ export const createPlatformApi = (adapter: RequestAdapter, mutationHeaders: Head
     adapter.post({
       url: `/api/platform/institutes/${encodeURIComponent(tenantId)}/status`,
       data: { status },
+      headers: mutationHeaders(options)
+    }),
+
+  /** 只能删没有项目的院：停用、从列表隐藏、让出院内用户名；数据与审计保留，单位代码不能再用 */
+  deleteInstituteApi: (
+    tenantId: string,
+    options?: { idempotencyKey?: string }
+  ): Promise<IResponse<{ deleted: boolean; releasedUsernames: string[]; auditLogId: string }>> =>
+    adapter.delete({
+      url: `/api/platform/institutes/${encodeURIComponent(tenantId)}`,
       headers: mutationHeaders(options)
     })
 })

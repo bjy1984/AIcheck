@@ -4379,7 +4379,8 @@ export const {
   setInstituteStatusApi,
   syncPlatformRulesApi,
   addInstituteAdminApi,
-  resetInstituteAdminPasswordApi
+  resetInstituteAdminPasswordApi,
+  deleteInstituteApi
 } = createPlatformApi(request, mutationHeaders)
 
 export const {

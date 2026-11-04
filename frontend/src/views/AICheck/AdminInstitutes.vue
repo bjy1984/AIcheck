@@ -17,7 +17,8 @@ import {
   ElSelect,
   ElTable,
   ElTableColumn,
-  ElTag
+  ElTag,
+  ElTooltip
 } from 'element-plus'
 import StaticPageShell from './components/StaticPageShell.vue'
 import {
@@ -26,7 +27,8 @@ import {
   setInstituteStatusApi,
   syncPlatformRulesApi,
   addInstituteAdminApi,
-  resetInstituteAdminPasswordApi
+  resetInstituteAdminPasswordApi,
+  deleteInstituteApi
 } from '@/api/aicheck'
 import type { Institute } from '@/api/aicheck/platform'
 import { useUserStoreWithOut } from '@/store/modules/user'
@@ -140,6 +142,29 @@ const toggleStatus = async (item: Institute) => {
     await load()
   } catch (error) {
     ElMessage.error(getAicheckErrorMessage(error, '操作失败，请稍后重试。'))
+  }
+}
+
+/* 删除（2026-11-04 用户：开通错了、测试建的院删不掉）：只能删没有项目的院 */
+const removeInstitute = async (item: Institute) => {
+  try {
+    await ElMessageBox.confirm(
+      `删除后「${item.name}」从列表中移除、院内账号全部停用并让出用户名，可以在别处再用。数据和审计记录保留，单位代码 ${item.code} 不能再用。`,
+      '删除特检院',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await deleteInstituteApi(item.id, {
+      idempotencyKey: `institute-delete-${item.id}-${Date.now()}`
+    })
+    const released = res?.data?.releasedUsernames || []
+    ElMessage.success(released.length ? `已删除，让出用户名：${released.join('、')}` : '已删除')
+    await load()
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '删除失败，请稍后重试。'))
   }
 }
 
@@ -306,7 +331,7 @@ onMounted(load)
             <ElTableColumn label="开通时间" width="170">
               <template #default="{ row }">{{ row.builtin ? '平台自带' : row.createdAt }}</template>
             </ElTableColumn>
-            <ElTableColumn label="操作" width="210" fixed="right">
+            <ElTableColumn label="操作" width="260" fixed="right">
               <template #default="{ row }">
                 <template v-if="!row.builtin">
                   <ElButton link type="primary" @click="openAdminDialog('add', row)"
@@ -328,6 +353,21 @@ onMounted(load)
                 >
                   {{ row.status === 'active' ? '停用' : '启用' }}
                 </ElButton>
+                <ElTooltip
+                  v-if="!row.builtin"
+                  :disabled="!row.projectCount"
+                  content="已有项目的特检院不能删除，只能停用"
+                >
+                  <span class="institute-delete-wrap">
+                    <ElButton
+                      link
+                      type="danger"
+                      :disabled="row.projectCount > 0"
+                      @click="removeInstitute(row)"
+                      >删除</ElButton
+                    >
+                  </span>
+                </ElTooltip>
               </template>
             </ElTableColumn>
           </ElTable>
@@ -428,6 +468,10 @@ onMounted(load)
 </template>
 
 <style scoped>
+.institute-delete-wrap {
+  display: inline-flex;
+  margin-left: 12px;
+}
 .institutes-page {
   display: grid;
   gap: 16px;

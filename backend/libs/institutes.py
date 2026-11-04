@@ -29,7 +29,7 @@ from libs.security.tenant import current_tenant_id, reset_request_tenant_id, set
 
 INSTITUTES = "institutes"
 USER_DIRECTORY = "user_directory"
-ACTIVE, DISABLED = "active", "disabled"
+ACTIVE, DISABLED, DELETED = "active", "disabled", "deleted"
 
 
 def _persistent() -> bool:
@@ -81,20 +81,27 @@ def _directory_key(username: str) -> str:
     return str(username or "").strip().casefold()
 
 
+def _home_tenant(row: dict[str, Any]) -> str:
+    """目录项指向的院。老格式（2026-11-04 之前，从未成功落库过）用的是 tenantId。"""
+    return str(row.get("homeTenantId") or row.get("tenantId") or "")
+
+
 def tenant_for_username(username: str | None) -> str | None:
     key = _directory_key(username or "")
     if not key:
         return None
     with platform_scope() as state:
         row = next((item for item in state.setdefault(USER_DIRECTORY, []) if item.get("id") == key), None)
-    return str(row["tenantId"]) if row and not row.get("released") else None
+    return _home_tenant(row) if row and not row.get("released") else None
 
 
 def register_username(username: str, tenant_id: str) -> None:
     """非平台院的新账号登进目录。平台院的账号不登：找不到目录项就落平台院。"""
     if tenant_id == platform_tenant_id():
         return
-    entry = {"id": _directory_key(username), "username": username, "tenantId": tenant_id, "createdAt": server_time()}
+    # 账号所在院记在 homeTenantId：tenantId 是这条目录记录本身的院标记（平台院），
+    # 落库会核对它与当前院一致；原来写成 tenantId=新院，开通特检院在这一步被拒（2026-11-04 生产）
+    entry = {"id": _directory_key(username), "username": username, "homeTenantId": tenant_id, "createdAt": server_time()}
     with platform_scope() as state:
         rows = state.setdefault(USER_DIRECTORY, [])
         rows[:] = [row for row in rows if row.get("id") != entry["id"]]
@@ -110,7 +117,7 @@ def unregister_username(username: str, tenant_id: str) -> None:
     key = _directory_key(username)
     with platform_scope() as state:
         row = next((item for item in state.setdefault(USER_DIRECTORY, []) if item.get("id") == key), None)
-        if row is None or row.get("tenantId") != tenant_id or row.get("released"):
+        if row is None or _home_tenant(row) != tenant_id or row.get("released"):
             return
         row.update({"released": True, "releasedAt": server_time()})
         save_in_current_tenant(USER_DIRECTORY, row)
@@ -124,7 +131,7 @@ def username_conflict_message(username: str, for_tenant: str | None = None) -> s
     key = _directory_key(username)
     current = str(for_tenant or current_tenant_id())
     with platform_scope() as state:
-        directory = {item.get("id"): item.get("tenantId") for item in state.setdefault(USER_DIRECTORY, []) if not item.get("released")}
+        directory = {item.get("id"): _home_tenant(item) for item in state.setdefault(USER_DIRECTORY, []) if not item.get("released")}
         in_platform = any(_directory_key(user.get("username")) == key for user in state.get("users") or [])
     owner = directory.get(key) or (platform_tenant_id() if in_platform else None)
     if owner and owner != current:

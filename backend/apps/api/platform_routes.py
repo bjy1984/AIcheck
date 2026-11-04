@@ -17,6 +17,7 @@ from libs import institutes
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import flush_state, repo
+from libs.name_release import release_username
 from libs.security.auth import (
     DEFAULT_INITIAL_PASSWORD,
     hash_password,
@@ -66,7 +67,7 @@ def _add_institute_admin(state: dict[str, Any], username: str, name: str, passwo
 
 def _institute_or_error(request: Request, tenant_id: str):
     institute = institutes.find_institute(tenant_id)
-    if institute is None:
+    if institute is None or institute.get("status") == institutes.DELETED:
         return None, fail(errors.NOT_FOUND, request, message="没有这个特检院（平台院的管理员在「组织用户」里管理）。")
     return institute, None
 
@@ -76,7 +77,8 @@ def list_platform_institutes(request: Request):
     if error := _guard(request):
         return error
     platform = {"id": platform_tenant_id(), "code": "PLATFORM", "name": "平台（默认院）", "status": institutes.ACTIVE, "builtin": True}
-    return ok({"items": [_institute_view(platform), *(_institute_view(row) for row in institutes.list_institutes())]}, request)
+    rows = [row for row in institutes.list_institutes() if row.get("status") != institutes.DELETED]
+    return ok({"items": [_institute_view(platform), *(_institute_view(row) for row in rows)]}, request)
 
 
 @platform_router.post("/platform/institutes")
@@ -97,7 +99,8 @@ def create_platform_institute(
         return fail(errors.VALIDATION_ERROR, request, message="请填写特检院名称和院管理员用户名。")
     tenant_id = f"TENANT-{code}"
     if tenant_id == platform_tenant_id() or institutes.find_institute(tenant_id):
-        return fail(errors.CONFLICT, request, http_status=409, message="这个单位代码已经用过了。")
+        return fail(errors.CONFLICT, request, http_status=409,
+                    message="这个单位代码已经用过了（删除过的特检院数据仍保留，代码不能再用）。")
     if conflict := institutes.username_conflict_message(username, for_tenant=tenant_id):
         return fail(errors.CONFLICT, request, http_status=409, message=conflict)
     password = str(body.get("adminPassword") or "").strip() or DEFAULT_INITIAL_PASSWORD
@@ -145,7 +148,7 @@ def set_platform_institute_status(
     def produce():
         with institutes.platform_scope() as state:
             row = next((item for item in state.setdefault(institutes.INSTITUTES, []) if item.get("id") == tenant_id), None)
-            if row is None:
+            if row is None or row.get("status") == institutes.DELETED:
                 return fail(errors.NOT_FOUND, request, message="没有这个特检院（平台院不能停用）。")
             before = row.get("status")
             row.update({"status": status, "updatedAt": server_time(), "updatedBy": api.request_actor_name(request)})
@@ -252,3 +255,49 @@ def reset_platform_institute_admin_password(
 
     return api.idempotent(request, idempotency_key, produce,
                           fingerprint_source={"tenantId": tenant_id, "username": username, "body": body})
+
+
+@platform_router.delete("/platform/institutes/{tenant_id}")
+def delete_platform_institute(
+    request: Request,
+    tenant_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """删除没有项目的特检院（2026-11-04 用户：开通错了、测试建的院删不掉）。
+
+    只做「停用 + 从列表隐藏 + 让出院内用户名」，数据和审计记录都留在库里：审计是哈希链，
+    不能删。还有项目的院只能停用。单位代码不能再用——它就是这个院的数据分区。
+    """
+    if error := _guard(request):
+        return error
+    institute, error = _institute_or_error(request, tenant_id)
+    if error:
+        return error
+    if _institute_view(institute)["projectCount"]:
+        return fail(errors.CONFLICT, request, http_status=409, message="这个特检院已有项目，不能删除，只能停用。")
+
+    def produce():
+        released: list[str] = []
+        with institutes.tenant_scope(tenant_id) as state:
+            for user in state.get("users") or []:
+                if not isinstance(user, dict):
+                    continue
+                user.update({"status": "停用", "deletedAt": server_time(), "updatedAt": server_time()})
+                # 版本号加一：已发的令牌立即失效
+                user["authVersion"] = int(user.get("authVersion") or 0) + 1
+                if original := release_username(user):
+                    released.append(original)
+                api.upsert_admin_config_user(user)
+            repo.add_audit("平台删除特检院：停用并让出院内用户名", "Institute", tenant_id, after={"released": released})
+            flush_state({"users", "audit_logs"}, selected_singleton_keys={"admin_config"})
+        for username in released:
+            institutes.unregister_username(username, tenant_id)
+        with institutes.platform_scope() as state:
+            row = next(item for item in state.setdefault(institutes.INSTITUTES, []) if item.get("id") == tenant_id)
+            row.update({"status": institutes.DELETED, "deletedAt": server_time(), "updatedBy": api.request_actor_name(request)})
+            institutes.save_in_current_tenant(institutes.INSTITUTES, row)
+        audit_id = repo.add_audit("删除特检院", "Institute", tenant_id, after={"releasedUsernames": released})
+        request.state.scoped_flush_records = dict
+        return ok({"deleted": True, "tenantId": tenant_id, "releasedUsernames": released, "auditLogId": audit_id}, request)
+
+    return api.idempotent(request, idempotency_key, produce, fingerprint_source={"tenantId": tenant_id, "delete": True})
