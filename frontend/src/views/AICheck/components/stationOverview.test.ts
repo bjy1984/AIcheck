@@ -76,3 +76,54 @@ assert.equal(
   ),
   '未满足：4105**********0550：持证人与平台登记一致'
 )
+
+// 行内展开的详情：审计项结论分布、全部不过的检查项、缺的资料、流程各步
+{
+  const { nodeDetail } = await import('./stationOverview')
+  const expandRow = {
+    node: {
+      nodeId: 4,
+      name: '设计文件的批准程序',
+      requirementsSummary: {
+        requiredCount: 3,
+        satisfiedCount: 2,
+        missingCount: 1,
+        missingRequirements: [{ fileContent: '设计说明及管道特性表' }]
+      }
+    },
+    items: [
+      {
+        key: 'ai_review',
+        label: 'AI 复核',
+        status: 'completed',
+        statusLabel: '已完成',
+        summary: ''
+      }
+    ],
+    conclusion: {
+      group: 'needs_materials',
+      confirmed: false,
+      atomicCounts: { passed: 1, evidence_insufficient: 2, human_review_required: 0 },
+      reason: {
+        checkCodes: [
+          'catalog_pages_submitted',
+          'corrosion_requirements_acceptancecriteria',
+          'leaktest_requirements_testpressure'
+        ]
+      }
+    }
+  } as unknown as InspectionAuditOverviewNode
+  const detail = nodeDetail(expandRow)
+  assert.equal(detail.atomicSummary, '符合 1 · 证据不足 2')
+  assert.equal(detail.failedChecks.length, 3)
+  assert.deepEqual(detail.materials, { done: 2, total: 3, missing: ['设计说明及管道特性表'] })
+  assert.deepEqual(
+    detail.process.map((step) => step.statusLabel),
+    ['已完成']
+  )
+  // 折叠时那一行只写前两项，后面写「等 n 项」
+  assert.match(
+    conclusionReason(expandRow),
+    /^未满足：图纸目录所列页数已交全；防腐蚀：要求·合格标准 等 3 项$/
+  )
+}

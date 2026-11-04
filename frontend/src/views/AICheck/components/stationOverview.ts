@@ -91,16 +91,69 @@ export const buildStationOverview = (
 export const maskIdentityNumbers = (text: string) =>
   text.replace(/(?<!\d)(\d{4})\d{10}(\d{3}[\dXx])(?!\d)/g, '$1**********$2')
 
+/** 不过的检查项，翻成中文、身份证号打码。 */
+export const failedCheckLabels = (row: InspectionAuditOverviewNode): string[] =>
+  (row.conclusion?.reason?.checkCodes || [])
+    .map((code) => maskIdentityNumbers(friendlyCheckCode(code)))
+    .filter(Boolean)
+
+const ATOMIC_RESULT_LABELS: Record<string, string> = {
+  passed: '符合',
+  failed: '不符合',
+  evidence_insufficient: '证据不足',
+  human_review_required: '需人工',
+  not_applicable: '不适用'
+}
+
+/**
+ * 行内展开的详情（2026-11-03 用户：点击展开、尽量少跳转）：审计项结论分布、全部不过的检查项、
+ * 必传资料齐不齐（缺哪几样）、流程各步走到哪。这些都在总览接口里，展开不再发请求。
+ */
+export const nodeDetail = (row: InspectionAuditOverviewNode) => {
+  const counts = row.conclusion?.atomicCounts || {}
+  const atomicSummary = Object.entries(counts)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${ATOMIC_RESULT_LABELS[key] || key} ${value}`)
+    .join(' · ')
+  const requirements = row.node.requirementsSummary
+  return {
+    atomicSummary,
+    failedChecks: failedCheckLabels(row),
+    humanOpinion: row.conclusion?.reason?.humanOpinion || '',
+    reasonText:
+      !failedCheckLabels(row).length && row.conclusion?.reason?.reasonCode
+        ? friendlyCheckReason(row.conclusion.reason.reasonCode)
+        : '',
+    materials: requirements
+      ? {
+          done: requirements.satisfiedCount,
+          total: requirements.requiredCount,
+          missing: (requirements.missingRequirements || []).map(
+            (item) => item.fileContent || item.materialTypeName || item.name || ''
+          )
+        }
+      : null,
+    process: (row.items || []).map((item) => ({
+      key: item.key,
+      label: item.label,
+      status: item.status,
+      statusLabel: item.statusLabel,
+      summary: item.summary
+    }))
+  }
+}
+
 /** 行内一句原因：人工意见原文优先，其次不过的检查项（翻成中文），再次原因码。 */
 export const conclusionReason = (row: InspectionAuditOverviewNode): string => {
   const reason = row.conclusion?.reason
   if (!reason) return ''
   if (reason.humanOpinion) return `监检意见：${reason.humanOpinion}`
-  const checks = (reason.checkCodes || [])
-    .map((code) => maskIdentityNumbers(friendlyCheckCode(code)))
-    .filter(Boolean)
+  const checks = failedCheckLabels(row).slice(0, 2)
   // 检查项名称写的是「应满足的条件」（如「图纸目录所列页数已交全」），前缀用「未满足」才读得通
-  if (checks.length) return `未满足：${checks.join('；')}`
+  if (checks.length) {
+    const more = failedCheckLabels(row).length - checks.length
+    return `未满足：${checks.join('；')}${more > 0 ? ` 等 ${more + checks.length} 项` : ''}`
+  }
   return reason.reasonCode ? friendlyCheckReason(reason.reasonCode) : ''
 }
 

@@ -29,7 +29,7 @@ def _reason(outcome: dict[str, Any]) -> dict[str, Any]:
     failed_codes = [str(item.get("code")) for item in outcome.get("checks") or []
                     if isinstance(item, dict) and item.get("passed") is False and item.get("code")]
     return {"atomicCheckId": outcome.get("atomicCheckId"), "result": outcome.get("result"),
-            "reasonCode": outcome.get("reason") or None, "checkCodes": failed_codes[:3]}
+            "reasonCode": outcome.get("reason") or None, "checkCodes": failed_codes[:8]}
 
 
 def node_conclusion(review_run: dict[str, Any] | None, opinion: dict[str, Any] | None) -> dict[str, Any]:

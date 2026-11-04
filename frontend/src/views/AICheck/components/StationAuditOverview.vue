@@ -4,7 +4,8 @@
  *
  * 左边固定 A～I 工位，每个带一条小进度条和计数，有未通过的加红点；右边是选中工位的节点，
  * 按「未通过 → 待补资料 → 需人工确认 → 通过 → 未开始审核」分组，每行一句原因、一个动作、
- * 点整行进节点。顶部一行细条给全项目合计。数的是节点，不是审计项（标题写明）。
+ * 点整行在原地展开详情（结论分布、不过的检查项、缺的资料、流程各步），不跳页；只有动作按钮和
+ * 「进入节点」才跳。顶部一行细条给全项目合计。数的是节点，不是审计项（标题写明）。
  */
 import { computed, ref, watch } from 'vue'
 import { ElButton, ElEmpty, ElSkeleton, ElTag } from 'element-plus'
@@ -20,7 +21,8 @@ import {
   STATION_GROUP_ORDER,
   buildStationOverview,
   conclusionReason,
-  conclusionSourceTag
+  conclusionSourceTag,
+  nodeDetail
 } from './stationOverview'
 
 const props = defineProps<{
@@ -76,6 +78,14 @@ const stationLine = (counts: Record<InspectionNodeConclusionGroup, number>) =>
     .filter(Boolean)
     .join(' · ')
 const width = (value: number, total: number) => (total ? `${(value / total) * 100}%` : '0')
+// 展开是本地状态：切工位不收起，回来还是原样
+const expanded = ref(new Set<number>())
+const toggle = (nodeId: number) => {
+  const next = new Set(expanded.value)
+  if (next.has(nodeId)) next.delete(nodeId)
+  else next.add(nodeId)
+  expanded.value = next
+}
 </script>
 
 <template>
@@ -149,35 +159,93 @@ const width = (value: number, total: number) => (total ? `${(value / total) * 10
             <div
               v-for="row in section.nodes"
               :key="row.node.nodeId"
-              class="station-node"
-              role="button"
-              tabindex="0"
-              @click="emit('open', row.node, row.group)"
-              @keydown.enter="emit('open', row.node, row.group)"
+              :class="['station-node-card', { 'is-expanded': expanded.has(row.node.nodeId) }]"
             >
-              <span class="station-node-id">{{ row.node.nodeId }}</span>
-              <span class="station-node-main">
-                <span class="station-node-name">{{ row.node.name }}</span>
-                <small v-if="conclusionReason(row)" class="station-node-reason">{{
-                  conclusionReason(row)
-                }}</small>
-              </span>
-              <ElTag
-                v-if="conclusionSourceTag(row)"
-                size="small"
-                effect="plain"
-                :type="conclusionSourceTag(row)!.tone"
-                >{{ conclusionSourceTag(row)!.text }}</ElTag
+              <div
+                class="station-node"
+                role="button"
+                tabindex="0"
+                :aria-expanded="expanded.has(row.node.nodeId)"
+                @click="toggle(row.node.nodeId)"
+                @keydown.enter.prevent="toggle(row.node.nodeId)"
               >
-              <ElButton
-                v-if="STATION_GROUP_ACTIONS[row.group]"
-                size="small"
-                type="primary"
-                plain
-                @click.stop="emit('open', row.node, row.group)"
-                >{{ STATION_GROUP_ACTIONS[row.group] }}</ElButton
-              >
-              <span class="station-node-chevron" aria-hidden="true">›</span>
+                <span class="station-node-id">{{ row.node.nodeId }}</span>
+                <span class="station-node-main">
+                  <span class="station-node-name">{{ row.node.name }}</span>
+                  <small v-if="conclusionReason(row)" class="station-node-reason">{{
+                    conclusionReason(row)
+                  }}</small>
+                </span>
+                <ElTag
+                  v-if="conclusionSourceTag(row)"
+                  size="small"
+                  effect="plain"
+                  :type="conclusionSourceTag(row)!.tone"
+                  >{{ conclusionSourceTag(row)!.text }}</ElTag
+                >
+                <ElButton
+                  v-if="STATION_GROUP_ACTIONS[row.group]"
+                  size="small"
+                  type="primary"
+                  plain
+                  @click.stop="emit('open', row.node, row.group)"
+                  >{{ STATION_GROUP_ACTIONS[row.group] }}</ElButton
+                >
+                <span class="station-node-chevron" aria-hidden="true">›</span>
+              </div>
+              <div v-if="expanded.has(row.node.nodeId)" class="station-node-detail">
+                <template
+                  v-for="detail in [nodeDetail(row)]"
+                  :key="`${row.node.nodeId}-${detail.process.length}`"
+                >
+                  <dl>
+                    <div v-if="detail.atomicSummary">
+                      <dt>审计项结论</dt>
+                      <dd>{{ detail.atomicSummary }}</dd>
+                    </div>
+                    <div v-if="detail.humanOpinion">
+                      <dt>监检意见</dt>
+                      <dd>{{ detail.humanOpinion }}</dd>
+                    </div>
+                    <div v-if="detail.failedChecks.length">
+                      <dt>未满足</dt>
+                      <dd>
+                        <ul>
+                          <li v-for="check in detail.failedChecks" :key="check">{{ check }}</li>
+                        </ul>
+                      </dd>
+                    </div>
+                    <div v-else-if="detail.reasonText">
+                      <dt>原因</dt>
+                      <dd>{{ detail.reasonText }}</dd>
+                    </div>
+                    <div v-if="detail.materials">
+                      <dt>必传资料</dt>
+                      <dd>
+                        已齐 {{ detail.materials.done }} / {{ detail.materials.total }}
+                        <span v-if="detail.materials.missing.length" class="station-node-missing">
+                          · 缺：{{ detail.materials.missing.join('、') }}
+                        </span>
+                      </dd>
+                    </div>
+                    <div v-if="detail.process.length">
+                      <dt>流程</dt>
+                      <dd class="station-node-process">
+                        <span
+                          v-for="step in detail.process"
+                          :key="step.key"
+                          :class="`step-${step.status}`"
+                          :title="step.summary"
+                          >{{ step.label }}·{{ step.statusLabel }}</span
+                        >
+                      </dd>
+                    </div>
+                  </dl>
+                  <ElButton link type="primary" @click="emit('open', row.node, row.group)"
+                    >进入节点 ›</ElButton
+                  >
+                </template>
+              </div>
             </div>
           </section>
         </div>
@@ -338,21 +406,81 @@ const width = (value: number, total: number) => (total ? `${(value / total) * 10
 .station-group.is-not_started h4 {
   color: var(--st-not_started);
 }
+.station-node-card {
+  border: 1px solid var(--aicheck-border, #e5e7eb);
+  border-radius: 6px;
+}
+.station-node-card + .station-node-card {
+  margin-top: 6px;
+}
+.station-node-card.is-expanded .station-node-chevron {
+  transform: rotate(90deg);
+}
+.station-node-detail {
+  padding: 4px 16px 12px 48px;
+  border-top: 1px dashed var(--aicheck-border, #e5e7eb);
+}
+.station-node-detail dl {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+.station-node-detail dl > div {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 8px;
+}
+.station-node-detail dt {
+  color: var(--aicheck-text-subtle, #667085);
+}
+.station-node-detail dd {
+  margin: 0;
+}
+.station-node-detail ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.station-node-missing {
+  color: var(--st-needs_materials);
+}
+.station-node-process {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.station-node-process span {
+  padding: 1px 8px;
+  color: var(--aicheck-text-subtle, #667085);
+  font-size: 12px;
+  background: #f3f4f6;
+  border-radius: 10px;
+}
+.station-node-process .step-completed {
+  color: var(--st-passed);
+  background: #ecfdf3;
+}
+.station-node-process .step-needs_attention,
+.station-node-process .step-failed {
+  color: var(--st-failed);
+  background: #fef2f2;
+}
+.station-node-process .step-in_progress {
+  color: #2f6bff;
+  background: #eef4ff;
+}
 .station-node {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border: 1px solid var(--aicheck-border, #e5e7eb);
   border-radius: 6px;
   cursor: pointer;
 }
-.station-node + .station-node {
-  margin-top: 6px;
-}
-.station-node:hover,
-.station-node:focus-visible {
+.station-node-card:hover,
+.station-node-card:focus-within {
   border-color: var(--el-color-primary, #2f6bff);
+}
+.station-node:focus-visible {
   outline: none;
 }
 .station-node-id {
@@ -380,6 +508,7 @@ const width = (value: number, total: number) => (total ? `${(value / total) * 10
 .station-node-chevron {
   color: #c0c4cc;
   font-size: 18px;
+  transition: transform 0.15s;
 }
 @media (max-width: 900px) {
   .station-body {
