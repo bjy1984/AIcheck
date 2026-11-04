@@ -396,6 +396,18 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         }
       },
       {
+        path: 'review-policies',
+        component: () => import('@/views/AICheck/AdminReviewPolicies.vue'),
+        name: 'AdminReviewPolicies',
+        meta: { title: '审查口径', noCache: true, roles: ['admin'] }
+      },
+      {
+        path: 'rule-updates',
+        component: () => import('@/views/AICheck/AdminRuleUpdates.vue'),
+        name: 'AdminRuleUpdates',
+        meta: { title: '规则升级', noCache: true, roles: ['admin'] }
+      },
+      {
         path: 'feedback',
         component: () => import('@/views/AICheck/AdminUserFeedback.vue'),
         name: 'AdminUserFeedback',

@@ -139,3 +139,49 @@ def test_任务只存在平台院_来源院不写进tenantId():
         task = next(row for row in state[it.COLLECTION] if row["id"] == task_id)
         assert task["sources"][0]["sourceTenantId"] == GD and task.get("tenantId") in {None, institutes.platform_tenant_id()}
     assert repo.state is not None
+
+
+def _deployed_task_with_two_sources(gd: dict) -> tuple[str, str, str]:
+    gd_feedback = submit(gd, "焊工证登记查询失败", "cf1")
+    platform_feedback = submit(PLATFORM, "焊工证登记查不到", "cf2")
+    task_id = escalate(gd, gd_feedback, "ce1")
+    data(act(escalate(PLATFORM, platform_feedback, "ce2"), "merge", {"intoTaskId": task_id}, "cm1"))
+    data(act(task_id, "approve", {"taskStatement": "修查询", "acceptanceCriteria": "用例通过"}, "ca1"))
+    data(act(task_id, "claim", {"agent": "codex"}, "cc1"))
+    data(act(task_id, "submit", {"prUrl": "https://github.com/x/y/pull/3", "tests": "ok"}, "cs1"))
+    data(act(task_id, "status", {"status": "deployed"}, "cd1"))
+    return task_id, gd_feedback, platform_feedback
+
+
+def confirm(headers: dict, feedback_id: str, key: str, **body):
+    return client.post(f"/api/user-feedback/{feedback_id}/confirm", headers={**headers, "Idempotency-Key": key}, json=body)
+
+
+def test_提交人都确认已解决才自动关闭():
+    gd = bearer(open_gdtj())
+    task_id, gd_feedback, platform_feedback = _deployed_task_with_two_sources(gd)
+    assert my_feedback(gd, gd_feedback)["platformTask"]["status"] == "deployed"
+    data(confirm(gd, gd_feedback, "k1", resolved=True))
+    assert my_feedback(gd, gd_feedback)["status"] == "resolved"
+    assert next(row for row in tasks() if row["id"] == task_id)["status"] == "deployed", "另一个院还没确认"
+    data(confirm(PLATFORM, platform_feedback, "k2", resolved=True))
+    assert next(row for row in tasks() if row["id"] == task_id)["status"] == "closed"
+    assert my_feedback(PLATFORM, platform_feedback)["reply"]["content"].startswith("平台已修复并上线")
+
+
+def test_提交人说仍有问题_任务重新打开_原因脱敏给AI():
+    gd = bearer(open_gdtj())
+    task_id, gd_feedback, _ = _deployed_task_with_two_sources(gd)
+    assert code_of(confirm(gd, gd_feedback, "k0", resolved=False)) != 0, "要写哪里不对"
+    data(confirm(gd, gd_feedback, "k1", resolved=False, note="还是查不到，电话 13812345678"))
+    packet = data(client.get(f"/api/platform/improvement-tasks/{task_id}", headers=PLATFORM))["task"]
+    assert packet["status"] == "approved" and "138****5678" in packet["reopenNote"]
+    assert my_feedback(gd, gd_feedback)["status"] == "escalated"
+
+
+def test_没上线不能确认_别人的反馈不能确认():
+    gd = bearer(open_gdtj())
+    feedback_id = submit(gd, "测试确认边界", "f1")
+    escalate(gd, feedback_id, "e1")
+    assert code_of(confirm(gd, feedback_id, "k1", resolved=True)) != 0
+    assert code_of(confirm(PLATFORM, feedback_id, "k2", resolved=True)) != 0, "别的院的人看不到这条"

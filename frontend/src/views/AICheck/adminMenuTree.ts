@@ -96,7 +96,10 @@ const SECTION_DEFS: Array<{ title: string; items: AdminMenuItem[] }> = [
         index: 'a09',
         label: '细项配置',
         route: '/admin/fine-config'
-      }
+      },
+      // 院级审查口径开关、平台规则送达既有项目（2026-11-04 意见反馈审批方案第二、三阶段）
+      { index: 'a14', label: '审查口径', route: '/admin/review-policies' },
+      { index: 'a15', label: '规则升级', route: '/admin/rule-updates' }
     ]
   },
   {

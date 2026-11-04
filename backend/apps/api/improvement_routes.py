@@ -307,3 +307,61 @@ def submit_improvement_task(request: Request, task_id: str, body: dict[str, Any]
             "note": it.text(body.get("note"), "note"), "by": actor, "at": server_time()}})
         return None, "AI 回报修改", ""
     return _mutate(request, task_id, idempotency_key, body, change)
+
+
+# ── 提交人：上线后确认解决，或说明仍有问题 ─────────────────────────────────────────
+
+@improvement_router.post("/user-feedback/{feedback_id}/confirm")
+def confirm_user_feedback(
+    request: Request,
+    feedback_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """提交人确认（2026-11-04）：「已解决」→ 这条反馈关闭，任务的来源都确认了任务就自动关闭；
+    「仍有问题」→ 写明哪里不对，任务重新打开回到待开发，原因脱敏后给 AI 重修。"""
+    _, error = api.effective_role_for_request(request)
+    if error:
+        return error
+    tenant_id, user_id = api.request_tenant_id(request), api.request_user_id(request)
+    row = next((item for item in repo.state.get(FEEDBACK_COLLECTION) or []
+                if item.get("id") == feedback_id and api.tenant_id_for_record(item) == tenant_id), None)
+    if not row or (row.get("submittedBy") or {}).get("userId") != user_id:
+        return fail(errors.NOT_FOUND, request)
+    task_id = str((row.get("platformTask") or {}).get("taskId") or "")
+    if row.get("status") != "escalated" or (row.get("platformTask") or {}).get("status") != "deployed" or not task_id:
+        return fail(errors.CONFLICT, request, http_status=409, message="平台标为已上线后才能确认。")
+    resolved = bool(body.get("resolved"))
+    note = it.text(body.get("note"), "note")
+    if not resolved and not note:
+        return fail(errors.VALIDATION_ERROR, request, message="请写一句哪里还不对，平台会照着重修。")
+
+    def produce():
+        actor = api.request_actor_name(request)
+        with institutes.platform_scope() as state:
+            task = _find(state, task_id)
+            if task is None or it.effective_status(task) != "deployed":
+                return fail(errors.CONFLICT, request, http_status=409, message="平台的任务状态已变化，请刷新。")
+            for src in task.get("sources") or []:
+                if src.get("sourceTenantId") == tenant_id and src.get("feedbackId") == feedback_id:
+                    src["submitterConfirmation"] = {"resolved": resolved, "at": server_time(), "note": it.redact(note)}
+            if resolved:
+                action = "提交人确认已解决"
+                if all((src.get("submitterConfirmation") or {}).get("resolved") for src in task.get("sources") or []):
+                    task["status"], action = "closed", "提交人都确认已解决，自动关闭"
+            else:
+                task.update({"status": "approved", "claim": None, "reopenNote": f"提交人反馈仍有问题：{it.redact(note)}"})
+                action = "提交人说仍有问题，重新打开"
+            task.setdefault("history", []).append(it.history_entry(action, actor, after=task["status"], note=it.redact(note)))
+            _save(task)
+            snapshot = repo.clone(task)
+        if resolved:
+            row["status"] = "resolved"
+        row["submitterConfirmation"] = {"resolved": resolved, "at": server_time(), "note": note}
+        institutes.save_in_current_tenant(FEEDBACK_COLLECTION, row)
+        closed_reply = f"平台已修复并上线：{snapshot.get('title') or task_id}" if snapshot["status"] == "closed" else ""
+        _mirror(snapshot, reply=closed_reply)
+        audit_id = repo.add_audit(f"意见反馈：{action}", "UserFeedback", feedback_id, after={"taskId": task_id, "resolved": resolved})
+        return _finish(request, {"feedback": repo.clone(row), "taskStatus": snapshot["status"], "auditLogId": audit_id})
+
+    return api.idempotent(request, idempotency_key, produce, fingerprint_source={"feedbackId": feedback_id, "body": body})

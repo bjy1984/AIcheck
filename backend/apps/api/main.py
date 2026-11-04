@@ -33,6 +33,7 @@ from apps.api.inspection_service_routes import inspection_service_router, public
 from apps.api.knowledge_admin_routes import knowledge_admin_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
 from apps.api.org_delegation_routes import org_delegation_router
+from apps.api.pack_update_routes import pack_update_router
 from apps.api.platform_routes import platform_router
 from apps.api.project_analysis_routes import project_analysis_router
 from apps.api.project_registration_routes import project_registration_router
@@ -40,6 +41,7 @@ from apps.api.project_rule_routes import project_rule_router
 from apps.api.report_template_routes import report_template_router
 from apps.api.review_handoff_routes import router as review_handoff_router
 from apps.api.review_plugin_routes import review_plugin_router
+from apps.api.review_policy_routes import review_policy_router
 from apps.api.routes import (
     binding_node_ids,
     document_node_ids,
@@ -1522,6 +1524,10 @@ app.include_router(user_feedback_router)
 app.include_router(user_feedback_router, prefix="/api")
 app.include_router(improvement_router)
 app.include_router(improvement_router, prefix="/api")
+app.include_router(review_policy_router)
+app.include_router(review_policy_router, prefix="/api")
+app.include_router(pack_update_router)
+app.include_router(pack_update_router, prefix="/api")
 app.include_router(platform_router)
 app.include_router(platform_router, prefix="/api")
 app.include_router(knowledge_admin_router)

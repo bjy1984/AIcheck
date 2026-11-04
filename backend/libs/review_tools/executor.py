@@ -13,6 +13,7 @@ from libs.raw_vault import (
     capture_tool_request,
     capture_tool_result,
 )
+from libs.review_policies import effective_value
 
 ToolRunner = Callable[[str, dict[str, Any]], dict[str, Any]]
 
@@ -375,6 +376,8 @@ def build_tool_arguments(
         design = nested_dict(facts, "design")
         arguments.setdefault("standardReferences", list_value(design.get("standardReferences")))
         arguments.setdefault("reviewDate", design.get("reviewDate") or nested_dict(facts, "project").get("constructionStart"))
+        # 院级口径开关（libs/review_policies）：本院没选就用平台默认，再没有用代码默认
+        arguments.setdefault("notYetEffectivePolicy", effective_value("standard_not_yet_effective_on_review_date"))
     if tool_name == "lookup_standard_status" and not arguments.get("standardRef"):
         # 计划里的这一步原来不带标准号，一律 VALIDATION_ERROR。现在把时间线没收录的编号交给它批量核。
         design = nested_dict(facts, "design")
@@ -562,6 +565,7 @@ def build_tool_arguments(
         arguments.setdefault("periodEnd", period.get("periodEnd") or read_fact(facts, "project.plannedConstructionEnd"))
         arguments.setdefault("referenceDate", period.get("referenceDate"))
         arguments.setdefault("referenceDateSource", period.get("referenceDateSource"))
+        arguments.setdefault("expiredWithoutPeriodPolicy", effective_value("certificate_expired_without_construction_period"))
         arguments.setdefault("expectedHolder", cert_facts.get("expectedHolder"))
         if profile in {
             "r01_design_license_period",

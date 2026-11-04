@@ -263,6 +263,9 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
     reference_is_fallback = period_end is None and (
         not arguments.get("referenceDate") or arguments.get("referenceDateSource") == "business_today"
     )
+    expired_without_period_policy = str(arguments.get("expiredWithoutPeriodPolicy") or "evidence_insufficient")
+    if expired_without_period_policy not in {"evidence_insufficient", "human_review_required", "failed"}:
+        expired_without_period_policy = "evidence_insufficient"
     expected_holder = _norm_holder(arguments.get("expectedHolder"))
     required_scopes = {normalize_grade(item) for item in arguments.get("requiredScopes") or [] if item}
     warnings: list[str] = []
@@ -298,7 +301,9 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
                 # 没有施工期时只能拿「今天」兜底：今天过期不等于施工期间无效，交人工而不判不符合
                 # （2026-09-25 业务确认：ECD202 未填施工期，任志国资格证按当日判成了不符合）。
                 # 调用方明确给了核验日期（独立核验服务）照常判。
-                status = "evidence_insufficient" if reference_is_fallback else "failed"
+                # 怎么判是院级口径开关（libs/review_policies，certificate_expired_without_construction_period），
+                # 默认证据不足；选项里没有「符合」。
+                status = expired_without_period_policy if reference_is_fallback else "failed"
             if period_start is not None and valid_from is not None:
                 covers_start = valid_from <= period_start
                 cert_checks.append(check(f"{label}:valid_from_covers_period_start", covers_start, valid_from.isoformat(), period_start.isoformat()))
@@ -381,6 +386,9 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
         overall = "failed"
     elif "evidence_insufficient" in statuses:
         overall = "evidence_insufficient"
+    elif "human_review_required" in statuses:
+        # 院级口径选「需人工确认」时会出现；原来没有这一档，会落到「符合」
+        overall = "human_review_required"
     else:
         overall = "passed"
     output = result(
@@ -398,6 +406,8 @@ def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
             "requiredScopes": sorted(required_scopes),
             "scopeProfile": scope_profile,
             "certificates": per_certificate,
+            **({"policyApplied": {"certificate_expired_without_construction_period": expired_without_period_policy}}
+               if reference_is_fallback else {}),
         },
         checks=checks,
         rule_version="certificate-validity-cn-v3" if scope_profile == "design-license-scope-cn-v2" else "certificate-validity-cn-v2",

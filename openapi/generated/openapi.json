@@ -901,6 +901,77 @@
         ]
       }
     },
+    "/admin/business-pack/updates": {
+      "get": {
+        "operationId": "list_business_pack_updates_admin_business_pack_updates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Business Pack Updates"
+      }
+    },
+    "/admin/business-pack/updates/apply": {
+      "post": {
+        "operationId": "apply_business_pack_updates_admin_business_pack_updates_apply_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Business Pack Updates"
+      }
+    },
     "/admin/config-diff/preview": {
       "post": {
         "operationId": "admin_config_diff_preview_admin_config_diff_preview_post",
@@ -2891,6 +2962,86 @@
         "summary": "Publish Report Template"
       }
     },
+    "/admin/review-policies": {
+      "get": {
+        "operationId": "list_review_policies_admin_review_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Review Policies"
+      }
+    },
+    "/admin/review-policies/{key}": {
+      "put": {
+        "operationId": "set_institute_review_policy_admin_review_policies__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Institute Review Policy"
+      }
+    },
     "/admin/user-feedback": {
       "get": {
         "operationId": "admin_user_feedback_admin_user_feedback_get",
@@ -4055,6 +4206,77 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/api/admin/business-pack/updates": {
+      "get": {
+        "operationId": "list_business_pack_updates_api_admin_business_pack_updates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Business Pack Updates"
+      }
+    },
+    "/api/admin/business-pack/updates/apply": {
+      "post": {
+        "operationId": "apply_business_pack_updates_api_admin_business_pack_updates_apply_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Business Pack Updates"
       }
     },
     "/api/admin/config-diff/preview": {
@@ -6045,6 +6267,86 @@
           }
         },
         "summary": "Publish Report Template"
+      }
+    },
+    "/api/admin/review-policies": {
+      "get": {
+        "operationId": "list_review_policies_api_admin_review_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Review Policies"
+      }
+    },
+    "/api/admin/review-policies/{key}": {
+      "put": {
+        "operationId": "set_institute_review_policy_api_admin_review_policies__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Institute Review Policy"
       }
     },
     "/api/admin/user-feedback": {
@@ -17324,7 +17626,7 @@
     },
     "/api/mcp/data-services": {
       "delete": {
-        "operationId": "mcp_api_mcp_data_services_post",
+        "operationId": "mcp_api_mcp_data_services_get",
         "responses": {
           "200": {
             "content": {
@@ -17338,7 +17640,7 @@
         "summary": "Mcp"
       },
       "get": {
-        "operationId": "mcp_api_mcp_data_services_post",
+        "operationId": "mcp_api_mcp_data_services_get",
         "responses": {
           "200": {
             "content": {
@@ -17352,7 +17654,7 @@
         "summary": "Mcp"
       },
       "post": {
-        "operationId": "mcp_api_mcp_data_services_post",
+        "operationId": "mcp_api_mcp_data_services_get",
         "responses": {
           "200": {
             "content": {
@@ -18870,6 +19172,70 @@
           }
         },
         "summary": "Set Platform Institute Status"
+      }
+    },
+    "/api/platform/review-policy-defaults/{key}": {
+      "put": {
+        "operationId": "set_platform_review_policy_default_api_platform_review_policy_defaults__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Platform Review Policy Default"
       }
     },
     "/api/projects": {
@@ -32760,6 +33126,71 @@
         "summary": "My User Feedback"
       }
     },
+    "/api/user-feedback/{feedback_id}/confirm": {
+      "post": {
+        "description": "提交人确认（2026-11-04）：「已解决」→ 这条反馈关闭，任务的来源都确认了任务就自动关闭；\n「仍有问题」→ 写明哪里不对，任务重新打开回到待开发，原因脱敏后给 AI 重修。",
+        "operationId": "confirm_user_feedback_api_user_feedback__feedback_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "title": "Feedback Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm User Feedback"
+      }
+    },
     "/api/users": {
       "get": {
         "operationId": "legacy_users_api_users_get",
@@ -44601,6 +45032,70 @@
           }
         },
         "summary": "Set Platform Institute Status"
+      }
+    },
+    "/platform/review-policy-defaults/{key}": {
+      "put": {
+        "operationId": "set_platform_review_policy_default_platform_review_policy_defaults__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Platform Review Policy Default"
       }
     },
     "/projects": {
@@ -58489,6 +58984,71 @@
           }
         },
         "summary": "My User Feedback"
+      }
+    },
+    "/user-feedback/{feedback_id}/confirm": {
+      "post": {
+        "description": "提交人确认（2026-11-04）：「已解决」→ 这条反馈关闭，任务的来源都确认了任务就自动关闭；\n「仍有问题」→ 写明哪里不对，任务重新打开回到待开发，原因脱敏后给 AI 重修。",
+        "operationId": "confirm_user_feedback_user_feedback__feedback_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "title": "Feedback Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm User Feedback"
       }
     },
     "/users": {

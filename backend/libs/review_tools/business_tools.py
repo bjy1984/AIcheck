@@ -1323,6 +1323,7 @@ def check_standard_version_active(arguments: dict[str, Any]) -> dict[str, Any]:
     if not references or review_date is None:
         return insufficient("check_standard_version_active", arguments, "standard_version_facts_missing")
     references = with_online_statuses(references, list_of_dicts(arguments.get("onlineStatuses")))
+    not_yet_effective_policy = "failed" if arguments.get("notYetEffectivePolicy") == "failed" else "human_review_required"
     checks = []
     for index, item in enumerate(references, 1):
         effective = parse_date(item.get("effectiveFrom"))
@@ -1331,13 +1332,19 @@ def check_standard_version_active(arguments: dict[str, Any]) -> dict[str, Any]:
         active_status = status not in {"withdrawn", "废止", "obsolete", "replaced"}
         active_period = (effective is None or effective <= review_date) and (withdrawn is None or review_date < withdrawn)
         entry = check(str(item.get("standardRef") or f"standard_{index}"), active_status and active_period, item, review_date)
-        if active_status and (withdrawn is None or review_date < withdrawn) and effective is not None and review_date < effective:
+        not_yet_effective = (active_status and (withdrawn is None or review_date < withdrawn)
+                             and effective is not None and review_date < effective)
+        # 院级口径（libs/review_policies，standard_not_yet_effective_on_review_date）选「不符合」时按审查日现行版本判
+        if not_yet_effective and not_yet_effective_policy == "failed":
+            entry["reason"] = "not_yet_effective_on_review_date"
+        elif not_yet_effective:
             # 已发布、审查日还没实施：设计提前采用新版不是用了作废标准，算不算有效版本由人定（用户 2026-10-29）。
             # GDLNG 设计 2021.3 引用 GB/T 20801.1~.6-2020（2021-06-01 实施），按施工日判不符合是误判。
             entry["humanReview"] = True
             entry["reason"] = "not_yet_effective_on_review_date"
         checks.append(entry)
-    facts = {"standardReferences": references, "reviewDate": review_date}
+    facts = {"standardReferences": references, "reviewDate": review_date,
+             "policyApplied": {"standard_not_yet_effective_on_review_date": not_yet_effective_policy}}
     pending = [item for item in checks if item.get("humanReview")]
     if pending and all(item.get("passed") or item.get("humanReview") for item in checks):
         output = result("check_standard_version_active", "human_review_required", facts={"input": facts}, checks=checks,

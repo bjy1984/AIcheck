@@ -38,6 +38,7 @@ export type UserFeedback = {
   }
   reply: { content: string; repliedBy: string; repliedAt: string } | null
   platformTask?: UserFeedbackPlatformTask
+  submitterConfirmation?: { resolved: boolean; at: string; note: string }
   escalation?: { by: string; at: string; scope: UserFeedbackScope; note: string }
   createdAt: string
   updatedAt: string
@@ -125,6 +126,18 @@ export const createUserFeedbackApi = (adapter: RequestAdapter, mutationHeaders: 
     adapter.get({
       url: '/api/admin/user-feedback',
       params: Object.fromEntries(Object.entries(filters || {}).filter(([, value]) => value))
+    }),
+
+  /** 提交人确认：平台标为已上线后，确认已解决，或说明仍有问题（任务重新打开） */
+  confirmUserFeedbackApi: (
+    feedbackId: string,
+    payload: { resolved: boolean; note?: string },
+    options?: { idempotencyKey?: string }
+  ): Promise<IResponse<{ feedback: UserFeedback; taskStatus: string; auditLogId: string }>> =>
+    adapter.post({
+      url: `/api/user-feedback/${encodeURIComponent(feedbackId)}/confirm`,
+      data: payload,
+      headers: mutationHeaders(options)
     }),
 
   escalateUserFeedbackApi: (

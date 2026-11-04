@@ -4,6 +4,7 @@ import { createAutoReviewApi } from './autoReview'
 import { createProjectAnalysisApi } from './projectAnalysis'
 import { createImprovementTaskApi } from './improvementTasks'
 import { createPlatformApi } from './platform'
+import { createReviewPolicyApi } from './reviewPolicies'
 import { createUserFeedbackApi } from './userFeedback'
 export type {
   ProjectAnalysisMutationOptions,
@@ -4393,11 +4394,20 @@ export const {
 } = createImprovementTaskApi(request, mutationHeaders)
 
 export const {
+  getReviewPoliciesApi,
+  setInstituteReviewPolicyApi,
+  setPlatformReviewPolicyDefaultApi,
+  getBusinessPackUpdatesApi,
+  applyBusinessPackUpdatesApi
+} = createReviewPolicyApi(request, mutationHeaders)
+
+export const {
   submitUserFeedbackApi,
   getMyUserFeedbackApi,
   getAdminUserFeedbackApi,
   replyUserFeedbackApi,
-  escalateUserFeedbackApi
+  escalateUserFeedbackApi,
+  confirmUserFeedbackApi
 } = createUserFeedbackApi(request, mutationHeaders)
 
 const projectAnalysisApi = createProjectAnalysisApi(request, mutationHeaders)

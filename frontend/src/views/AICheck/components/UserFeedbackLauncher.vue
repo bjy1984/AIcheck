@@ -9,13 +9,14 @@ import {
   ElDialog,
   ElInput,
   ElMessage,
+  ElMessageBox,
   ElRadioButton,
   ElRadioGroup,
   ElTabPane,
   ElTabs,
   ElTag
 } from 'element-plus'
-import { getMyUserFeedbackApi, submitUserFeedbackApi } from '@/api/aicheck'
+import { confirmUserFeedbackApi, getMyUserFeedbackApi, submitUserFeedbackApi } from '@/api/aicheck'
 import {
   USER_FEEDBACK_CATEGORIES,
   type UserFeedback,
@@ -66,6 +67,45 @@ const contextLabel = computed(() => {
   if (context.value.nodeId) parts.push(`节点 ${context.value.nodeId}`)
   return parts.join(' · ')
 })
+/* 平台标为已上线后，提交人确认（2026-11-04）：已解决就关闭；仍有问题写原因，任务重新打开 */
+const awaitingConfirm = (item: UserFeedback) =>
+  item.status === 'escalated' && item.platformTask?.status === 'deployed'
+const confirming = ref('')
+const confirmFix = async (item: UserFeedback, resolved: boolean) => {
+  let note = ''
+  if (!resolved) {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '写一句哪里还不对，平台会照着重修。',
+        '仍有问题',
+        {
+          confirmButtonText: '提交',
+          cancelButtonText: '取消',
+          inputType: 'textarea',
+          inputValidator: (input: string) => Boolean(String(input || '').trim()) || '请填写'
+        }
+      )
+      note = String(value || '').trim()
+    } catch {
+      return
+    }
+  }
+  confirming.value = item.id
+  try {
+    await confirmUserFeedbackApi(
+      item.id,
+      { resolved, note: note || undefined },
+      { idempotencyKey: `user-feedback-confirm-${item.id}-${Date.now()}` }
+    )
+    ElMessage.success(resolved ? '已确认解决，谢谢反馈。' : '已退回平台重修。')
+    await loadMine()
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '提交失败，请稍后重试。'))
+  } finally {
+    confirming.value = ''
+  }
+}
+
 const repliedCount = computed(() => mine.value.filter((item) => item.reply).length)
 
 const loadMine = async () => {
@@ -190,6 +230,22 @@ const statusTagType = (status: string) =>
               <p v-if="item.platformTask" class="mine-platform">
                 平台进度：{{ item.platformTask.statusLabel }}
               </p>
+              <div v-if="awaitingConfirm(item)" class="mine-confirm">
+                <span>平台说已修好上线，请确认：</span>
+                <ElButton
+                  size="small"
+                  type="primary"
+                  :loading="confirming === item.id"
+                  @click="confirmFix(item, true)"
+                  >已解决</ElButton
+                >
+                <ElButton
+                  size="small"
+                  :disabled="confirming === item.id"
+                  @click="confirmFix(item, false)"
+                  >仍有问题</ElButton
+                >
+              </div>
               <p v-if="item.reply" class="mine-reply">
                 <strong>{{ item.reply.repliedBy }} 回复：</strong>{{ item.reply.content }}
               </p>
@@ -299,6 +355,15 @@ const statusTagType = (status: string) =>
   margin: 6px 0 0;
   font-size: 13px;
   white-space: pre-wrap;
+}
+
+.mine-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 13px;
 }
 
 .mine-platform {
