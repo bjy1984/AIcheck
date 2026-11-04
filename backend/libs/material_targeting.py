@@ -23,6 +23,17 @@ MANUAL_STATUS_LABELS = {
 }
 
 
+
+def matched_file_refs(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """已挂到审查点的文件：文件名、文档 id、版本 id（按文档去重，保持先后）。"""
+    seen: dict[str, dict[str, Any]] = {}
+    for item in items:
+        document_id = str(item.get("documentId") or "")
+        if document_id and document_id not in seen:
+            seen[document_id] = {"documentId": document_id, "fileName": item.get("fileName") or "",
+                                 "documentVersionId": item.get("documentVersionId") or item.get("versionId")}
+    return list(seen.values())
+
 def evidence_link_is_locatable(link: dict[str, Any]) -> bool:
     bbox = link.get("bbox")
     try:
@@ -1459,6 +1470,8 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
                     if item.get("fileName")
                 }
             ),
+            # 总览里点文件名直接在线预览要文档 id；按文档去重，绑定和证据链接都算
+            "matchedFiles": matched_file_refs([*point_bindings, *point_links]),
             "supportStatus": (
                 SUPPORTED_STATUS
                 if fulfilled

@@ -252,6 +252,7 @@ import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSection
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import StationAuditOverview from './components/StationAuditOverview.vue'
+import UserAvatarIcon from './components/UserAvatarIcon.vue'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
 import ImportantReview from '@/views/ImportantReview/ImportantReview.vue'
 import InspectionViewTabs from './components/InspectionViewTabs.vue'
@@ -3062,6 +3063,28 @@ const handleOpenFileDetail = async (documentId: string) => {
   }
 }
 
+/** 工位总览的资料清单里点文件名：直接打开在线预览，不经过文件详情弹窗、不离开总览。 */
+const previewOverviewDocument = async (documentId: string, fileName: string) => {
+  if (!activeProjectId.value || !documentId) return
+  try {
+    const res = await getDocumentDetailApi(activeProjectId.value, documentId)
+    const preview = res?.data?.preview
+    if (!preview?.url || preview.previewType === 'unsupported') {
+      ElMessage.warning(`${fileName}暂不支持在线预览，可在节点资料里下载查看。`)
+      return
+    }
+    openPreviewDrawer({
+      source: 'file',
+      title: res.data.document.fileName || fileName,
+      url: preview.url,
+      previewType: preview.previewType,
+      meta: `${preview.contentType || res.data.document.fileType} · 有效期至 ${preview.expiresAt}`
+    })
+  } catch (error) {
+    showActionError('文件预览加载失败，请重试。', error)
+  }
+}
+
 const handlePreviewFile = (url: string) => {
   openPreviewDrawer({
     source: 'file',
@@ -5105,7 +5128,7 @@ onBeforeUnmount(() => {
         <!-- 用户菜单固定在顶栏右上角：不跟操作按钮一起换行（2026-11-03 用户） -->
         <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
           <button class="user" type="button" aria-label="打开用户菜单">
-            <span class="avatar"></span>
+            <UserAvatarIcon class="avatar" :badge="role === 'inspection'" />
             <span>{{ roleUserLabel }}</span>
             <span class="user-caret">⌄</span>
           </button>
@@ -5388,6 +5411,7 @@ onBeforeUnmount(() => {
                   :loading="inspectionAuditLoading"
                   :audit-item-total="inspectionAuditSummaryTotal"
                   @open="openStationOverviewNode"
+                  @preview="previewOverviewDocument"
                 />
 
                 <article
@@ -7336,8 +7360,6 @@ onBeforeUnmount(() => {
 .avatar {
   width: 32px;
   height: 32px;
-  background: linear-gradient(180deg, #4b83f7, #1e5ec8);
-  border-radius: 50%;
 }
 
 .user-menu {

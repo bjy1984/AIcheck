@@ -116,7 +116,8 @@ assert.equal(
   const detail = nodeDetail(expandRow)
   assert.equal(detail.atomicSummary, '符合 1 · 证据不足 2')
   assert.equal(detail.failedChecks.length, 3)
-  assert.deepEqual(detail.materials, { done: 2, total: 3, missing: ['设计说明及管道特性表'] })
+  assert.equal(detail.materials?.done, 2)
+  assert.deepEqual(detail.materials?.missing, ['设计说明及管道特性表'])
   assert.deepEqual(
     detail.process.map((step) => step.statusLabel),
     ['已完成']
@@ -126,4 +127,50 @@ assert.equal(
     conclusionReason(expandRow),
     /^未满足：图纸目录所列页数已交全；防腐蚀：要求·合格标准 等 3 项$/
   )
+}
+
+// 资料清单：全部 / 已传 / 未传；有文档 id 的文件才能点开预览
+{
+  const { nodeDetail, filterMaterials } = await import('./stationOverview')
+  const withFiles = {
+    node: {
+      nodeId: 28,
+      name: '管道组对',
+      requirementsSummary: {
+        requiredCount: 2,
+        satisfiedCount: 1,
+        missingCount: 1,
+        requirements: [
+          {
+            id: 'R1',
+            fileContent: '管道组对检查记录',
+            requiredType: '必传',
+            fulfilled: true,
+            matchedFiles: [{ documentId: 'DOC-1', fileName: '组对记录.pdf' }]
+          },
+          {
+            id: 'R2',
+            fileContent: '现场照片',
+            requiredType: '必传',
+            fulfilled: false,
+            matchedFileNames: []
+          }
+        ],
+        missingRequirements: [{ id: 'R2', fileContent: '现场照片' }]
+      }
+    },
+    items: [],
+    conclusion: { group: 'needs_materials', confirmed: false }
+  } as unknown as InspectionAuditOverviewNode
+  const items = nodeDetail(withFiles).materials!.items
+  assert.deepEqual(
+    filterMaterials(items, 'uploaded').map((item) => item.name),
+    ['管道组对检查记录']
+  )
+  assert.deepEqual(
+    filterMaterials(items, 'missing').map((item) => item.name),
+    ['现场照片']
+  )
+  assert.equal(filterMaterials(items, 'all').length, 2)
+  assert.equal(items[0].files[0].documentId, 'DOC-1')
 }

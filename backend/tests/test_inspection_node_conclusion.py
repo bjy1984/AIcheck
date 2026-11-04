@@ -47,3 +47,16 @@ def test_工位清单固定A到I_覆盖69个节点():
     assert [item["stationId"] for item in stations] == list("ABCDEFGHI")
     nodes = [node for item in stations for node in item["nodeIds"]]
     assert len(nodes) == len(set(nodes)) == 69
+
+
+def test_挂到审查点的文件按文档去重_带文档id供预览():
+    from libs.material_targeting import matched_file_refs
+
+    refs = matched_file_refs([
+        {"documentId": "DOC-1", "fileName": "组对记录.pdf", "documentVersionId": "DV-1"},
+        {"documentId": "DOC-1", "fileName": "组对记录.pdf", "documentVersionId": "DV-1"},
+        {"documentId": "", "fileName": "没有文档号的链接"},
+        {"documentId": "DOC-2", "fileName": "照片.jpg", "versionId": "DV-2"},
+    ])
+    assert refs == [{"documentId": "DOC-1", "fileName": "组对记录.pdf", "documentVersionId": "DV-1"},
+                    {"documentId": "DOC-2", "fileName": "照片.jpg", "documentVersionId": "DV-2"}]

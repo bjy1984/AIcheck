@@ -220,6 +220,7 @@ from libs.manual_binding_links import (
 from libs.material_targeting import (
     build_node_evidence_readiness,
     evidence_link_is_locatable,
+    matched_file_refs,
     node_evidence_links_for_node,
     recompute_project_material_targeting,  # noqa: F401 -- public re-export and monkeypatch compatibility
     review_points_for_project,
@@ -4518,6 +4519,7 @@ def build_node_requirements_summary(
             **repo.clone(requirement),
             "matchedBindingCount": len(matches),
             "matchedFileNames": sorted({str(binding.get("fileName") or "") for binding in matches if binding.get("fileName")}),
+            "matchedFiles": matched_file_refs(matches),
             "fulfilled": bool(matches),
         }
         matched_requirements.append(matched)

@@ -139,6 +139,8 @@ export type NodeRequirementMatch = NodeDocumentRequirement & {
   /** 映射表里写的资料内容（如「设计说明及管道特性表」），比 name 更具体 */
   fileContent?: string
   materialTypeName?: string
+  /** 已挂到这一项的文件（总览里点文件名在线预览用） */
+  matchedFiles?: { documentId: string; fileName: string; documentVersionId?: string | null }[]
   matchedLinkCount?: number
   matchedBindingCount: number
   matchedFileNames: string[]

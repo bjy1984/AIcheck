@@ -9,7 +9,14 @@
  */
 import { computed, ref, watch } from 'vue'
 import { ElButton, ElEmpty, ElIcon, ElSkeleton, ElTag } from 'element-plus'
-import { ArrowRight, Check, Close, MoreFilled, WarningFilled } from '@element-plus/icons-vue'
+import {
+  ArrowRight,
+  Check,
+  Close,
+  Document,
+  MoreFilled,
+  WarningFilled
+} from '@element-plus/icons-vue'
 import type {
   InspectionAuditOverviewNode,
   InspectionNodeConclusionGroup,
@@ -23,7 +30,9 @@ import {
   buildStationOverview,
   conclusionReason,
   conclusionSourceTag,
-  nodeDetail
+  filterMaterials,
+  nodeDetail,
+  type MaterialFilter
 } from './stationOverview'
 
 const props = defineProps<{
@@ -34,6 +43,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   open: [node: ProjectTreeNode, group: InspectionNodeConclusionGroup]
+  preview: [documentId: string, fileName: string]
 }>()
 
 const overview = computed(() => buildStationOverview(props.items, props.stations || []))
@@ -78,7 +88,17 @@ const stationLine = (counts: Record<InspectionNodeConclusionGroup, number>) =>
   ]
     .filter(Boolean)
     .join(' · ')
-const width = (value: number, total: number) => (total ? `${(value / total) * 100}%` : '0')
+// 资料清单的「全部 / 已传 / 未传」按节点各记各的
+const materialFilters = ref<Record<number, MaterialFilter>>({})
+const materialFilterOf = (nodeId: number): MaterialFilter => materialFilters.value[nodeId] || 'all'
+const setMaterialFilter = (nodeId: number, filter: MaterialFilter) => {
+  materialFilters.value = { ...materialFilters.value, [nodeId]: filter }
+}
+const materialTabs = (items: { uploaded: boolean }[]) => [
+  { key: 'all' as const, label: '全部', count: items.length },
+  { key: 'uploaded' as const, label: '已传', count: items.filter((item) => item.uploaded).length },
+  { key: 'missing' as const, label: '未传', count: items.filter((item) => !item.uploaded).length }
+]
 // 展开是本地状态：切工位不收起，回来还是原样
 const expanded = ref(new Set<number>())
 const toggle = (nodeId: number) => {
@@ -111,10 +131,10 @@ const toggle = (nodeId: number) => {
         </ul>
         <div class="station-bar" aria-hidden="true">
           <span
-            v-for="chip in summaryChips"
+            v-for="chip in summaryChips.filter((item) => item.value)"
             :key="chip.group"
             :class="`is-${chip.group}`"
-            :style="{ width: width(chip.value, nodeTotal) }"
+            :style="{ flexGrow: chip.value }"
           ></span>
         </div>
       </div>
@@ -136,10 +156,10 @@ const toggle = (nodeId: number) => {
             </span>
             <span class="station-bar station-bar--mini" aria-hidden="true">
               <span
-                v-for="group in STATION_GROUP_ORDER"
+                v-for="group in STATION_GROUP_ORDER.filter((key) => station.counts[key])"
                 :key="group"
                 :class="`is-${group}`"
-                :style="{ width: width(station.counts[group], station.nodes.length) }"
+                :style="{ flexGrow: station.counts[group] }"
               ></span>
             </span>
             <small>{{ stationLine(station.counts) }}</small>
@@ -221,27 +241,88 @@ const toggle = (nodeId: number) => {
                       <dd>{{ detail.reasonText }}</dd>
                     </div>
                     <div v-if="detail.materials">
-                      <dt>必传资料</dt>
+                      <dt>资料</dt>
                       <dd class="station-materials">
-                        <span class="station-materials-count">
-                          <strong>{{ detail.materials.done }}</strong> /
-                          {{ detail.materials.total }} 已齐
-                        </span>
-                        <span
-                          class="station-materials-meter"
-                          role="presentation"
-                          :style="{
-                            '--done': `${detail.materials.total ? (detail.materials.done / detail.materials.total) * 100 : 0}%`
-                          }"
-                        ></span>
-                        <template v-if="detail.materials.missing.length">
-                          <span class="station-materials-missing-title"
-                            >还缺 {{ detail.materials.missing.length }} 项</span
+                        <div class="station-materials-head">
+                          <span class="station-materials-count">
+                            必传 <strong>{{ detail.materials.done }}</strong> /
+                            {{ detail.materials.total }} 已齐
+                          </span>
+                          <span class="station-materials-meter" role="presentation">
+                            <i
+                              v-for="index in detail.materials.total"
+                              :key="index"
+                              :class="{ 'is-done': index <= detail.materials.done }"
+                            ></i>
+                          </span>
+                        </div>
+                        <div
+                          class="station-materials-tabs"
+                          role="tablist"
+                          :aria-label="`${row.node.name}资料`"
+                        >
+                          <button
+                            v-for="tab in materialTabs(detail.materials.items)"
+                            :key="tab.key"
+                            type="button"
+                            role="tab"
+                            :aria-selected="materialFilterOf(row.node.nodeId) === tab.key"
+                            :class="{ 'is-active': materialFilterOf(row.node.nodeId) === tab.key }"
+                            @click="setMaterialFilter(row.node.nodeId, tab.key)"
+                            >{{ tab.label }} <span>{{ tab.count }}</span></button
                           >
-                          <ul class="station-materials-missing">
-                            <li v-for="item in detail.materials.missing" :key="item">{{ item }}</li>
-                          </ul>
-                        </template>
+                        </div>
+                        <ul class="station-materials-list">
+                          <li
+                            v-for="item in filterMaterials(
+                              detail.materials.items,
+                              materialFilterOf(row.node.nodeId)
+                            )"
+                            :key="item.key"
+                            :class="{ 'is-missing': !item.uploaded }"
+                          >
+                            <span class="station-materials-name">
+                              {{ item.name }}
+                              <small v-if="item.requiredType !== '必传'">{{
+                                item.requiredType
+                              }}</small>
+                            </span>
+                            <span v-if="item.uploaded" class="station-materials-files">
+                              <template
+                                v-for="file in item.files"
+                                :key="file.documentId || file.fileName"
+                              >
+                                <button
+                                  v-if="file.documentId"
+                                  type="button"
+                                  class="station-file-link"
+                                  :title="`在线预览 ${file.fileName}`"
+                                  @click="emit('preview', file.documentId, file.fileName)"
+                                >
+                                  <ElIcon aria-hidden="true"><Document /></ElIcon
+                                  >{{ file.fileName }}
+                                </button>
+                                <span v-else class="station-file-name">{{ file.fileName }}</span>
+                              </template>
+                            </span>
+                            <span v-else class="station-materials-state">未传</span>
+                          </li>
+                          <li
+                            v-if="
+                              !filterMaterials(
+                                detail.materials.items,
+                                materialFilterOf(row.node.nodeId)
+                              ).length
+                            "
+                            class="station-materials-empty"
+                          >
+                            {{
+                              materialFilterOf(row.node.nodeId) === 'uploaded'
+                                ? '还没有已传资料'
+                                : '没有未传资料'
+                            }}
+                          </li>
+                        </ul>
                       </dd>
                     </div>
                     <div v-if="detail.process.length">
@@ -351,11 +432,14 @@ const toggle = (nodeId: number) => {
 .failure-dot {
   background: var(--st-failed);
 }
+/* 分段条：各状态一段、段间留缝、两端圆角（效果图样式），0 的段不画 */
 .station-bar {
   display: flex;
   height: 8px;
-  overflow: hidden;
-  background: #f3f4f6;
+  gap: 3px;
+}
+.station-bar > span {
+  min-width: 6px;
   border-radius: 4px;
 }
 .station-bar--mini {
@@ -490,7 +574,11 @@ const toggle = (nodeId: number) => {
 }
 .station-materials {
   display: grid;
-  grid-template-columns: auto 1fr;
+  gap: 8px;
+}
+.station-materials-head {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px 12px;
   align-items: center;
 }
@@ -500,38 +588,118 @@ const toggle = (nodeId: number) => {
 .station-materials-count strong {
   font-size: 15px;
 }
+/* 一项一格：做完一项点亮一格，不画连续进度 */
 .station-materials-meter {
-  display: block;
-  width: 100%;
-  max-width: 160px;
-  height: 4px;
-  background:
-    linear-gradient(var(--st-passed), var(--st-passed)) 0 0 / var(--done) 100% no-repeat,
-    #eceff3;
-  border-radius: 2px;
-}
-.station-materials-missing-title {
-  grid-column: 1 / -1;
-  color: var(--st-needs_materials);
-  font-size: 12px;
-}
-.station-materials-missing {
   display: flex;
-  flex-wrap: wrap;
-  grid-column: 1 / -1;
-  gap: 6px;
+  gap: 3px;
+}
+.station-materials-meter i {
+  width: 14px;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+}
+.station-materials-meter i.is-done {
+  background: var(--st-passed);
+}
+.station-materials-tabs {
+  display: inline-flex;
+  justify-self: start;
+  padding: 2px;
+  background: #f2f4f7;
+  border-radius: 6px;
+  gap: 2px;
+}
+.station-materials-tabs button {
+  padding: 2px 10px;
+  color: #475467;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.station-materials-tabs button span {
+  color: #98a2b3;
+  font-variant-numeric: tabular-nums;
+}
+.station-materials-tabs button.is-active {
+  color: #101828;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 10%);
+}
+.station-materials-tabs button:focus-visible {
+  outline: 2px solid var(--el-color-primary, #2f6bff);
+  outline-offset: 1px;
+}
+.station-materials-list {
+  display: grid;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.station-materials-missing li {
-  padding: 2px 8px;
-  color: #92400e;
-  font-size: 12px;
-  line-height: 18px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+.station-materials-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: #f9fafb;
   border-radius: 4px;
+}
+.station-materials-list > li.is-missing {
+  background: #fffbeb;
+}
+.station-materials-name small {
+  margin-left: 6px;
+  color: #98a2b3;
+  font-size: 11px;
+}
+.station-materials-files {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 2px;
+  justify-items: start;
+}
+.station-file-link {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  color: var(--el-color-primary, #2f6bff);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  gap: 4px;
+  align-items: center;
+}
+.station-file-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.station-file-link:focus-visible {
+  outline: 2px solid var(--el-color-primary, #2f6bff);
+  outline-offset: 1px;
+}
+.station-file-name {
+  color: #475467;
+  font-size: 12px;
+}
+.station-materials-state {
+  color: #b54708;
+  font-size: 12px;
+}
+.station-materials-empty {
+  color: var(--aicheck-text-subtle, #667085);
 }
 .station-flow {
   --flow-node: 20px;

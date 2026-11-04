@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
-  ElAvatar,
   ElBadge,
   ElButton,
   ElCollapse,
@@ -25,6 +24,7 @@ import { useUserStore } from '@/store/modules/user'
 import { Icon } from '@/components/Icon'
 import type { OperationArea } from '@/types/aicheck'
 import AuditStatusTag from './AuditStatusTag.vue'
+import UserAvatarIcon from './UserAvatarIcon.vue'
 import GlobalCommandPalette from './GlobalCommandPalette.vue'
 import OperationTaskDrawer from './OperationTaskDrawer.vue'
 import StaticShellRightPanel from './StaticShellRightPanel.vue'
@@ -200,7 +200,6 @@ const boundaryPanels = computed<string[]>({
     boundaryOpen.value = panels.includes('boundary')
   }
 })
-const userInitial = computed(() => props.userLabel.trim().slice(0, 1) || '用')
 const elementTone = (tone: StaticShellTone = 'blue') => {
   const typeMap = {
     blue: 'primary',
@@ -466,7 +465,7 @@ onBeforeUnmount(() => {
           </ElButton>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
             <ElButton class="user" text aria-label="打开用户菜单">
-              <ElAvatar class="avatar" :size="32">{{ userInitial }}</ElAvatar>
+              <UserAvatarIcon class="avatar" />
               <span class="user-label">{{ userLabel }}</span>
               <Icon class="user-caret" icon="vi-ep:arrow-down" :size="12" />
             </ElButton>
@@ -1238,10 +1237,6 @@ onBeforeUnmount(() => {
 
 .avatar {
   flex: 0 0 auto;
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  background: linear-gradient(180deg, #4b83f7, #1e5ec8);
 }
 
 .user-menu {

@@ -1,5 +1,6 @@
 import type {
   InspectionAuditOverviewNode,
+  NodeRequirementMatch,
   InspectionNodeConclusionGroup,
   InspectionStation
 } from '@/types/aicheck'
@@ -128,9 +129,8 @@ export const nodeDetail = (row: InspectionAuditOverviewNode) => {
       ? {
           done: requirements.satisfiedCount,
           total: requirements.requiredCount,
-          missing: (requirements.missingRequirements || []).map(
-            (item) => item.fileContent || item.materialTypeName || item.name || ''
-          )
+          missing: (requirements.missingRequirements || []).map(requirementName),
+          items: (requirements.requirements || []).map(materialItem)
         }
       : null,
     process: PROCESS_ORDER.map((key) => (row.items || []).find((item) => item.key === key))
@@ -165,6 +165,31 @@ const PROCESS_LABELS: Record<string, string> = {
   report: '报告',
   archive: '归档'
 }
+
+const requirementName = (item: NodeRequirementMatch) =>
+  item.fileContent || item.materialTypeName || item.name || ''
+
+export type MaterialFilter = 'all' | 'uploaded' | 'missing'
+
+/** 资料清单的一项：是否已传、传了哪些文件（有文档 id 的才能点开预览）。 */
+const materialItem = (item: NodeRequirementMatch) => {
+  const files = item.matchedFiles?.length
+    ? item.matchedFiles
+    : (item.matchedFileNames || []).map((fileName) => ({ documentId: '', fileName }))
+  return {
+    key: item.id,
+    name: requirementName(item),
+    requiredType: item.requiredType,
+    uploaded: files.length > 0,
+    fulfilled: item.fulfilled,
+    files
+  }
+}
+
+export const filterMaterials = <T extends { uploaded: boolean }>(
+  items: T[],
+  filter: MaterialFilter
+) => (filter === 'all' ? items : items.filter((item) => item.uploaded === (filter === 'uploaded')))
 
 /** 行内一句原因：人工意见原文优先，其次不过的检查项（翻成中文），再次原因码。 */
 export const conclusionReason = (row: InspectionAuditOverviewNode): string => {
