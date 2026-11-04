@@ -304,3 +304,18 @@ def test_institute_knowledge_pages_list_platform_standards_read_only_and_never_p
     # 平台院自己看不到重复的
     platform_sources = [row["id"] for row in data(client.get("/api/knowledge/sources", headers=PLATFORM))["items"]]
     assert platform_sources.count("KS-STANDARD-RULES") == 1
+
+
+def test_开通特检院后新院里的记录都能按新院落库():
+    """2026-11-04 生产：开通特检院全部报「服务内部错误」。院管理员的审计记录标的是平台院，
+    落库检查（persistence_tenant_document）拒绝跨院写入。测试不接数据库，原来测不出——
+    这里直接跑落库前那一步，新院里任何一条记录标错院都会抛错。"""
+    from libs import institutes
+
+    data(client.post("/api/platform/institutes", headers=PLATFORM, json={
+        "code": "QDTJ", "name": "青岛特检院", "adminUsername": "qdtj-admin", "adminName": "牛帅"}))
+    with institutes.tenant_scope("TENANT-QDTJ") as state:
+        repo.current_persistence_documents({"users", "audit_logs"})
+        audits = [row for row in state["audit_logs"] if row.get("objectType") == "User" or row.get("action", "").startswith("平台")]
+        assert audits and all(row["tenantId"] == "TENANT-QDTJ" for row in audits)
+        assert all(row.get("actorTenantId") == configured_tenant_id() for row in audits), "留下是谁从哪个院操作的"

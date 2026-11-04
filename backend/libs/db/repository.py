@@ -794,7 +794,11 @@ class InMemoryRepository:
     ) -> str:
         audit_id = f"AUD-{uuid4().hex[:10].upper()}"
         actor = current_request_audit_context()
-        tenant_id = str(actor.get("tenantId") or configured_tenant_id())
+        # 记在当前所在院的审计链里，而不是操作人所属院：平台管理员开通特检院时切进新院
+        # 写院管理员，审计却标成平台院，落库直接拒绝（Cross-tenant persistence，2026-11-04
+        # 生产上开通特检院全部失败）。正常请求两者本来就相同。
+        tenant_id = configured_tenant_id()
+        actor_tenant_id = str(actor.get("tenantId") or tenant_id)
         request_path = str(actor.get("requestPath") or "")
         project_match = re.search(r"/projects/([^/]+)", request_path)
         node_match = re.search(r"/nodes/(\d+)", request_path)
@@ -850,6 +854,7 @@ class InMemoryRepository:
         event = {
             "id": audit_id,
             "tenantId": tenant_id,
+            **({"actorTenantId": actor_tenant_id} if actor_tenant_id != tenant_id else {}),
             "projectId": resolved_project_id,
             "nodeId": int(resolved_node_id) if resolved_node_id not in {None, ""} else None,
             "actorId": actor.get("actorId") or "system",
