@@ -28,6 +28,7 @@ from apps.api.document_category_routes import document_category_router
 from apps.api.feedback_metrics_routes import feedback_metrics_router
 from apps.api.idempotency_scope import authorization_membership_snapshot
 from apps.api.important_review_routes import important_review_router
+from apps.api.improvement_routes import improvement_router
 from apps.api.inspection_service_routes import inspection_service_router, public_review_request
 from apps.api.knowledge_admin_routes import knowledge_admin_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
@@ -1519,6 +1520,8 @@ if compatibility_mocks_enabled():
 # 意见反馈要排在主 router 前面：routes.py 有通配的 GET /admin/{kind}，会先吞掉 /admin/user-feedback
 app.include_router(user_feedback_router)
 app.include_router(user_feedback_router, prefix="/api")
+app.include_router(improvement_router)
+app.include_router(improvement_router, prefix="/api")
 app.include_router(platform_router)
 app.include_router(platform_router, prefix="/api")
 app.include_router(knowledge_admin_router)

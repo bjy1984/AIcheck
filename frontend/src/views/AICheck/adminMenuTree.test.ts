@@ -107,6 +107,8 @@ const platformRoutes = platformSections.flatMap((section) =>
   section.items.map((item) => item.route)
 )
 assert.ok(platformRoutes.includes('/admin/institutes'), '平台管理员要能看到特检院管理')
+assert.ok(platformRoutes.includes('/admin/improvement-tasks'), '平台管理员要能看到改进任务')
+assert.ok(!plainRoutes.includes('/admin/improvement-tasks'), '院管理员不该看到改进任务')
 assert.equal(new Set(platformRoutes).size, platformRoutes.length, '加了平台分组后路由仍不许重复')
 const platformItems = platformSections.flatMap(
   (section) => section.items as Array<{ route: string; active?: boolean }>

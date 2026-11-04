@@ -95,4 +95,4 @@ def test_admin_lists_filters_replies_and_the_submitter_sees_the_reply():
     mine = data_of(client.get(MINE, headers=bearer("inspection")))["items"]
     assert mine[0]["reply"]["content"].startswith("已修复特性表识别")
     assert data_of(client.get(ADMIN, headers=bearer("admin")))["statusCounts"] == {
-        "open": 1, "acknowledged": 0, "resolved": 1, "declined": 0}
+        "open": 1, "acknowledged": 0, "resolved": 1, "declined": 0, "escalated": 0}

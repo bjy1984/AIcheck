@@ -114,11 +114,15 @@ const submit = async () => {
 }
 
 const statusTagType = (status: string) =>
-  ({ open: 'info', acknowledged: 'warning', resolved: 'success', declined: 'danger' })[status] as
-    | 'info'
-    | 'warning'
-    | 'success'
-    | 'danger'
+  (
+    ({
+      open: 'info',
+      acknowledged: 'warning',
+      resolved: 'success',
+      declined: 'danger',
+      escalated: 'primary'
+    }) as const
+  )[status as 'open']
 </script>
 
 <template>
@@ -182,6 +186,10 @@ const statusTagType = (status: string) =>
                 <time>{{ item.createdAt }}</time>
               </div>
               <p class="mine-content">{{ item.content }}</p>
+              <!-- 送平台审批后的进度（2026-11-04）：平台审批、AI 修复、上线，都会更新这里 -->
+              <p v-if="item.platformTask" class="mine-platform">
+                平台进度：{{ item.platformTask.statusLabel }}
+              </p>
               <p v-if="item.reply" class="mine-reply">
                 <strong>{{ item.reply.repliedBy }} 回复：</strong>{{ item.reply.content }}
               </p>
@@ -291,6 +299,12 @@ const statusTagType = (status: string) =>
   margin: 6px 0 0;
   font-size: 13px;
   white-space: pre-wrap;
+}
+
+.mine-platform {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--el-color-primary);
 }
 
 .mine-reply {

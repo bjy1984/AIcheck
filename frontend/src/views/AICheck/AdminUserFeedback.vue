@@ -18,12 +18,19 @@ import {
   ElTag
 } from 'element-plus'
 import StaticPageShell from './components/StaticPageShell.vue'
-import { getAdminUserFeedbackApi, replyUserFeedbackApi } from '@/api/aicheck'
+import {
+  escalateUserFeedbackApi,
+  getAdminUserFeedbackApi,
+  replyUserFeedbackApi
+} from '@/api/aicheck'
 import {
   USER_FEEDBACK_CATEGORIES,
+  USER_FEEDBACK_REPLY_STATUSES,
+  USER_FEEDBACK_SCOPES,
   USER_FEEDBACK_STATUSES,
   type UserFeedback,
   type UserFeedbackCategory,
+  type UserFeedbackScope,
   type UserFeedbackStatus
 } from '@/api/aicheck/userFeedback'
 import { useUserStoreWithOut } from '@/store/modules/user'
@@ -91,11 +98,15 @@ const statusTabLabel = (status: UserFeedbackStatus | '', label: string) => {
 }
 
 const statusTagType = (status: string) =>
-  ({ open: 'info', acknowledged: 'warning', resolved: 'success', declined: 'danger' })[status] as
-    | 'info'
-    | 'warning'
-    | 'success'
-    | 'danger'
+  (
+    ({
+      open: 'info',
+      acknowledged: 'warning',
+      resolved: 'success',
+      declined: 'danger',
+      escalated: 'primary'
+    }) as const
+  )[status as UserFeedbackStatus]
 
 const contextText = (item: UserFeedback) => {
   const parts = [item.context?.pageTitle || item.context?.page]
@@ -148,6 +159,47 @@ const submitReply = async () => {
   }
 }
 
+/* 送平台审批（2026-11-04）：要改平台的反馈送平台，平台审批后交 AI 修复，进度回写到这条反馈 */
+const canEscalate = (item: UserFeedback) => ['open', 'acknowledged'].includes(item.status)
+const escalateOpen = ref(false)
+const escalating = ref(false)
+const escalateError = ref('')
+const escalateTarget = ref<UserFeedback | null>(null)
+const escalateForm = reactive<{ scope: UserFeedbackScope; note: string }>({
+  scope: 'public',
+  note: ''
+})
+let escalateKey = ''
+
+const openEscalate = (item: UserFeedback) => {
+  escalateTarget.value = item
+  escalateForm.scope = 'public'
+  escalateForm.note = ''
+  escalateError.value = ''
+  escalateKey = `user-feedback-escalate-${item.id}-${Date.now()}`
+  escalateOpen.value = true
+}
+
+const submitEscalate = async () => {
+  if (!escalateTarget.value) return
+  escalating.value = true
+  escalateError.value = ''
+  try {
+    await escalateUserFeedbackApi(
+      escalateTarget.value.id,
+      { scope: escalateForm.scope, note: escalateForm.note.trim() || undefined },
+      { idempotencyKey: escalateKey }
+    )
+    ElMessage.success('已送平台审批，进度会显示在这条反馈上。')
+    escalateOpen.value = false
+    await load()
+  } catch (error) {
+    escalateError.value = getAicheckErrorMessage(error, '送平台失败，请稍后重试。')
+  } finally {
+    escalating.value = false
+  }
+}
+
 const rightCards = computed(() => [
   {
     title: '处理说明',
@@ -155,7 +207,7 @@ const rightCards = computed(() => [
       label: item.label,
       value: String(statusCounts.value[item.value] || 0)
     })),
-    note: '「已解决」「暂不采纳」要写回复；回复会出现在提交人的「我的反馈」里。'
+    note: '「已解决」「暂不采纳」要写回复；回复会出现在提交人的「我的反馈」里。要改平台的问题点「送平台」，平台审批后交 AI 修复。'
   }
 ])
 
@@ -256,6 +308,10 @@ onMounted(load)
             <template #default="{ row }">
               <p class="cell-content">{{ row.content }}</p>
               <p v-if="row.reply" class="cell-reply">回复：{{ row.reply.content }}</p>
+              <p v-if="row.platformTask" class="cell-platform">
+                平台：{{ row.platformTask.statusLabel
+                }}<template v-if="row.platformTask.title"> · {{ row.platformTask.title }}</template>
+              </p>
             </template>
           </ElTableColumn>
           <ElTableColumn label="提交人" width="160">
@@ -272,11 +328,17 @@ onMounted(load)
             </template>
           </ElTableColumn>
           <ElTableColumn label="提交时间" prop="createdAt" width="160" />
-          <ElTableColumn label="操作" width="90" fixed="right">
+          <ElTableColumn label="操作" width="140" fixed="right">
             <template #default="{ row }">
-              <ElButton link type="primary" @click="openReply(row)">{{
-                row.reply ? '改回复' : '回复'
-              }}</ElButton>
+              <span v-if="row.status === 'escalated'" class="muted">平台处理中</span>
+              <template v-else>
+                <ElButton link type="primary" @click="openReply(row)">{{
+                  row.reply ? '改回复' : '回复'
+                }}</ElButton>
+                <ElButton v-if="canEscalate(row)" link type="primary" @click="openEscalate(row)"
+                  >送平台</ElButton
+                >
+              </template>
             </template>
           </ElTableColumn>
         </ElTable>
@@ -295,7 +357,7 @@ onMounted(load)
           <span class="field-label">处理状态</span>
           <ElRadioGroup v-model="replyForm.status" size="small">
             <ElRadioButton
-              v-for="item in USER_FEEDBACK_STATUSES"
+              v-for="item in USER_FEEDBACK_REPLY_STATUSES"
               :key="item.value"
               :value="item.value"
             >
@@ -319,6 +381,55 @@ onMounted(load)
       <template #footer>
         <ElButton @click="replyOpen = false">取消</ElButton>
         <ElButton type="primary" :loading="replying" @click="submitReply">保存</ElButton>
+      </template>
+    </ElDialog>
+    <ElDialog
+      v-model="escalateOpen"
+      title="送平台审批"
+      width="min(560px, calc(100vw - 32px))"
+      append-to-body
+    >
+      <template v-if="escalateTarget">
+        <p class="reply-quote">{{ escalateTarget.content }}</p>
+        <p class="escalate-rule">
+          判断：这个改动给所有院，有没有哪个院会变差？没有 → 公共改进；院和院要求不同 →
+          先看能不能在本院设定里解决，解决不了再选「各院口径不一」。
+        </p>
+        <div class="field">
+          <span class="field-label">归属</span>
+          <ElRadioGroup v-model="escalateForm.scope" size="small">
+            <ElRadioButton
+              v-for="item in USER_FEEDBACK_SCOPES"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ item.label }}
+            </ElRadioButton>
+          </ElRadioGroup>
+          <small class="muted">{{
+            USER_FEEDBACK_SCOPES.find((item) => item.value === escalateForm.scope)?.hint
+          }}</small>
+        </div>
+        <div class="field">
+          <span class="field-label">给平台的说明（选填）</span>
+          <ElInput
+            v-model="escalateForm.note"
+            type="textarea"
+            :rows="3"
+            maxlength="1000"
+            show-word-limit
+            placeholder="例如：本院多个项目都遇到；怎么复现"
+            aria-label="给平台的说明"
+          />
+        </div>
+        <p class="muted escalate-privacy">
+          送到平台时会遮去身份证号、手机号和邮箱，不带提交人姓名；平台审批后交 AI 修复。
+        </p>
+        <p v-if="escalateError" class="error" role="alert">{{ escalateError }}</p>
+      </template>
+      <template #footer>
+        <ElButton @click="escalateOpen = false">取消</ElButton>
+        <ElButton type="primary" :loading="escalating" @click="submitEscalate">送平台</ElButton>
       </template>
     </ElDialog>
   </StaticPageShell>
@@ -364,6 +475,22 @@ onMounted(load)
 .reply-quote {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.cell-platform {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--el-color-primary);
+}
+
+.escalate-rule {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.escalate-privacy {
+  font-size: 12px;
 }
 
 .cell-reply {

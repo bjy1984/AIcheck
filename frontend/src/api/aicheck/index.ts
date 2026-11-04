@@ -2,6 +2,7 @@ import request from '@/axios'
 import { validateOriginalBlob } from './originalBlob'
 import { createAutoReviewApi } from './autoReview'
 import { createProjectAnalysisApi } from './projectAnalysis'
+import { createImprovementTaskApi } from './improvementTasks'
 import { createPlatformApi } from './platform'
 import { createUserFeedbackApi } from './userFeedback'
 export type {
@@ -4384,10 +4385,19 @@ export const {
 } = createPlatformApi(request, mutationHeaders)
 
 export const {
+  getImprovementTasksApi,
+  approveImprovementTaskApi,
+  declineImprovementTaskApi,
+  mergeImprovementTaskApi,
+  setImprovementTaskStatusApi
+} = createImprovementTaskApi(request, mutationHeaders)
+
+export const {
   submitUserFeedbackApi,
   getMyUserFeedbackApi,
   getAdminUserFeedbackApi,
-  replyUserFeedbackApi
+  replyUserFeedbackApi,
+  escalateUserFeedbackApi
 } = createUserFeedbackApi(request, mutationHeaders)
 
 const projectAnalysisApi = createProjectAnalysisApi(request, mutationHeaders)

@@ -1,7 +1,17 @@
 /** 意见反馈：各角色提给管理员，管理员回复、改状态。后端见 backend/apps/api/user_feedback_routes.py。 */
 
 export type UserFeedbackCategory = 'usability' | 'audit_accuracy' | 'bug' | 'suggestion' | 'other'
-export type UserFeedbackStatus = 'open' | 'acknowledged' | 'resolved' | 'declined'
+export type UserFeedbackStatus = 'open' | 'acknowledged' | 'resolved' | 'declined' | 'escalated'
+
+/** 送平台审批后，平台改进任务的进度（后端 libs/improvement_tasks.feedback_mirror） */
+export type UserFeedbackPlatformTask = {
+  taskId: string
+  status: string
+  statusLabel: string
+  title?: string
+}
+
+export type UserFeedbackScope = 'public' | 'gray'
 
 export type UserFeedbackContext = {
   page?: string
@@ -27,6 +37,8 @@ export type UserFeedback = {
     orgUnitName?: string
   }
   reply: { content: string; repliedBy: string; repliedAt: string } | null
+  platformTask?: UserFeedbackPlatformTask
+  escalation?: { by: string; at: string; scope: UserFeedbackScope; note: string }
   createdAt: string
   updatedAt: string
 }
@@ -55,7 +67,30 @@ export const USER_FEEDBACK_STATUSES: Array<{ value: UserFeedbackStatus; label: s
   { value: 'open', label: '待处理' },
   { value: 'acknowledged', label: '已受理' },
   { value: 'resolved', label: '已解决' },
-  { value: 'declined', label: '暂不采纳' }
+  { value: 'declined', label: '暂不采纳' },
+  { value: 'escalated', label: '已送平台' }
+]
+
+/** 院管理员回复时能选的状态：「已送平台」只能走送审，不能手动选 */
+export const USER_FEEDBACK_REPLY_STATUSES = USER_FEEDBACK_STATUSES.filter(
+  (item) => item.value !== 'escalated'
+)
+
+export const USER_FEEDBACK_SCOPES: Array<{
+  value: UserFeedbackScope
+  label: string
+  hint: string
+}> = [
+  {
+    value: 'public',
+    label: '公共改进',
+    hint: '改给所有院都不会变差：功能异常、使用不便、按国家标准审计不准'
+  },
+  {
+    value: 'gray',
+    label: '各院口径不一',
+    hint: '各院做法可能不同，平台会考虑做成院级开关，给一个默认值'
+  }
 ]
 
 type RequestConfig = {
@@ -90,6 +125,17 @@ export const createUserFeedbackApi = (adapter: RequestAdapter, mutationHeaders: 
     adapter.get({
       url: '/api/admin/user-feedback',
       params: Object.fromEntries(Object.entries(filters || {}).filter(([, value]) => value))
+    }),
+
+  escalateUserFeedbackApi: (
+    feedbackId: string,
+    payload: { scope: UserFeedbackScope; note?: string },
+    options?: { idempotencyKey?: string }
+  ): Promise<IResponse<{ feedback: UserFeedback; taskId: string; auditLogId: string }>> =>
+    adapter.post({
+      url: `/api/admin/user-feedback/${encodeURIComponent(feedbackId)}/escalate`,
+      data: payload,
+      headers: mutationHeaders(options)
     }),
 
   replyUserFeedbackApi: (

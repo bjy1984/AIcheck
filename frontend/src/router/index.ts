@@ -407,6 +407,13 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         component: () => import('@/views/AICheck/AdminInstitutes.vue'),
         name: 'AdminInstitutes',
         meta: { title: '特检院管理', noCache: true, roles: ['admin'] }
+      },
+      {
+        // 平台管理员才能用：各院送平台审批的意见反馈
+        path: 'improvement-tasks',
+        component: () => import('@/views/AICheck/AdminImprovementTasks.vue'),
+        name: 'AdminImprovementTasks',
+        meta: { title: '改进任务', noCache: true, roles: ['admin'] }
       }
     ]
   },

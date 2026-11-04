@@ -178,8 +178,12 @@ export const ADMIN_MENU_SECTIONS: AdminMenuSection[] = SECTION_DEFS.map((section
  * 不并进 ADMIN_MENU_SECTIONS：院管理员的后台仍是原来那一棵树。 */
 export const PLATFORM_MENU_SECTION: AdminMenuSection = {
   title: '平台',
-  meta: '1 页',
-  items: [{ index: 'p01', label: '特检院管理', route: '/admin/institutes' }]
+  meta: '2 页',
+  items: [
+    { index: 'p01', label: '特检院管理', route: '/admin/institutes' },
+    // 各院送平台审批的意见反馈：审批、合并、交 AI 修复（2026-11-04）
+    { index: 'p02', label: '改进任务', route: '/admin/improvement-tasks' }
+  ]
 }
 
 const menuSectionsFor = (platformAdmin: boolean) =>

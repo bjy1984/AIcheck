@@ -31,6 +31,8 @@ STATUSES = {
     "acknowledged": "已受理",
     "resolved": "已解决",
     "declined": "暂不采纳",
+    # 院管理员送平台审批后（apps/api/improvement_routes.py）；平台进度在 platformTask 里
+    "escalated": "已送平台",
 }
 CONTENT_MIN, CONTENT_MAX = 5, 2000
 REPLY_MAX = 1000
@@ -166,6 +168,9 @@ def reply_user_feedback(
     status = str(body.get("status") or "")
     if status not in STATUSES:
         return fail(errors.VALIDATION_ERROR, request, message="处理状态不支持。", data={"allowedStatuses": sorted(STATUSES)})
+    if status == "escalated" or row.get("status") == "escalated":
+        # 送平台要走送审接口（会生成改进任务）；已送平台的由平台审批结果回写，不在院里改
+        return fail(errors.CONFLICT, request, http_status=409, message="已送平台的反馈由平台处理；送平台请用「送平台审批」。")
     reply = _paragraphs(body.get("reply"), REPLY_MAX)
     if status in {"resolved", "declined"} and not reply:
         # 关掉一条意见却不说为什么，提交人只看到「已解决 / 暂不采纳」，等于没回
