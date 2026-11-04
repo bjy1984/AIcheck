@@ -65,6 +65,7 @@ from libs.audit_context import (
     set_request_audit_context,
 )
 from libs.audit_runtime import audit_runtime_public_config
+from libs.auto_review import enqueue_node_evidence_change
 from libs.auto_review_status import auto_review_status
 from libs.binding_requirements import resolve_binding_requirement
 from libs.business_pack import (
@@ -7328,6 +7329,7 @@ def update_node_evidence_manual_status(
         raise
     if not link:
         return fail(errors.NOT_FOUND, request)
+    enqueue_node_evidence_change(repo.state, tenant_id=current_tenant_id(), project_id=project_id, node_ids=[node_id], reason=f"evidence_{manual_status}")
     audit_id = repo.add_audit("确认证据" if manual_status == "confirmed" else "不采用证据", "NodeEvidenceLink", evidence_link_id)
     return ok(
         {
@@ -7902,6 +7904,7 @@ def bind_documents(
                 created.append(binding["id"])
                 node_created.append(binding)
             inherited = upsert_manual_binding_evidence_links(repo.state, project_id, node_created, actor_name=request_actor_name(request))
+            enqueue_node_evidence_change(repo.state, tenant_id=current_tenant_id(), project_id=project_id, node_ids=[int(b.get("nodeId") or 0) for b in node_created], reason="manual_mount_submitted")
             if node_created:
                 changed.append(repo.set_node_status(project_id, node_id, "待审查" if inherited or any(item.get("inheritedSubmission") for item in node_created) else "部分提交"))
         return ok(repo.mutation_result("保存节点挂载关系", "NodeFileBinding", created[0] if created else "BIND-EMPTY", next_status="部分提交", changed=changed, affected_ids=created), request)
@@ -8586,6 +8589,7 @@ def submit_node_package(
                 submitted_bindings.append(binding)
         # 人工挂载提交即进审查视野：补证据链接，否则 AI 复核/一键分析只看自动打靶的资料
         upsert_manual_binding_evidence_links(repo.state, project_id, submitted_bindings, actor_name=request_actor_name(request))
+        enqueue_node_evidence_change(repo.state, tenant_id=current_tenant_id(), project_id=project_id, node_ids=[int(b.get("nodeId") or 0) for b in submitted_bindings], reason="manual_mount_submitted")
         for node_id in node_ids:
             changed.append(repo.set_node_status(project_id, node_id, "待审查"))
         todo_id = f"TODO-{uuid4().hex[:8].upper()}"
@@ -8810,6 +8814,7 @@ def submit_rectification(
                 binding["bindingStatus"] = "已提交"
                 resubmitted_bindings.append(binding)
         upsert_manual_binding_evidence_links(repo.state, project_id, resubmitted_bindings, actor_name=request_actor_name(request))
+        enqueue_node_evidence_change(repo.state, tenant_id=current_tenant_id(), project_id=project_id, node_ids=[int(b.get("nodeId") or 0) for b in resubmitted_bindings], reason="manual_mount_submitted")
         rectification["bindingIds"] = binding_ids
         rectification["replacementBindingIds"] = replacement_binding_ids
         rectification["feedbackComment"] = body.get("comment") or body.get("description")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -254,9 +255,7 @@ SUCCESSFUL_NODE_REVIEW_STATUSES = {
 }
 
 
-def _latest_successful_snapshot_hash(
-    state: dict[str, Any], project_id: str, node_id: int
-) -> str | None:
+def _latest_successful_run(state: dict[str, Any], project_id: str, node_id: int) -> dict[str, Any] | None:
     rows = [
         row
         for collection in ("review_runs", "ai_runs")
@@ -275,7 +274,41 @@ def _latest_successful_snapshot_hash(
         ),
         reverse=True,
     )
-    return str(rows[0].get("evidenceSnapshotHash") or "") or None
+    return rows[0]
+
+
+def _latest_successful_snapshot_hash(
+    state: dict[str, Any], project_id: str, node_id: int
+) -> str | None:
+    row = _latest_successful_run(state, project_id, node_id)
+    return str(row.get("evidenceSnapshotHash") or "") or None if row else None
+
+
+def evidence_already_reviewed(
+    state: dict[str, Any], project_id: str, node_id: int, snapshot: dict[str, Any]
+) -> bool:
+    """当前证据和最近一次成功复核（手动或自动）用的证据是否完全相同。
+
+    按 evidence_content_hash 比，不比 snapshotHash（见 review_evidence.evidence_content_hash）。
+    最近一次运行的快照找不到（老数据没存）就当没审过，交给原来的去重逻辑。
+    """
+    from libs.review_evidence import evidence_content_hash
+
+    row = _latest_successful_run(state, project_id, node_id)
+    if not row:
+        return False
+    snapshot_id = str(row.get("evidenceSnapshotId") or "")
+    previous = next(
+        (
+            item
+            for item in state.get("evidence_snapshots") or []
+            if isinstance(item, dict) and snapshot_id and str(item.get("evidenceSnapshotId") or "") == snapshot_id
+        ),
+        None,
+    )
+    if previous is None:
+        return False
+    return evidence_content_hash(previous) == evidence_content_hash(snapshot)
 
 
 def dirty_nodes_for_project(
@@ -293,7 +326,9 @@ def dirty_nodes_for_project(
         if not snapshot.get("documentVersions"):
             continue
         previous_hash = _latest_successful_snapshot_hash(state, project_id, int(node_id))
-        if previous_hash == snapshot["snapshotHash"]:
+        if previous_hash == snapshot["snapshotHash"] or evidence_already_reviewed(
+            state, project_id, int(node_id), snapshot
+        ):
             continue
         dirty.append(
             {
@@ -652,6 +687,8 @@ def enqueue_auto_review_evidence_event(
     document_version_id: str,
     node_ids: list[int],
     mount_revision: int,
+    change_key: str | None = None,
+    reason: str | None = None,
 ) -> tuple[dict[str, Any] | None, bool]:
     policy = next(
         (
@@ -676,6 +713,7 @@ def enqueue_auto_review_evidence_event(
             "documentVersionId": str(document_version_id),
             "nodeIds": normalized_node_ids,
             "mountRevision": int(mount_revision),
+            **({"changeKey": str(change_key)} if change_key else {}),
         },
     )
     rows = state.setdefault("auto_review_outbox", [])
@@ -691,6 +729,7 @@ def enqueue_auto_review_evidence_event(
         "documentVersionId": str(document_version_id),
         "nodeIds": normalized_node_ids,
         "mountRevision": int(mount_revision),
+        **({"reason": str(reason)} if reason else {}),
         "policyRevision": int(policy.get("revision") or 1),
         "status": "pending",
         "attemptCount": 0,
@@ -700,6 +739,41 @@ def enqueue_auto_review_evidence_event(
     }
     rows.append(event)
     return event, True
+
+
+def enqueue_node_evidence_change(
+    state: dict[str, Any],
+    *,
+    tenant_id: str,
+    project_id: str,
+    node_ids: list[int],
+    reason: str,
+) -> list[dict[str, Any]]:
+    """节点证据变了就排一次自动重审事件（2026-11-03 审计第 5 条）。
+
+    原来只有自动打靶新建链接这一条路会入队；人工挂载提交、监检确认或不采用证据都不触发。
+    事件按节点当前的证据指纹去重：改来改去最后证据一样，只排一次；证据已经审过的，
+    消费时 evidence_already_reviewed 会跳过。永远不让业务请求因此失败。
+    """
+    from libs.review_evidence import evidence_content_hash
+
+    events: list[dict[str, Any]] = []
+    for node_id in sorted({int(item) for item in node_ids if int(item or 0) > 0}):
+        try:
+            snapshot = current_node_snapshot(state, project_id, node_id)
+            event, _created = enqueue_auto_review_evidence_event(
+                state, tenant_id=tenant_id, project_id=project_id, document_version_id="",
+                node_ids=[node_id], mount_revision=0, change_key=evidence_content_hash(snapshot), reason=reason,
+            )
+        except Exception as exc:  # noqa: BLE001 -- advisory trigger must never fail the business request
+            logging.getLogger(__name__).warning(
+                "auto_review_evidence_change_not_enqueued project=%s node=%s reason=%s error=%s",
+                project_id, node_id, reason, exc.__class__.__name__,
+            )
+            continue
+        if event:
+            events.append(event)
+    return events
 
 
 def policy_due_for_daily_scan(policy: dict[str, Any], now: datetime) -> bool:
@@ -787,6 +861,9 @@ def consume_auto_review_evidence_events(
         for node_id in sorted({int(item) for item in event.get("nodeIds") or [] if int(item) > 0}):
             snapshot = current_node_snapshot(state, project_id, node_id)
             if not snapshot.get("documentVersions"):
+                continue
+            # 这份证据已经被复核过（手动复核也算）就不再排自动复核（2026-11-03 审计第 3 条）
+            if evidence_already_reviewed(state, project_id, node_id, snapshot):
                 continue
             candidate, created = upsert_auto_review_candidate(
                 state,

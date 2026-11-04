@@ -16,6 +16,27 @@ def _stable_hash(value: Any) -> str:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def evidence_content_hash(snapshot: dict[str, Any]) -> str:
+    """只看证据本身的指纹：哪些文档的哪个版本、OCR 结果是哪份、取了哪些页。
+
+    snapshotHash 还混了规则版本、条款包、提示词版本：自动重审拿写死的占位版本算，
+    真实运行拿真实版本算，两边永远对不上（2026-11-03 审计第 3 条）——「这份证据审过没有」
+    判断不了。挂载元数据（mountLinkIds、mountRevision）也不算：同一文件重新挂一次不是证据变了。
+    历史快照（evidence_snapshots）里存着同样的字段，所以老运行也能算出同一个值。
+    """
+    documents = sorted(
+        (str(row.get("documentId") or ""), str(row.get("documentVersionId") or ""), str(row.get("ocrContentHash") or ""))
+        for row in snapshot.get("documentVersions") or []
+        if isinstance(row, dict)
+    )
+    return _stable_hash({
+        "projectId": str(snapshot.get("projectId") or ""),
+        "nodeId": int(snapshot.get("nodeId") or 0),
+        "documents": documents,
+        "documentPageRanges": snapshot.get("documentPageRanges"),
+    })
+
+
 def _records(state: dict[str, Any], primary: str, fallback: str | None = None) -> list[dict[str, Any]]:
     rows = state.get(primary)
     if not isinstance(rows, list) and fallback:
