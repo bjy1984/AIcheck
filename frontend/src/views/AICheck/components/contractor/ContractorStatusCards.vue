@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ChatDotRound, Clock, Tickets } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import type {
   ContractorStatusCardKey,
@@ -16,10 +15,11 @@ const emit = defineEmits<{
   select: [key: ContractorStatusCardKey]
 }>()
 
-const iconByKey = {
-  feedback: ChatDotRound,
-  pending: Tickets,
-  reviewing: Clock
+/** 施工方看到的叫法：「待处理意见」就是被退回、要补正的事。 */
+const LABELS: Record<string, string> = {
+  feedback: '需补正',
+  pending: '待提交',
+  reviewing: '审核中'
 }
 
 const cardsWithIcons = computed(() =>
@@ -28,13 +28,13 @@ const cardsWithIcons = computed(() =>
     tone:
       card.count === 0 || (card.key === 'feedback' && props.feedbackUnavailable)
         ? 'gray'
-        : card.tone,
-    icon: iconByKey[card.key]
+        : card.tone
   }))
 )
 </script>
 
 <template>
+  <!-- 2026-11-04 手机简化稿：一张卡三个大数字，点一下筛到对应资料 -->
   <section class="contractor-status-cards" aria-label="施工资料办理状态">
     <button
       v-for="card in cardsWithIcons"
@@ -42,21 +42,19 @@ const cardsWithIcons = computed(() =>
       type="button"
       :class="[
         'contractor-status-card',
+        `is-${card.key}`,
         `is-${card.tone}`,
         { 'is-active': activeKey === card.key }
       ]"
       :aria-pressed="activeKey === card.key"
       :aria-label="
         card.key === 'feedback' && feedbackUnavailable
-          ? '待处理意见数量暂不可用'
-          : `${card.label} ${card.count} 项`
+          ? '需补正数量暂不可用'
+          : `${LABELS[card.key] || card.label} ${card.count} 项`
       "
       @click="emit('select', card.key)"
     >
-      <span class="contractor-status-icon" aria-hidden="true">
-        <component :is="card.icon" />
-      </span>
-      <span class="contractor-status-label">{{ card.label }}</span>
+      <span class="contractor-status-label">{{ LABELS[card.key] || card.label }}</span>
       <strong>{{ card.key === 'feedback' && feedbackUnavailable ? '—' : card.count }}</strong>
     </button>
   </section>
@@ -65,111 +63,62 @@ const cardsWithIcons = computed(() =>
 <style scoped>
 .contractor-status-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
   margin-bottom: 14px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .contractor-status-card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 12px;
-  align-items: center;
-  min-height: 72px;
-  padding: 14px 18px;
-  color: #1f2a44;
-  text-align: left;
+  min-height: 84px;
+  padding: 12px 8px;
+  font: inherit;
+  color: #172033;
   cursor: pointer;
-  background: #fff;
-  border: 1px solid #dfe6f1;
-  border-radius: 8px;
-  box-shadow: none;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
+  background: transparent;
+  border: 0;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
 }
 
-.contractor-status-card:hover {
-  border-color: #9ebcff;
-  background: var(--aicheck-hover-bg, #f6faff);
+.contractor-status-card + .contractor-status-card {
+  border-left: 1px solid #eef1f6;
 }
 
+.contractor-status-card:hover,
 .contractor-status-card:focus-visible {
-  outline: 2px solid #2f6fed;
-  outline-offset: 2px;
+  background: #f6f9ff;
+  outline: 0;
 }
 
 .contractor-status-card.is-active {
-  border-color: #2f6fed;
-  box-shadow: 0 0 0 2px rgb(47 111 237 / 12%);
-}
-
-.contractor-status-icon {
-  display: inline-grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  color: #2f6fed;
   background: #eef4ff;
-  border-radius: 50%;
-}
-
-.contractor-status-icon :deep(svg) {
-  width: 21px;
-  height: 21px;
-}
-
-.contractor-status-card.is-orange .contractor-status-icon {
-  color: var(--aicheck-warning, #8a4b00);
-  background: var(--aicheck-warning-bg, #fff7e6);
-}
-
-.contractor-status-card.is-green .contractor-status-icon {
-  color: var(--aicheck-success, #087443);
-  background: var(--aicheck-success-bg, #ecfdf3);
-}
-
-.contractor-status-card.is-gray .contractor-status-icon {
-  color: var(--aicheck-neutral, #52647d);
-  background: var(--aicheck-neutral-bg, #f2f4f7);
 }
 
 .contractor-status-label {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  color: #475467;
 }
 
 .contractor-status-card strong {
-  font-size: 26px;
-  line-height: 1;
-  color: #172b4d;
+  font-size: 30px;
+  line-height: 36px;
+  font-variant-numeric: tabular-nums;
 }
 
-@media (width <= 767px) {
-  .contractor-status-cards {
-    gap: 8px;
-  }
+.contractor-status-card.is-feedback:not(.is-gray) strong {
+  color: #d64545;
+}
 
-  .contractor-status-card {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-    min-height: 80px;
-    padding: 12px 10px;
-  }
+.contractor-status-card.is-reviewing:not(.is-gray) strong {
+  color: #2f6bff;
+}
 
-  .contractor-status-icon {
-    display: none;
-  }
-
-  .contractor-status-label {
-    font-size: 14px;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
-  }
-
-  .contractor-status-card strong {
-    font-size: 24px;
-  }
+.contractor-status-card.is-gray strong {
+  color: #98a2b3;
 }
 </style>

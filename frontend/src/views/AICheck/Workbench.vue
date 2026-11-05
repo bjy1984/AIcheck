@@ -163,7 +163,7 @@ import {
   reportErrorTo,
   uploadFileToSignedUrl as uploadToSignedUrl
 } from './workbenchUpload'
-import { buildDocumentSubmissionPayload, documentBindingSummary } from '@/utils/acceptanceFlows'
+import { buildDocumentSubmissionPayload } from '@/utils/acceptanceFlows'
 import {
   reportBatchResultThenRefresh,
   runConfirmedBatchSubmission
@@ -206,7 +206,6 @@ type EvidenceConfirmationRow = {
   evidence?: EvidenceLink
 }
 import { friendlyModelAlias, materialTypeLabels } from './components/auditLabels'
-import { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import AuditStatusTag from './components/AuditStatusTag.vue'
 import StatusTag from './components/StatusTag.vue'
 import { getStatusTone } from './components/status'
@@ -1239,110 +1238,6 @@ const showBreadcrumbNodeType = computed(
     role.value !== 'ndt' &&
     activeWorkbenchSection.value === 'node' &&
     Boolean(selectedNode.value?.inspectionType)
-)
-const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
-  if (role.value === 'contractor') {
-    const projectFileCount = nodePackage.value?.projectFiles.length || bindings.value.length
-    const correctionCount = rectifications.value.filter((item) => item.status !== '已关闭').length
-    const pendingSubmitCount = (nodePackage.value?.projectFiles || []).filter((file) =>
-      ['未关联', '待提交', '需补正'].includes(documentBindingSummary(file))
-    ).length
-    return [
-      {
-        label: '办理对象',
-        value: '项目文件库',
-        hint: currentProject.value?.name || '未选择项目',
-        tone: 'blue'
-      },
-      {
-        label: '项目文件',
-        value: `${projectFileCount} 份`,
-        hint: `${extractedFields.value.length} 个 OCR/字段证据可定位`,
-        tone: 'green'
-      },
-      {
-        label: '待提交/补正',
-        value: pendingSubmitCount,
-        hint: '文件可先入库，审核环节可后续选择',
-        tone: 'orange'
-      },
-      {
-        label: '监检反馈',
-        value: `${correctionCount} 项`,
-        hint: '按反馈逐条上传补正或关联已有文件',
-        tone: correctionCount ? 'red' : 'green'
-      }
-    ]
-  }
-  if (role.value === 'ndt') {
-    const openFeedbackCount = ndtFeedback.value.filter((item) => item.status !== '已关闭').length
-    const ndtProjectFiles = (nodePackage.value?.projectFiles || []).filter(
-      (file) => file.materialCategory === '无损检测资料'
-    )
-    const materialTypeCount = new Set(ndtProjectFiles.map((file) => file.materialTypeCode)).size
-    const pendingFileCount = ndtProjectFiles.filter((file) =>
-      ['未关联', '待提交', '需补正'].includes(documentBindingSummary(file))
-    ).length
-    return [
-      {
-        label: '办理对象',
-        value: '检测资料库',
-        hint: currentProject.value?.name || '未选择项目',
-        tone: 'blue'
-      },
-      {
-        label: '已上传文件',
-        value: `${ndtProjectFiles.length} 份`,
-        hint: `${materialTypeCount} 种资料类型`,
-        tone: 'green'
-      },
-      {
-        label: '待提交/补正',
-        value: pendingFileCount,
-        hint: '每个文件可单独提交审批',
-        tone: 'orange',
-        // 有数字就要能看到是哪几份。只报数不给入口，等于让人自己去列表里翻。
-        ...(pendingFileCount ? { actionKey: 'ndt-pending', actionLabel: '查看待处理文件' } : {})
-      },
-      {
-        label: '监检反馈',
-        value: `${openFeedbackCount} 项`,
-        hint: '按反馈补充报告、底片、记录或说明',
-        tone: openFeedbackCount ? 'red' : 'green',
-        // 有待处理反馈就给入口：它有期限，不能只让人自己往下翻。
-        ...(openFeedbackCount ? { actionKey: 'ndt-feedback', actionLabel: '去处理反馈' } : {})
-      }
-    ]
-  }
-  return [
-    {
-      label: '当前审查对象',
-      value: selectedNode.value?.name || currentNodeLabel.value,
-      hint: currentProject.value?.name || '未选择项目',
-      tone: 'blue'
-    },
-    {
-      label: '资料证据',
-      value: `${bindings.value.length} 份挂载资料`,
-      hint: `${extractedFields.value.length} 个 OCR/字段证据可定位`,
-      tone: 'green'
-    },
-    {
-      label: 'AI 审查',
-      value: latestAiRun.value ? latestAiReviewDisplay.value.conclusion : '等待预审',
-      hint: 'AI 只生成建议，正式结论由人工确认',
-      tone: 'orange'
-    },
-    {
-      label: '人工确认',
-      value: `${latestAiReviewDisplay.value.failed ? 0 : latestAiRun.value?.suggestion.manualConfirmItems.length || 0} 项`,
-      hint: role.value === 'owner' ? '只读查看，不办理审批' : '低置信和阻断项优先处理',
-      tone: 'red'
-    }
-  ]
-})
-const ndtSubmissionSummary = computed(() =>
-  workbenchAuditCards.value.filter((card) => card.label !== '办理对象')
 )
 const overviewFileMaterialTypeLabels = materialTypeLabels
 const getOverviewFileMaterialCategory = (file: {
@@ -2521,22 +2416,6 @@ const handleLocateQuickResult = async (result: SearchResult) => {
  */
 /** 消息里的内容也要能点过去。走的是和待办同一套定位——
  *  两套定位逻辑迟早会分叉，而分叉的那天没人会发现。 */
-/** 摘要卡片上的「查看明细」。
- *
- * 只处理明确登记过的动作：认不出的 key 什么都不做，也不弹提示——
- * 一个凭空冒出来的动作 key 说明是代码写错了，不该让用户来承担。
- */
-const handleSummaryCardAction = async (actionKey: string) => {
-  const anchors: Record<string, string> = {
-    'ndt-pending': '#ndt-pending-files',
-    'ndt-feedback': '#ndt-feedback-list'
-  }
-  const selector = anchors[actionKey]
-  if (!selector) return
-  await nextTick()
-  document.querySelector(selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
 const handleOpenQuickMessage = async (message: MessageItem) => {
   await handleOpenQuickTodo({
     id: message.id,
@@ -5331,7 +5210,8 @@ onBeforeUnmount(() => {
               :message="readonlyIssue.message"
             />
 
-            <div v-if="role !== 'owner'" class="page-head">
+            <!-- 施工方/无损检测按手机简化稿没有页头：顶栏已有项目名和状态，正文第一屏留给要办的事 -->
+            <div v-if="!['owner', 'contractor', 'ndt'].includes(role)" class="page-head">
               <div>
                 <ElBreadcrumb
                   v-if="currentWorkbenchPresentation.showBreadcrumb"
@@ -5445,24 +5325,6 @@ onBeforeUnmount(() => {
               action-label="重新加载目录状态"
               @action="loadInspectionAuditWorkspace(activeNodeId)"
             />
-
-            <dl v-if="role === 'ndt'" class="ndt-submission-summary" aria-label="待办与提交摘要">
-              <div v-for="card in ndtSubmissionSummary" :key="card.label">
-                <dt>{{ card.label }}</dt>
-                <dd>
-                  <strong>{{ card.value }}</strong>
-                  <ElButton
-                    v-if="card.actionKey"
-                    link
-                    type="primary"
-                    @click="handleSummaryCardAction(card.actionKey)"
-                  >
-                    {{ card.actionLabel || '查看明细' }}
-                  </ElButton>
-                  <small v-else>{{ card.hint }}</small>
-                </dd>
-              </div>
-            </dl>
 
             <section
               v-if="role === 'inspection' && activeWorkbenchSection === 'overview'"
@@ -8961,51 +8823,6 @@ h3 {
   line-height: 1.5;
   text-overflow: clip;
   overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.ndt-submission-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px 20px;
-  padding: 12px 16px;
-  margin: 0 0 14px;
-  background: var(--aicheck-surface, #fff);
-  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
-  border-radius: 8px;
-}
-
-.ndt-submission-summary dt {
-  margin-bottom: 5px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.ndt-submission-summary dd {
-  display: flex;
-  min-width: 0;
-  margin: 0;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  align-items: center;
-}
-
-.ndt-submission-summary strong {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.ndt-submission-summary small {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.ndt-submission-summary :deep(.el-button) {
-  height: auto;
-  min-height: 30px;
-  padding: 0;
-  font-size: 12px;
   white-space: normal;
 }
 

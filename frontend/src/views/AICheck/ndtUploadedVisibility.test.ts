@@ -16,8 +16,7 @@
  *   点开是空的，不如让人一眼看出还没传
  * - 文件行要同时显示上传状态与 OCR 状态：**文件已上传但 OCR 还在排队，
  *   跟文件根本没传上去，处置完全不同**
- * - 摘要卡片只有配了 actionKey 才可点。没有去处的卡片不做成按钮——
- *   点了没反应比不可点更伤
+ * - 只报数的摘要条去掉（2026-11-04）：待提交数放在面板里、紧挨着已上传清单
  * - 滚动锚点必须真实存在（本轮已因此静默失败过两次）
  */
 import assert from 'node:assert/strict'
@@ -26,10 +25,6 @@ import { fileURLToPath } from 'node:url'
 
 const panel = readFileSync(
   fileURLToPath(new URL('./components/NdtWorkflowPanel.vue', import.meta.url)),
-  'utf8'
-)
-const grid = readFileSync(
-  fileURLToPath(new URL('./components/AuditSummaryGrid.vue', import.meta.url)),
   'utf8'
 )
 const workbench = readFileSync(fileURLToPath(new URL('./Workbench.vue', import.meta.url)), 'utf8')
@@ -56,15 +51,14 @@ assert.ok(
   '事件要接到工作台的文件详情'
 )
 
-// 摘要卡片动作：配了才可点
-assert.ok(/actionKey\?: string/.test(grid), '卡片动作是可选的')
-assert.ok(/v-if="card\.actionKey"/.test(grid), '没有去处的卡片不渲染按钮')
-assert.ok(/actionKey: 'ndt-pending'/.test(workbench), '待提交/补正卡要配动作')
+// 2026-11-04 手机简化稿：工作台那条「待提交/补正 N」摘要卡去掉了，数字改在面板里
+// 「底片 / 记录 / 报告 / 待提交」一行，下面紧跟「已上传」清单——数字旁边就是内容，不用跳转。
+assert.ok(!/ndt-submission-summary/.test(workbench), '工作台不再另放一条只报数的无损检测摘要')
 assert.ok(
-  /\.\.\.\(pendingFileCount \? \{ actionKey: 'ndt-pending'/.test(workbench),
-  '数字为 0 时不给入口——点进去什么都没有'
+  /<dt>待提交<\/dt>\s*<dd>\{\{ batchSubmittableAtomicFiles\.length \}\}<\/dd>/.test(panel),
+  '待提交数和「全部提交」用同一份清单，不能各算各的'
 )
-
-// 锚点真实存在
-assert.ok(/#ndt-pending-files/.test(workbench), '要滚到待处理清单')
-assert.ok(/id="ndt-pending-files"/.test(panel), '锚点元素必须真实存在')
+assert.ok(/id="ndt-pending-files"/.test(panel), '已上传清单要有锚点')
+// 「上传其他资料」要落到真实存在的清单上
+assert.ok(/getElementById\('ndt-checklist'\)/.test(panel), '要滚到资料类型清单')
+assert.ok(/id="ndt-checklist"/.test(panel), '锚点元素必须真实存在')

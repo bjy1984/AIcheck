@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { getStatusTagType } from '../status'
-import { ref, watch } from 'vue'
-import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
-import { ElButton, ElCard, ElEmpty, ElTag } from 'element-plus'
+import { computed, ref } from 'vue'
+import { ElButton, ElTag } from 'element-plus'
 
 import { plainWording } from '@/utils/reviewerWording'
 
@@ -34,283 +33,238 @@ const emit = defineEmits<{
   rectify: [rectificationId: string]
 }>()
 
-const expandedId = ref('')
-
-watch(
-  () => props.items.map((item) => `${item.id}:${item.sourceStatus}`).join('|'),
-  () => {
-    const currentStillExists = props.items.some((item) => item.id === expandedId.value)
-    if (currentStillExists) return
-    expandedId.value =
-      props.items.find((item) => item.sourceStatus === '待反馈')?.id || props.items[0]?.id || ''
-  },
-  { immediate: true }
-)
-
-const toggle = (id: string) => {
-  expandedId.value = expandedId.value === id ? '' : id
-}
+const pendingItems = computed(() => props.items.filter((item) => item.sourceStatus === '待反馈'))
+const doneItems = computed(() => props.items.filter((item) => item.sourceStatus !== '待反馈'))
+const doneOpen = ref(false)
 
 const tagType = getStatusTagType
+/** 「监检退回补正」只是类别，真正要看的是监检写的那句话 */
+const opinionOf = (item: ContractorFeedbackRow) => item.requirement || item.issue
 </script>
 
 <template>
-  <ElCard id="contractor-feedback-list" class="contractor-feedback-panel" shadow="never">
-    <template #header>
-      <div class="panel-head">
-        <div>
-          <h2>二、监检审查意见</h2>
-          <p>优先处理待补正意见，上传资料时自动带入对应意见。</p>
-        </div>
-        <span class="feedback-count">
-          <template v-if="loading || issue">{{
-            loading ? '更新中' : '待处理数量暂不可用'
-          }}</template>
-          <template v-else
-            >{{ items.filter((item) => item.sourceStatus === '待反馈').length }} 项待处理</template
-          >
-        </span>
+  <!-- 2026-11-04 手机简化稿：待补正的意见一条一张淺红卡，按钮直接给「补交资料 / 提交反馈」；
+       处理过的收起来。一条都没有时整块不占位。 -->
+  <section
+    v-if="pendingItems.length || doneItems.length || loading || issue"
+    id="contractor-feedback-list"
+    class="contractor-feedback-panel"
+    aria-label="监检退回"
+  >
+    <h2 class="feedback-title">
+      监检退回，需要你处理
+      <span v-if="pendingItems.length" class="feedback-count">{{ pendingItems.length }}</span>
+    </h2>
+    <p v-if="loading" class="feedback-note">正在更新补正清单…</p>
+    <p v-else-if="issue" class="feedback-note is-error">补正清单加载失败，请重试</p>
+
+    <article v-for="item in pendingItems" :key="item.id" class="feedback-card">
+      <div class="feedback-card-head">
+        <ElTag type="danger" size="small" effect="light">需补正</ElTag>
+        <strong>{{ item.node }}</strong>
       </div>
-    </template>
-
-    <div v-if="items.length" class="feedback-list">
-      <article
-        v-for="item in items"
-        :key="item.id"
-        :class="['feedback-item', { 'is-open': expandedId === item.id }]"
-      >
-        <button
-          type="button"
-          class="feedback-summary"
-          :aria-expanded="expandedId === item.id"
-          @click="toggle(item.id)"
-        >
-          <span class="feedback-id">{{ item.id }}</span>
-          <strong>{{ plainWording(item.issue) }}</strong>
-          <ElTag :type="tagType(item.status)" size="small" effect="light">
-            {{ plainWording(item.status) }}
-          </ElTag>
-          <component :is="expandedId === item.id ? ArrowUp : ArrowDown" aria-hidden="true" />
-        </button>
-
-        <div v-if="expandedId === item.id" class="feedback-detail">
-          <p>{{ plainWording(item.requirement) }}</p>
-          <dl>
-            <div
-              ><dt>问题环节</dt><dd>{{ item.node }}</dd></div
-            >
-            <div
-              ><dt>关联文件</dt><dd>{{ item.linkedFiles }} 个</dd></div
-            >
-            <div
-              ><dt>反馈时间</dt><dd>{{ item.feedbackAt }}</dd></div
-            >
-            <div
-              ><dt>截止要求</dt><dd>{{ item.dueAt }}</dd></div
-            >
-          </dl>
-          <div class="feedback-actions">
-            <ElButton @click="emit('view', item.rectificationId)">查看意见</ElButton>
-            <ElButton
-              type="primary"
-              :disabled="readOnly || item.sourceStatus !== '待反馈'"
-              @click="
-                emit('upload', { rectificationId: item.rectificationId, nodeId: item.nodeId })
-              "
-            >
-              上传补正资料
-            </ElButton>
-            <ElButton link type="primary" :disabled="readOnly" @click="emit('bind')">
-              关联已有文件
-            </ElButton>
-            <ElButton
-              link
-              type="primary"
-              :disabled="readOnly || item.sourceStatus !== '待反馈'"
-              @click="emit('rectify', item.rectificationId)"
-            >
-              提交反馈
-            </ElButton>
-          </div>
+      <p class="feedback-opinion">监检意见：{{ plainWording(opinionOf(item)) }}</p>
+      <div class="feedback-card-foot">
+        <small v-if="item.dueAt">期限 {{ item.dueAt }}</small>
+        <small v-else-if="item.feedbackAt">退回于 {{ String(item.feedbackAt).slice(5, 10) }}</small>
+        <div class="feedback-actions">
+          <ElButton
+            type="primary"
+            :disabled="readOnly"
+            @click="emit('upload', { rectificationId: item.rectificationId, nodeId: item.nodeId })"
+          >
+            补交资料
+          </ElButton>
+          <ElButton
+            plain
+            type="primary"
+            :disabled="readOnly"
+            @click="emit('rectify', item.rectificationId)"
+          >
+            提交反馈
+          </ElButton>
         </div>
-      </article>
+      </div>
+      <div class="feedback-links">
+        <button type="button" @click="emit('view', item.rectificationId)">查看详情</button>
+        <button type="button" :disabled="readOnly" @click="emit('bind')">关联已有文件</button>
+      </div>
+    </article>
+
+    <div v-if="doneItems.length" class="feedback-done">
+      <button
+        type="button"
+        class="feedback-done-toggle"
+        :aria-expanded="doneOpen"
+        @click="doneOpen = !doneOpen"
+      >
+        已处理 {{ doneItems.length }} 条<span aria-hidden="true">{{
+          doneOpen ? ' 收起' : ' ›'
+        }}</span>
+      </button>
+      <ul v-if="doneOpen">
+        <li v-for="item in doneItems" :key="item.id">
+          <button type="button" @click="emit('view', item.rectificationId)">
+            <span>{{ item.node }}</span>
+            <ElTag :type="tagType(item.status)" size="small" effect="plain">
+              {{ plainWording(item.status) }}
+            </ElTag>
+          </button>
+        </li>
+      </ul>
     </div>
-    <ElEmpty
-      v-else
-      :image-size="56"
-      :description="
-        issue
-          ? '补正清单加载失败，请重试'
-          : loading
-            ? '正在加载全项目补正清单…'
-            : '暂无监检审查意见'
-      "
-    />
-  </ElCard>
+  </section>
 </template>
 
 <style scoped>
 .contractor-feedback-panel {
-  height: 100%;
-  border: 0;
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgb(15 23 42 / 6%);
+  display: grid;
+  margin-bottom: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
 }
 
-.contractor-feedback-panel :deep(.el-card__header) {
-  padding: 14px 16px 10px;
-}
-
-.contractor-feedback-panel :deep(.el-card__body) {
-  padding: 10px 14px 14px;
-}
-
-@media (width <= 767px) {
-  .contractor-feedback-panel :deep(.el-empty) {
-    padding: 8px 0;
-  }
-
-  .contractor-feedback-panel :deep(.el-empty__image) {
-    display: none;
-  }
-
-  .contractor-feedback-panel :deep(.el-empty__description) {
-    margin-top: 0;
-  }
-}
-
-.panel-head {
+.feedback-title {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.panel-head h2 {
+  gap: 8px;
+  align-items: center;
   margin: 0;
-  font-size: 18px;
-  line-height: 1.35;
-}
-
-.panel-head p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: #667085;
+  font-size: 17px;
+  line-height: 24px;
+  color: #172033;
 }
 
 .feedback-count {
-  padding: 3px 9px;
+  display: inline-grid;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
   font-size: 12px;
-  font-weight: 600;
-
-  /* #d97706 配 #fff5e7 只有 2.95:1。12px 即使加粗也不算 WCAG 的「大字」，
-     仍要 4.5:1。换成 amber-700，约 6.5:1，颜色语义不变。 */
-  color: #b45309;
-  background: #fff5e7;
+  color: #fff;
+  background: #d64545;
   border-radius: 999px;
-  flex: none;
+  place-items: center;
 }
 
-.feedback-list {
+.feedback-note {
+  margin: 0;
+  font-size: 13px;
+  color: #667085;
+}
+
+.feedback-note.is-error {
+  color: #b42318;
+}
+
+.feedback-card {
   display: grid;
-  gap: 7px;
+  padding: 14px 16px;
+  background: #fff7f6;
+  border: 1px solid #f0c8c3;
+  border-radius: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
 }
 
-.feedback-item {
-  overflow: hidden;
-  background: #fff;
-  border: 1px solid #e4eaf2;
-  border-radius: 7px;
-}
-
-.feedback-item.is-open {
-  background: #fffafa;
-  border-color: #ffc8c5;
-  box-shadow: inset 3px 0 0 #f04438;
-}
-
-.feedback-summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: 9px;
+.feedback-card-head {
+  display: flex;
+  gap: 8px;
   align-items: center;
-  width: 100%;
-  min-height: 42px;
-  padding: 8px 10px;
-  color: #26344d;
-  text-align: left;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
 }
 
-.feedback-summary:focus-visible {
-  outline: 3px solid rgb(47 111 237 / 20%);
-  outline-offset: -3px;
-}
-
-.feedback-summary > svg {
-  width: 15px;
-  height: 15px;
-  color: #718096;
-}
-
-.feedback-summary strong {
+.feedback-card-head strong {
+  min-width: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  color: #172033;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.feedback-id {
-  padding: 2px 6px;
-  font-size: 11px;
-  color: #526178;
-  background: #f1f4f8;
-  border-radius: 4px;
+.feedback-opinion {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: #475467;
+  overflow-wrap: anywhere;
 }
 
-.feedback-detail {
-  padding: 2px 12px 12px;
+.feedback-card-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
-.feedback-detail > p {
-  margin: 4px 0 9px;
+.feedback-card-foot small {
   font-size: 13px;
-  line-height: 1.65;
-  color: #344054;
-}
-
-.feedback-detail dl {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 12px;
-  margin: 0;
-  font-size: 12px;
-}
-
-.feedback-detail dl > div {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-}
-
-.feedback-detail dt {
-  color: #7a879b;
-}
-
-.feedback-detail dd {
-  min-width: 0;
-  margin: 0;
-  color: #344054;
+  color: #667085;
 }
 
 .feedback-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  justify-content: flex-end;
-  margin-top: 11px;
+  gap: 8px;
+}
+
+.feedback-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.feedback-links {
+  display: flex;
+  gap: 16px;
+}
+
+.feedback-links button,
+.feedback-done-toggle,
+.feedback-done li button {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--el-color-primary, #2f6bff);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.feedback-links button:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.feedback-done {
+  display: grid;
+  gap: 6px;
+}
+
+.feedback-done-toggle {
+  justify-self: start;
+  color: #667085;
+}
+
+.feedback-done ul {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+}
+
+.feedback-done li + li {
+  border-top: 1px solid #eef1f6;
+}
+
+.feedback-done li button {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  color: #172033;
 }
 </style>

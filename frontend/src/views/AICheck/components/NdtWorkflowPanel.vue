@@ -1,22 +1,22 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { Document, FolderOpened, UploadFilled } from '@element-plus/icons-vue'
 import {
   ElAlert,
   ElButton,
-  ElCard,
   ElCheckbox,
   ElCheckboxGroup,
   ElDialog,
-  ElEmpty,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
   ElForm,
   ElFormItem,
+  ElIcon,
   ElInput,
   ElOption,
   ElSelect,
-  ElTable,
-  ElTableColumn,
-  ElTag,
-  ElTooltip
+  ElTag
 } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import type {
@@ -28,6 +28,7 @@ import type {
   ProjectTreeNode
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+import FileTypeIcon from './FileTypeIcon.vue'
 import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
 import { plainWording } from '@/utils/reviewerWording'
@@ -142,9 +143,7 @@ const pendingReports = computed(() => pendingNdtReports(props.reports))
 const pendingFilms = computed(() => pendingNdtFilms(props.films))
 const openFeedback = computed(() => props.feedback.filter((item) => item.status === '待反馈'))
 const defaultFeedback = computed(() => openFeedback.value[0])
-// 有待处理的监检反馈时先给反馈：这是唯一有期限、要立刻动手的事，不该排在 22 行资料类型表后面。
-const feedbackFirst = computed(() => openFeedback.value.length > 0)
-const CHECKLIST_PREVIEW = 6
+const CHECKLIST_PREVIEW = 4
 const checklistExpanded = ref(false)
 watch(
   () => defaultFeedback.value?.id,
@@ -283,6 +282,47 @@ const handleCreateFilm = async () => {
   })
 }
 
+const replyDialogVisible = ref(false)
+const closedOpen = ref(false)
+const closedFeedback = computed(() => props.feedback.filter((item) => item.status !== '待反馈'))
+const openReply = (rectificationId: string) => {
+  rectificationForm.rectificationId = rectificationId
+  replyDialogVisible.value = true
+}
+// 提交成功后这条反馈会离开「待反馈」：弹窗跟着关，和底片登记弹窗一个做法
+watch(
+  () => openFeedback.value.length,
+  (count, previousCount) => {
+    if (replyDialogVisible.value && count < previousCount) replyDialogVisible.value = false
+  }
+)
+/** 还缺的资料：没展开时只列没传过的前几种；展开后列全部 22 种。 */
+const missingMaterialCount = computed(
+  () => ndtMaterialChecklist.value.filter((item) => !item.uploadedCount).length
+)
+const visibleChecklist = computed(() => {
+  if (checklistExpanded.value) return ndtMaterialChecklist.value
+  const missing = ndtMaterialChecklist.value.filter((item) => !item.uploadedCount)
+  return (missing.length ? missing : ndtMaterialChecklist.value).slice(0, CHECKLIST_PREVIEW)
+})
+const goToChecklist = () => {
+  checklistExpanded.value = true
+  document.getElementById('ndt-checklist')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+const ndtFileSubtext = (row: (typeof atomicFileRows.value)[number]) =>
+  [
+    row.materialTypeDisplayName,
+    row.businessRuleNames[0] || '尚未关联',
+    String(row.updatedAt || '').slice(5, 10)
+  ]
+    .filter(Boolean)
+    .join(' · ')
+const handleNdtFileMenu = (command: string, row: (typeof atomicFileRows.value)[number]) => {
+  if (command === 'view') emit('viewMaterialFile', row.id)
+  else if (command === 'submit') submitAtomicFile(row)
+  else if (command === 'rules') openBindingDialog(row)
+}
+
 const handleRectifyNdt = async (rectificationId?: string) => {
   if (rectificationId) rectificationForm.rectificationId = rectificationId
   const valid = await rectificationFormRef.value?.validate().catch(() => false)
@@ -298,11 +338,13 @@ const handleRectifyNdt = async (rectificationId?: string) => {
 </script>
 
 <template>
-  <div class="ndt-workspace" :class="{ 'is-feedback-first': feedbackFirst }">
+  <!-- 2026-11-04 手机简化稿：反馈卡 → 三个常用操作 → 一行登记数 → 还缺的资料 → 已上传。
+       有待处理的监检反馈时放最前：这是唯一有期限、要立刻动手的事，不该排在 22 种资料类型后面。 -->
+  <div class="ndt-workspace">
     <ElDialog
       v-model="filmDialogVisible"
       title="新增底片编号"
-      width="720px"
+      width="min(720px, 94vw)"
       destroy-on-close
       append-to-body
     >
@@ -379,7 +421,12 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       </template>
     </ElDialog>
 
-    <ElDialog v-model="bindingDialogVisible" title="调整适用业务规则" width="640px" append-to-body>
+    <ElDialog
+      v-model="bindingDialogVisible"
+      title="调整适用业务规则"
+      width="min(640px, 94vw)"
+      append-to-body
+    >
       <p class="binding-dialog-hint">草稿或需补正的文件可以调整，提交审批后不能再修改。</p>
       <ElCheckboxGroup v-model="bindingNodeIds" class="binding-node-options">
         <ElCheckbox v-for="nodeId in NDT_NODE_IDS" :key="nodeId" :value="nodeId">
@@ -399,343 +446,13 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       </template>
     </ElDialog>
 
-    <ElCard shadow="never" class="panel ndt-panel">
-      <template #header>
-        <div class="panel-header">
-          <div>
-            <span>无损检测资料</span>
-            <div class="panel-subtitle"
-              >集中管理检测方案、底片、记录、报告和补正资料，并逐项提交监检审核。</div
-            >
-          </div>
-        </div>
-      </template>
-
-      <dl class="ndt-registered-counts" aria-label="已登记检测资料">
-        <div
-          ><dt>已登记底片</dt><dd>{{ films.length }}</dd></div
-        >
-        <div
-          ><dt>已导入记录</dt><dd>{{ records.length }}</dd></div
-        >
-        <div
-          ><dt>检测报告</dt><dd>{{ reports.length }}</dd></div
-        >
-      </dl>
-
-      <section class="ndt-checklist">
-        <div class="ndt-section-head">
-          <div>
-            <strong>无损检测资料上传</strong>
-            <p
-              >选择资料类型后，系统自动关联适用的业务规则；可在上传前调整。每个文件上传后单独保存为草稿。</p
-            >
-          </div>
-          <ElTag type="info" effect="plain">
-            {{ ndtChecklistSummary.uploaded }} 个文件 / {{ ndtChecklistSummary.types }} 种类型
-          </ElTag>
-        </div>
-        <ElTable
-          :data="
-            checklistExpanded
-              ? ndtMaterialChecklist
-              : ndtMaterialChecklist.slice(0, CHECKLIST_PREVIEW)
-          "
-          border
-          class="ndt-checklist-table"
-        >
-          <ElTableColumn type="index" label="序号" width="72" />
-          <ElTableColumn prop="name" label="资料类型" min-width="250" show-overflow-tooltip />
-          <ElTableColumn label="业务规则" min-width="360" show-overflow-tooltip>
-            <template #default="{ row, $index }">
-              <!-- 连续几行属于同一条业务规则时只写一次，其余写「同上」：整列重复同一句话没有信息量 -->
-              <span
-                v-if="$index > 0 && ndtMaterialChecklist[$index - 1]?.group === row.group"
-                class="ndt-rule-same"
-                >同上</span
-              >
-              <span v-else>{{ row.group }}</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="已上传" width="110">
-            <template #default="{ row }">
-              <!-- 0 项不做成可点：点开是空的，不如让人一眼看出还没传 -->
-              <ElButton
-                v-if="row.uploadedCount"
-                link
-                type="primary"
-                :aria-expanded="expandedMaterialCodes.includes(row.code)"
-                @click="toggleMaterialFiles(row.code)"
-              >
-                {{ row.uploadedCount }} 项{{
-                  expandedMaterialCodes.includes(row.code) ? ' ▴' : ' ▾'
-                }}
-              </ElButton>
-              <span v-else class="ndt-empty-count">0 项</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="操作" width="120" fixed="right">
-            <template #default="{ row }">
-              <ElButton link type="primary" :loading="loading" @click="handleMaterialUpload(row)">
-                上传文件
-              </ElButton>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-
-        <div v-if="ndtMaterialChecklist.length > CHECKLIST_PREVIEW" class="ndt-checklist-toggle">
-          <ElButton
-            link
-            type="primary"
-            :aria-expanded="checklistExpanded"
-            @click="checklistExpanded = !checklistExpanded"
-          >
-            {{
-              checklistExpanded
-                ? '收起资料类型'
-                : `展开全部 ${ndtMaterialChecklist.length} 种资料类型`
-            }}
-          </ElButton>
-        </div>
-
-        <ul class="ndt-mobile-checklist" aria-label="资料类型与上传">
-          <li v-for="material in ndtMaterialChecklist" :key="material.code">
-            <strong>{{ material.name }}</strong>
-            <details class="ndt-material-rules">
-              <summary>适用业务规则</summary>
-              <p>{{ material.group }}</p>
-            </details>
-            <div class="ndt-mobile-actions">
-              <ElButton
-                v-if="material.uploadedCount"
-                link
-                type="primary"
-                :aria-expanded="expandedMaterialCodes.includes(material.code)"
-                @click="toggleMaterialFiles(material.code)"
-              >
-                {{ expandedMaterialCodes.includes(material.code) ? '收起' : '查看' }}已上传
-                {{ material.uploadedCount }} 份
-              </ElButton>
-              <span v-else class="ndt-empty-count">尚未上传</span>
-              <ElButton
-                plain
-                type="primary"
-                :loading="loading"
-                :aria-label="`上传${material.name}`"
-                @click="handleMaterialUpload(material)"
-                >上传文件</ElButton
-              >
-            </div>
-            <ul
-              v-if="expandedMaterialCodes.includes(material.code) && material.files.length"
-              class="ndt-mobile-files"
-            >
-              <li v-for="file in material.files" :key="file.id">
-                <ElButton link type="primary" @click="emit('viewMaterialFile', file.id)">
-                  {{ file.fileName }}
-                </ElButton>
-                <small
-                  >{{ plainWording(file.fileStatus) }} · 资料处理：{{
-                    plainWording(file.currentOcrStatus)
-                  }}</small
-                >
-              </li>
-            </ul>
-          </li>
-        </ul>
-
-        <!-- 桌面集中展示已展开类型的文件；窄版在所属类型下直接展示。 -->
-        <div
-          v-for="material in ndtMaterialChecklist.filter(
-            (item) => expandedMaterialCodes.includes(item.code) && item.files.length
-          )"
-          :key="`expanded-${material.code}`"
-          class="ndt-uploaded-files"
-        >
-          <div class="ndt-uploaded-head">
-            <strong>{{ material.name }}</strong>
-            <span>已上传 {{ material.files.length }} 份</span>
-          </div>
-          <ul>
-            <li v-for="file in material.files" :key="file.id">
-              <ElButton link type="primary" @click="emit('viewMaterialFile', file.id)">
-                {{ file.fileName }}
-              </ElButton>
-              <!-- 上传状态和识别状态是两件事：文件已上传但 OCR 还在排队，
-                   跟文件根本没传上去，处置完全不同。 -->
-              <small
-                >{{ plainWording(file.fileStatus) }} · 资料处理：{{
-                  plainWording(file.currentOcrStatus)
-                }}</small
-              >
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- 摘要卡片「待提交/补正」滚到这里。锚点必须真实存在——
-           选择器写了而元素没有，滚动会静默失败（本轮已踩过两次）。 -->
-      <section id="ndt-pending-files" class="ndt-library">
-        <div class="ndt-section-head">
-          <div>
-            <strong>已上传资料</strong>
-            <p>请逐个核对资料类型；文件上传成功后可分别提交审批，无需等待其他资料上传完成。</p>
-          </div>
-          <div class="ndt-actions">
-            <ElButton
-              type="primary"
-              :loading="loading"
-              :disabled="readOnly || loading || !batchSubmittableAtomicFiles.length"
-              @click="submitAtomicFilesBatch"
-            >
-              批量提交
-            </ElButton>
-            <ElButton plain @click="filmDialogVisible = true">登记底片编号</ElButton>
-            <ElButton plain type="primary" @click="emit('uploadReport')">上传检测报告</ElButton>
-          </div>
-        </div>
-        <ElAlert
-          v-if="submitError"
-          class="ndt-submit-error"
-          type="error"
-          title="无损检测文件操作失败"
-          :closable="false"
-          show-icon
-        >
-          {{ submitError }}
-        </ElAlert>
-        <ElTable :data="atomicFileRows" border max-height="360">
-          <ElTableColumn type="index" label="序号" width="72" />
-          <ElTableColumn prop="fileName" label="文件名称" min-width="220" show-overflow-tooltip />
-          <ElTableColumn
-            prop="materialTypeDisplayName"
-            label="资料类型"
-            min-width="230"
-            show-overflow-tooltip
-          />
-          <ElTableColumn label="适用业务规则" min-width="300" show-overflow-tooltip>
-            <template #default="{ row }">
-              {{ row.businessRuleNames.join('；') || '尚未关联' }}
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="上传状态" width="130">
-            <template #default="{ row }">
-              <ElButton
-                v-if="canRetryDocumentUpload(row.uploadStatus)"
-                link
-                type="danger"
-                :disabled="loading"
-                @click="retryAtomicFileUpload(row)"
-              >
-                失败重新上传
-              </ElButton>
-              <ElTag v-else :type="getStatusTagType(row.uploadStatus)" size="small" effect="plain">
-                {{ plainWording(row.uploadStatus) }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="审批状态" width="110">
-            <template #default="{ row }">
-              <ElTag :type="getStatusTagType(row.approvalStatus)" size="small" effect="plain">
-                {{ plainWording(row.approvalStatus) }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="updatedAt" label="更新时间" min-width="150" show-overflow-tooltip />
-          <ElTableColumn label="操作" width="190" fixed="right">
-            <template #default="{ row }">
-              <ElTooltip :disabled="row.canEdit" :content="row.editBlockedReason" placement="top">
-                <span>
-                  <ElButton
-                    link
-                    type="primary"
-                    :disabled="!row.canEdit"
-                    @click="openBindingDialog(row)"
-                  >
-                    调整业务规则
-                  </ElButton>
-                </span>
-              </ElTooltip>
-              <!-- 禁用时把理由挂在 tooltip 上：三种情况该做的事完全不同
-                   （等一等 / 重新上传 / 已经提交过了），不能都用一个灰按钮打发。 -->
-              <ElTooltip
-                :disabled="row.canSubmit"
-                :content="row.submitBlockedReason"
-                placement="top"
-              >
-                <span>
-                  <ElButton
-                    link
-                    type="primary"
-                    :disabled="!row.canSubmit"
-                    :loading="loading"
-                    @click="submitAtomicFile(row)"
-                  >
-                    提交审批
-                  </ElButton>
-                </span>
-              </ElTooltip>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-      </section>
-    </ElCard>
-
-    <ElCard id="ndt-feedback-list" shadow="never" class="panel ndt-panel">
-      <template #header>
-        <div class="panel-header">
-          <div>
-            <span>监检反馈</span>
-            <div class="panel-subtitle"
-              >按监检退回意见逐项处理，补充报告、底片或检测记录后提交反馈。</div
-            >
-          </div>
-          <ElTag :type="openFeedback.length ? 'warning' : 'success'" effect="plain">
-            {{ openFeedback.length }} 项待处理
-          </ElTag>
-        </div>
-      </template>
-
-      <!-- 反馈用列表而不是表格：事项、状态、期限、操作在窄屏下不被裁，待处理的整行高亮 -->
-      <ul v-if="feedback.length" class="ndt-feedback-list" aria-label="监检反馈">
-        <li v-for="row in feedback" :key="row.id" :class="{ 'is-open': row.status === '待反馈' }">
-          <div class="ndt-feedback-main">
-            <div class="ndt-feedback-head">
-              <strong>{{ plainWording(row.title) }}</strong>
-              <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-                {{ plainWording(row.status) }}
-              </ElTag>
-            </div>
-            <p v-if="row.description" class="ndt-feedback-desc">{{ row.description }}</p>
-            <small class="ndt-feedback-meta">期限 {{ row.deadline }} · 编号 {{ row.id }}</small>
-          </div>
-          <div class="ndt-feedback-actions">
-            <ElButton link type="primary" @click="emit('openFeedbackDetail', row.id)"
-              >详情</ElButton
-            >
-            <ElTooltip
-              content="该反馈已关闭，无需重复提交"
-              :disabled="row.status !== '已关闭'"
-              placement="top"
-              popper-class="audit-action-tooltip-popper"
-            >
-              <span class="ndt-action-tooltip">
-                <ElButton
-                  :type="row.status === '已关闭' ? 'default' : 'warning'"
-                  :plain="row.status === '已关闭'"
-                  size="small"
-                  :disabled="row.status === '已关闭'"
-                  @click="handleRectifyNdt(row.id)"
-                >
-                  提交反馈
-                </ElButton>
-              </span>
-            </ElTooltip>
-          </div>
-        </li>
-      </ul>
-      <ElEmpty v-else description="暂无监检反馈" class="compact-empty" />
-
+    <!-- 回复反馈：说明写在弹窗里，不在页面上摊开一个表单（2026-11-04 手机简化稿） -->
+    <ElDialog
+      v-model="replyDialogVisible"
+      title="回复监检反馈"
+      width="min(560px, 92vw)"
+      append-to-body
+    >
       <ElForm
         ref="rectificationFormRef"
         :model="rectificationForm"
@@ -744,7 +461,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
         status-icon
         class="rectify-form"
       >
-        <ElFormItem label="补正反馈" prop="rectificationId">
+        <ElFormItem label="反馈事项" prop="rectificationId">
           <ElSelect
             v-model="rectificationForm.rectificationId"
             :disabled="!openFeedback.length"
@@ -754,16 +471,16 @@ const handleRectifyNdt = async (rectificationId?: string) => {
             <ElOption
               v-for="item in openFeedback"
               :key="item.id"
-              :label="item.title"
+              :label="plainWording(item.title)"
               :value="item.id"
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem label="反馈说明" prop="description">
+        <ElFormItem label="补正说明" prop="description">
           <ElInput
             v-model="rectificationForm.description"
             type="textarea"
-            :rows="2"
+            :rows="3"
             maxlength="240"
             show-word-limit
             aria-label="补正反馈说明"
@@ -773,50 +490,272 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           v-if="rectifyError"
           class="ndt-rectify-error"
           type="error"
-          title="无损检测补正反馈提交失败"
+          title="补正反馈提交失败"
           :closable="false"
           show-icon
         >
-          <div class="ndt-error-content">
-            <span>{{ rectifyError }}</span>
-            <ElButton link type="primary" :loading="loading" @click="handleRectifyNdt()">
-              重试补正反馈
+          {{ rectifyError }}
+        </ElAlert>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="replyDialogVisible = false">取消</ElButton>
+        <ElButton
+          type="primary"
+          :disabled="!openFeedback.length"
+          :loading="loading"
+          @click="handleRectifyNdt()"
+        >
+          提交反馈
+        </ElButton>
+      </template>
+    </ElDialog>
+
+    <!-- 有待处理的监检反馈时放最前：这是唯一有期限、要立刻动手的事 -->
+    <section
+      v-if="feedback.length"
+      id="ndt-feedback-list"
+      class="ndt-section"
+      aria-label="监检反馈"
+    >
+      <h2>
+        监检反馈<span v-if="openFeedback.length" class="ndt-count is-red">{{
+          openFeedback.length
+        }}</span>
+      </h2>
+      <article v-for="row in openFeedback" :key="row.id" class="ndt-feedback-card">
+        <ElTag type="danger" size="small" effect="light">{{ plainWording(row.status) }}</ElTag>
+        <strong>{{ plainWording(row.title) }}</strong>
+        <p v-if="row.description">{{ plainWording(row.description) }}</p>
+        <div class="ndt-feedback-foot">
+          <small>期限 {{ row.deadline }}</small>
+          <div class="ndt-feedback-actions">
+            <ElButton type="primary" :disabled="readOnly" @click="emit('uploadReport')">
+              补充资料
+            </ElButton>
+            <ElButton plain type="primary" :disabled="readOnly" @click="openReply(row.id)">
+              回复反馈
             </ElButton>
           </div>
-        </ElAlert>
-        <ElTooltip
-          content="暂无待处理的监检反馈"
-          :disabled="Boolean(openFeedback.length)"
-          placement="top"
-          popper-class="audit-action-tooltip-popper"
+        </div>
+        <button type="button" class="ndt-link" @click="emit('openFeedbackDetail', row.id)">
+          查看详情
+        </button>
+      </article>
+      <p v-if="!openFeedback.length" class="ndt-note">监检反馈都已处理。</p>
+      <div v-if="closedFeedback.length" class="ndt-closed">
+        <button
+          type="button"
+          class="ndt-link is-muted"
+          :aria-expanded="closedOpen"
+          @click="closedOpen = !closedOpen"
         >
-          <span class="ndt-action-tooltip">
-            <ElButton
-              type="warning"
-              plain
-              :disabled="!openFeedback.length"
-              :loading="loading"
-              @click="handleRectifyNdt()"
+          已处理 {{ closedFeedback.length }} 条{{ closedOpen ? ' 收起' : ' ›' }}
+        </button>
+        <ul v-if="closedOpen" class="ndt-card ndt-list">
+          <li v-for="row in closedFeedback" :key="row.id">
+            <button type="button" class="ndt-row-main" @click="emit('openFeedbackDetail', row.id)">
+              <span class="ndt-row-text">
+                <strong>{{ plainWording(row.title) }}</strong>
+                <small>期限 {{ row.deadline }}</small>
+              </span>
+            </button>
+            <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
+              {{ plainWording(row.status) }}
+            </ElTag>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="ndt-action-tiles" aria-label="常用操作">
+      <button type="button" :disabled="readOnly" @click="emit('uploadReport')">
+        <ElIcon><UploadFilled /></ElIcon>上传检测报告
+      </button>
+      <button type="button" :disabled="readOnly" @click="filmDialogVisible = true">
+        <ElIcon><Document /></ElIcon>登记底片编号
+      </button>
+      <button type="button" :disabled="readOnly" @click="goToChecklist">
+        <ElIcon><FolderOpened /></ElIcon>上传其他资料
+      </button>
+    </div>
+
+    <dl class="ndt-card ndt-stats" aria-label="已登记检测资料">
+      <div>
+        <dt>底片</dt>
+        <dd>{{ films.length }}</dd>
+      </div>
+      <div>
+        <dt>记录</dt>
+        <dd>{{ records.length }}</dd>
+      </div>
+      <div>
+        <dt>报告</dt>
+        <dd>{{ reports.length }}</dd>
+      </div>
+      <div>
+        <dt>待提交</dt>
+        <dd>{{ batchSubmittableAtomicFiles.length }}</dd>
+      </div>
+    </dl>
+
+    <section id="ndt-checklist" class="ndt-section" aria-label="资料类型与上传">
+      <div class="ndt-section-head">
+        <h2>{{ missingMaterialCount ? '还缺的资料' : '资料类型' }}</h2>
+        <small>{{ ndtChecklistSummary.total }} 种中已传 {{ ndtChecklistSummary.types }} 种</small>
+      </div>
+      <ul class="ndt-card ndt-list">
+        <li v-for="row in visibleChecklist" :key="row.code" class="ndt-material">
+          <div class="ndt-material-line">
+            <span class="ndt-material-name">{{ row.name }}</span>
+            <!-- 0 项不做成可点：点开是空的，不如让人一眼看出还没传 -->
+            <button
+              v-if="row.uploadedCount"
+              type="button"
+              class="ndt-link"
+              :aria-expanded="expandedMaterialCodes.includes(row.code)"
+              @click="toggleMaterialFiles(row.code)"
             >
-              提交补正反馈
+              {{ row.uploadedCount }} 份{{ expandedMaterialCodes.includes(row.code) ? ' ▴' : ' ▾' }}
+            </button>
+            <small v-else class="ndt-empty-count">0 份</small>
+            <ElButton
+              plain
+              type="primary"
+              :disabled="readOnly"
+              :loading="loading"
+              :aria-label="`上传${row.name}`"
+              @click="handleMaterialUpload(row)"
+            >
+              上传
             </ElButton>
-          </span>
-        </ElTooltip>
-      </ElForm>
-    </ElCard>
+          </div>
+          <!-- 上传状态和识别状态是两件事：文件已上传但 OCR 还在排队，跟文件根本没传上去，处置完全不同。 -->
+          <ul
+            v-if="expandedMaterialCodes.includes(row.code) && row.files.length"
+            class="ndt-uploaded-files"
+          >
+            <li v-for="file in row.files" :key="file.id">
+              <button type="button" class="ndt-link" @click="emit('viewMaterialFile', file.id)">
+                {{ file.fileName }}
+              </button>
+              <small
+                >{{ plainWording(file.fileStatus) }} · 资料处理：{{
+                  plainWording(file.currentOcrStatus)
+                }}</small
+              >
+            </li>
+          </ul>
+        </li>
+      </ul>
+      <button
+        v-if="ndtMaterialChecklist.length > visibleChecklist.length || checklistExpanded"
+        type="button"
+        class="ndt-link ndt-expand"
+        :aria-expanded="checklistExpanded"
+        @click="checklistExpanded = !checklistExpanded"
+      >
+        {{ checklistExpanded ? '收起' : `展开全部 ${ndtMaterialChecklist.length} 种` }}
+      </button>
+    </section>
+
+    <!-- 摘要「待提交」滚到这里。锚点必须真实存在——选择器写了而元素没有，滚动会静默失败 -->
+    <section id="ndt-pending-files" class="ndt-section" aria-label="已上传资料">
+      <div class="ndt-section-head">
+        <h2>已上传</h2>
+        <button
+          v-if="batchSubmittableAtomicFiles.length"
+          type="button"
+          class="ndt-link"
+          :disabled="readOnly || loading"
+          @click="submitAtomicFilesBatch"
+        >
+          全部提交
+        </button>
+      </div>
+      <ElAlert
+        v-if="submitError"
+        class="ndt-submit-error"
+        type="error"
+        title="无损检测文件操作失败"
+        :closable="false"
+        show-icon
+      >
+        {{ submitError }}
+      </ElAlert>
+      <ul v-if="atomicFileRows.length" class="ndt-card ndt-list">
+        <li v-for="row in atomicFileRows" :key="row.id">
+          <button type="button" class="ndt-row-main" @click="emit('viewMaterialFile', row.id)">
+            <FileTypeIcon :file-name="row.fileName" />
+            <span class="ndt-row-text">
+              <strong>{{ row.fileName }}</strong>
+              <small>{{ ndtFileSubtext(row) }}</small>
+            </span>
+          </button>
+          <ElButton
+            v-if="canRetryDocumentUpload(row.uploadStatus)"
+            type="danger"
+            plain
+            :disabled="loading"
+            @click="retryAtomicFileUpload(row)"
+          >
+            重新上传
+          </ElButton>
+          <template v-else>
+            <ElTag :type="getStatusTagType(row.approvalStatus)" size="small" effect="plain">
+              {{ plainWording(row.approvalStatus) }}
+            </ElTag>
+            <ElButton
+              v-if="row.canSubmit"
+              plain
+              type="primary"
+              :loading="loading"
+              @click="submitAtomicFile(row)"
+            >
+              提交
+            </ElButton>
+          </template>
+          <ElDropdown
+            trigger="click"
+            @command="(command: string) => handleNdtFileMenu(command, row)"
+          >
+            <button type="button" class="ndt-more" aria-label="更多操作">⋯</button>
+            <template #dropdown>
+              <ElDropdownMenu>
+                <ElDropdownItem command="view">查看</ElDropdownItem>
+                <ElDropdownItem
+                  command="submit"
+                  :disabled="!row.canSubmit"
+                  :title="row.canSubmit ? '' : row.submitBlockedReason"
+                >
+                  提交审批
+                </ElDropdownItem>
+                <ElDropdownItem
+                  command="rules"
+                  :disabled="!row.canEdit"
+                  :title="row.canEdit ? '' : row.editBlockedReason"
+                >
+                  调整业务规则
+                </ElDropdownItem>
+              </ElDropdownMenu>
+            </template>
+          </ElDropdown>
+        </li>
+      </ul>
+      <p v-else class="ndt-card ndt-note is-empty">还没有上传无损检测资料：用上面的按钮开始。</p>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.panel {
-  border-radius: 8px;
-}
-
 .ndt-workspace {
   display: grid;
-  gap: 12px;
+  max-width: 860px;
+  margin: 0 auto 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
 }
 
+/* —— 弹窗（底片登记 / 业务规则 / 回复反馈）—— */
 .ndt-film-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -843,359 +782,384 @@ const handleRectifyNdt = async (rectificationId?: string) => {
   line-height: 1.5;
 }
 
-.ndt-workspace :deep(.el-button),
-.ndt-workspace :deep(.el-input__wrapper),
-.ndt-workspace :deep(.el-select__wrapper) {
-  min-height: 44px;
+.rectify-form :deep(.el-select) {
+  width: 100%;
 }
 
-.ndt-panel {
-  margin-bottom: 16px;
-  border: 0;
-  box-shadow: 0 8px 20px rgb(15 23 42 / 7%);
+.ndt-submit-error,
+.ndt-rectify-error {
+  margin: 4px 0 0;
 }
 
-.panel-header {
+/* —— 分区 —— */
+.ndt-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.ndt-section h2 {
   display: flex;
   gap: 8px;
   align-items: center;
-  justify-content: space-between;
-  min-height: 32px;
-  font-weight: 600;
-}
-
-.panel-subtitle {
-  margin-top: 4px;
-  font-size: 13px;
-  font-weight: 400;
-  color: #52617a;
-}
-
-.ndt-registered-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  padding: 0 0 12px;
   margin: 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.ndt-registered-counts div {
-  display: flex;
-  gap: 8px;
-}
-
-.ndt-registered-counts dt {
-  color: #52617a;
-}
-
-.ndt-registered-counts dd {
-  margin: 0;
-  color: #1f2937;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.ndt-mobile-checklist {
-  display: none;
-}
-
-.section-title {
-  margin: 14px 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.ndt-checklist,
-.ndt-ocr-panel,
-.ndt-library {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
+  font-size: 17px;
+  line-height: 24px;
+  color: #172033;
 }
 
 .ndt-section-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   gap: 12px;
-  align-items: start;
-}
-
-.ndt-section-head strong {
-  font-size: 15px;
-  color: #1f2937;
-}
-
-.ndt-section-head p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #52617a;
-}
-
-.ndt-submit-error,
-.ndt-rectify-error {
-  margin-bottom: 10px;
-}
-
-.ndt-submit-error,
-.ndt-rectify-error {
-  margin-top: 10px;
-}
-
-.ndt-readiness-table {
-  margin-top: 8px;
-}
-
-.ndt-blocker-list {
-  padding-left: 18px;
-  margin: 4px 0 0;
-  line-height: 1.6;
-}
-
-.ndt-error-content {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
+  align-items: baseline;
   justify-content: space-between;
-  line-height: 1.6;
 }
 
-.ndt-error-content span {
-  overflow-wrap: anywhere;
-}
-
-.ndt-table-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  align-items: center;
-}
-
-.ndt-action-tooltip {
-  display: inline-flex;
-}
-
-.ndt-checklist-table :deep(.el-table__body-wrapper) {
-  overflow-y: visible;
-}
-
-.ndt-checklist-table :deep(.el-table__cell .cell) {
-  overflow: visible;
-  line-height: 1.45;
-  text-overflow: clip;
-  white-space: normal;
-}
-
-.rectify-form {
-  grid-template-columns: 1fr;
-}
-
-.rectify-form :deep(.el-button) {
-  min-height: 36px;
-  margin-left: 0;
-}
-
-.ndt-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12px;
-}
-
-.ndt-actions span {
-  color: #52617a;
-}
-
-.muted-action {
+.ndt-section-head small {
   font-size: 13px;
-  font-weight: 600;
   color: #667085;
 }
 
-.rectify-form {
-  display: grid;
-  gap: 10px;
-  align-items: end;
-  margin-top: 12px;
+.ndt-count {
+  display: inline-grid;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: #fff;
+  background: #d64545;
+  border-radius: 999px;
+  place-items: center;
 }
 
-.compact-empty {
-  padding: 8px 0;
-}
-
-@media (width <= 768px) {
-  .ndt-checklist-table {
-    display: none;
-  }
-
-  .ndt-uploaded-files {
-    display: none;
-  }
-
-  .ndt-mobile-checklist {
-    display: grid;
-    padding: 0;
-    margin: 0;
-    list-style: none;
-  }
-
-  .ndt-mobile-checklist > li {
-    display: grid;
-    gap: 6px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-
-  .ndt-mobile-checklist > li:first-child {
-    padding-top: 0;
-  }
-
-  .ndt-mobile-checklist strong,
-  .ndt-material-rules p {
-    overflow-wrap: anywhere;
-    line-height: 1.5;
-  }
-
-  .ndt-material-rules summary {
-    display: list-item;
-    width: fit-content;
-    min-height: 44px;
-    padding: 10px 0;
-    color: #335d9d;
-    cursor: pointer;
-  }
-
-  .ndt-material-rules summary:focus-visible {
-    outline: 2px solid var(--el-color-primary);
-    outline-offset: 3px;
-  }
-
-  .ndt-material-rules p {
-    margin: 0 0 8px;
-    color: #52617a;
-    font-size: 13px;
-  }
-
-  .ndt-mobile-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .ndt-mobile-files {
-    display: grid;
-    gap: 8px;
-    padding: 0;
-    margin: 6px 0 0;
-    list-style: none;
-  }
-
-  .ndt-mobile-files li {
-    display: grid;
-    gap: 4px;
-  }
-
-  .ndt-mobile-files :deep(.el-button) {
-    justify-content: flex-start;
-    white-space: normal;
-    text-align: left;
-  }
-
-  .ndt-mobile-files :deep(.el-button > span),
-  .ndt-mobile-files small {
-    overflow-wrap: anywhere;
-    line-height: 1.5;
-  }
-
-  .ndt-section-head,
-  .rectify-form {
-    grid-template-columns: 1fr;
-  }
-
-  .ndt-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .ndt-error-content {
-    align-items: stretch;
-    flex-direction: column;
-  }
-}
-
-/* 工作区本来就是 grid，order 直接生效，gap 不变 */
-.ndt-workspace.is-feedback-first #ndt-feedback-list {
-  order: -1;
-}
-
-.ndt-rule-same {
-  color: var(--el-text-color-placeholder);
-}
-
-.ndt-checklist-toggle {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 0;
-}
-
-.ndt-feedback-list {
-  display: grid;
-  gap: 8px;
-  margin: 0;
+.ndt-card {
   padding: 0;
-  list-style: none;
+  margin: 0;
+  background: #fff;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
 }
 
-.ndt-feedback-list > li {
+.ndt-note {
+  margin: 0;
+  font-size: 13px;
+  color: #667085;
+}
+
+.ndt-note.is-empty {
+  padding: 18px 16px;
+  text-align: center;
+}
+
+.ndt-link {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--el-color-primary, #2f6bff);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.ndt-link:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.ndt-link.is-muted {
+  justify-self: start;
+  color: #667085;
+}
+
+/* —— 监检反馈卡：浅红底 + 细边 —— */
+.ndt-feedback-card {
+  display: grid;
+  padding: 14px 16px;
+  background: #fff7f6;
+  border: 1px solid #f0c8c3;
+  border-radius: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  justify-items: start;
+}
+
+.ndt-feedback-card strong {
+  font-size: 15px;
+  line-height: 22px;
+  color: #172033;
+  overflow-wrap: anywhere;
+}
+
+.ndt-feedback-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: #475467;
+  overflow-wrap: anywhere;
+}
+
+.ndt-feedback-foot {
   display: flex;
-  gap: 16px;
+  width: 100%;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  flex-wrap: wrap;
 }
 
-.ndt-feedback-list > li.is-open {
-  background: var(--el-color-warning-light-9);
-  border-color: var(--el-color-warning-light-5);
-}
-
-.ndt-feedback-main {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.ndt-feedback-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.ndt-feedback-desc {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-regular);
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.ndt-feedback-meta {
-  color: var(--el-text-color-secondary);
+.ndt-feedback-foot small {
+  font-size: 13px;
+  color: #667085;
 }
 
 .ndt-feedback-actions {
   display: flex;
-  flex: none;
+  gap: 8px;
+}
+
+.ndt-feedback-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.ndt-closed {
+  display: grid;
+  gap: 6px;
+}
+
+/* —— 三个常用操作 —— */
+.ndt-action-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ndt-action-tiles button {
+  display: grid;
+  min-height: 84px;
+  padding: 12px 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #172033;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+  place-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.ndt-action-tiles button:hover:not(:disabled) {
+  background: #f5f8ff;
+  border-color: #c9d8f6;
+}
+
+.ndt-action-tiles button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ndt-action-tiles button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+
+.ndt-action-tiles :deep(.el-icon) {
+  font-size: 24px;
+  color: var(--el-color-primary, #2f6bff);
+}
+
+/* —— 一行登记数 —— */
+.ndt-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ndt-stats div {
+  display: grid;
+  padding: 10px 4px;
+  text-align: center;
+  gap: 2px;
+}
+
+.ndt-stats div + div {
+  border-left: 1px solid #eef1f6;
+}
+
+.ndt-stats dt {
+  font-size: 12px;
+  color: #667085;
+}
+
+.ndt-stats dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--el-color-primary, #2f6bff);
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 列表行 —— */
+.ndt-list {
+  display: grid;
+  list-style: none;
+}
+
+.ndt-list > li {
+  display: flex;
+  min-height: 56px;
+  padding: 8px 10px 8px 14px;
   gap: 8px;
   align-items: center;
+}
+
+.ndt-list > li + li {
+  border-top: 1px solid #eef1f6;
+}
+
+.ndt-list :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.ndt-row-main {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  flex: 1;
+  gap: 10px;
+  align-items: center;
+}
+
+.ndt-row-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ndt-row-text strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ndt-row-text small {
+  overflow: hidden;
+  font-size: 12px;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ndt-more {
+  display: grid;
+  width: 36px;
+  height: 44px;
+  padding: 0;
+  font-size: 18px;
+  color: #667085;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  place-items: center;
+}
+
+.ndt-more:hover {
+  background: #f2f4f7;
+}
+
+/* —— 资料类型 —— */
+.ndt-list > li.ndt-material {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.ndt-material-line {
+  display: flex;
+  min-height: 44px;
+  gap: 10px;
+  align-items: center;
+}
+
+.ndt-material-name {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: #172033;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.ndt-empty-count {
+  font-size: 13px;
+  color: #b42318;
+  white-space: nowrap;
+}
+
+.ndt-uploaded-files {
+  display: grid;
+  padding: 8px 10px;
+  margin: 0 0 4px;
+  list-style: none;
+  background: #f8fafc;
+  border-radius: 8px;
+  gap: 6px;
+}
+
+.ndt-uploaded-files li {
+  display: grid;
+  gap: 2px;
+}
+
+.ndt-uploaded-files .ndt-link {
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ndt-uploaded-files small {
+  font-size: 12px;
+  color: #667085;
+}
+
+.ndt-expand {
+  justify-self: center;
+  min-height: 36px;
+}
+
+@media (width <= 560px) {
+  .ndt-workspace {
+    gap: 14px;
+  }
+
+  .ndt-film-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ndt-action-tiles button {
+    min-height: 76px;
+    font-size: 13px;
+  }
+
+  .ndt-feedback-actions {
+    width: 100%;
+  }
+
+  .ndt-feedback-actions :deep(.el-button) {
+    flex: 1;
+  }
 }
 </style>

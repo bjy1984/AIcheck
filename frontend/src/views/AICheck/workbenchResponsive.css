@@ -245,23 +245,6 @@
     display: none;
   }
 
-  .ndt-submission-summary {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-    padding: 12px;
-  }
-
-  .ndt-submission-summary > div {
-    display: grid;
-    grid-template-columns: 88px minmax(0, 1fr);
-    gap: 10px;
-    align-items: baseline;
-  }
-
-  .ndt-submission-summary dt {
-    margin: 0;
-  }
-
   .basis-meta-grid {
     grid-template-columns: minmax(0, 1fr);
   }

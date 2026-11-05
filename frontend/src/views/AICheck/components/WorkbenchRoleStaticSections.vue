@@ -3,21 +3,14 @@ import { computed, nextTick, ref } from 'vue'
 import {
   ElAlert,
   ElButton,
-  ElCard,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
-  ElEmpty,
   ElInput,
   ElOption,
   ElPagination,
-  ElRadioButton,
-  ElRadioGroup,
   ElSelect,
-  ElTable,
-  ElTableColumn,
-  ElTag,
-  ElTooltip
+  ElTag
 } from 'element-plus'
 import type {
   ArchiveItem,
@@ -33,7 +26,9 @@ import type {
   RoleCode,
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
-import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
+import { type AuditStatusTone } from './AuditStatusTag.vue'
+import FileTypeIcon from './FileTypeIcon.vue'
+import { plainWording } from '@/utils/reviewerWording'
 import ContractorFeedbackPanel from './contractor/ContractorFeedbackPanel.vue'
 import ContractorStatusCards from './contractor/ContractorStatusCards.vue'
 import ContractorUploadPanel from './contractor/ContractorUploadPanel.vue'
@@ -56,7 +51,6 @@ import {
   CONTRACTOR_MATERIAL_REQUIREMENTS,
   inferMaterialCategory
 } from '../contractorMaterialCategories'
-import { CONTRACTOR_MATERIAL_GUIDE_COLUMNS } from '../contractorMaterialGuide'
 
 type ReviewChainStep = {
   title: string
@@ -261,26 +255,6 @@ const processRows = computed(() =>
   }))
 )
 
-const correctionFileCount = computed(
-  () => contractorFileRows.value.filter((file) => file.status === '需补正').length
-)
-const pendingRectificationCount = computed(
-  () => rectifications.value.filter((item) => item.status === '待反馈').length
-)
-const showCorrectionFiles = async () => {
-  contractorStatusFilter.value = '需补正'
-  contractorKeyword.value = ''
-  contractorNodeFilter.value = null
-  contractorUsageFilter.value = '全部用途'
-  contractorMaterialFilter.value = '全部资料类别'
-  contractorProcessingFilter.value = '全部'
-  contractorPage.value = 1
-  await nextTick()
-  document
-    .getElementById('contractor-file-list')
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
 const mapContractorFileStatus = (
   file: NodePackagePayload['projectFiles'][number]
 ): Exclude<ContractorFileStatus, '全部'> => {
@@ -406,7 +380,8 @@ const contractorFeedbackRows = computed(() => {
           status: rectification.status === '待反馈' ? '待处理' : rectification.status,
           linkedFiles: rectification.bindingIds?.length ?? linkedBindings.length,
           feedbackAt: rectification.createdAt,
-          dueAt: '未设置截止日期',
+          // 补正单没有截止日期字段：留空，卡片上改显示退回日期，不写一句「未设置截止日期」
+          dueAt: '',
           createdAt: rectification.createdAt
         }
       })
@@ -571,6 +546,35 @@ const requestFileReplace = (file: ContractorFileRow) => {
   })
 }
 
+/** 手机版资料行的「⋯」菜单：查看、提交也收进来，行上只留状态。 */
+const handleContractorFileMenu = (command: string, row: ContractorFileRow) => {
+  if (command === 'view') requestFileView(row)
+  else if (command === 'submit') requestFileSubmit(row)
+  else handleContractorRowCommand(command, row)
+}
+/** 资料行第二行类别后面的部分：· 关联环节 · 日期（类别和它的来源标记在模板里画） */
+const contractorFileMeta = (row: ContractorFileRow) => {
+  const parts = [
+    row.relationNode && row.relationNode !== '—' ? row.relationNode : '',
+    String(row.updatedAt || '').slice(5, 10)
+  ].filter(Boolean)
+  if (!parts.length) return ''
+  return `${row.materialCategory ? ' · ' : ''}${parts.join(' · ')}`
+}
+/** 筛选只列有资料的状态（「全部」和当前选中的一直在）：手机上一行放得下，也不用点开一个空列表 */
+const visibleContractorStatusOptions = computed(() =>
+  contractorStatusFilterOptions.filter(
+    (status) =>
+      status === '全部' ||
+      status === contractorStatusFilter.value ||
+      contractorStatusCounts.value[status] > 0
+  )
+)
+const contractorFiltersOpen = ref(false)
+const selectContractorStatus = (status: typeof contractorStatusFilter.value) => {
+  contractorStatusFilter.value = status
+  resetContractorFilePage()
+}
 const handleContractorRowCommand = (command: string, row: ContractorFileRow) => {
   if (command === 'replace') requestFileReplace(row)
   else if (command === 'bind') requestFileBind(row)
@@ -693,7 +697,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
 </script>
 
 <template>
-  <div class="role-static-sections">
+  <div :class="['role-static-sections', { 'is-mobile-first': role === 'contractor' }]">
     <template v-if="role === 'contractor'">
       <ElAlert
         v-if="rectificationIssue"
@@ -734,327 +738,252 @@ const getPillClass = (value?: string): AuditStatusTone => {
           @rectify="requestRectify"
         />
       </div>
-      <!-- 先说要做什么，再给入口：计数口径（意见数和文件数不同）用一句话带过，不让施工方读一段解释 -->
-      <ElAlert
-        v-if="
-          rectificationLoaded && !rectificationLoading && !rectificationIssue && correctionFileCount
-        "
-        class="correction-scope-note"
-        type="warning"
-        :closable="false"
-        :title="`${correctionFileCount} 份文件需要补正`"
+      <!-- 2026-11-04 手机简化稿：待提交单独一块（逐个提交或全部提交），我的资料一份一行，
+           14 列表格和三个下拉框收起来；功能都还在，只是不再一进来就铺开。 -->
+
+      <section
+        v-if="batchSubmittableContractorFiles.length"
+        class="contractor-section"
+        aria-label="待提交"
       >
-        <p>{{
-          pendingRectificationCount
-            ? `有 ${pendingRectificationCount} 条待处理的补正意见；一条意见可能涉及多份文件，上传补正资料时会自动带入。`
-            : '监检人员还没有给出具体的补正要求，可先查看这些文件。'
-        }}</p>
-        <ElButton type="primary" plain @click="showCorrectionFiles"
-          >查看需补正文件（{{ correctionFileCount }}）</ElButton
-        >
-      </ElAlert>
-      <ElCard class="role-section-card contractor-section-card" shadow="never">
-        <template #header>
-          <div class="card-head">
-            <div>
-              <h2>三、上传资料列表</h2>
-            </div>
-            <div class="file-library-head-actions">
-              <ElButton
-                type="primary"
-                :loading="actionLoading"
-                :disabled="readOnly || actionLoading || !batchSubmittableContractorFiles.length"
-                @click="requestBatchFileSubmit"
-              >
-                批量提交
-              </ElButton>
-              <AuditStatusTag tone="blue">
-                {{ filteredContractorFileRows.length }} / {{ contractorFileRows.length }} 个文件
-              </AuditStatusTag>
-            </div>
-          </div>
-        </template>
-        <div class="card-body">
-          <div class="file-library-tools">
-            <ElRadioGroup
-              v-model="contractorStatusFilter"
-              class="status-filter-row"
-              aria-label="文件状态筛选"
-              @change="resetContractorFilePage"
-            >
-              <ElRadioButton
-                v-for="status in contractorStatusFilterOptions"
-                :key="status"
-                :value="status"
-              >
-                {{ status }} {{ contractorStatusCounts[status] }}
-              </ElRadioButton>
-            </ElRadioGroup>
-            <div v-if="contractorProcessingFilter !== '全部'" class="node-filter-tip">
-              <span>
-                当前只显示“{{ contractorProcessingFilter }}”资料（共
-                {{ filteredContractorFileRows.length }} 份）。
-              </span>
-              <ElButton link type="primary" @click="handleContractorRecentFilter('全部')">
-                查看全部资料
-              </ElButton>
-            </div>
-            <!-- 锁定节点时必须明说，并给一键退出。
-                 不说的话，用户只会看到「文件忽然少了」——而这正是上一版
-                 「0 / 10 个文件 · 暂无文件」让人以为资料丢了的原因。 -->
-            <div v-if="contractorNodeFilter !== null" class="node-filter-tip">
-              <span>
-                当前只显示「节点 {{ contractorNodeFilter }}」关联的资料（共
-                {{ filteredContractorFileRows.length }} 份）。
-              </span>
-              <ElButton link type="primary" @click="clearContractorNodeFilter">
-                查看全部资料
-              </ElButton>
-            </div>
-            <div id="contractor-file-list" class="filter-row">
-              <ElInput
-                v-model="contractorKeyword"
-                class="filter-input"
-                clearable
-                placeholder="搜索文件名、资料类别、资料项、来源单位、审核环节或反馈编号"
-                aria-label="搜索项目文件"
-                @update:model-value="resetContractorFilePage"
-              />
-              <ElSelect
-                v-model="contractorMaterialFilter"
-                class="filter-select"
-                aria-label="资料类别筛选"
-                @change="resetContractorFilePage"
-              >
-                <ElOption
-                  v-for="material in contractorMaterialOptions"
-                  :key="material"
-                  :label="material"
-                  :value="material"
-                />
-              </ElSelect>
-              <ElSelect
-                v-model="contractorUsageFilter"
-                class="filter-select"
-                aria-label="文件用途筛选"
-                @change="resetContractorFilePage"
-              >
-                <ElOption
-                  v-for="usage in contractorUsageOptions"
-                  :key="usage"
-                  :label="usage"
-                  :value="usage"
-                />
-              </ElSelect>
-              <ElSelect
-                v-model="contractorSort"
-                class="filter-select"
-                aria-label="文件排序方式"
-                @change="resetContractorFilePage"
-              >
-                <ElOption label="更新时间从新到旧" value="updatedDesc" />
-                <ElOption label="更新时间从旧到新" value="updatedAsc" />
-                <ElOption label="按状态排序" value="status" />
-                <ElOption label="按版本排序" value="version" />
-              </ElSelect>
-            </div>
-          </div>
-
-          <ElTable
-            class="contractor-files-table"
-            :data="pagedContractorFileRows"
-            row-key="id"
-            empty-text="当前筛选条件下暂无文件"
+        <div class="contractor-section-head">
+          <h2>
+            待提交<span class="contractor-count">{{ batchSubmittableContractorFiles.length }}</span>
+          </h2>
+          <button
+            type="button"
+            class="contractor-link"
+            :disabled="readOnly || actionLoading"
+            @click="requestBatchFileSubmit"
           >
-            <ElTableColumn label="序号" width="64" align="center">
-              <template #default="{ $index }">
-                {{ (normalizedContractorPage - 1) * contractorPageSize + $index + 1 }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
-            <ElTableColumn prop="materialCategory" label="资料类别" min-width="168">
-              <template #default="{ row }">
-                <!-- 类别本身，加上**谁定的**。
-                     只显示类别的话，「系统猜的」和「人定的」长得一模一样，
-                     用户没法判断要不要去核对它——这正是第 1 条那个坑的形状。 -->
-                <span class="material-category-value">{{ row.materialCategory }}</span>
-                <ElTag
-                  v-if="row.materialCategorySource !== 'manual'"
-                  class="material-category-source"
-                  size="small"
-                  :type="row.materialCategorySource === 'auto' ? 'primary' : 'info'"
-                  effect="plain"
-                  :title="
-                    row.materialCategoryReason ||
-                    (row.materialCategorySource === 'auto'
-                      ? '系统自动识别'
-                      : '系统未识别，按文件名关键词推测，准确度较低')
-                  "
-                >
-                  {{ row.materialCategorySource === 'auto' ? '自动识别' : '推测' }}
-                </ElTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn prop="uploader" label="上传人" width="112" />
-            <ElTableColumn prop="updatedAt" label="更新时间" width="176" />
-            <ElTableColumn
-              prop="sourceOrgName"
-              label="来源单位"
-              min-width="150"
-              show-overflow-tooltip
-            />
-            <ElTableColumn label="状态" width="96">
-              <template #default="{ row }">
-                <ElTag :type="getElementTagType(row.status)" effect="light">
-                  {{ row.status }}
-                </ElTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn label="处理状态" width="116">
-              <template #default="{ row }">
-                <ElButton
-                  v-if="canRetryDocumentUpload(row.processingStatus)"
-                  link
-                  type="danger"
-                  :disabled="readOnly"
-                  @click="requestFileRetryUpload(row)"
-                >
-                  失败重新上传
-                </ElButton>
-                <ElTag v-else :type="getElementTagType(row.processingStatus)" effect="plain">
-                  {{ row.processingStatus }}
-                </ElTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn prop="version" label="版本" width="86" />
-            <ElTableColumn
-              prop="relationNode"
-              label="关联审核环节"
-              min-width="180"
-              show-overflow-tooltip
-            />
-            <ElTableColumn prop="feedback" label="关联反馈" min-width="120" />
-            <ElTableColumn
-              prop="requirementName"
-              label="资料项"
-              min-width="180"
-              show-overflow-tooltip
-            />
-            <ElTableColumn prop="usage" label="文件用途" min-width="130" show-overflow-tooltip />
-            <!-- 五个操作（查看/替换/提交/删除/挂接）挤不进 220px：
-                 列宽不够时按钮会被裁掉，等于加了个看不见的功能。 -->
-            <ElTableColumn label="操作" width="170" fixed="right">
-              <template #default="{ row }">
-                <div class="table-actions">
-                  <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
-                  <ElTooltip
-                    :content="getContractorSubmitHint(row)"
-                    :disabled="canSubmitContractorFile(row)"
-                    placement="top"
-                    popper-class="audit-action-tooltip-popper"
-                  >
-                    <span class="table-action-tooltip">
-                      <ElButton
-                        link
-                        type="primary"
-                        :disabled="!canSubmitContractorFile(row)"
-                        @click="requestFileSubmit(row)"
-                      >
-                        提交
-                      </ElButton>
-                    </span>
-                  </ElTooltip>
-                  <!-- 查看、提交是常用动作，留在行上；替换、选择环节、删除收进「更多」，一行不再摆五个链接 -->
-                  <ElDropdown
-                    trigger="click"
-                    @command="(command: string) => handleContractorRowCommand(command, row)"
-                  >
-                    <ElButton link type="primary">更多</ElButton>
-                    <template #dropdown>
-                      <ElDropdownMenu>
-                        <ElDropdownItem
-                          command="replace"
-                          :disabled="!canReplaceContractorFile(row)"
-                          :title="
-                            canReplaceContractorFile(row) ? '' : getContractorReplaceHint(row)
-                          "
-                        >
-                          替换文件
-                        </ElDropdownItem>
-                        <ElDropdownItem command="bind" :disabled="readOnly"
-                          >选择环节</ElDropdownItem
-                        >
-                        <ElDropdownItem
-                          command="delete"
-                          divided
-                          :disabled="readOnly || !['未关联', '待提交'].includes(row.status)"
-                          :title="
-                            !readOnly && ['未关联', '待提交'].includes(row.status)
-                              ? ''
-                              : getContractorDeleteHint(row)
-                          "
-                        >
-                          删除
-                        </ElDropdownItem>
-                      </ElDropdownMenu>
-                    </template>
-                  </ElDropdown>
-                </div>
-              </template>
-            </ElTableColumn>
-            <template #empty>
-              <ElEmpty :image-size="64" description="当前筛选条件下暂无文件" />
-            </template>
-          </ElTable>
-
-          <ElPagination
-            v-model:current-page="contractorPage"
-            class="contractor-pagination"
-            :page-size="contractorPageSize"
-            :total="filteredContractorFileRows.length"
-            layout="total, prev, pager, next"
-            background
-            small
-          />
+            全部提交
+          </button>
         </div>
-      </ElCard>
-
-      <ElCard class="role-section-card material-guide-card" shadow="never">
-        <template #header>
-          <div class="card-head">
-            <div>
-              <h2>四、资料分类与上传指引</h2>
-              <div class="sub">直接上传即可，系统会自动识别类别；下面的分类只是整理参考。</div>
-            </div>
+        <ul class="contractor-card contractor-file-list">
+          <li v-for="row in batchSubmittableContractorFiles" :key="row.id">
+            <button type="button" class="contractor-file-main" @click="requestFileView(row)">
+              <FileTypeIcon :file-name="row.fileName" />
+              <span class="contractor-file-text">
+                <strong>{{ row.fileName }}</strong>
+                <small>
+                  <template v-if="row.materialCategory">
+                    {{ row.materialCategory }}
+                    <!-- 人工定的不加标记；系统定的鼠标悬上去看依据 -->
+                    <span
+                      v-if="row.materialCategorySource !== 'manual'"
+                      class="material-category-source"
+                      :title="row.materialCategoryReason || '按文件名推测，可在文件详情里改'"
+                      >{{ row.materialCategorySource === 'auto' ? '自动识别' : '推测' }}</span
+                    >
+                  </template>
+                  {{ contractorFileMeta(row) }}
+                </small>
+              </span>
+            </button>
             <ElButton
-              link
+              plain
               type="primary"
-              :aria-expanded="materialGuideOpen"
-              @click="materialGuideOpen = !materialGuideOpen"
+              :disabled="readOnly || actionLoading || !canSubmitContractorFile(row)"
+              @click="requestFileSubmit(row)"
             >
-              {{ materialGuideOpen ? '收起指引' : '展开指引' }}
+              提交
             </ElButton>
-          </div>
-        </template>
-        <div v-if="materialGuideOpen" class="material-checklist">
-          <ElTable
-            class="material-gap-table"
-            :data="CONTRACTOR_MATERIAL_REQUIREMENTS"
-            row-key="category"
-            empty-text="暂无资料分类指引"
+          </li>
+        </ul>
+      </section>
+
+      <section class="contractor-section" aria-label="我的资料">
+        <div class="contractor-section-head">
+          <h2>我的资料</h2>
+          <button
+            type="button"
+            class="contractor-link is-muted"
+            :aria-expanded="contractorFiltersOpen"
+            @click="contractorFiltersOpen = !contractorFiltersOpen"
           >
-            <ElTableColumn type="index" label="序号" width="72" align="center" />
-            <ElTableColumn
-              v-for="column in CONTRACTOR_MATERIAL_GUIDE_COLUMNS"
-              :key="column.key"
-              :prop="column.key"
-              :label="column.label"
-              :width="column.width"
-              :min-width="column.minWidth"
-            />
-          </ElTable>
+            {{ contractorFiltersOpen ? '收起筛选' : '搜索与筛选' }}
+          </button>
         </div>
-      </ElCard>
+        <div class="contractor-filter" role="tablist" aria-label="文件状态筛选">
+          <button
+            v-for="status in visibleContractorStatusOptions"
+            :key="status"
+            type="button"
+            role="tab"
+            :aria-selected="contractorStatusFilter === status"
+            :class="['contractor-filter-item', { 'is-active': contractorStatusFilter === status }]"
+            @click="selectContractorStatus(status)"
+          >
+            {{ status }} {{ contractorStatusCounts[status] }}
+          </button>
+        </div>
+        <div v-if="contractorFiltersOpen" id="contractor-file-list" class="contractor-filter-more">
+          <ElInput
+            v-model="contractorKeyword"
+            clearable
+            placeholder="搜索文件名、资料类别、审核环节"
+            aria-label="搜索项目文件"
+            @update:model-value="resetContractorFilePage"
+          />
+          <ElSelect
+            v-model="contractorMaterialFilter"
+            aria-label="资料类别筛选"
+            @change="resetContractorFilePage"
+          >
+            <ElOption
+              v-for="material in contractorMaterialOptions"
+              :key="material"
+              :label="material"
+              :value="material"
+            />
+          </ElSelect>
+          <ElSelect
+            v-model="contractorUsageFilter"
+            aria-label="文件用途筛选"
+            @change="resetContractorFilePage"
+          >
+            <ElOption
+              v-for="usage in contractorUsageOptions"
+              :key="usage"
+              :label="usage"
+              :value="usage"
+            />
+          </ElSelect>
+          <ElSelect
+            v-model="contractorSort"
+            aria-label="文件排序方式"
+            @change="resetContractorFilePage"
+          >
+            <ElOption label="更新时间从新到旧" value="updatedDesc" />
+            <ElOption label="更新时间从旧到新" value="updatedAsc" />
+            <ElOption label="按状态排序" value="status" />
+            <ElOption label="按版本排序" value="version" />
+          </ElSelect>
+        </div>
+        <span v-else id="contractor-file-list" class="contractor-anchor" aria-hidden="true"></span>
+        <!-- 锁定节点或只看上传中 / 失败时必须明说，并给一键退出：不说的话，用户只会看到「文件忽然少了」 -->
+        <p v-if="contractorProcessingFilter !== '全部'" class="contractor-filter-tip">
+          只显示「{{ contractorProcessingFilter }}」的资料（{{ filteredContractorFileRows.length }}
+          份）
+          <button type="button" @click="handleContractorRecentFilter('全部')">看全部</button>
+        </p>
+        <p v-if="contractorNodeFilter !== null" class="contractor-filter-tip">
+          当前只显示「节点 {{ contractorNodeFilter }}」关联的资料（{{
+            filteredContractorFileRows.length
+          }}
+          份）
+          <button type="button" @click="clearContractorNodeFilter">看全部</button>
+        </p>
+
+        <ul v-if="pagedContractorFileRows.length" class="contractor-card contractor-file-list">
+          <li v-for="row in pagedContractorFileRows" :key="row.id">
+            <button type="button" class="contractor-file-main" @click="requestFileView(row)">
+              <FileTypeIcon :file-name="row.fileName" />
+              <span class="contractor-file-text">
+                <strong>{{ row.fileName }}</strong>
+                <small>
+                  <template v-if="row.materialCategory">
+                    {{ row.materialCategory }}
+                    <!-- 人工定的不加标记；系统定的鼠标悬上去看依据 -->
+                    <span
+                      v-if="row.materialCategorySource !== 'manual'"
+                      class="material-category-source"
+                      :title="row.materialCategoryReason || '按文件名推测，可在文件详情里改'"
+                      >{{ row.materialCategorySource === 'auto' ? '自动识别' : '推测' }}</span
+                    >
+                  </template>
+                  {{ contractorFileMeta(row) }}
+                </small>
+              </span>
+            </button>
+            <ElButton
+              v-if="canRetryDocumentUpload(row.processingStatus)"
+              type="danger"
+              plain
+              :disabled="readOnly"
+              @click="requestFileRetryUpload(row)"
+            >
+              重新上传
+            </ElButton>
+            <ElTag v-else :type="getElementTagType(row.status)" effect="light">
+              {{ plainWording(row.status) }}
+            </ElTag>
+            <ElDropdown
+              trigger="click"
+              @command="(command: string) => handleContractorFileMenu(command, row)"
+            >
+              <button type="button" class="contractor-more" aria-label="更多操作">⋯</button>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem command="view">查看</ElDropdownItem>
+                  <ElDropdownItem
+                    command="submit"
+                    :disabled="!canSubmitContractorFile(row)"
+                    :title="canSubmitContractorFile(row) ? '' : getContractorSubmitHint(row)"
+                  >
+                    提交
+                  </ElDropdownItem>
+                  <ElDropdownItem
+                    command="replace"
+                    :disabled="!canReplaceContractorFile(row)"
+                    :title="canReplaceContractorFile(row) ? '' : getContractorReplaceHint(row)"
+                  >
+                    替换文件
+                  </ElDropdownItem>
+                  <ElDropdownItem command="bind" :disabled="readOnly">选择环节</ElDropdownItem>
+                  <ElDropdownItem
+                    command="delete"
+                    divided
+                    :disabled="readOnly || !['未关联', '待提交'].includes(row.status)"
+                    :title="
+                      !readOnly && ['未关联', '待提交'].includes(row.status)
+                        ? ''
+                        : getContractorDeleteHint(row)
+                    "
+                  >
+                    删除
+                  </ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
+          </li>
+        </ul>
+        <p v-else class="contractor-card contractor-empty">
+          {{
+            contractorFileRows.length
+              ? '没有符合条件的资料。'
+              : '还没有上传资料：点上面的大按钮开始。'
+          }}
+        </p>
+        <ElPagination
+          v-if="filteredContractorFileRows.length > contractorPageSize"
+          v-model:current-page="contractorPage"
+          class="contractor-pagination"
+          :page-size="contractorPageSize"
+          :total="filteredContractorFileRows.length"
+          layout="prev, pager, next"
+          small
+        />
+      </section>
+
+      <!-- 上传指引平时收起：直接上传就行，类别系统会自动识别 -->
+      <section class="contractor-guide" aria-label="上传指引">
+        <button
+          type="button"
+          class="contractor-link is-muted"
+          :aria-expanded="materialGuideOpen"
+          @click="materialGuideOpen = !materialGuideOpen"
+        >
+          不知道传什么？看上传指引{{ materialGuideOpen ? ' 收起' : ' ›' }}
+        </button>
+        <ul v-if="materialGuideOpen" class="contractor-card contractor-guide-list">
+          <li v-for="item in CONTRACTOR_MATERIAL_REQUIREMENTS" :key="item.category">
+            <strong>{{ item.category }}</strong>
+            <p>{{ item.requiredItems }}</p>
+            <small v-if="item.uploadHint">{{ item.uploadHint }}</small>
+          </li>
+        </ul>
+      </section>
     </template>
 
     <template v-else-if="role === 'ndt'">
@@ -1407,7 +1336,12 @@ const getPillClass = (value?: string): AuditStatusTone => {
 
 /* 「谁定的」这个标记不能比类别本身还抢眼——它是注解，不是主角 */
 .material-category-source {
-  transform: scale(0.9);
+  padding: 0 4px;
+  margin-left: 2px;
+  font-size: 11px;
+  color: #667085;
+  background: #f2f4f7;
+  border-radius: 4px;
 }
 
 .role-static-sections {
@@ -1446,11 +1380,250 @@ const getPillClass = (value?: string): AuditStatusTone => {
   padding: 0;
 }
 
+/* 2026-11-04 施工方手机简化稿：单栏、最宽 860px，上传在上、退回意见在下 */
+.role-static-sections.is-mobile-first {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
 .contractor-task-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
-  gap: 14px;
-  margin-bottom: 14px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.contractor-section {
+  display: grid;
+  margin-bottom: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.contractor-section-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.contractor-section-head h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  color: #172033;
+}
+
+.contractor-count {
+  display: inline-grid;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475467;
+  background: #eef1f6;
+  border-radius: 999px;
+  place-items: center;
+}
+
+.contractor-link,
+.contractor-filter-tip button {
+  padding: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--el-color-primary, #2f6bff);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.contractor-link.is-muted {
+  font-size: 13px;
+  color: #667085;
+}
+
+.contractor-link:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.contractor-card {
+  background: #fff;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+}
+
+.contractor-file-list {
+  display: grid;
+  padding: 0 14px;
+  margin: 0;
+  list-style: none;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.contractor-file-list li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 60px;
+}
+
+.contractor-file-list li + li {
+  border-top: 1px solid #eef1f6;
+}
+
+.contractor-file-main {
+  display: flex;
+  min-width: 0;
+  padding: 8px 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  flex: 1 1 auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.contractor-file-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.contractor-file-text strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contractor-file-text small {
+  overflow: hidden;
+  font-size: 12px;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contractor-file-main:hover strong {
+  color: var(--el-color-primary, #2f6bff);
+}
+
+.contractor-more {
+  min-width: 32px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 18px;
+  color: #667085;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.contractor-filter {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  gap: 6px;
+}
+
+.contractor-filter-item {
+  min-height: 36px;
+  padding: 0 4px;
+  overflow: hidden;
+  font: inherit;
+  font-size: 13px;
+  color: #475467;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: #eef1f6;
+  border: 0;
+  border-radius: 8px;
+}
+
+.contractor-filter-item.is-active {
+  font-weight: 600;
+  color: #fff;
+  background: var(--el-color-primary, #2f6bff);
+}
+
+.contractor-filter-more {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.contractor-filter-tip {
+  margin: 0;
+  font-size: 13px;
+  color: #667085;
+}
+
+.contractor-empty {
+  padding: 18px 14px;
+  margin: 0;
+  font-size: 13px;
+  color: #667085;
+  text-align: center;
+}
+
+.contractor-pagination {
+  justify-content: center;
+}
+
+.contractor-guide {
+  display: grid;
+  margin-bottom: 18px;
+  gap: 10px;
+}
+
+.contractor-guide > .contractor-link {
+  justify-self: start;
+}
+
+.contractor-guide-list {
+  display: grid;
+  padding: 0 14px;
+  margin: 0;
+  list-style: none;
+}
+
+.contractor-guide-list li {
+  display: grid;
+  padding: 12px 0;
+  gap: 4px;
+}
+
+.contractor-guide-list li + li {
+  border-top: 1px solid #eef1f6;
+}
+
+.contractor-guide-list strong {
+  font-size: 14px;
+  color: #172033;
+}
+
+.contractor-guide-list p,
+.contractor-guide-list small {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: #475467;
+}
+
+.contractor-guide-list small {
+  color: #667085;
+}
+
+.contractor-anchor {
+  display: block;
+  height: 0;
 }
 
 @media (width <= 900px) {

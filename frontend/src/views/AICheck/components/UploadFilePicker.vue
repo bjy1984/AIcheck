@@ -16,10 +16,13 @@ const props = withDefaults(
     modelValue: File[]
     disabled?: boolean
     compact?: boolean
+    /** button：一个整宽的大按钮（手机上点开就是拍照 / 选文件），桌面仍可把文件拖上去 */
+    variant?: 'zone' | 'button'
   }>(),
   {
     disabled: false,
-    compact: false
+    compact: false,
+    variant: 'zone'
   }
 )
 
@@ -87,7 +90,9 @@ watch(
 </script>
 
 <template>
-  <div :class="['upload-file-picker', { 'is-compact': compact }]">
+  <div
+    :class="['upload-file-picker', { 'is-compact': compact, 'is-button': variant === 'button' }]"
+  >
     <ElUpload
       ref="uploadRef"
       class="file-uploader"
@@ -99,7 +104,11 @@ watch(
       :accept="accept"
       :on-change="handleUploadChange"
     >
-      <div class="file-drop-zone">
+      <div v-if="variant === 'button'" class="file-big-button">
+        <UploadFilled class="upload-file-icon" aria-hidden="true" />
+        <strong>拍照或选择文件上传</strong>
+      </div>
+      <div v-else class="file-drop-zone">
         <UploadFilled class="upload-file-icon" aria-hidden="true" />
         <strong>将文件拖到此处</strong>
         <span>系统将自动识别资料类别，支持一次上传多个文件</span>
@@ -214,5 +223,37 @@ watch(
 .selected-files small {
   font-size: 12px;
   color: #7a879b;
+}
+
+/* 大按钮样式：整块就是拖放区，看起来是一个主按钮 */
+.upload-file-picker.is-button :deep(.el-upload-dragger) {
+  display: flex;
+  min-height: 52px;
+  padding: 0 16px;
+  color: #fff;
+  background: var(--el-color-primary, #2f6bff);
+  border: 0;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-file-picker.is-button :deep(.el-upload-dragger:hover),
+.upload-file-picker.is-button :deep(.el-upload-dragger.is-dragover) {
+  background: #2558d9;
+}
+
+.file-big-button {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 16px;
+}
+
+.file-big-button .upload-file-icon {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  color: #fff;
 }
 </style>

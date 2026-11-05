@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { CircleCheck, WarningFilled } from '@element-plus/icons-vue'
-import { ElAlert, ElButton, ElCard } from 'element-plus'
+import { ElAlert, ElButton } from 'element-plus'
 import UploadFilePicker from '../UploadFilePicker.vue'
 import { canSubmitInlineUpload } from '../uploadFileSelection'
 import type { ContractorWorkbenchModel } from './contractorWorkbenchViewModel'
@@ -40,16 +40,8 @@ watch(
 </script>
 
 <template>
-  <ElCard class="contractor-work-panel contractor-upload-panel" shadow="never">
-    <template #header>
-      <div class="panel-head">
-        <div>
-          <h2>一、统一上传资料</h2>
-          <p>文件上传后由系统识别资料类别，可一次选择多个文件。</p>
-        </div>
-      </div>
-    </template>
-
+  <!-- 2026-11-04 手机简化稿：一个大按钮，选完再点「上传 N 个文件」；最近上传一行带过 -->
+  <section class="contractor-upload-panel" aria-label="上传资料">
     <ElAlert
       v-if="operationError"
       class="inline-upload-error"
@@ -64,7 +56,8 @@ watch(
       </div>
     </ElAlert>
 
-    <UploadFilePicker v-model="selectedFiles" compact :disabled="loading || readOnly" />
+    <UploadFilePicker v-model="selectedFiles" variant="button" :disabled="loading || readOnly" />
+    <p class="upload-hint">可一次选多个文件，系统自动识别资料类别</p>
 
     <div v-if="selectedFiles.length" class="inline-upload-actions">
       <span>已选择 {{ selectedFiles.length }} 个文件</span>
@@ -73,9 +66,9 @@ watch(
       </ElButton>
     </div>
 
-    <div class="recent-upload" aria-label="最近上传摘要">
+    <div v-if="recentUpload.total" class="recent-upload" aria-label="最近上传摘要">
       <button type="button" @click="emit('recent-filter', '全部')">
-        最近上传：{{ recentUpload.total }} 个文件，{{ recentUpload.successful }} 个上传成功
+        最近上传 {{ recentUpload.total }} 个，{{ recentUpload.successful }} 个成功
       </button>
       <button
         v-if="recentUpload.processing"
@@ -95,42 +88,27 @@ watch(
         {{ recentUpload.failed }} 个失败
       </button>
       <CircleCheck
-        v-else-if="recentUpload.total && !recentUpload.processing"
+        v-else-if="!recentUpload.processing"
         class="recent-complete"
         aria-label="最近上传已处理完成"
       />
     </div>
-  </ElCard>
+  </section>
 </template>
 
 <style scoped>
-.contractor-work-panel {
-  height: 100%;
-  border: 0;
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgb(15 23 42 / 6%);
+.contractor-upload-panel {
+  display: grid;
+  margin-bottom: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
-.contractor-work-panel :deep(.el-card__header) {
-  padding: 14px 16px 10px;
-  border-bottom: 0;
-}
-
-.contractor-work-panel :deep(.el-card__body) {
-  padding: 0 16px 14px;
-}
-
-.panel-head h2 {
+.upload-hint {
   margin: 0;
-  font-size: 18px;
-  line-height: 1.35;
-}
-
-.panel-head p {
-  margin: 4px 0 0;
   font-size: 13px;
-  font-weight: 500;
   color: #667085;
+  text-align: center;
 }
 
 .inline-upload-error {

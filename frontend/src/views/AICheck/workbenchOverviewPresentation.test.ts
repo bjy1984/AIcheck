@@ -49,48 +49,7 @@ for (const [libraryRole, label] of [
   assert.equal(showNodeType.value, false)
 }
 
-const nodePackage = ref({
-  projectFiles: [
-    { materialCategory: '无损检测资料', materialTypeCode: 'report', status: '待提交' },
-    { materialCategory: '无损检测资料', materialTypeCode: 'report', status: '已提交' },
-    { materialCategory: '无损检测资料', materialTypeCode: 'film', status: '需补正' },
-    { materialCategory: '施工资料', materialTypeCode: 'report', status: '待提交' }
-  ]
-})
-const ndtFeedback = ref([{ status: '待补正' }, { status: '已关闭' }])
-const workbenchAuditCards = handler('./Workbench.vue', 'workbenchAuditCards', {
-  computed,
-  role,
-  nodePackage,
-  ndtFeedback,
-  currentProject: ref({ name: '测试项目' }),
-  documentBindingSummary: (file: { status: string }) => file.status
-})
-const summary = handler('./Workbench.vue', 'ndtSubmissionSummary', {
-  computed,
-  workbenchAuditCards
-})
-assert.deepEqual(
-  summary.value.map((item: { label: string; value: string | number }) => [item.label, item.value]),
-  [
-    ['已上传文件', '3 份'],
-    ['待提交/补正', 2],
-    ['监检反馈', '1 项']
-  ],
-  'the compact summary retains NDT-only counts and omits duplicate project context'
-)
-assert.equal(summary.value[0].hint, '2 种资料类型')
-assert.equal(summary.value[1].actionKey, 'ndt-pending')
-assert.equal(summary.value[1].actionLabel, '查看待处理文件')
+// 2026-11-04 起无损检测的「待提交/补正」摘要条并入 NdtWorkflowPanel 的登记数一行（手机简化稿），
+// 工作台不再另算一份，见 ndtUploadedVisibility.test.ts。
 
-nodePackage.value.projectFiles.forEach((file) => (file.status = '已提交'))
-ndtFeedback.value[0].status = '已关闭'
-assert.equal(summary.value[1].value, 0)
-assert.equal(
-  summary.value[1].actionKey,
-  undefined,
-  'no pending action is fabricated for zero files'
-)
-assert.equal(summary.value[2].value, '0 项')
-
-console.log('Workbench overview location and compact NDT summary regressions passed')
+console.log('Workbench overview location regressions passed')

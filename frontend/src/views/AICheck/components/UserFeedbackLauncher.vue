@@ -28,10 +28,12 @@ import { getAicheckErrorMessage } from '@/utils/aicheckError'
 const route = useRoute()
 const userStore = useUserStoreWithOut()
 
+// 施工方、无损检测、建设方不放这个入口（2026-11-04 用户）；
 // FDE 是内部治理角色，没有提交权限；没登录也不显示
+const HIDDEN_ROLES = ['fde', 'contractor', 'ndt', 'owner']
 const visible = computed(() => {
   const role = userStore.getUserInfo?.role
-  return Boolean(role) && role !== 'fde'
+  return Boolean(role) && !HIDDEN_ROLES.includes(String(role))
 })
 
 const open = ref(false)

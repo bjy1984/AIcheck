@@ -51,9 +51,16 @@ assert.ok(
     /const handleContractorRowCommand/.test(sections),
   '「更多」菜单的命令要接到处理函数，不能只画菜单不接线'
 )
+// 2026-11-04 手机简化稿：表格改成列表，行上只留状态（或「重新上传」）和「⋯」，点文件名就是查看；
+// 收进「⋯」的入口一个都不能丢。
 assert.ok(
-  /width="170" fixed="right"/.test(sections),
-  '操作列现在只放查看、提交、更多；改宽时要保证三个入口都看得见'
+  /command="view"/.test(sections) && /command="submit"/.test(sections),
+  '「⋯」菜单里要有查看和提交'
+)
+assert.ok(
+  /const handleContractorFileMenu/.test(sections) &&
+    /handleContractorFileMenu\(command, row\)/.test(sections),
+  '「⋯」菜单的查看、提交要接上，其余命令交给 handleContractorRowCommand'
 )
 
 // ② 替换走的是「加版本」，不是新建
