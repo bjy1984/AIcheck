@@ -152,3 +152,17 @@ def test_普通成员不能分配权限():
 
 def test_受保护角色名单没被悄悄放宽():
     assert delegation.PROTECTED_ROLES >= {"admin", "fde"}
+
+
+def test_不在用户表里的账号回401而不是500():
+    """内置演示账号能登录但不在用户表里；_guard 以前用了不存在的 errors.UNAUTHORIZED（2026-11-05）。"""
+    from libs.security.auth import USERS
+
+    assert not any(u.get("username") == "admin" for u in repo.state.get("users", []))
+    response = client.post(
+        f"/api/org-units/{ORG_A}/members/U-A-MEMBER/role",
+        json={"role": "owner"},
+        headers={"Authorization": f"Bearer {issue_token(USERS['admin'])}"},
+    )
+    assert response.json()["code"] == 401
+

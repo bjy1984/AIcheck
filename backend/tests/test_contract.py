@@ -6946,6 +6946,39 @@ def test_report_detail_scope_and_archive_if_match() -> None:
     assert repo.find_one("reports", report_id)["status"] == "已归档"
 
 
+def test_report_archive_works_when_if_match_is_enforced(monkeypatch) -> None:
+    """生产默认强制 If-Match。报告路径的头是报告 etag，guard 以前不读它，
+    带了头也判成「没带」，报告永远归档不了（2026-11-05 全功能验收 FLOW-13）。"""
+    monkeypatch.setenv("AICHECK_REQUIRE_IF_MATCH", "true")
+    project_id = "P-2026-HDCP-001"
+    report_id = "RPT-20260625-001"
+    seed_report_scope(report_id, project_id, status="已签发")
+    etag = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))["report"]["etag"]
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/reports/{report_id}/export",
+            json={"format": "pdf"},
+            headers={"Idempotency-Key": "archive-enforced-export"},
+        )
+    )
+    path = f"/projects/{project_id}/reports/{report_id}/archive"
+
+    missing = client.post(path, json={"archiveNote": "no header"})
+    assert missing.json()["data"]["reason"] == "IF_MATCH_REQUIRED", "不带头仍要拦"
+    assert_error(
+        client.post(path, json={"archiveNote": "stale"}, headers={"If-Match": 'W/"report-stale-r0"'}),
+        "ETAG_CONFLICT",
+    )
+    archived = assert_ok(
+        client.post(
+            path,
+            json={"archiveNote": "ready"},
+            headers={"If-Match": etag, "Idempotency-Key": "archive-enforced"},
+        )
+    )
+    assert archived["nextStatus"] == "已归档"
+
+
 def test_report_update_if_match_increments_revision() -> None:
     project_id = "P-2026-HDCP-001"
     report_id = "RPT-20260625-001"

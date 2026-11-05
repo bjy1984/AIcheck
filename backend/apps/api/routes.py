@@ -1970,9 +1970,9 @@ def mutation_guard(
         if effective_if_match is None and "/reports/" not in request.url.path:
             effective_if_match = request.headers.get("If-Match")
         # N-6：不发 If-Match 就绕过乐观锁。对「一旦并发写就会推翻别人结论」的高风险
-        # 动作强制要求该头——保存审查结论、打回补正、正式提交、归档。
-        # 其余端点保持缺省放行，避免一次性打破所有既有调用方。
-        if not effective_if_match and requires_if_match(request):
+        # 动作强制要求该头——保存审查结论、打回补正、正式提交、归档。其余端点缺省放行。
+        # /reports/ 路径的头是报告 etag，这里只看带没带，值由路由按报告校验（2026-11-05）。
+        if not (effective_if_match or request.headers.get("If-Match")) and requires_if_match(request):
             return fail(
                 errors.VALIDATION_ERROR,
                 request,

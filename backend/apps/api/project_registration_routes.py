@@ -106,7 +106,7 @@ def can_manage_project_registration(user: dict[str, Any] | None, project_id: str
 def _guard(request: Request, project_id: str):
     actor = _actor(request)
     if not actor:
-        return None, fail(errors.UNAUTHORIZED, request, http_status=401)
+        return None, fail(errors.AUTH_REQUIRED, request, http_status=401)
     if not can_manage_project_registration(actor, project_id):
         return None, fail(
             errors.FORBIDDEN, request, http_status=403, message="只有项目负责人可以操作。"

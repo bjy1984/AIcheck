@@ -69,7 +69,7 @@ def _guard(request: Request, org_id: str) -> tuple[dict[str, Any] | None, Any]:
     """返回 (actor, 错误响应)。有错误就直接把它返回出去。"""
     actor = _actor(request)
     if not actor:
-        return None, fail(errors.UNAUTHORIZED, request, http_status=401)
+        return None, fail(errors.AUTH_REQUIRED, request, http_status=401)
     if not _is_org_leader(actor, org_id):
         # 不区分「不是负责人」和「组织不存在」——区分了就成了组织存在性的探测口
         return None, fail(errors.FORBIDDEN, request, http_status=403, message="只有本组织负责人可以操作。")

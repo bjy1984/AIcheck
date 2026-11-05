@@ -700,3 +700,18 @@ def test_短于六位的口令被拒():
     ).json()
     assert body["code"] != 0
     assert body["data"]["problems"] == ["密码长度至少为 6 位"]
+
+
+def test_account_missing_from_user_table_gets_401_not_500():
+    """内置演示账号能登录但不在用户表里。_guard 以前用了不存在的 errors.UNAUTHORIZED，
+    走到这一支就是 500（2026-11-05 全功能验收 ADM-07）。"""
+    from libs.security.auth import USERS
+
+    assert not any(u.get("username") == "admin" for u in repo.state.get("users", []))
+    response = client.post(
+        f"/api/projects/{PROJECT_A}/registration-links",
+        json={},
+        headers={"Authorization": f"Bearer {issue_token(USERS['admin'])}"},
+    )
+    assert response.json()["code"] == 401
+
