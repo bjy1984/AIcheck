@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { findingReviewState, ownerActivityItems, pendingFinding } from './workbenchTruth'
+import { ownerReportsState } from './ownerHome'
 import { handler, ref, deferred } from './workflowTestHarness'
 import { buildContractorWorkbenchModel } from './components/contractor/contractorWorkbenchViewModel'
 import type { ArchiveItem, Project, ReportVersion } from '@/types/aicheck'
@@ -75,35 +76,23 @@ assert.equal(
   'confirmed OCR cannot prove related-stage completeness'
 )
 
-const props = {
-  reports: [],
-  archiveItems: [],
-  metrics: [{ key: 'report', label: '报告版本', value: 0 }],
-  reportArchiveLoaded: false,
-  reportArchiveLoading: false,
-  reportArchiveIssue: ''
-}
-const unavailable = handler(
-  './components/WorkbenchRoleStaticSections.vue',
-  'reportArchiveUnavailable',
-  { computed, props }
+// 建设方报告与归档：没加载成功不能当成 0 份（2026-11-04 起口径在 ownerHome.ownerReportsState）
+assert.equal(
+  ownerReportsState({ loading: false, loaded: false }),
+  'idle',
+  'unloaded reports must not be presented as zero'
 )
-const emptyLabel = handler(
-  './components/WorkbenchRoleStaticSections.vue',
-  'reportArchiveEmptyLabel',
-  { computed, props }
+assert.equal(ownerReportsState({ loading: true, loaded: false }), 'loading')
+assert.equal(
+  ownerReportsState({ loading: false, loaded: true }),
+  'ready',
+  'successfully loaded empty list is a real zero'
 )
-const cards = handler('./components/WorkbenchRoleStaticSections.vue', 'ownerMetricCards', {
-  computed,
-  props,
-  reportArchiveUnavailable: unavailable,
-  reportArchiveEmptyLabel: emptyLabel
-})
-assert.equal(cards.value[0].value, '—', 'unloaded reports must not be presented as zero')
-props.reportArchiveLoaded = true
-assert.equal(cards.value[0].value, 0, 'successfully loaded empty authorized list is a real zero')
-props.reportArchiveIssue = 'Could not load'
-assert.equal(cards.value[0].value, '—', 'load failure must not be presented as zero')
+assert.equal(
+  ownerReportsState({ loading: false, loaded: true, issue: 'Could not load' }),
+  'failed',
+  'load failure must not be presented as zero'
+)
 
 // File corrections and pending feedback count different business objects.
 const contractor = buildContractorWorkbenchModel({

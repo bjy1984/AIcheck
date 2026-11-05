@@ -24,9 +24,21 @@ const props = defineProps<{
   todos: Array<TodoItem & { nodeLabel?: string }>
   /** 待办总数。列表可能只装了一页，页签上的数字要写总数，不能写列表长度。 */
   todoTotal?: number
+  /** 没有 todo:update 的角色（建设方只读）不给「完成」：点了也会被拒绝。 */
+  canCompleteTodos?: boolean
   messages: MessageItem[]
   loading: boolean
 }>()
+
+/** 按角色投递的待办（2026-11-04 起）不指定某个人：责任人一栏写角色。 */
+const ROLE_LABELS: Record<string, string> = {
+  inspection: '监检',
+  contractor: '施工方',
+  ndt: '无损检测',
+  owner: '建设方'
+}
+const assigneeLabel = (todo: TodoItem) =>
+  todo.assigneeName || (todo.assigneeRole ? ROLE_LABELS[todo.assigneeRole] || '' : '') || '-'
 
 /** 这条消息能不能定位过去。定位不了就不做成可点——
  *  给一条去不了的消息配个按钮，点了没反应比不可点更伤。 */
@@ -184,7 +196,9 @@ const focusSearchInput = async () => {
               <small v-if="row.nodeLabel" class="todo-node-label">{{ row.nodeLabel }}</small>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="assigneeName" label="责任人" width="92" />
+          <ElTableColumn label="责任人" width="92">
+            <template #default="{ row }">{{ assigneeLabel(row) }}</template>
+          </ElTableColumn>
           <ElTableColumn prop="deadline" label="期限" width="158" />
           <ElTableColumn label="优先级" width="88">
             <template #default="{ row }">
@@ -200,7 +214,7 @@ const focusSearchInput = async () => {
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="操作" width="90">
+          <ElTableColumn v-if="canCompleteTodos !== false" label="操作" width="90">
             <template #default="{ row }">
               <ElButton
                 link

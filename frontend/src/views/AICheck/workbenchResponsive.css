@@ -114,27 +114,89 @@
     overflow: visible;
   }
 
+  /* 小屏两行（2026-11-04 用户）：第一行 logo＋项目＋账号，第二行项目状态、搜索、待办消息并排。
+     原来状态标签掉进 34px 的 logo 列被挤扁、字溢出边框，搜索和操作又各占一整行。 */
   .topbar {
-    gap: 10px;
-    min-height: 68px;
+    display: flex;
+    gap: 8px 10px;
+    min-height: 0;
     padding: 10px 12px;
-    grid-template-columns: minmax(0, 1fr) max-content;
-  }
-
-  .global-search-cluster,
-  .top-actions {
-    grid-column: 1 / -1;
-  }
-
-  .top-actions {
-    overflow-x: visible;
-    white-space: normal;
     flex-wrap: wrap;
-    gap: 8px 12px;
+    align-items: center;
+  }
+
+  /* 第一行到这里断开 */
+  .topbar::after {
+    order: 3;
+    height: 0;
+    content: '';
+    flex-basis: 100%;
   }
 
   .brand {
-    grid-template-columns: 34px minmax(0, 1fr);
+    display: contents;
+  }
+
+  .brand-mark {
+    order: 0;
+    flex: 0 0 auto;
+  }
+
+  .project-title-select {
+    order: 1;
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  /* 项目名一行放不下就省略，不折成三行把顶栏撑高 */
+  .project-title-select :deep(.el-select__selected-item),
+  .project-title-select :deep(.el-select__placeholder) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar > .user-menu {
+    order: 2;
+    margin-left: auto;
+  }
+
+  /* 项目状态是标签不是按钮：做成浅底无框的胶囊，不和旁边 44px 的按钮比高矮 */
+  .brand > .status-tag {
+    order: 4;
+    height: 30px;
+    padding: 0 12px;
+    background: #eef4ff;
+    border-color: transparent;
+    border-radius: 999px;
+  }
+
+  .global-search-cluster {
+    order: 5;
+    flex: 0 0 auto;
+  }
+
+  /* 按钮保留 44px 触控尺寸，只把形状统一成圆和胶囊 */
+  .global-search {
+    border-radius: 999px;
+  }
+
+  .top-actions {
+    order: 6;
+    overflow-x: visible;
+    min-width: 0;
+    white-space: normal;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+
+  .top-actions .top-action.el-button {
+    padding: 0 14px;
+    background: #f4f8ff;
+    border-radius: 999px;
   }
 
   .top-status {
@@ -178,6 +240,11 @@
 }
 
 @media (width <= 560px) {
+  /* 手机上顶栏只留头像：账号名在用户菜单里有，把宽度让给项目名 */
+  .user > span:not(.user-caret) {
+    display: none;
+  }
+
   .ndt-submission-summary {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;

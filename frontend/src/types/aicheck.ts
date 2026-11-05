@@ -34,6 +34,8 @@ export type ActionCode =
   | 'submission:draft'
   | 'submission:submit'
   | 'rectification:submit'
+  | 'todo:update'
+  | 'message:update'
   | 'review:save'
   | 'review:return-correction'
   | 'ai:recheck'
@@ -870,8 +872,20 @@ export type TodoItem = {
   title: string
   projectId: string
   nodeId?: number
-  targetType: 'node' | 'document' | 'submission' | 'rectification' | 'report' | 'knowledgeTask'
+  targetType:
+    | 'node'
+    | 'document'
+    | 'submission'
+    | 'rectification'
+    | 'report'
+    | 'knowledgeTask'
+    | 'ndt_feedback'
+    | 'project'
   targetId: string
+  /** 2026-11-04 起：待办是哪类事、投递给哪个角色（libs/notifications）。 */
+  kind?: string
+  assigneeRole?: RoleCode
+  closeReason?: string
   status: '待处理' | '处理中' | '已完成' | '已延期' | '已关闭'
   priority: '低' | '中' | '高'
   deadline?: string
@@ -891,6 +905,9 @@ export type MessageItem = {
   projectId?: string
   targetType?: TodoItem['targetType']
   targetId?: string
+  nodeId?: number
+  kind?: string
+  /** 当前用户自己的已读状态：已读按人记，不再是全项目一个标记。 */
   read: boolean
   createdAt: string
   readAt?: string
@@ -1065,6 +1082,8 @@ export type WorkbenchSummaryPayload = {
   }>
   todos: TodoItem[]
   messages: MessageItem[]
+  /** 当前用户的未读消息总数（messages 只带前 5 条，不能拿它数）。 */
+  messageUnreadCount?: number
   updatedAt: string
 }
 

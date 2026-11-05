@@ -1,16 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  ElButton,
-  ElCard,
-  ElDescriptions,
-  ElDescriptionsItem,
-  ElAlert,
-  ElEmpty,
-  ElTable,
-  ElTableColumn,
-  ElTag
-} from 'element-plus'
+import { ElAlert, ElButton, ElEmpty, ElTag } from 'element-plus'
 import type { NodePackagePayload } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
@@ -48,20 +38,20 @@ const alertType = computed(() => {
 </script>
 
 <template>
-  <ElCard shadow="never" class="panel node-panel" v-loading="loading">
-    <template #header>
-      <div class="panel-header">
-        <div>
-          <span>{{ selectedNode?.name || '节点包' }}</span>
-          <div class="panel-subtitle">
-            {{ selectedNode?.groupName || '-' }} · 节点 {{ selectedNode?.nodeId || '-' }}
-          </div>
-        </div>
-        <ElTag :type="getStatusTagType(selectedNode?.status)" effect="light">
-          {{ selectedNode?.status || '-' }}
-        </ElTag>
-      </div>
-    </template>
+  <!-- 2026-11-04 建设方手机版：三张表改成列表，手机上不横滑。只有建设方的节点抽屉用这个组件。 -->
+  <section class="node-panel" v-loading="loading" aria-label="节点资料">
+    <div class="panel-header">
+      <span class="panel-subtitle">
+        {{ selectedNode?.groupName || '-' }} · 节点 {{ selectedNode?.nodeId || '-' }}
+        <template v-if="selectedNode?.inspectionType">
+          · {{ selectedNode.inspectionType }} 类</template
+        >
+        · {{ submittedFiles }}
+      </span>
+      <ElTag :type="getStatusTagType(selectedNode?.status)" effect="light">
+        {{ selectedNode?.status || '-' }}
+      </ElTag>
+    </div>
 
     <div v-if="issue" class="node-issue">
       <ElEmpty v-if="issue.type === 'empty'" :description="issue.title">
@@ -83,80 +73,70 @@ const alertType = computed(() => {
     </div>
 
     <template v-else-if="packageData">
-      <ElDescriptions :column="2" border class="node-descriptions">
-        <ElDescriptionsItem label="检验类别">
-          {{ selectedNode?.inspectionType || '-' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="已提交文件">{{ submittedFiles }}</ElDescriptionsItem>
-      </ElDescriptions>
-
       <div class="section-title">资料要求</div>
-      <ElTable :data="requirements" border height="190">
-        <ElTableColumn prop="name" label="资料名称" min-width="180" show-overflow-tooltip />
-        <ElTableColumn label="要求" width="96">
-          <template #default="{ row }">
-            <ElTag :type="row.requiredType === '必传' ? 'danger' : 'info'" size="small">
-              {{ row.requiredType }}
-            </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="note" label="说明" min-width="160" show-overflow-tooltip />
-      </ElTable>
+      <!-- 资料名在 note 里（焊工资格证、焊工名册…）；name 是审查点名，每行都一样，不再重复 -->
+      <ul v-if="requirements.length" class="node-list">
+        <li v-for="row in requirements" :key="row.id">
+          <span class="node-list-main">{{ row.note || row.name }}</span>
+          <ElTag :type="row.requiredType === '必传' ? 'danger' : 'info'" size="small">
+            {{ row.requiredType }}
+          </ElTag>
+        </li>
+      </ul>
+      <p v-else class="node-empty">这个节点没有配置资料要求。</p>
 
       <div class="section-title">已挂载资料</div>
-      <ElTable :data="bindings" border height="210">
-        <ElTableColumn prop="fileName" label="文件" min-width="190" show-overflow-tooltip />
-        <ElTableColumn prop="usage" label="用途" width="100" />
-        <ElTableColumn prop="sourceOrgName" label="来源" width="130" show-overflow-tooltip />
-        <ElTableColumn label="状态" width="100">
-          <template #default="{ row }">
-            <ElTag :type="getStatusTagType(row.bindingStatus)" size="small" effect="plain">
-              {{ row.bindingStatus }}
-            </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="操作" width="82" fixed="right">
-          <template #default="{ row }">
-            <ElButton link type="primary" @click="emit('openFile', row.documentId)">详情</ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+      <ul v-if="bindings.length" class="node-list">
+        <li v-for="row in bindings" :key="row.id">
+          <button type="button" class="node-file" @click="emit('openFile', row.documentId)">
+            <span class="node-list-main">{{ row.fileName }}</span>
+            <small>{{ [row.usage, row.sourceOrgName].filter(Boolean).join(' · ') }}</small>
+          </button>
+          <ElTag :type="getStatusTagType(row.bindingStatus)" size="small" effect="plain">
+            {{ row.bindingStatus }}
+          </ElTag>
+        </li>
+      </ul>
+      <p v-else class="node-empty">还没有挂载资料。</p>
 
-      <div class="section-title">项目资料池</div>
-      <ElTable :data="projectFiles" border height="180">
-        <ElTableColumn prop="fileName" label="文件" min-width="190" show-overflow-tooltip />
-        <ElTableColumn prop="sourceOrgName" label="来源" width="120" show-overflow-tooltip />
-        <ElTableColumn
-          v-if="showTechnicalStatus !== false"
-          prop="currentOcrStatus"
-          label="OCR"
-          width="90"
-        />
-        <ElTableColumn label="状态" width="100">
-          <template #default="{ row }">
+      <!-- 项目资料池是全项目的，不属于这个节点：收起来，要看再展开 -->
+      <details v-if="projectFiles.length" class="node-pool">
+        <summary>项目全部资料（{{ projectFiles.length }} 份）</summary>
+        <ul class="node-list">
+          <li v-for="row in projectFiles" :key="row.id">
+            <button type="button" class="node-file" @click="emit('openFile', row.id)">
+              <span class="node-list-main">{{ row.fileName }}</span>
+              <small>
+                {{
+                  [
+                    row.sourceOrgName,
+                    showTechnicalStatus !== false ? row.currentOcrStatus : '',
+                    row.updatedAt
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                }}
+              </small>
+            </button>
             <ElTag :type="getStatusTagType(projectFileStatus(row))" size="small" effect="plain">
               {{ projectFileStatus(row) }}
             </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="updatedAt" label="更新时间" width="160" />
-        <ElTableColumn label="操作" width="82" fixed="right">
-          <template #default="{ row }">
-            <ElButton link type="primary" @click="emit('openFile', row.id)">详情</ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+          </li>
+        </ul>
+      </details>
 
       <slot name="actions"></slot>
     </template>
 
     <ElEmpty v-else description="请选择节点" />
-  </ElCard>
+  </section>
 </template>
 
 <style scoped>
-.panel {
-  border-radius: 8px;
+.node-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
 }
 
 .panel-header {
@@ -164,22 +144,18 @@ const alertType = computed(() => {
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  min-height: 32px;
-  font-weight: 600;
+  padding-bottom: 8px;
 }
 
 .panel-subtitle {
-  margin-top: 4px;
+  min-width: 0;
   font-size: 13px;
+  line-height: 20px;
   color: #667085;
 }
 
-.node-descriptions {
-  margin-bottom: 16px;
-}
-
 .node-issue {
-  min-height: 420px;
+  min-height: 240px;
 }
 
 .node-issue-content {
@@ -201,15 +177,85 @@ const alertType = computed(() => {
 }
 
 .section-title {
-  margin: 16px 0 8px;
-  font-size: 14px;
+  margin: 14px 0 4px;
+  font-size: 15px;
   font-weight: 600;
+  color: #172033;
 }
 
-@media (width <= 1280px) {
-  .node-panel {
-    margin-bottom: 16px;
-  }
+.node-list {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.node-list li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 48px;
+}
+
+.node-list li + li {
+  border-top: 1px solid #eef1f6;
+}
+
+.node-list-main {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.node-file {
+  display: grid;
+  min-width: 0;
+  padding: 6px 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.node-file small {
+  overflow: hidden;
+  font-size: 12px;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-file:hover .node-list-main {
+  color: var(--el-color-primary, #2f6bff);
+}
+
+.node-empty {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #667085;
+}
+
+.node-pool {
+  margin-top: 14px;
+  border-top: 1px solid #eef1f6;
+}
+
+.node-pool summary {
+  min-height: 44px;
+  padding: 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #172033;
+  cursor: pointer;
 }
 
 @media (width <= 768px) {

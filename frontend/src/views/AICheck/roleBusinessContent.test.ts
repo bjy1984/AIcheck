@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { handler } from './workflowTestHarness'
+import { ownerProgress } from './ownerHome'
 
 const computed = (fn: () => unknown) => ({
   get value() {
@@ -18,28 +19,11 @@ const props = {
   reports: [{ id: 'R1' }],
   archiveItems: [{ id: 'A1' }, { id: 'A2' }]
 }
-const cards = handler('./components/WorkbenchRoleStaticSections.vue', 'ownerMetricCards', {
-  computed,
-  props,
-  reportArchiveUnavailable: { value: false },
-  reportArchiveEmptyLabel: { value: '待加载' }
-})
+// 建设方首页的进度只认业务进度：接口只给技术指标（Token、耗时）时显示「—」，不编一个进度
+assert.deepEqual(ownerProgress(props.metrics), { label: '50%', percent: 50 })
 assert.deepEqual(
-  cards.value.map((card: any) => card.label),
-  ['总体进度', '报告版本', '归档资料']
-)
-assert.deepEqual(
-  cards.value.map((card: any) => card.value),
-  ['50%', 1, 2]
-)
-props.metrics = [{ key: 'token', label: 'Token 消耗', value: 987654 }]
-assert.deepEqual(
-  cards.value.map((card: any) => card.label),
-  ['总体进度', '报告版本', '归档资料']
-)
-assert.equal(
-  cards.value[0].value,
-  '—',
+  ownerProgress([{ key: 'token', label: 'Token 消耗', value: 987654 }]),
+  { label: '—', percent: 0 },
   'technical-only payload must not fabricate business progress'
 )
 
@@ -90,32 +74,22 @@ assert.match(
 assert.equal(messageLabel({ role: 'user', execution: { mode: 'deterministic_fallback' } }), '')
 
 const workbench = readFileSync(new URL('./Workbench.vue', import.meta.url), 'utf8')
-const ownerSections = readFileSync(
-  new URL('./components/WorkbenchRoleStaticSections.vue', import.meta.url),
+const ownerHome = readFileSync(
+  new URL('./components/OwnerProjectHome.vue', import.meta.url),
   'utf8'
 )
-  .split(`<template v-else-if="role === 'owner'">`)[1]
-  .split(`<template v-else-if="role === 'inspection'">`)[0]
-assert.doesNotMatch(ownerSections, /reviewSteps|aiConfidence|Prompt|业务审查链路|强制限制/)
-assert.match(ownerSections, /ownerNodeRows/)
-assert.match(ownerSections, /retry-report-archive/)
+assert.doesNotMatch(ownerHome, /reviewSteps|aiConfidence|Prompt|业务审查链路|强制限制/)
+assert.doesNotMatch(ownerHome, /<ElTable/, '建设方首页不用表格：手机上要横滑')
+assert.match(ownerHome, /retryReportArchive/)
+assert.match(workbench, /<OwnerProjectHome\s+v-if="role === 'owner'"/)
 assert.doesNotMatch(
   workbench,
   /<WorkbenchSidePanel|<WorkbenchRightStaticDetails|<RoleContextPanel/,
   'owner must not mount the shared engineering/AI sidebar'
 )
 assert.match(workbench, /<NodePackagePanel\s+:show-technical-status="false"/)
-assert.match(workbench, /<ReportArchivePanel/)
-assert.ok(
-  workbench.indexOf('<ReportArchivePanel') < workbench.indexOf('<NodePackagePanel'),
-  'owner reports and archives precede detailed node material tables'
-)
-assert.match(workbench, /<details v-if="role === 'owner'" class="card owner-node-documents">/)
-assert.doesNotMatch(
-  workbench,
-  /<details[^>]*owner-node-documents[^>]*\sopen(?:\s|>)/,
-  'node material details should not push owner reports below the fold by default'
-)
+// 节点资料点进节点才看（抽屉），不在首页把报告挤到下面去
+assert.match(workbench, /<ElDrawer\s+v-if="role === 'owner'"\s+v-model="ownerNodeOpen"/)
 const conversation = readFileSync(
   new URL('../AIReviewB/ConversationalReviewWorkbenchB.vue', import.meta.url),
   'utf8'

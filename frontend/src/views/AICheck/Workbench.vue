@@ -252,6 +252,7 @@ import { NDT_NODE_IDS, type NdtAtomicMaterial } from '@/utils/ndtAtomicMaterials
 import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSections.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import StationAuditOverview from './components/StationAuditOverview.vue'
+import OwnerProjectHome from './components/OwnerProjectHome.vue'
 import UserAvatarIcon from './components/UserAvatarIcon.vue'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
 import ImportantReview from '@/views/ImportantReview/ImportantReview.vue'
@@ -654,6 +655,13 @@ const aiRecheckOutputVisible = ref(false)
 const aiTechnicalPanels = ref<string[]>([])
 const mobileTreeOpen = ref(false)
 const compactNodeNavigation = ref(false)
+/** 建设方点节点：先弹出抽屉（显示加载中），再切节点加载资料。 */
+const ownerNodeOpen = ref(false)
+const handleOwnerOpenNode = async (node: ProjectTreeNode) => {
+  ownerNodeOpen.value = true
+  await handleNodeSelect(node)
+}
+const handleOwnerOpenMessages = () => handleOpenQuickAccess('messages')
 const desktopTreeCollapsed = ref(false)
 
 const syncCompactNodeNavigation = () => {
@@ -1009,7 +1017,11 @@ const availableActions = computed<ActionCode[]>(() => {
     new Set([...(context.value?.actions || []), ...(nodePackage.value?.actions || [])])
   )
 })
-const unreadMessageCount = computed(() => messages.value.filter((message) => !message.read).length)
+// 摘要里的消息只带前 5 条：未读总数用后端按人算的 messageUnreadCount（2026-11-04）
+const unreadMessageCount = computed(() => {
+  const total = Number(summary.value?.messageUnreadCount)
+  return Number.isFinite(total) ? total : messages.value.filter((message) => !message.read).length
+})
 // 摘要接口的 todos 只带前 5 条（后端 role_todos[:5]），真正的总数在 metrics 的 todo 项里。
 // 徽标原先拿那 5 条的长度当总数：生产里写 5，点开「待办」页签却是 20 条。
 const todoTotal = computed(() => {
@@ -2363,7 +2375,13 @@ const loadQuickAccessData = async () => {
     // 接口默认每页 20 条。不传 pageSize 时第 21 条起被悄悄截掉：生产里徽标（总数）写 21，
     // 弹窗列表和页签只有 20，第 21 条永远看不到。
     const [todoRes, messageRes] = await Promise.all([
-      listTodosApi({ role: role.value, projectId: activeProjectId.value, pageSize: 100 }),
+      // 只列还要办的：做完的事由业务动作自动关掉（2026-11-04），不再在这里堆着
+      listTodosApi({
+        role: role.value,
+        projectId: activeProjectId.value,
+        status: '待处理',
+        pageSize: 100
+      }),
       listMessagesApi({ projectId: activeProjectId.value, pageSize: 100 })
     ])
     if (!todoRes || !messageRes) return
@@ -5205,11 +5223,13 @@ onBeforeUnmount(() => {
             'no-left-nav':
               role === 'contractor' ||
               role === 'ndt' ||
+              role === 'owner' ||
               activeInspectionWorkspaceView === 'important',
             'is-left-collapsed':
               desktopTreeCollapsed &&
               role !== 'contractor' &&
               role !== 'ndt' &&
+              role !== 'owner' &&
               activeInspectionWorkspaceView !== 'important'
           }
         ]"
@@ -5223,10 +5243,12 @@ onBeforeUnmount(() => {
           show-icon
           @close="uploadPostProcessingWarning = ''"
         />
+        <!-- 建设方首页自带节点列表（OwnerProjectHome），不再挂左侧节点树 -->
         <aside
           v-if="
             role !== 'contractor' &&
             role !== 'ndt' &&
+            role !== 'owner' &&
             !compactNodeNavigation &&
             activeInspectionWorkspaceView !== 'important'
           "
@@ -5241,7 +5263,6 @@ onBeforeUnmount(() => {
           >
             <div class="section-title">
               <span>项目审核节点</span>
-              <span v-if="role === 'owner'" class="section-tools">只读</span>
             </div>
             <WorkstationProjectTree
               v-model="labStation"
@@ -5307,7 +5328,7 @@ onBeforeUnmount(() => {
               :message="readonlyIssue.message"
             />
 
-            <div class="page-head">
+            <div v-if="role !== 'owner'" class="page-head">
               <div>
                 <ElBreadcrumb
                   v-if="currentWorkbenchPresentation.showBreadcrumb"
@@ -5377,7 +5398,6 @@ onBeforeUnmount(() => {
                 </ElButton>
                 <ElButton
                   v-if="
-                    role !== 'owner' &&
                     role !== 'contractor' &&
                     role !== 'ndt' &&
                     !(role === 'inspection' && activeWorkbenchSection === 'overview')
@@ -5592,8 +5612,28 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
+            <!-- 建设方首页（2026-11-04 按手机简化稿重做）：进度、需要关注、动态、报告、节点 -->
+            <OwnerProjectHome
+              v-if="role === 'owner'"
+              :project="currentProject"
+              :nodes="projectTreeNodes"
+              :metrics="metrics"
+              :reports="reports"
+              :archive-items="archiveItems"
+              :messages="messages"
+              :report-archive-loading="reportArchiveLoading"
+              :report-archive-loaded="reportArchiveLoaded"
+              :report-archive-issue="reportArchiveIssue"
+              @open-node="handleOwnerOpenNode"
+              @open-messages="handleOwnerOpenMessages"
+              @open-report="handleOpenReportDetail"
+              @download-archive-item="handleDownloadArchiveItem"
+              @download-archive-package="handleDownloadArchivePackage"
+              @retry-report-archive="loadReportArchive"
+            />
+
             <WorkbenchRoleStaticSections
-              v-if="role === 'contractor' || role === 'owner'"
+              v-if="role === 'contractor'"
               ref="staticSectionsRef"
               :role="role"
               :project="currentProject"
@@ -6467,6 +6507,7 @@ onBeforeUnmount(() => {
               v-if="
                 role !== 'ndt' &&
                 role !== 'contractor' &&
+                role !== 'owner' &&
                 (role !== 'inspection' ||
                   (activeWorkbenchSection === 'node' &&
                     ['report', 'archive'].includes(activeInspectionAuditItem)))
@@ -6505,23 +6546,26 @@ onBeforeUnmount(() => {
               @open-export-task="handleOpenExportTask"
             />
 
-            <details v-if="role === 'owner'" class="card owner-node-documents">
-              <summary class="owner-node-documents-summary">
-                节点资料
-                <span>{{ selectedNode?.name || '请先选择节点' }}</span>
-              </summary>
-              <div class="card-body">
-                <NodePackagePanel
-                  :show-technical-status="false"
-                  :package-data="nodePackage"
-                  :loading="nodeLoading"
-                  :issue="nodeIssue"
-                  :retry-loading="nodeLoading"
-                  @open-file="handleOpenFileDetail"
-                  @retry="handleRetryNodeLoad"
-                />
-              </div>
-            </details>
+            <!-- 节点资料点进节点才看：手机上从底部弹出，桌面从右侧 -->
+            <ElDrawer
+              v-if="role === 'owner'"
+              v-model="ownerNodeOpen"
+              class="owner-node-drawer"
+              :title="selectedNode ? `${selectedNode.nodeId}. ${selectedNode.name}` : '节点资料'"
+              :direction="compactNodeNavigation ? 'btt' : 'rtl'"
+              :size="compactNodeNavigation ? '88%' : 'min(640px, 92vw)'"
+              append-to-body
+            >
+              <NodePackagePanel
+                :show-technical-status="false"
+                :package-data="nodePackage"
+                :loading="nodeLoading"
+                :issue="nodeIssue"
+                :retry-loading="nodeLoading"
+                @open-file="handleOpenFileDetail"
+                @retry="handleRetryNodeLoad"
+              />
+            </ElDrawer>
           </div>
         </main>
       </div>
@@ -6843,6 +6887,7 @@ onBeforeUnmount(() => {
         :search-scope="currentProject?.name"
         :todos="quickTodoRows"
         :todo-total="quickTodoTotal"
+        :can-complete-todos="hasAction('todo:update')"
         :messages="quickMessages"
         :loading="quickAccessLoading"
         @search="handleQuickSearch"
@@ -7972,24 +8017,6 @@ onBeforeUnmount(() => {
 .center.is-workbench-page-entering {
   will-change: opacity, transform;
   animation: workbench-page-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.owner-node-documents-summary {
-  padding: 14px 16px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.owner-node-documents-summary span {
-  margin-left: 12px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 400;
-}
-
-.owner-node-documents-summary:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
 }
 
 .center-support-grid {

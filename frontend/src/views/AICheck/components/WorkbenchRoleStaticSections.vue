@@ -4,8 +4,6 @@ import {
   ElAlert,
   ElButton,
   ElCard,
-  ElDescriptions,
-  ElDescriptionsItem,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
@@ -19,8 +17,6 @@ import {
   ElTable,
   ElTableColumn,
   ElTag,
-  ElTimeline,
-  ElTimelineItem,
   ElTooltip
 } from 'element-plus'
 import type {
@@ -38,7 +34,6 @@ import type {
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
-import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import ContractorFeedbackPanel from './contractor/ContractorFeedbackPanel.vue'
 import ContractorStatusCards from './contractor/ContractorStatusCards.vue'
 import ContractorUploadPanel from './contractor/ContractorUploadPanel.vue'
@@ -62,7 +57,6 @@ import {
   inferMaterialCategory
 } from '../contractorMaterialCategories'
 import { CONTRACTOR_MATERIAL_GUIDE_COLUMNS } from '../contractorMaterialGuide'
-import { ownerActivityItems } from '../workbenchTruth'
 
 type ReviewChainStep = {
   title: string
@@ -159,18 +153,6 @@ const rectifications = computed(
 const requirements = computed(() => props.packageData?.requirements || [])
 const extractedFields = computed(() => props.packageData?.extractedFields || [])
 const latestAiRun = computed(() => props.packageData?.aiRuns[0])
-const reportArchiveUnavailable = computed(
-  () => props.reportArchiveLoading || props.reportArchiveIssue || !props.reportArchiveLoaded
-)
-const reportArchiveEmptyLabel = computed(() =>
-  props.reportArchiveLoading
-    ? '正在加载'
-    : props.reportArchiveIssue
-      ? '暂不可用，请重试'
-      : !props.reportArchiveLoaded
-        ? '待加载'
-        : '当前无可查看记录'
-)
 const correctionFeedback = computed(() =>
   props.ndtFeedback.find((item) => item.status === '待反馈')
 )
@@ -261,38 +243,6 @@ const boundProgress = computed(() => {
   return `${progress.done}/${progress.total}`
 })
 
-const ownerMetricCards = computed<AuditSummaryCard[]>(() =>
-  (props.metrics.some((metric) => ['progress', 'report', 'archive'].includes(metric.key))
-    ? props.metrics.filter((metric) => ['progress', 'report', 'archive'].includes(metric.key))
-    : [
-        { key: 'progress', label: '总体进度', value: '—' },
-        { key: 'report', label: '报告版本', value: '—' },
-        { key: 'archive', label: '归档资料', value: '—' }
-      ]
-  ).map((metric) => ({
-    label: metric.label,
-    value:
-      metric.key === 'report'
-        ? reportArchiveUnavailable.value
-          ? '—'
-          : props.reports.length
-        : metric.key === 'archive'
-          ? reportArchiveUnavailable.value
-            ? '—'
-            : props.archiveItems.length
-          : metric.value,
-    hint:
-      ['report', 'archive'].includes(metric.key) && reportArchiveUnavailable.value
-        ? reportArchiveEmptyLabel.value
-        : '当前授权可见范围',
-    tone: 'blue'
-  }))
-)
-
-const ownerTimelineItems = computed(() =>
-  ownerActivityItems(props.project, props.reports, props.archiveItems)
-)
-
 const processRows = computed(() =>
   bindings.value.slice(0, 5).map((binding, index) => ({
     id: binding.id,
@@ -310,19 +260,6 @@ const processRows = computed(() =>
     status: binding.bindingStatus
   }))
 )
-
-const ownerNodeRows = computed(() => {
-  const nodes = props.projectNodes || (props.node ? [props.node] : [])
-  return nodes.map((node) => ({
-    group: node.groupName || '--',
-    node: `${node.nodeId}. ${node.name}`,
-    fileStatus: node.status,
-    reviewStatus: node.status === '需补正' ? '退回补正' : node.status,
-    files: node.fileCount ?? '—',
-    warnings: ['需补正', '补正中'].includes(node.status) ? '需补正' : '未标记补正',
-    updatedAt: props.project?.updatedAt || '--'
-  }))
-})
 
 const correctionFileCount = computed(
   () => contractorFileRows.value.filter((file) => file.status === '需补正').length
@@ -1292,84 +1229,6 @@ const getPillClass = (value?: string): AuditStatusTone => {
           </div>
         </section>
       </div>
-    </template>
-
-    <template v-else-if="role === 'owner'">
-      <ElCard class="role-section-card" shadow="never">
-        <template #header>
-          <div class="card-head">
-            <div>
-              <h2>项目概况</h2>
-              <div class="sub">项目进度、报告和归档资料</div>
-            </div>
-          </div>
-        </template>
-        <AuditSummaryGrid
-          class="owner-summary-grid"
-          :cards="ownerMetricCards"
-          aria-label="建设单位项目基础指标"
-        />
-        <ElDescriptions :column="3" size="small" class="owner-organizations">
-          <ElDescriptionsItem label="建设单位">{{
-            project?.ownerOrgName || '—'
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="施工单位">{{
-            project?.contractorOrgName || '—'
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="监检机构">{{
-            project?.inspectionOrgName || '—'
-          }}</ElDescriptionsItem>
-        </ElDescriptions>
-      </ElCard>
-
-      <ElCard class="role-section-card role-section-card--table" shadow="never">
-        <template #header>
-          <div class="card-head">
-            <div>
-              <h2>节点进展</h2>
-              <div class="sub">查看各节点的资料提交与审查状态</div>
-            </div>
-          </div>
-        </template>
-        <ElTable :data="ownerNodeRows" row-key="node" empty-text="当前没有可查看的节点">
-          <ElTableColumn prop="group" label="业务大类" min-width="132" show-overflow-tooltip />
-          <ElTableColumn prop="node" label="检测节点" min-width="190" show-overflow-tooltip />
-          <ElTableColumn label="审查状态" width="128">
-            <template #default="{ row }">
-              <AuditStatusTag :tone="getPillClass(row.fileStatus)" round>
-                {{ row.reviewStatus }}
-              </AuditStatusTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="files" label="资料数量" width="120" align="center" />
-        </ElTable>
-      </ElCard>
-
-      <ElCard class="role-section-card" shadow="never">
-        <template #header>
-          <div class="card-head"><h2>最近更新</h2></div>
-        </template>
-        <ElTimeline class="owner-timeline">
-          <ElTimelineItem
-            v-for="item in ownerTimelineItems"
-            :key="`${item.timestamp}-${item.title}`"
-            :timestamp="item.timestamp"
-            :type="item.type"
-            placement="top"
-          >
-            <strong>{{ item.title }}</strong>
-            <p>{{ item.description }}</p>
-          </ElTimelineItem>
-        </ElTimeline>
-        <ElEmpty
-          v-if="!ownerTimelineItems.length"
-          description="当前没有可查看的更新记录"
-          :image-size="64"
-        />
-      </ElCard>
-      <ElAlert v-if="reportArchiveIssue" type="error" :closable="false" :title="reportArchiveIssue">
-        <ElButton @click="emit('retry-report-archive')">重试报告与归档</ElButton>
-      </ElAlert>
     </template>
 
     <template v-else-if="role === 'inspection'">
