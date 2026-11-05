@@ -253,6 +253,8 @@ import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import StationAuditOverview from './components/StationAuditOverview.vue'
 import OwnerProjectHome from './components/OwnerProjectHome.vue'
 import UserAvatarIcon from './components/UserAvatarIcon.vue'
+import { openUserGuide } from './userGuide/useUserGuide'
+import { hasUserGuide } from './userGuide/guideContent'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
 import ImportantReview from '@/views/ImportantReview/ImportantReview.vue'
 import InspectionViewTabs from './components/InspectionViewTabs.vue'
@@ -1156,6 +1158,8 @@ const roleUserLabel = computed(() => {
 const handleUserCommand = (command: string | number | object) => {
   if (command === 'logout') {
     userStore.logoutConfirm()
+  } else if (command === 'help') {
+    openUserGuide()
   }
 }
 const handleOpenProjectRegistration = () => {
@@ -4999,7 +5003,7 @@ onBeforeUnmount(() => {
     <div class="aicheck-page app-shell">
       <a class="skip-main" href="#aicheck-workbench-main">跳到主内容</a>
       <header class="topbar" :class="{ 'is-business-topbar': role !== 'inspection' }">
-        <div class="brand">
+        <div class="brand" data-guide="topbar-project">
           <div class="brand-mark">盾</div>
           <ElSelect
             v-model="activeProjectId"
@@ -5039,24 +5043,32 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="top-actions">
-          <ElButton class="top-action" text @click="handleOpenQuickAccess('todos')">
+          <ElButton
+            class="top-action"
+            text
+            data-guide="topbar-messages"
+            @click="handleOpenQuickAccess('todos')"
+          >
             待办消息<span v-if="quickAccessNotificationCount" class="notice-dot">
               {{ quickAccessNotificationCount }}
             </span>
           </ElButton>
           <InspectionViewTabs
             v-if="role === 'inspection'"
+            data-guide="inspection-view-tabs"
             :model-value="activeInspectionWorkspaceView"
             @change="handleInspectionWorkspaceViewChange"
           />
           <AutoReviewControl
             v-if="role === 'inspection'"
+            data-guide="inspection-auto-review"
             :project-id="activeProjectId"
             :disabled="!activeProjectId"
           />
           <!-- prettier-ignore -->
           <ProjectAnalysisControl
             v-if="role === 'inspection' || role === 'admin'"
+            data-guide="inspection-analysis"
             :project-id="activeProjectId"
             :disabled="!activeProjectId"
             @state-change="projectAnalysisBanner = $event"
@@ -5073,7 +5085,7 @@ onBeforeUnmount(() => {
         </div>
         <!-- 用户菜单固定在顶栏右上角：不跟操作按钮一起换行（2026-11-03 用户） -->
         <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
-          <button class="user" type="button" aria-label="打开用户菜单">
+          <button class="user" type="button" aria-label="打开用户菜单" data-guide="topbar-user">
             <UserAvatarIcon class="avatar" :badge="role === 'inspection'" />
             <span>{{ roleUserLabel }}</span>
             <span class="user-caret">⌄</span>
@@ -5081,6 +5093,7 @@ onBeforeUnmount(() => {
           <template #dropdown>
             <ElDropdownMenu>
               <ElDropdownItem disabled>{{ roleUserLabel }}</ElDropdownItem>
+              <ElDropdownItem v-if="hasUserGuide(role)" command="help">使用帮助</ElDropdownItem>
               <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
             </ElDropdownMenu>
           </template>
@@ -5135,6 +5148,7 @@ onBeforeUnmount(() => {
             activeInspectionWorkspaceView !== 'important'
           "
           id="audit-node-navigation"
+          data-guide="inspection-tree"
           :class="['left', { 'is-collapsed': desktopTreeCollapsed }]"
         >
           <section
@@ -5275,6 +5289,7 @@ onBeforeUnmount(() => {
                   type="primary"
                   :disabled="actionLoading || isReadOnly"
                   :icon="Upload"
+                  data-guide="inspection-upload"
                   @click="handleOpenInspectionUploadDrawer"
                 >
                   上传监检资料
@@ -5335,6 +5350,7 @@ onBeforeUnmount(() => {
                 <!-- 2026-11-03 用户确认的第三版：按工位看节点通过与否，取代原来的审计项状态条与节点处理清单。 -->
                 <StationAuditOverview
                   class="inspection-overview-stations"
+                  data-guide="inspection-overview"
                   :items="inspectionAuditOverview?.items || []"
                   :stations="inspectionAuditOverview?.stations"
                   :loading="inspectionAuditLoading"
@@ -5548,6 +5564,7 @@ onBeforeUnmount(() => {
               <div :class="{ 'node-review-main': inspectionNodeReviewVisible }">
                 <WorkbenchNodeMaterialsCard
                   v-if="inspectionNodeReviewVisible"
+                  data-guide="inspection-node-materials"
                   :rows="nodeRequirementRows"
                   :file-ids="nodeMaterialFileIds"
                   :can-request-correction="hasAction('review:return-correction') && !isReadOnly"
@@ -5558,6 +5575,7 @@ onBeforeUnmount(() => {
 
                 <WorkbenchAiReviewPanel
                   v-if="inspectionNodeReviewVisible"
+                  data-guide="inspection-node-checks"
                   :presentation="workbenchAiPresentation"
                   :history="workbenchAiHistory"
                   :can-act="hasAction('ai:recheck')"
@@ -6295,6 +6313,7 @@ onBeforeUnmount(() => {
                 role="tabpanel"
                 aria-label="人工结论"
                 class="workbench-human-review-section node-review-aside"
+                data-guide="inspection-node-decision"
               >
                 <div id="inspection-node-manual-review" class="manual-review-section">
                   <div class="manual-review-grid">

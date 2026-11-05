@@ -514,6 +514,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
     <section
       v-if="feedback.length"
       id="ndt-feedback-list"
+      data-guide="ndt-feedback"
       class="ndt-section"
       aria-label="监检反馈"
     >
@@ -567,7 +568,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       </div>
     </section>
 
-    <div class="ndt-action-tiles" aria-label="常用操作">
+    <div class="ndt-action-tiles" aria-label="常用操作" data-guide="ndt-actions">
       <button type="button" :disabled="readOnly" @click="emit('uploadReport')">
         <ElIcon><UploadFilled /></ElIcon>上传检测报告
       </button>
@@ -579,7 +580,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       </button>
     </div>
 
-    <dl class="ndt-card ndt-stats" aria-label="已登记检测资料">
+    <dl class="ndt-card ndt-stats" aria-label="已登记检测资料" data-guide="ndt-stats">
       <div>
         <dt>底片</dt>
         <dd>{{ films.length }}</dd>
@@ -598,7 +599,12 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       </div>
     </dl>
 
-    <section id="ndt-checklist" class="ndt-section" aria-label="资料类型与上传">
+    <section
+      id="ndt-checklist"
+      class="ndt-section"
+      aria-label="资料类型与上传"
+      data-guide="ndt-checklist"
+    >
       <div class="ndt-section-head">
         <h2>{{ missingMaterialCount ? '还缺的资料' : '资料类型' }}</h2>
         <small>{{ ndtChecklistSummary.total }} 种中已传 {{ ndtChecklistSummary.types }} 种</small>
@@ -659,7 +665,12 @@ const handleRectifyNdt = async (rectificationId?: string) => {
     </section>
 
     <!-- 摘要「待提交」滚到这里。锚点必须真实存在——选择器写了而元素没有，滚动会静默失败 -->
-    <section id="ndt-pending-files" class="ndt-section" aria-label="已上传资料">
+    <section
+      id="ndt-pending-files"
+      class="ndt-section"
+      aria-label="已上传资料"
+      data-guide="ndt-uploaded"
+    >
       <div class="ndt-section-head">
         <h2>已上传</h2>
         <button

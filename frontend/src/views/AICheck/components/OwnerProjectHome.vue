@@ -118,7 +118,7 @@ const archiveTypeLabel = (item: ArchiveItem) =>
   <div class="owner-home">
     <!-- 页头标题对建设方没信息量，去掉了；读屏仍要有一级标题 -->
     <h1 class="owner-sr-only">建设方工作台 · {{ project?.name || '项目概况' }}</h1>
-    <section class="owner-card owner-progress" aria-label="项目进度">
+    <section class="owner-card owner-progress" aria-label="项目进度" data-guide="owner-progress">
       <span class="owner-eyebrow">建设方 · 只读</span>
       <div class="owner-progress-line">
         <strong class="owner-progress-value">{{ progress.label }}</strong>
@@ -172,7 +172,12 @@ const archiveTypeLabel = (item: ArchiveItem) =>
       </dl>
     </section>
 
-    <section v-if="attention.length" class="owner-section" aria-label="需要关注">
+    <section
+      v-if="attention.length"
+      class="owner-section"
+      aria-label="需要关注"
+      data-guide="owner-attention"
+    >
       <h2>
         需要关注<span class="owner-count">{{ attention.length }}</span>
       </h2>
@@ -192,7 +197,7 @@ const archiveTypeLabel = (item: ArchiveItem) =>
       </button>
     </section>
 
-    <section class="owner-section" aria-label="最新动态">
+    <section class="owner-section" aria-label="最新动态" data-guide="owner-news">
       <div class="owner-section-head">
         <h2>最新动态</h2>
         <button type="button" class="owner-link" @click="emit('openMessages')">
@@ -209,7 +214,7 @@ const archiveTypeLabel = (item: ArchiveItem) =>
       <p v-else class="owner-card owner-empty">暂时没有新动态。</p>
     </section>
 
-    <section class="owner-section" aria-label="报告与归档">
+    <section class="owner-section" aria-label="报告与归档" data-guide="owner-reports">
       <h2>报告与归档</h2>
       <div class="owner-card owner-files">
         <p v-if="reportsState === 'loading'" class="owner-empty">正在加载报告与归档…</p>
@@ -265,7 +270,12 @@ const archiveTypeLabel = (item: ArchiveItem) =>
       </div>
     </section>
 
-    <section id="owner-node-list" class="owner-section" aria-label="全部节点">
+    <section
+      id="owner-node-list"
+      class="owner-section"
+      aria-label="全部节点"
+      data-guide="owner-nodes"
+    >
       <h2>全部节点</h2>
       <div class="owner-card">
         <div class="owner-filter" role="tablist" aria-label="按状态筛选节点">

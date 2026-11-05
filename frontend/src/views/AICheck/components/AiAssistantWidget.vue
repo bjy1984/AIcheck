@@ -85,6 +85,7 @@ const handleKeydown = (event: KeyboardEvent) => {
       ref="launcher"
       type="button"
       :class="['ai-assistant-launcher', { 'is-open': open }]"
+      data-guide="inspection-assistant"
       :aria-expanded="open"
       aria-controls="ai-assistant-panel"
       :title="open ? '收起 AI 审查' : hint"

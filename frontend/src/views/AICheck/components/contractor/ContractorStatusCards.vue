@@ -35,7 +35,11 @@ const cardsWithIcons = computed(() =>
 
 <template>
   <!-- 2026-11-04 手机简化稿：一张卡三个大数字，点一下筛到对应资料 -->
-  <section class="contractor-status-cards" aria-label="施工资料办理状态">
+  <section
+    class="contractor-status-cards"
+    aria-label="施工资料办理状态"
+    data-guide="contractor-status"
+  >
     <button
       v-for="card in cardsWithIcons"
       :key="card.key"

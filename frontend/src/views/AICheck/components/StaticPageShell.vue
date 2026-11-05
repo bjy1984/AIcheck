@@ -25,6 +25,8 @@ import { Icon } from '@/components/Icon'
 import type { OperationArea } from '@/types/aicheck'
 import AuditStatusTag from './AuditStatusTag.vue'
 import UserAvatarIcon from './UserAvatarIcon.vue'
+import { openUserGuide } from '../userGuide/useUserGuide'
+import { hasUserGuide } from '../userGuide/guideContent'
 import GlobalCommandPalette from './GlobalCommandPalette.vue'
 import OperationTaskDrawer from './OperationTaskDrawer.vue'
 import StaticShellRightPanel from './StaticShellRightPanel.vue'
@@ -350,6 +352,8 @@ const openRightPanel = () => {
 const handleUserCommand = (command: string | number | object) => {
   if (command === 'logout') {
     userStore.logoutConfirm()
+  } else if (command === 'help') {
+    openUserGuide()
   }
 }
 
@@ -406,6 +410,7 @@ onBeforeUnmount(() => {
         </div>
         <ElButton
           class="global-search"
+          data-guide="admin-search"
           aria-label="打开全局搜索"
           :title="`${searchPlaceholder}（⌘K）`"
           @click="commandPaletteRef?.open()"
@@ -464,7 +469,7 @@ onBeforeUnmount(() => {
             <span>任务中心</span>
           </ElButton>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
-            <ElButton class="user" text aria-label="打开用户菜单">
+            <ElButton class="user" text aria-label="打开用户菜单" data-guide="topbar-user">
               <UserAvatarIcon class="avatar" />
               <span class="user-label">{{ userLabel }}</span>
               <Icon class="user-caret" icon="vi-ep:arrow-down" :size="12" />
@@ -472,6 +477,9 @@ onBeforeUnmount(() => {
             <template #dropdown>
               <ElDropdownMenu>
                 <ElDropdownItem disabled>{{ userLabel }}</ElDropdownItem>
+                <ElDropdownItem v-if="hasUserGuide(userStore.getUserInfo?.role)" command="help">
+                  使用帮助
+                </ElDropdownItem>
                 <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
               </ElDropdownMenu>
             </template>
@@ -480,7 +488,7 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="workspace">
-        <aside id="aicheck-static-navigation" class="left">
+        <aside id="aicheck-static-navigation" class="left" data-guide="admin-menu">
           <section class="tree-wrap">
             <div class="section-title">
               <span>{{ menuTitle }}</span>

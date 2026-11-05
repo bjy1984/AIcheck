@@ -3599,7 +3599,12 @@ onMounted(() => {
           <div v-if="adminPageSubtitle" class="page-subtitle">{{ adminPageSubtitle }}</div>
         </div>
         <ElSpace wrap>
-          <ElButton v-if="activeTab === 'projects'" type="primary" @click="openProjectWizard">
+          <ElButton
+            v-if="activeTab === 'projects'"
+            type="primary"
+            data-guide="admin-new-project"
+            @click="openProjectWizard"
+          >
             新建项目
           </ElButton>
           <ElButton
@@ -3921,7 +3926,13 @@ onMounted(() => {
                     <span>组织单位</span>
                     <ElSpace>
                       <ElTag type="info" effect="plain">{{ overview.orgUnits.length }} 个</ElTag>
-                      <ElButton size="small" type="primary" plain @click="openOrgDialog()">
+                      <ElButton
+                        size="small"
+                        type="primary"
+                        plain
+                        data-guide="admin-new-org"
+                        @click="openOrgDialog()"
+                      >
                         新增组织
                       </ElButton>
                     </ElSpace>
@@ -4045,7 +4056,13 @@ onMounted(() => {
                     <span>用户与角色</span>
                     <ElSpace>
                       <ElTag type="info" effect="plain">{{ overview.users.length }} 人</ElTag>
-                      <ElButton size="small" type="primary" plain @click="openUserDialog()">
+                      <ElButton
+                        size="small"
+                        type="primary"
+                        plain
+                        data-guide="admin-new-user"
+                        @click="openUserDialog()"
+                      >
                         新增用户
                       </ElButton>
                     </ElSpace>

@@ -240,7 +240,7 @@ onMounted(load)
     search-scope="admin"
     task-area="admin"
   >
-    <section class="feedback-page" aria-labelledby="feedback-heading">
+    <section class="feedback-page" aria-labelledby="feedback-heading" data-guide="admin-feedback">
       <ElCard shadow="never">
         <div class="heading-row">
           <div>

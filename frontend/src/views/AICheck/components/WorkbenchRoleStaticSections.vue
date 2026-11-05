@@ -745,6 +745,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
         v-if="batchSubmittableContractorFiles.length"
         class="contractor-section"
         aria-label="待提交"
+        data-guide="contractor-pending"
       >
         <div class="contractor-section-head">
           <h2>
@@ -792,7 +793,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
         </ul>
       </section>
 
-      <section class="contractor-section" aria-label="我的资料">
+      <section class="contractor-section" aria-label="我的资料" data-guide="contractor-files">
         <div class="contractor-section-head">
           <h2>我的资料</h2>
           <button
@@ -967,7 +968,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
       </section>
 
       <!-- 上传指引平时收起：直接上传就行，类别系统会自动识别 -->
-      <section class="contractor-guide" aria-label="上传指引">
+      <section class="contractor-guide" aria-label="上传指引" data-guide="contractor-guide">
         <button
           type="button"
           class="contractor-link is-muted"

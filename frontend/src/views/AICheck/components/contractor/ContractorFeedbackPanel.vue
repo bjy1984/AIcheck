@@ -48,6 +48,7 @@ const opinionOf = (item: ContractorFeedbackRow) => item.requirement || item.issu
   <section
     v-if="pendingItems.length || doneItems.length || loading || issue"
     id="contractor-feedback-list"
+    data-guide="contractor-feedback"
     class="contractor-feedback-panel"
     aria-label="监检退回"
   >

@@ -152,7 +152,11 @@ onMounted(load)
     search-scope="admin"
     task-area="admin"
   >
-    <section class="policies-page" aria-labelledby="policies-heading">
+    <section
+      class="policies-page"
+      aria-labelledby="policies-heading"
+      data-guide="admin-review-policies"
+    >
       <div class="heading-row">
         <div>
           <h2 id="policies-heading">审查口径</h2>

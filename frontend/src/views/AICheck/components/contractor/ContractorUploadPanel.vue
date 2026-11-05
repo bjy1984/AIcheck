@@ -41,7 +41,7 @@ watch(
 
 <template>
   <!-- 2026-11-04 手机简化稿：一个大按钮，选完再点「上传 N 个文件」；最近上传一行带过 -->
-  <section class="contractor-upload-panel" aria-label="上传资料">
+  <section class="contractor-upload-panel" aria-label="上传资料" data-guide="contractor-upload">
     <ElAlert
       v-if="operationError"
       class="inline-upload-error"

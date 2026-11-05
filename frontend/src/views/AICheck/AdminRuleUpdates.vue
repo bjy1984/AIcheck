@@ -166,7 +166,7 @@ onMounted(load)
     search-scope="admin"
     task-area="admin"
   >
-    <section class="updates-page" aria-labelledby="updates-heading">
+    <section class="updates-page" aria-labelledby="updates-heading" data-guide="admin-rule-updates">
       <ElCard shadow="never">
         <div class="heading-row">
           <div>
