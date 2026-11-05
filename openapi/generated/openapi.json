@@ -21831,6 +21831,65 @@
         ]
       }
     },
+    "/api/projects/{project_id}/documents/{document_id}/versions/{version_id}/ocr-result": {
+      "get": {
+        "description": "平台上这份资料这一版已有的识别结果——审查读的就是这一份。\n\n节点审计 skill 原来把服务器上已经识别过的原件再上传一遍、再跑一次 MinerU（服务器又多存一份原件、\n要等十几分钟、轮询整表加载），现在先来这里取；返回里的 reusable 说明能不能直接用（只认 MinerU、千问兜底）。\n只给监检和管理员：识别结果是审查过程数据。按项目取行，不整表加载 ocr_parse_results。",
+        "operationId": "get_document_version_ocr_result_api_projects__project_id__documents__document_id__versions__version_id__ocr_result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Version Ocr Result",
+        "tags": [
+          "MinerU OCR"
+        ]
+      }
+    },
     "/api/projects/{project_id}/documents/{document_id}/void": {
       "post": {
         "operationId": "void_document_api_projects__project_id__documents__document_id__void_post",
@@ -47688,6 +47747,65 @@
         "summary": "Append Document Version",
         "tags": [
           "AIcheck API"
+        ]
+      }
+    },
+    "/projects/{project_id}/documents/{document_id}/versions/{version_id}/ocr-result": {
+      "get": {
+        "description": "平台上这份资料这一版已有的识别结果——审查读的就是这一份。\n\n节点审计 skill 原来把服务器上已经识别过的原件再上传一遍、再跑一次 MinerU（服务器又多存一份原件、\n要等十几分钟、轮询整表加载），现在先来这里取；返回里的 reusable 说明能不能直接用（只认 MinerU、千问兜底）。\n只给监检和管理员：识别结果是审查过程数据。按项目取行，不整表加载 ocr_parse_results。",
+        "operationId": "get_document_version_ocr_result_projects__project_id__documents__document_id__versions__version_id__ocr_result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Version Ocr Result",
+        "tags": [
+          "MinerU OCR"
         ]
       }
     },
