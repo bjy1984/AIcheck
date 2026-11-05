@@ -2,16 +2,13 @@
 import { LoginForm } from './components'
 import { ThemeSwitch } from '@/components/ThemeSwitch'
 import { LocaleDropdown } from '@/components/LocaleDropdown'
-import { underlineToHump } from '@/utils'
-import { useAppStore } from '@/store/modules/app'
 import { useDesign } from '@/hooks/web/useDesign'
+import { PLAIN_APP_TITLE } from '@/utils/reviewerWording'
 import { ElScrollbar } from 'element-plus'
 
 const { getPrefixCls } = useDesign()
 
 const prefixCls = getPrefixCls('login')
-
-const appStore = useAppStore()
 </script>
 
 <template>
@@ -20,26 +17,26 @@ const appStore = useAppStore()
       <main class="aicheck-login-shell">
         <section :class="`${prefixCls}__left aicheck-login-brief`">
           <div class="brand-row">
-            <img src="@/assets/imgs/logo.png" alt="AIcheck" class="brand-logo" />
+            <img src="@/assets/imgs/logo.png" :alt="PLAIN_APP_TITLE" class="brand-logo" />
             <div>
-              <div class="brand-name">{{ underlineToHump(appStore.getTitle) }}</div>
-              <div class="brand-subtitle">AI 资料审查操作系统</div>
+              <div class="brand-name">{{ PLAIN_APP_TITLE }}</div>
+              <div class="brand-subtitle">资料审查与监检协作</div>
             </div>
           </div>
 
           <div class="brief-content">
-            <p class="eyebrow">AI DELIVERY WORKSPACE</p>
-            <h1>AIcheck 审查工作台</h1>
+            <!-- 登录页所有角色共用：不出现「AI」字眼（2026-11-04 用户） -->
+            <p class="eyebrow">PRESSURE PIPING INSPECTION</p>
+            <h1>监检审查工作台</h1>
             <p class="brief-copy">
-              面向资料审查、证据追溯、规则知识与 AI
-              治理的一体化入口。不同角色进入各自面板，业务结论和 AI 运行全程留痕。
+              面向资料审查、证据追溯与规则知识的一体化入口。不同角色进入各自面板，审查结论全程留痕。
             </p>
 
             <div class="capability-strip" aria-label="系统能力">
               <span>角色隔离</span>
-              <span>服务器 OCR</span>
+              <span>资料识别</span>
               <span>证据留痕</span>
-              <span>FDE 治理</span>
+              <span>补正闭环</span>
             </div>
           </div>
         </section>
@@ -47,8 +44,8 @@ const appStore = useAppStore()
         <section class="aicheck-login-main">
           <div class="login-toolbar">
             <div class="mobile-brand">
-              <img src="@/assets/imgs/logo.png" alt="AIcheck" class="brand-logo small" />
-              <span>{{ underlineToHump(appStore.getTitle) }}</span>
+              <img src="@/assets/imgs/logo.png" :alt="PLAIN_APP_TITLE" class="brand-logo small" />
+              <span>{{ PLAIN_APP_TITLE }}</span>
             </div>
 
             <div class="toolbar-actions">

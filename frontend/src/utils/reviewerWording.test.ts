@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 
-import { plainWording, usesPlainWording, wordingFor } from './reviewerWording'
+import {
+  appTitleFor,
+  plainWording,
+  PLAIN_APP_TITLE,
+  usesPlainWording,
+  wordingFor
+} from './reviewerWording'
 
 // 施工方、无损检测、建设方换说法；监检、管理员、FDE 看原文
 assert.equal(usesPlainWording('contractor'), true)
@@ -30,3 +36,10 @@ assert.equal(plainWording(undefined), '')
 
 assert.equal(wordingFor('owner')('待人工确认'), '待审核员确认')
 assert.equal(wordingFor('inspection')('待人工确认'), '待人工确认', '监检照原样看')
+
+// 浏览器标题：登录页（还不知道是谁）和对外三类角色用对外名字，监检、管理员照旧
+assert.equal(appTitleFor(undefined, 'AIcheck'), PLAIN_APP_TITLE)
+assert.equal(appTitleFor('owner', 'AIcheck'), PLAIN_APP_TITLE)
+assert.equal(appTitleFor('contractor', 'AIcheck'), PLAIN_APP_TITLE)
+assert.equal(appTitleFor('inspection', 'AIcheck'), 'AIcheck')
+assert.equal(appTitleFor('admin', 'AIcheck'), 'AIcheck')

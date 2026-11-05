@@ -34,6 +34,16 @@ export const plainWording = (text: string | null | undefined): string => {
   return value
 }
 
+/**
+ * 产品对外的名字（2026-11-04）：登录页所有角色共用、还认不出是谁，
+ * 施工方、无损检测、建设方登录后也用它；监检、管理员、FDE 的浏览器标题照旧用
+ * VITE_APP_TITLE（生产是「AIcheck」）。
+ */
+export const PLAIN_APP_TITLE = '压力管道监检协作系统'
+
+export const appTitleFor = (role: RoleCode | string | null | undefined, envTitle: string) =>
+  role && !usesPlainWording(role) ? envTitle : PLAIN_APP_TITLE
+
 /** 按角色决定要不要换说法：组件里统一用这个。 */
 export const wordingFor = (role?: RoleCode | string | null) =>
   usesPlainWording(role) ? plainWording : (text: string | null | undefined) => String(text ?? '')

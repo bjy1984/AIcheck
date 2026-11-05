@@ -90,7 +90,7 @@ const logout = async () => {
   <main class="password-page">
     <section class="password-panel" aria-labelledby="password-title">
       <header>
-        <img src="@/assets/imgs/logo.png" alt="AIcheck" />
+        <img src="@/assets/imgs/logo.png" alt="压力管道监检协作系统" />
         <div>
           <h1 id="password-title">设置安全密码</h1>
           <p>首次登录必须修改初始密码，完成后才能进入业务工作台。</p>
