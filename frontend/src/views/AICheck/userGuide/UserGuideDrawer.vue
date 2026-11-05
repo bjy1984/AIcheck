@@ -239,8 +239,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-
-
 @media (width <= 640px) {
   .guide {
     padding: 14px 16px 24px;
