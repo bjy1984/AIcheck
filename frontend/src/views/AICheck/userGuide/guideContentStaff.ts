@@ -22,7 +22,7 @@ export const INSPECTION_GUIDE: RoleGuide = {
     },
     {
       target: 'inspection-overview',
-      hint: '项目总览按工位列出节点：未通过、证据不足、需人工确认、通过、未开始审核。点一行展开看资料和流程，右边的按钮直接进节点。',
+      hint: '项目总览列出全部节点，按未通过、证据不足、需人工确认、通过、未开始审核分组。点一行展开看资料和流程，右边的按钮直接进节点。',
       emptyHint: '这一块在「项目总览」里：点左边项目树顶上的「项目总览」。'
     },
     {
@@ -34,6 +34,10 @@ export const INSPECTION_GUIDE: RoleGuide = {
       hint: '「自动审查」：资料识别并挂载后自动跑审查，也可以每天定时扫描补漏。'
     },
     { target: 'inspection-analysis', hint: '「一键分析」对整个工程的全部适用节点发起 AI 分析。' },
+    {
+      target: 'inspection-audit-tasks',
+      hint: '「审计任务」看每个节点最近一次审查走到哪了：审查中、排队中（前面还有几个）、要你确认或重新发起的；点一行直接进那个节点。'
+    },
     { target: 'topbar-messages', hint: '资料提交、补正反馈等提醒都在「待办消息」里。' },
     {
       target: 'inspection-assistant',
@@ -47,25 +51,25 @@ export const INSPECTION_GUIDE: RoleGuide = {
       summary: '先看哪些节点要处理。',
       steps: [
         '最上面是全部节点的统计：未通过、证据不足、需人工确认、通过、未开始审核。',
-        '选「工位」看这一组节点。',
+        '下面按这几组列出全部节点，要处理的排在前面。',
         '点一行在原地展开：必传资料齐不齐、处理流程到哪一步；点「进入节点」去办理。',
         '每行右边的按钮直接进节点：「写监检意见」「查看原因」「去确认」「开始审核」。'
       ],
       image: {
         src: shot('inspection-overview'),
-        alt: '监检项目总览：节点统计和工位列表',
+        alt: '监检项目总览：节点统计和全部节点列表',
         device: 'desktop',
         markers: [
-          { n: 1, x: 34, y: 25.4 },
-          { n: 2, x: 35, y: 39.4 },
-          { n: 3, x: 37.5, y: 48.7 },
-          { n: 4, x: 91, y: 59.6 }
+          { n: 1, x: 33.5, y: 35.5 },
+          { n: 2, x: 38, y: 46 },
+          { n: 3, x: 48, y: 52.6 },
+          { n: 4, x: 90, y: 52.6 }
         ]
       },
       jump: {
         label: '去「项目总览」',
         target: 'inspection-overview',
-        hint: '按工位看节点，点一行展开。',
+        hint: '看全部节点，点一行展开。',
         emptyHint: '这一块在「项目总览」里：点左边项目树顶上的「项目总览」。'
       }
     },

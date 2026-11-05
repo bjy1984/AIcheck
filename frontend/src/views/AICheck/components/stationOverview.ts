@@ -89,6 +89,21 @@ export const buildStationOverview = (
   return { totals, confirmedPassed, stations: result }
 }
 
+/**
+ * 不分工位、全部节点放一个列表（2026-11-05 用户：工位先隐藏，显示全部节点）。
+ * 按节点号排，各组内顺序就是节点号顺序；计数直接用全项目合计。
+ */
+export const allNodesStation = (
+  overview: ReturnType<typeof buildStationOverview>
+): StationOverview => ({
+  stationId: 'all',
+  stationName: '全部节点',
+  counts: overview.totals,
+  nodes: overview.stations
+    .flatMap((station) => station.nodes)
+    .sort((left, right) => left.node.nodeId - right.node.nodeId)
+})
+
 /** 总览一行一句原因，身份证号（焊工、检测人员证的检查码前缀）不全量展示：留前 4 后 4。 */
 export const maskIdentityNumbers = (text: string) =>
   text.replace(/(?<!\d)(\d{4})\d{10}(\d{3}[\dXx])(?!\d)/g, '$1**********$2')

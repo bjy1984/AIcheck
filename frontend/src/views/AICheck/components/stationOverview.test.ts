@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import type { InspectionAuditOverviewNode, InspectionNodeConclusion } from '@/types/aicheck'
-import { buildStationOverview, conclusionReason, conclusionSourceTag } from './stationOverview'
+import {
+  allNodesStation,
+  buildStationOverview,
+  conclusionReason,
+  conclusionSourceTag
+} from './stationOverview'
 
 const row = (nodeId: number, conclusion?: Partial<InspectionNodeConclusion> | null) =>
   ({
@@ -47,6 +52,14 @@ assert.deepEqual(overview.totals, {
 assert.equal(overview.confirmedPassed, 1)
 // 没有结论的节点算未开始审核
 assert.equal(overview.stations[1].counts.not_started, 1)
+
+// 工位隐藏时：全部节点一个列表，按节点号排，计数等于全项目合计
+const everything = allNodesStation(overview)
+assert.deepEqual(
+  everything.nodes.map((node) => node.node.nodeId),
+  [1, 2, 4, 9, 11, 99]
+)
+assert.deepEqual(everything.counts, overview.totals)
 
 // 行内原因翻成中文；人工意见原文优先
 assert.equal(conclusionReason(rows[2]), '未满足：引用标准的适用介质与本工程介质一致')

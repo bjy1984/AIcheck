@@ -7,6 +7,7 @@ import { createPlatformApi } from './platform'
 import { createReviewPolicyApi } from './reviewPolicies'
 import { createUserFeedbackApi } from './userFeedback'
 import { createSkillInstallApi } from './skillInstall'
+import { createNodeAuditTaskApi } from './nodeAuditTasks'
 export type {
   ProjectAnalysisMutationOptions,
   ProjectAnalysisPhase,
@@ -4412,6 +4413,7 @@ export const {
 } = createUserFeedbackApi(request, mutationHeaders)
 
 export const { createSkillInstallLinkApi } = createSkillInstallApi(request, mutationHeaders)
+export const { getNodeAuditTasksApi } = createNodeAuditTaskApi(request)
 
 const projectAnalysisApi = createProjectAnalysisApi(request, mutationHeaders)
 export const {

@@ -213,6 +213,7 @@ import { auditItemsMatchStatus, type InspectionStatusFilter } from './inspection
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
 import AutoReviewControl from './components/AutoReviewControl.vue'
 import ProjectAnalysisControl from './components/ProjectAnalysisControl.vue'
+import NodeAuditTaskQueue from './components/NodeAuditTaskQueue.vue'
 import BatchRecheckPanel from './components/BatchRecheckPanel.vue'
 import NodeReviewTimeline from './components/NodeReviewTimeline.vue'
 import { useBatchRecheck } from './useBatchRecheck'
@@ -2816,6 +2817,14 @@ const openStationOverviewNode = async (
   await handleNodeSelect(node)
   activeInspectionReviewAuditItem.value =
     group === 'failed' || group === 'needs_human' ? 'human_review' : 'ai_review'
+  if (activeInspectionReviewAuditItem.value === 'human_review') await revealManualReviewPanel()
+}
+/** 简化后的节点页不再按审计项切内容：要写结论的，把右栏结论区带进视野（窄屏时它在下面）。 */
+const revealManualReviewPanel = async () => {
+  await nextTick()
+  document
+    .getElementById('inspection-node-manual-review')
+    ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 const handleNodeSelect = async (node: ProjectTreeNode) => {
   mobileTreeOpen.value = false
@@ -3971,10 +3980,32 @@ const handleSubmitRectification = async (payload: {
 const nodeAutoReviewStatus = computed(() => nodePackage.value?.autoReviewStatus)
 const nodeReviewTimeline = computed(() => nodePackage.value?.reviewTimeline || [])
 
+// 顶栏「审计任务」队列（2026-11-05）：发起复核后让它马上刷新，不等下一轮轮询
+const nodeAuditQueueRef = ref<InstanceType<typeof NodeAuditTaskQueue> | null>(null)
+const refreshNodeAuditQueue = () => void nodeAuditQueueRef.value?.refresh()
+/** 队列里点一行：进节点，要确认的停在人工结论，其余停在 AI 审查。 */
+const openNodeAuditTask = async (nodeId: number, auditItem: InspectionAuditItemKey) => {
+  const node = projectTreeNodes.value.find((item) => item.nodeId === nodeId)
+  if (!node) {
+    ElMessage.warning(`当前项目树里没有节点 ${nodeId}`)
+    return
+  }
+  await handleNodeSelect(node)
+  activeInspectionReviewAuditItem.value = auditItem
+  if (auditItem === 'human_review') await revealManualReviewPanel()
+}
+/** 有节点审完：正在看总览就刷新总览（节点页自己在轮询，不用管）。 */
+const handleNodeAuditSettled = () => {
+  if (activeWorkbenchSection.value === 'overview') void loadInspectionAuditOverview()
+}
+
 const { batchRecheckLoading, batchRecheckResult, handleAiRecheckBatch } = useBatchRecheck({
   projectId: () => activeProjectId.value,
   etag: () => currentProject.value?.etag,
-  onFinished: () => loadProjectBundle()
+  onFinished: () => {
+    refreshNodeAuditQueue()
+    return loadProjectBundle()
+  }
 })
 
 /** 资料明细在「资料提交」审计项下；节点页目录只留了 AI/人工两项，这里直接切过去。 */
@@ -4021,6 +4052,7 @@ const handleAiRecheck = async () => {
     actionBlocker.value = undefined
     aiRecheckRunOverride.value = res.data.latestRun
     startAiReviewPolling()
+    refreshNodeAuditQueue()
     const statusReason = String(res.data.dispatch?.statusReason || '')
     ElMessage.success(
       statusReason
@@ -5076,6 +5108,15 @@ onBeforeUnmount(() => {
             :disabled="!activeProjectId"
             @state-change="projectAnalysisBanner = $event"
             @select-node="handleProjectAnalysisSelectNode"
+          />
+          <NodeAuditTaskQueue
+            v-if="role === 'inspection'"
+            ref="nodeAuditQueueRef"
+            data-guide="inspection-audit-tasks"
+            :project-id="activeProjectId"
+            :disabled="!activeProjectId"
+            @open="openNodeAuditTask"
+            @settled="handleNodeAuditSettled"
           />
           <ElButton
             v-if="role === 'inspection' && canManageRegistration"

@@ -32,6 +32,7 @@ from apps.api.improvement_routes import improvement_router
 from apps.api.inspection_service_routes import inspection_service_router, public_review_request
 from apps.api.knowledge_admin_routes import knowledge_admin_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
+from apps.api.node_audit_task_routes import router as node_audit_task_router
 from apps.api.org_delegation_routes import org_delegation_router
 from apps.api.pack_update_routes import pack_update_router
 from apps.api.platform_routes import platform_router
@@ -1596,3 +1597,5 @@ app.include_router(project_rule_router, prefix="/api")
 
 app.include_router(review_handoff_router)
 app.include_router(review_handoff_router, prefix="/api")
+app.include_router(node_audit_task_router)
+app.include_router(node_audit_task_router, prefix="/api")

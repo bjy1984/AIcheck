@@ -6,6 +6,9 @@
  * 按「未通过 → 证据不足 → 需人工确认 → 通过 → 未开始审核」分组，每行一句原因、一个动作、
  * 点整行在原地展开详情（结论分布、不过的检查项、缺的资料、流程各步），不跳页；只有动作按钮和
  * 「进入节点」才跳。顶部一行细条给全项目合计。数的是节点，不是审计项（标题写明）。
+ *
+ * 2026-11-05 用户：工位先隐藏，显示全部节点。默认不分工位、全部节点一个列表；
+ * 工位下拉还在，传 by-station 就回来。
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import {
@@ -36,6 +39,7 @@ import {
   STATION_GROUP_ACTIONS,
   STATION_GROUP_LABELS,
   STATION_GROUP_ORDER,
+  allNodesStation,
   buildStationOverview,
   conclusionReason,
   conclusionSourceTag,
@@ -51,6 +55,8 @@ const props = defineProps<{
   stations?: InspectionStation[]
   loading?: boolean
   auditItemTotal?: number
+  /** 按工位分组看（下拉选工位）；不传则全部节点一个列表 */
+  byStation?: boolean
 }>()
 const emit = defineEmits<{
   open: [node: ProjectTreeNode, group: InspectionNodeConclusionGroup]
@@ -73,7 +79,9 @@ watch(
   { immediate: true }
 )
 const selectedStation = computed(() =>
-  overview.value.stations.find((station) => station.stationId === selectedStationId.value)
+  props.byStation
+    ? overview.value.stations.find((station) => station.stationId === selectedStationId.value)
+    : allNodesStation(overview.value)
 )
 const nodeTotal = computed(() => props.items.length)
 const summaryChips = computed(() =>
@@ -133,7 +141,10 @@ const toggle = async (nodeId: number) => {
 </script>
 
 <template>
-  <section class="station-overview" aria-label="按工位查看审计结果">
+  <section
+    class="station-overview"
+    :aria-label="byStation ? '按工位查看审计结果' : '全部节点审计结果'"
+  >
     <ElSkeleton v-if="loading && !items.length" :rows="6" animated />
     <ElEmpty v-else-if="!items.length" description="这个项目还没有节点" :image-size="72" />
     <template v-else>
@@ -165,7 +176,7 @@ const toggle = async (nodeId: number) => {
       <div class="station-body">
         <div v-if="selectedStation" class="station-detail">
           <!-- 工位改成顶部下拉（2026-11-04 用户）：节点区独占一行，不再左右分栏 -->
-          <div class="station-detail-head">
+          <div v-if="byStation" class="station-detail-head">
             <span class="station-picker-label">工位</span>
             <ElSelect
               v-model="selectedStationId"
