@@ -71,6 +71,7 @@ class FakeServer:
         self.ocr_upload_failures = 0  # 上传先回几次 502
         self.ocr_status_mode = "ok"  # missing：任务被服务器清理（HTTP 200 + 40404）；auth：令牌过期（HTTP 200 + 401）
         self.download_failures = 0  # 下载原件先回几次 502
+        self.project_ocr: dict | None = None  # 平台现成的识别结果（GET …/versions/V-1/ocr-result）；None：旧服务器没有这个接口
         self.calls: list[tuple[str, dict]] = []  # 下面这些只读接口收到的 (路径, 查询或正文)
         outer = self
 
@@ -143,6 +144,10 @@ class FakeServer:
                     self.send_json({"jobId": job, "recommendedPollSeconds": 0,
                                     **({"status": "running", "provider": "mineru", "statusMessage": "MinerU 正在处理文件。"}
                                        if running else outer.ocr_final)})
+                    return
+                if path == "/api/projects/P-T/documents/DOC-1/versions/V-1/ocr-result" and outer.project_ocr is not None:
+                    outer.calls.append((path, {}))
+                    self.send_json(outer.project_ocr)
                     return
                 if path == f"{node}/audit-workspace" and outer.workspace_mode != "ok":
                     business = {"auth200": 401, "forbidden200": 403, "missing200": 40404}[outer.workspace_mode]
@@ -1225,6 +1230,80 @@ class NodeAuditTest(unittest.TestCase):
         self.assertEqual(len(self.server.ocr_uploads), 1)  # 续等不重传
         self.assertFalse((bundle / "ocr" / "pending.json").exists())
         self.assertIn("识别：千问", Path(done["saved"]).read_text(encoding="utf-8"))
+
+    def server_scan_bundle(self, name: str = "server-ocr") -> tuple[Path, str]:
+        """服务器节点的资料包，原件换成一页扫描件（整页是图）。"""
+        import fitz
+
+        self.login()
+        out_dir = Path(self.tmp.name) / name
+        code, out = run("fetch", "--project", "P-T", "--node", "24", "--out", str(out_dir))
+        self.assertEqual(code, 0, out)
+        [file] = json.loads((out_dir / "bundle.json").read_text(encoding="utf-8"))["files"]
+        with fitz.open() as doc:
+            doc.new_page().insert_image(fitz.Rect(0, 0, 595, 842), stream=PNG)
+            doc.save(out_dir / file["path"])
+        return out_dir, file["path"]
+
+    def platform_ocr(self, provider: str = "mineru", reusable: bool = True) -> dict:
+        return {"documentId": "DOC-1", "documentVersionId": "V-1", "resultAvailable": True, "reusable": reusable,
+                "ocrProvider": provider, "parseResultId": "PARSE-AAA", **self.certificate_result()}
+
+    def test_ocr_reuses_the_platforms_mineru_result_for_a_server_file_without_uploading(self):
+        """服务器节点的原件平台已经用 MinerU 识别过：直接取那份，不再上传、不再建任务（2026-11-04）。"""
+        bundle, pdf = self.server_scan_bundle()
+        self.server.project_ocr = self.platform_ocr()
+        code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["data"]["reused"], [pdf])
+        [done] = out["data"]["done"]
+        self.assertEqual((done["file"], done["provider"], done["source"]), (pdf, "mineru", "project"))
+        self.assertEqual(self.server.ocr_uploads, [])  # 没有上传原件
+        self.assertFalse(any("/internal/ocr/mineru/tasks" in p for _, p, _ in self.server.requests))
+        readable = Path(done["saved"]).read_text(encoding="utf-8")
+        self.assertIn("平台审查这份资料时用的同一份识别结果", readable)
+        self.assertIn("项目代号 | GTAW-FeⅡ-6G-3/60-FefS-02/10/12", readable)  # 表格照样按格展开
+        self.assertNotIn(self.FULL_ID, readable)
+        record = json.loads((bundle / "ocr" / f"{na.ocr_key(pdf)}.json").read_text(encoding="utf-8"))
+        self.assertEqual((record["source"], record["parseResultId"], record["jobId"]), ("project", "PARSE-AAA", None))
+        calls = len(self.server.calls)
+        code, out = run("ocr", "--bundle", str(bundle))  # 原件没变：用本包的记录，不再去取
+        self.assertEqual((code, out["data"]["cached"], len(self.server.calls)), (0, [pdf], calls))
+
+    def test_ocr_uploads_when_the_platform_result_came_from_another_engine(self):
+        """导入的测试场景是本机 OCR（没有表格和印章）：不复用，照旧交 MinerU。"""
+        bundle, pdf = self.server_scan_bundle("server-ocr-vision")
+        self.server.project_ocr = self.platform_ocr("macos_vision_ocr_v1", reusable=False)
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("reused", out["data"])
+        [done] = out["data"]["done"]
+        self.assertNotIn("source", done)
+        self.assertEqual(len(self.server.ocr_uploads), 1)
+
+    def test_ocr_falls_back_to_upload_on_a_server_without_the_platform_result_endpoint(self):
+        bundle, pdf = self.server_scan_bundle("server-ocr-old")
+        self.server.project_ocr = None  # 旧服务器：这个接口 HTTP 404
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle))
+        self.assertEqual(code, 0, out)
+        [done] = out["data"]["done"]
+        self.assertEqual(done["file"], pdf)
+        self.assertEqual(len(self.server.ocr_uploads), 1)
+
+    def test_ocr_force_still_runs_a_new_recognition_instead_of_reusing(self):
+        bundle, pdf = self.server_scan_bundle("server-ocr-force")
+        self.server.project_ocr = self.platform_ocr()
+        self.assertEqual(run("ocr", "--bundle", str(bundle))[1]["data"]["reused"], [pdf])
+        self.server.ocr_result = self.certificate_result()
+        with patch.object(na, "OCR_POLL_SECONDS", 0):
+            code, out = run("ocr", "--bundle", str(bundle), "--force")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("reused", out["data"])
+        self.assertEqual(len(self.server.ocr_uploads), 1)  # --force 就是要重新识别
 
     def test_ocr_reports_a_failed_job_and_keeps_no_text(self):
         bundle, png = self.scan_bundle("fail")

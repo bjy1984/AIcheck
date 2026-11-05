@@ -157,7 +157,7 @@ def get_mineru_task(request: Request, job_id: str):
 
 
 def request_actor(request: Request) -> tuple[str | None, str | None]:
-    from libs.security.data_service_test_mode import allows, ACTOR
+    from libs.security.data_service_test_mode import ACTOR, allows
     if allows(request.method, request.url.path):
         return ACTOR, "internal_test"
     claims = getattr(request.state, "auth", None) or {}
@@ -203,7 +203,7 @@ def mineru_job_access_error(
     request: Request,
     job: dict[str, Any],
 ):
-    from libs.security.data_service_test_mode import allows, ACTOR
+    from libs.security.data_service_test_mode import ACTOR, allows
     if allows(request.method, request.url.path) and (job.get("requestedBy") != ACTOR or job.get("documentId")):
         return fail(errors.FORBIDDEN, request, message="免登录测试仅可读取共享测试身份的独立任务。")
     document_id = str(job.get("documentId") or "")
@@ -623,3 +623,37 @@ def get_mineru_task_result(request: Request, job_id: str, pageNo: int | None = N
     content = project_ocr_result(parsed, page_no=pageNo)
     return ok({"jobId": job_id, "status": job.get("status"), "resultAvailable": True,
                "pageCount": page_count, **content}, request)
+
+
+# 施工方、无损检测、建设方不看识别过程数据（审查过程数据只给审查方）
+OCR_RESULT_READER_ROLES = {"inspection", "admin", "test"}
+
+
+@router.get("/projects/{project_id}/documents/{document_id}/versions/{version_id}/ocr-result")
+def get_document_version_ocr_result(request: Request, project_id: str, document_id: str, version_id: str):
+    """平台上这份资料这一版已有的识别结果——审查读的就是这一份。
+
+    节点审计 skill 原来把服务器上已经识别过的原件再上传一遍、再跑一次 MinerU（服务器又多存一份原件、
+    要等十几分钟、轮询整表加载），现在先来这里取；返回里的 reusable 说明能不能直接用（只认 MinerU、千问兜底）。
+    只给监检和管理员：识别结果是审查过程数据。按项目取行，不整表加载 ocr_parse_results。"""
+    from apps.api.routes import document_read_scope_error, effective_role_for_request
+    from libs.data_service_ocr_result import (
+        document_version_ocr_payload,
+        latest_version_parse_result,
+    )
+
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if str(role or "") not in OCR_RESULT_READER_ROLES:
+        return fail(errors.FORBIDDEN, request, message="只有监检人员和管理员能读取资料识别结果。")
+    if scope_error := document_read_scope_error(request, project_id, document_id):
+        return scope_error
+    view = repo.project_document_read_view(project_id)
+    if view is repo:  # 没接 PostgreSQL（本机 SQLite、内存演示）：按需补载这两张表
+        load_state({"versions", "ocr_parse_results"})
+    version = view.find_one("versions", version_id)
+    if not version or str(version.get("documentId") or "") != document_id:
+        return fail(errors.NOT_FOUND, request, message="资料版本不存在。")
+    parsed = latest_version_parse_result(view.state.get("ocr_parse_results", []), version_id)
+    return ok(document_version_ocr_payload(parsed, document_id=document_id, document_version_id=version_id), request)

@@ -1979,7 +1979,8 @@ CODE_MISREAD_NOTE = ("焊工证上的项目代号 OCR 常认错字母（实测 M
 
 def ocr_text(record: dict[str, Any], problems: dict[int, str] | None = None) -> str:
     provider = "千问（MinerU 排队超时后服务器改用）" if record.get("provider") == "qwen" else "MinerU"
-    head = (f"（服务器 OCR 文字，识别：{provider}；不是原件文字层。表格已按格展开：合并单元格的值在所跨的每一行重复，"
+    reused = "平台审查这份资料时用的同一份识别结果，没有重新识别；" if record.get("source") == "project" else ""
+    head = (f"（服务器 OCR 文字，识别：{provider}；{reused}不是原件文字层。表格已按格展开：合并单元格的值在所跨的每一行重复，"
             "横跨多列的每行只写一次并标（跨N列）；"
             f"[印章：…]、[签名：…] 是服务器识别的印章、签名。{CODE_MISREAD_NOTE}。"
             "页头标了“OCR 读得不全”的页，找不到某个事实不等于原件上没有。）")
@@ -1993,13 +1994,17 @@ def ocr_text(record: dict[str, Any], problems: dict[int, str] | None = None) -> 
     return f"{head}\n\n{body}\n"
 
 
-def store_ocr(bundle: Path, item: dict[str, Any], status: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+def store_ocr(bundle: Path, item: dict[str, Any], status: dict[str, Any], result: dict[str, Any],
+              origin: str | None = None) -> dict[str, Any]:
+    """origin 是 "project" 时，文字取自平台现成的识别结果（reuse_project_ocr），不是这次新建的任务。"""
     pages = server_ocr_pages(result)
     processing = result.get("processing") if isinstance(result.get("processing"), dict) else {}
-    provider = str(processing.get("provider") or status.get("provider") or "mineru")
+    provider = str((status.get("provider") if origin == "project" else None)
+                   or processing.get("provider") or status.get("provider") or "mineru")
     record = {"file": item["file"], "sha256": item["sha256"], "engine": "aicheck-server", "provider": provider,
               "renderVersion": OCR_RENDER_VERSION,
-              "fallback": processing.get("fallback") or status.get("fallback"), "jobId": item["jobId"],
+              "fallback": processing.get("fallback") or status.get("fallback"), "jobId": item.get("jobId"),
+              **({"source": origin, "parseResultId": item.get("parseResultId")} if origin else {}),
               "quality": result.get("quality"), "documentType": result.get("documentType"), "at": now(),
               "pages": [{"page": n, "text": t} for n, t in sorted(pages.items())], "fields": server_ocr_fields(result)}
     write_private(ocr_record_path(bundle, item["file"]), dump(record))  # 原文（含完整证号），只给脚本回查用
@@ -2010,7 +2015,8 @@ def store_ocr(bundle: Path, item: dict[str, Any], status: dict[str, Any], result
     # 只算要靠 OCR 的页里没读出字的：有文字层的页 OCR 是空的不要紧（c 轮评测里把有文字层的页也算进来，agent 读成整份没字）
     blank = sorted(n for n, kind in problems.items() if kind == "blank")
     return {"file": item["file"], "pages": len(pages), "chars": sum(len(t) for t in pages.values()), "provider": provider,
-            "saved": str(target), **({"blankPages": page_ranges(blank)} if blank else {})}
+            "saved": str(target), **({"source": origin} if origin else {}),
+            **({"blankPages": page_ranges(blank)} if blank else {})}
 
 
 def target_path(bundle: Path, relative: str) -> Path:
@@ -2137,6 +2143,46 @@ def job_created_before(status: dict[str, Any], moment: float) -> bool | None:
     return created.timestamp() < moment - OCR_STALE_SKEW
 
 
+# 平台现成识别结果里只复用这两种引擎出的：skill 的读法（表格展开、印章、签名）和评测都按 MinerU（千问兜底）做。
+# 导入的测试场景用本机 OCR（macos_vision_ocr_v1，没有表格和印章），照旧上传重识别。
+PROJECT_OCR_PROVIDERS = {"mineru", "qwen"}
+
+
+def project_ocr_sources(manifest: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    """服务器资料包里每份原件对应的平台资料和版本：{files/…: (documentId, documentVersionId)}。"""
+    if manifest.get("source") != "server":
+        return {}
+    return {str(item["path"]): (str(item["documentId"]), str(item["documentVersionId"]))
+            for item in manifest.get("files") or []
+            if item.get("path") and item.get("documentId") and item.get("documentVersionId")}
+
+
+def reuse_project_ocr(api: Api, bundle: Path, manifest: dict[str, Any], relative: str, sha: str,
+                      ids: tuple[str, str], timeout: float) -> dict[str, Any] | str | None:
+    """服务器节点的原件平台已经识别过（MinerU 或千问兜底）：直接取那份——平台审查读的也是它——不再上传、
+    不再识别（原来每次都把原件再传一遍：服务器多存一份含身份证号的原件，还要等十几分钟）。
+    返回 store_ocr 的结果；平台还没识别、或是别的引擎出的返回 None，照旧上传；服务器还没有这个接口返回 "unsupported"。"""
+    document_id, version_id = ids
+    path = "/projects/{}/documents/{}/versions/{}/ocr-result".format(
+        *(parse.quote(str(value), safe="") for value in (manifest.get("projectId"), document_id, version_id)))
+    try:
+        data = api.call("GET", path, auth=True, timeout=timeout) or {}
+    except ClientError as exc:
+        if exc.code == "loginRequired":
+            raise
+        if exc.code == "notFound" and exc.details.get("status") == 404:
+            return "unsupported"  # HTTP 404：旧服务器没有这个接口（资料不存在是业务码 40404）
+        return None
+    provider = str(data.get("ocrProvider") or "")
+    if not data.get("resultAvailable") or not data.get("reusable") or provider not in PROJECT_OCR_PROVIDERS:
+        return None
+    if not any(text.strip() for text in server_ocr_pages(data).values()):
+        return None  # 平台那份一个字也没有：交给 MinerU 重新识别一次
+    item = {"file": relative, "sha256": sha, "parseResultId": data.get("parseResultId")}
+    status = {"provider": provider, "fallback": (data.get("processing") or {}).get("fallback")}
+    return store_ocr(bundle, item, status, data, origin="project")
+
+
 def cmd_ocr(args: argparse.Namespace) -> Any:
     started_at = time.time()
     # --timeout 是整条命令的时长（上传＋查状态）。每次至少传一份、查一份，保证重跑总有进展。
@@ -2205,8 +2251,15 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
         return {"file": relative, "sha256": sha, "jobId": job_id, "attempt": attempt, "submittedAt": now(), **extra}
 
     uploaded = 0
+    done, kinds = [], set()
+    reused: list[str] = []  # 平台现成的识别结果，没有上传、没有新建任务
+    sources = project_ocr_sources(manifest)
+    reuse_off = bool(args.force) or not sources  # --force 就是要重新识别
     for relative, path in targets:
         finished = load_ocr(bundle, relative, path)
+        if finished and not args.force and finished.get("source") == "project" \
+                and finished.get("renderVersion") != OCR_RENDER_VERSION:
+            finished = None  # 平台现成的那份是旧排版：再取一次按新排版存，不用重新识别
         if finished and not args.force:
             if (finished.get("renderVersion") != OCR_RENDER_VERSION and finished.get("jobId")
                     and not finished.get("rerenderFailed") and finished["sha256"] not in waiting):
@@ -2220,6 +2273,24 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
         sha = cached_sha(path)
         if sha in waiting:
             continue  # 上次交了还没出结果：接着等，不重传
+        if not reuse_off and not server_down and relative in sources:
+            progressed = bool(uploaded or deferred or reused)
+            if progressed and time_left() < OCR_MIN_REQUEST:
+                deferred.append(relative)  # 到点了：下次再取
+                continue
+            try:
+                outcome = reuse_project_ocr(api, bundle, manifest, relative, sha, sources[relative],
+                                            request_timeout(90.0, first=not progressed))
+            except ClientError as exc:
+                if exc.code == "loginRequired":
+                    raise
+                outcome = None
+            if outcome == "unsupported":
+                reuse_off = True
+            elif isinstance(outcome, dict):
+                done.append(outcome)
+                reused.append(relative)
+                continue
         if server_down:
             not_uploaded.append(relative)
             continue
@@ -2241,7 +2312,6 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
             write_private(state_path, dump(pending))
     if server_down:
         clock["end"] = min(clock["end"], time.monotonic())  # 服务器不可用：查一下就走，不干等
-    done, kinds = [], set()
 
     def give_up(item: dict[str, Any], reason: str, kind: str | None = None) -> None:
         if item.get("rerender"):
@@ -2341,6 +2411,8 @@ def cmd_ocr(args: argparse.Namespace) -> Any:
             break
         time.sleep(pause)
     result: dict[str, Any] = {"bundle": str(bundle), "done": done, "cached": cached, "skipped": skipped, "failed": failed}
+    if reused:
+        result["reused"] = reused  # 平台审查用的同一份识别结果（MinerU 或千问兜底），没有上传、没有重新识别
     if rerendered:
         result["rerendered"] = rerendered  # 旧排版的 OCR 记录，按新排版重排（没有重新识别）
     if retried:

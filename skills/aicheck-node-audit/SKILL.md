@@ -47,7 +47,7 @@ argument-hint: <projectId> <nodeId>  或  local <nodeId> <项目目录>
    - 服务器节点：`$PY $S fetch --project <工程ID> --node <节点号>`
    - 本地资料：`$PY $S local-init --node <节点号> --project-dir <整个项目目录> --project <标签> [--out <资料包目录>]`
    收整个项目目录，不要自己挑文件。记下返回的 `bundle`，下面写作 `B=<那个路径>`。
-   同一节点再审一次（资料更新了、上次审得不对）：照样重新 `fetch`，会建一个新资料包，旧包不动，不要在旧包上改。原件没变的，`ocr` 拿回服务器上那次的识别结果，不会重新识别。同步前看预览里的 `earlierSyncs`（见第 11 步）。
+   同一节点再审一次（资料更新了、上次审得不对）：照样重新 `fetch`，会建一个新资料包，旧包不动，不要在旧包上改。原件没变的，`ocr` 拿回平台现成或上次的识别结果，不会重新识别。同步前看预览里的 `earlierSyncs`（见第 11 步）。
 2. **生成报告骨架**：`$PY $S skeleton --bundle $B`。`audit.json` 里已按顺序列好每个原子检查（含要做的事）和包里每份文件，后面只填空，不要增删条目。
 3. **读 `$B/digest.md`**：规则依据、审查方法、每个原子检查要做的事和口径标记（证据追溯项、逐件核对项）、资料要求、文件清单。`warnings` 里有“服务器规则与节点不一致”时，按本地规则审，并写进 `limitations`。
 4. **全包检索**：`$PY $S search --bundle $B --terms <本节点要找的词…>`。
@@ -55,7 +55,7 @@ argument-hint: <projectId> <nodeId>  或  local <nodeId> <项目目录>
    - 看 `filesWithHits`（每份文件按词列命中页，如 `焊口 p4-6`）、`zeroHitTerms`（全包都没出现的词）、`idNumbersInText`（文字层里找得到的身份证号）。输出只是摘要，逐条命中和片段在 `saved` 给的 JSON 里，要看就读它，不要自己重定向输出。
    - `needsOcr`（图片、扫描件、读不了的 Office 文件）和 `needsOcrPages`（文字 PDF 里夹的扫描页）检索不到内容，下一步先 OCR。`embeddedImages` 列的是嵌了图片的 Word 文件（如焊工清单后面附的证件照片）：图片里的字检索不到，`ocr` 会把它们一起交服务器识别。
    - `zeroHitTerms` 只对有文字（文字层或 OCR）的文件成立。输出里带 `zeroHitNote` 时，说明还有扫描件没 OCR、没被检索到，或有 OCR 读得不全的页（`ocrQuality`）；要写“全包没有某某”，先跑第 5 步再检索。
-5. **OCR 扫描件**：`$PY $S ocr --bundle $B`（要登录；本地资料包第一次要先问用户，同意后加 `--allow-egress`）。它把 `needsOcr`、`needsOcrPages` 里的原件上传到服务器识别，逐页文字存进资料包，返回 `done`（每份的 `saved` 是可直接读的文字，`provider` 写着是 MinerU 还是千问识别的）、`cached`、`skipped`、`failed`，`progress` 是“几份已有 OCR 文字/共几份”。
+5. **OCR 扫描件**：`$PY $S ocr --bundle $B`（要登录；本地资料包第一次要先问用户，同意后加 `--allow-egress`）。它把 `needsOcr`、`needsOcrPages` 里的原件交服务器识别，逐页文字存进资料包，返回 `done`（每份的 `saved` 是可直接读的文字，`provider` 写着是 MinerU 还是千问识别的）、`cached`、`skipped`、`failed`，`progress` 是“几份已有 OCR 文字/共几份”。服务器节点的原件平台已经用 MinerU（或千问兜底）识别过的，直接取平台那份（列在 `reused`，`done` 里标 `source: project`）——平台审查读的也是它，不上传、不重新识别；平台用别的引擎识别的（如导入的测试工程）照旧交 MinerU。要重新识别才加 `--force`。
    - **时长**：一条 `ocr` 最多跑 `--timeout` 秒（上传加查状态，默认 300、最多 420），每个请求都按剩余时间截断，到点就停；只有保证进展的第一份上传、第一次查状态最多再多等一分钟。别在外面再套更短的 `timeout`：被杀掉的那一轮白跑。
    - **没跑完的**：`notSubmitted`（到点了还没上传）、`pending`（服务器还没识别完）、`notUploaded`（服务器暂时不可用、没传上去，不是识别失败）都是**不用另外等，直接再跑同一条命令**接着传、接着等，已传的不重传，也不用管 502。`pending` 里 `state: unreachable` 是服务器正在重启（每约半小时一次，约一分钟），任务还在。整包几十份扫描件要跑好几轮，几十分钟：先用 `--files` 只识别本节点要核的文件（证书、记录、设计材料表），其余后补；两轮之间可以先读已经 `done` 的。
    - **失败与重试**：识别失败的任务脚本当场换新任务重试一次（`retried`，不是失败；新任务在 `pending` 里标 `retried`，每份文件只列一次）；来不及重试的留到下次，下次自动换新任务。`failed` 里带 `autoRetried` 的是重试过仍失败，写进 `limitations`、相关事实交人工确认，不要反复重跑。带 `kind: engineAuth` 的（诊断码 HTTP_401 等）是**这次新建的任务**服务器调 MinerU 也被拒：可以再原样跑一次确认，仍是 engineAuth 就是服务器那边 MinerU 的令牌失效或没配好，**不是你的登录过期，不要重新 login**，告诉用户请管理员处理。
