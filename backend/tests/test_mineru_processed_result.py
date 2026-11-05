@@ -1,11 +1,10 @@
 import hashlib
 import json
 
-from libs.mineru_ocr import finalize_mineru_after_seals
 from libs.data_service_ocr_result import project_ocr_result
+from libs.mineru_ocr import finalize_mineru_after_seals, normalize_mineru_zip
 from libs.seal_vision import read_seal_texts
 from tests.test_mineru_ocr import _normalize, _zip_bytes
-from libs.mineru_ocr import normalize_mineru_zip
 
 
 def test_finalized_seals_and_artifact_share_quality_and_unverified_evidence():

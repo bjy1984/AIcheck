@@ -1,5 +1,6 @@
 """Project runtime for the local OCR MCP. Does not write engineering repository records."""
 from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -20,8 +21,8 @@ def configure():
 
 
 def describe():
-    from libs.ocr_runtime import ocr_runtime_config
     from libs.ocr.profiles import OCR_PROFILES
+    from libs.ocr_runtime import ocr_runtime_config
     runtime=ocr_runtime_config(validate=False)
     return {'mode':runtime['mode'],'officialCredentialsConfigured':bool(runtime['official'].get('apiKey')),
             'engines':['runtime','mineru'],'mineruCredentialsConfigured':bool(os.environ.get('AICHECK_MINERU_API_KEY')),
@@ -40,8 +41,8 @@ def run(folder):
     req=json.loads((folder/'request.json').read_text())
     write_json(folder/'status.json',{'status':'running'})
     try:
+        from libs.ocr.profiles import OCR_PROFILES, profile_for
         from libs.ocr_runtime import ocr_runtime_config
-        from libs.ocr.profiles import profile_for, OCR_PROFILES
         source=Path(req['filePath']);profile_id=req.get('profileId')
         if profile_id and profile_id not in OCR_PROFILES:raise ValueError('unknown profile')
         runtime=ocr_runtime_config(validate=False)
@@ -105,7 +106,7 @@ def run(folder):
         failed=result.get('status') in {'failed','error'} or not (fragments or public.get('tables') or public.get('fields'))
         state='failed' if failed else 'partial' if unconfirmed or result.get('outcomeStatus')=='partial' or (result.get('quality') or {}).get('status') not in {None,'usable','passed','auto_usable'} else 'completed'
         write_json(folder/'status.json',{'status':state,'coverage':public['coverage'],'error':{'code':'ocrFailed','message':'OCR 未返回可用正文，请检查引擎和配置。'} if failed else None})
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- worker 边界：任何异常都写成 failed 状态，不让任务卡在处理中
         code=str(getattr(exc,'code','') or getattr(exc,'reason','') or 'ocrRuntimeError')
         # Exceptions from provider calls may contain image URLs or credentials.
         write_json(folder/'status.json',{'status':'failed','error':{'code':code if code.isidentifier() else 'ocrRuntimeError','message':'识别未完成；请检查运行配置、文件格式、页数限制及引擎就绪情况。','type':type(exc).__name__}})

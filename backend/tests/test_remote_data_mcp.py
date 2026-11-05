@@ -1,15 +1,19 @@
 import json
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from apps.api import data_service_mcp_routes as m
+
 
 @pytest.fixture
 def client(tmp_path,monkeypatch):
     monkeypatch.chdir(tmp_path);(tmp_path/'output').mkdir();(tmp_path/'output/data-services-noauth.enabled').write_text('enabled')
     app=FastAPI();app.include_router(m.router,prefix='/api');return TestClient(app)
 
-def call(c,method,params={}):
+def call(c,method,params=None):
+    params = {} if params is None else params
     return c.post('/api/mcp/data-services',json={'jsonrpc':'2.0','id':1,'method':method,'params':params})
 
 def test_protocol(client):

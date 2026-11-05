@@ -4,8 +4,8 @@ Enable by writing `enabled` to output/data-services-noauth.enabled in the API
 working directory. Remove the file to restore authentication without restart.
 Anonymous OCR jobs use a shared test identity; existing users' jobs remain private.
 """
-from pathlib import Path
 import re
+from pathlib import Path
 
 ACTOR = 'internal-data-services-test'
 

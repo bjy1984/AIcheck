@@ -77,7 +77,7 @@ def pipeline_lock(key: str, *, idle_timeout_seconds: int = 60, keepalive: bool =
             while not stopped.wait(15):
                 try:
                     connection.execute("SELECT 1")
-                except Exception:
+                except Exception:  # noqa: BLE001 -- 心跳失败不论什么原因都当锁丢了，交给持锁方停下
                     lost.set()
                     logging.getLogger(__name__).error("pipeline lock heartbeat lost")
                     return

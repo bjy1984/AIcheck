@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build a read-only MCP standard corpus from existing MinerU output; no OCR call or DB writes."""
 from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -14,8 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 from libs.db.seed import STANDARD_KNOWLEDGE_SEED
-from libs.security.tenant import configured_tenant_id
 from libs.inspection_standard_corpus import SCHEMA
+from libs.security.tenant import configured_tenant_id
 from libs.standard_knowledge_canonical import build_standard_knowledge_record
 from scripts.reocr_standards_with_mineru import build_sidecar_parse_result
 
@@ -37,12 +38,12 @@ def add_section_paths(parsed: dict) -> None:
             elif re.fullmatch(r"目\s*[次录]|前\s*言|引\s*言|参考文献", text):
                 active = []
             else:
-                match = re.match(r"^((?:[A-Z]|\d+)(?:\.\d+)*)(?:[ \t]+|$)(.*)", text, re.S)
+                match = re.match(r"^((?:[A-Z]|\d+)(?:\.\d+)*)(?:[ \t]+|$)(.*)", text, re.DOTALL)
                 if match:
                     number, body = match.groups()
                     # OCR can label decimal quantities as headings. A unit/multiplier,
                     # arithmetic sign, or a TOC leader disqualifies that interpretation.
-                    quantity = re.match(r"^(?:倍|[%％℃°≤≥<>＝=±×/]|(?:mm|cm|km|m|MPa|kPa|Pa|kg|s|h|min|N|kN)(?:\b|[²³]))", body, re.I)
+                    quantity = re.match(r"^(?:倍|[%％℃°≤≥<>＝=±×/]|(?:mm|cm|km|m|MPa|kPa|Pa|kg|s|h|min|N|kN)(?:\b|[²³]))", body, re.IGNORECASE)
                     toc = re.search(r"[.…·]{2,}\s*\d+\s*$", body)
                     parts = number.split(".")
                     if not quantity and not toc and len(parts) <= 6 and (

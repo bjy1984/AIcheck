@@ -1,6 +1,8 @@
 from starlette.requests import Request
-from libs.security.data_service_test_mode import allows, ACTOR
+
 from apps.api.mineru_ocr_routes import mineru_job_access_error, request_actor
+from libs.security.data_service_test_mode import ACTOR, allows
+
 
 def test_switch_scope_and_existing_job_protection(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -20,7 +22,9 @@ def test_switch_scope_and_existing_job_protection(tmp_path, monkeypatch):
 
 def test_anonymous_ocr_ignores_stale_token_before_tenant_selection(tmp_path, monkeypatch):
     import asyncio
+
     from fastapi.responses import JSONResponse
+
     from apps.api import main
 
     monkeypatch.chdir(tmp_path)

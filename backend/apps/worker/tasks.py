@@ -2188,7 +2188,7 @@ def _execute_mineru_ocr_extract(
                 job.get("artifactReferences") or {}
             ),
         }
-    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
+    except Exception as exc:  # task boundary persists terminal or retry state; shadow failures stay isolated
         if isinstance(exc, PipelineLockUnavailable):
             raise
         code = ("QWEN_OCR_FAILED" if job.get("activeProvider") == "qwen" else _mineru_failure_code(job, exc))
@@ -5537,7 +5537,7 @@ def _for_each_tenant(job: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         token = set_request_tenant_id(tenant_id)
         try:
             results[tenant_id] = job()
-        except Exception as exc:  # noqa: BLE001 - 收齐后统一抛出
+        except Exception as exc:  # 收齐后统一抛出
             logging.getLogger(__name__).exception("periodic job failed for tenant %s", tenant_id)
             errors.append(exc)
         finally:

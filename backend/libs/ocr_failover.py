@@ -1,6 +1,6 @@
 """Durable provider selection for an OCR job; callers hold the job execution lock."""
-from datetime import UTC, datetime
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 

@@ -131,6 +131,7 @@ def test_standard_services_use_public_routes(connected, monkeypatch):
 
 def test_search_to_actual_canonical_content_roundtrip(connected):
     from test_standard_knowledge_canonical import canonical_source_fixture
+
     from libs.standard_knowledge_canonical import build_standard_knowledge_record
     state=canonical_source_fixture()
     for key,rows in state.items():
@@ -189,9 +190,11 @@ def test_registry_explicit_disable_prevents_http(connected):
 
 def test_readonly_sidecar_corpus_does_not_modify_project_repository(connected, monkeypatch, tmp_path):
     import json
+
     from test_standard_knowledge_canonical import canonical_source_fixture
-    from libs.standard_knowledge_canonical import build_standard_knowledge_record
+
     from libs.inspection_standard_corpus import SCHEMA
+    from libs.standard_knowledge_canonical import build_standard_knowledge_record
     state=canonical_source_fixture()
     file=state['knowledge_files'][0]
     state['standard_knowledge_records']=[build_standard_knowledge_record(state,file['id'],ROOT)]
@@ -210,7 +213,8 @@ def test_readonly_sidecar_corpus_does_not_modify_project_repository(connected, m
 
 def test_corpus_rejects_project_material(tmp_path,monkeypatch):
     import json
-    from libs.inspection_standard_corpus import standard_state,SCHEMA
+
+    from libs.inspection_standard_corpus import SCHEMA, standard_state
     path=tmp_path/'corpus.json'
     path.write_text(json.dumps({'schemaVersion':SCHEMA,'state':{
         'knowledge_files':[{'id':'private','sourceType':'standard','projectId':'P'}],
@@ -233,6 +237,7 @@ def test_content_rejects_non_file_identifiers_locally(connected,file_id):
 
 def test_public_search_exposes_uncertainty_and_blocks_conflicting_identity(connected):
     from test_standard_knowledge_canonical import canonical_source_fixture
+
     from libs.standard_knowledge_canonical import build_standard_knowledge_record
     state = canonical_source_fixture()
     for key, rows in state.items():

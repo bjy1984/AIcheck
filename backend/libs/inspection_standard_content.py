@@ -1,5 +1,6 @@
 """Explicit selection metadata for the public review original-content contract."""
 from __future__ import annotations
+
 from libs.inspection_services import InspectionServiceError
 
 CONTENT_KEYS = ('sections','clauses','blocks','tables','equations','images','seals')

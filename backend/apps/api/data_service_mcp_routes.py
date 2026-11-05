@@ -1,18 +1,21 @@
 """Stateless Streamable HTTP MCP (2025-06-18) for the existing data APIs."""
 from __future__ import annotations
+
 import base64
 import hashlib
 import hmac
 import json
 import os
-from pathlib import Path
 import re
-import time
 import secrets
+import time
+from pathlib import Path
 from urllib.parse import quote
+
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
+
 from libs.data_service_mcp_contract import ACTIONS, validate
 
 router = APIRouter()

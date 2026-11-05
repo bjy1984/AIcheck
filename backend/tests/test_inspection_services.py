@@ -234,7 +234,6 @@ def test_public_review_requires_no_login_but_project_api_stays_protected(monkeyp
 
 
 def test_anonymous_standard_content_excludes_project_documents(monkeypatch):
-    from apps.api.knowledge_admin_routes import scoped_standard_canonical
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
     tenant = main.configured_tenant_id()
     for name, project in (("KF-KB-PUBLIC", None), ("KF-KB-PRIVATE", "P-PRIVATE")):

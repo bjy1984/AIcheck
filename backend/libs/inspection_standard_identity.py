@@ -1,6 +1,11 @@
 """Cross-check public standard identity without treating citations as document identity."""
 import re
-from libs.knowledge_retrieval import canonical_standard_text, standard_refs_from_text, STANDARD_REF_RE
+
+from libs.knowledge_retrieval import (
+    STANDARD_REF_RE,
+    canonical_standard_text,
+    standard_refs_from_text,
+)
 
 
 def identity_check(file: dict, record: dict | None) -> dict:

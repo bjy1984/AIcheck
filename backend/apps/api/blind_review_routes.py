@@ -8,8 +8,12 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, Header, Request
 
 from apps.api.routes import (
-    document_read_error, fde_error_unless_allowed, idempotent, request_actor_name,
-    request_tenant_id, tenant_id_for_record,
+    document_read_error,
+    fde_error_unless_allowed,
+    idempotent,
+    request_actor_name,
+    request_tenant_id,
+    tenant_id_for_record,
 )
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok

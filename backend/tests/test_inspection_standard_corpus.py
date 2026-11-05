@@ -1,9 +1,8 @@
 import json
-from pathlib import Path
 
-from scripts.build_inspection_standard_corpus import build
 from libs.db.seed import STANDARD_KNOWLEDGE_SEED
 from libs.inspection_standard_corpus import standard_state
+from scripts.build_inspection_standard_corpus import build
 
 
 def test_build_keeps_multiple_tables_equations_and_page_sources(tmp_path, monkeypatch):
@@ -38,11 +37,12 @@ def test_build_keeps_multiple_tables_equations_and_page_sources(tmp_path, monkey
 
 def test_sections_reading_order_empty_and_out_of_range(tmp_path):
     import pytest
-    from scripts.build_inspection_standard_corpus import add_section_paths
-    from libs.standard_knowledge_canonical import build_standard_knowledge_record
-    from libs.inspection_standard_content import select_content
-    from libs.inspection_services import InspectionServiceError
     from test_standard_knowledge_canonical import canonical_source_fixture
+
+    from libs.inspection_services import InspectionServiceError
+    from libs.inspection_standard_content import select_content
+    from libs.standard_knowledge_canonical import build_standard_knowledge_record
+    from scripts.build_inspection_standard_corpus import add_section_paths
     state=canonical_source_fixture()
     parsed=state['ocr_parse_results'][0]
     parsed['layoutBlocks']=[

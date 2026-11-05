@@ -1,7 +1,10 @@
-from types import SimpleNamespace
 import json
+from types import SimpleNamespace
+
 from starlette.requests import Request
+
 from apps.api import mineru_ocr_routes as m
+
 
 def req(user):
  r=Request({'type':'http','method':'GET','path':'/','headers':[(b'x-user-id',user.encode()),(b'x-role',b'inspection')]})

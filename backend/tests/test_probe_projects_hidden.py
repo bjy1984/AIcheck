@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 os.environ.setdefault("AICHECK_ENABLE_DEMO_DATA", "true")
 
-from apps.api.main import app  # noqa: E402
-from libs.db.repository import repo  # noqa: E402
-from libs.probe_projects import is_probe_project  # noqa: E402
+from apps.api.main import app
+from libs.db.repository import repo
+from libs.probe_projects import is_probe_project
 
 client = TestClient(app)
 ADMIN = {"Authorization": "Bearer dev-token-admin", "X-Role": "admin"}

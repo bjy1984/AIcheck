@@ -1,7 +1,9 @@
-from uuid import uuid4
 from copy import deepcopy
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
+
 from apps.api import main
 from libs.db.repository import repo
 
@@ -12,13 +14,13 @@ ADMIN = {'X-Role': 'admin', 'X-User-Id': 'USER-ADMIN-001'}
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
     repo.reset()
-    for k,v in dict(postgres_enabled=False,sync_postgres=None,postgres_dsn=None,sqlite_enabled=False,sqlite_path=None).items():
+    for k,v in {'postgres_enabled': False,'sync_postgres': None,'postgres_dsn': None,'sqlite_enabled': False,'sqlite_path': None}.items():
         monkeypatch.setattr(repo,k,v)
     monkeypatch.setattr(repo,'sqlite_enabled',True)
     monkeypatch.setattr(repo,'sqlite_path',str(tmp_path/'requests.sqlite'))
     repo.state['inspection_requests']=[]
 
-def payload():return dict(requestId=str(uuid4()),requestText='核对焊材与工程要求\n保留原始换行。',platform='WorkBuddy',nodeIds=[24,26])
+def payload():return {'requestId': str(uuid4()),'requestText': '核对焊材与工程要求\n保留原始换行。','platform': 'WorkBuddy','nodeIds': [24,26]}
 
 def test_register_retry_admin_query_and_tenant_boundary(monkeypatch):
     import libs.db.repository as db

@@ -1,12 +1,14 @@
-from datetime import UTC, datetime, timedelta
-from copy import deepcopy
 import json
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+
 import pytest
-from libs.ocr_failover import observe_provider, select_qwen
-from libs.db.repository import InMemoryRepository
-from apps.worker import tasks
+
 from apps.api.mineru_ocr_routes import public_mineru_job
+from apps.worker import tasks
+from libs.db.repository import InMemoryRepository
+from libs.ocr_failover import observe_provider, select_qwen
 
 
 def test_pending_deadline_survives_restart_and_resets_on_running(monkeypatch):
@@ -102,8 +104,8 @@ def test_completed_fallback_duplicate_never_calls_provider(monkeypatch):
 
 
 def test_concurrent_execution_does_not_start_second_provider(monkeypatch):
-    from concurrent.futures import ThreadPoolExecutor
     import threading
+    from concurrent.futures import ThreadPoolExecutor
     repo=InMemoryRepository();job=repo.create_ocr_job_record(document_id='',version_id='',storage_key='x',file_name='test.pdf',provider='mineru')
     monkeypatch.setattr(tasks,'repo',repo);monkeypatch.setattr(tasks,'refresh_worker_state',lambda *a:None)
     monkeypatch.setattr(tasks,'_persist_mineru_job',lambda *a:None)
@@ -124,8 +126,9 @@ def test_concurrent_execution_does_not_start_second_provider(monkeypatch):
 
 def test_selected_pages_are_not_silently_expanded(tmp_path):
     import fitz
-    from libs.official_ocr_pipeline import selected_source_pages
+
     from libs.aliyun_ocr import AliyunOcrError
+    from libs.official_ocr_pipeline import selected_source_pages
     path=tmp_path/'three.pdf'
     with fitz.open() as doc:
         for _ in range(3):doc.new_page()
@@ -145,6 +148,7 @@ def test_remote_source_rejects_private_address_before_connect(monkeypatch,tmp_pa
 
 def test_lost_lock_refuses_ocr_persistence(monkeypatch):
     import threading
+
     import libs.pipeline_lock as locks
     event=threading.Event();event.set();token=locks._ACTIVE_LOCK_LOST.set(event)
     monkeypatch.setattr(tasks,'flush_state_records',lambda *a:pytest.fail('Must not persist without execution ownership'))
@@ -165,10 +169,11 @@ def test_credentials_only_reused_for_same_dashscope_region():
 
 def test_ocr_lock_fails_closed_when_configured_database_unavailable(monkeypatch):
     import sys
-    from libs.pipeline_lock import pipeline_lock, PipelineLockUnavailable
+
+    from libs.pipeline_lock import PipelineLockUnavailable, pipeline_lock
     monkeypatch.setenv('AICHECK_DATABASE_URL','postgresql://not-available')
     monkeypatch.setenv('AICHECK_STRICT_PRODUCTION','false')
     def unavailable(*a,**kw):raise ConnectionError('not available')
     monkeypatch.setitem(sys.modules,'psycopg',SimpleNamespace(connect=unavailable,Error=Exception))
-    with pytest.raises(PipelineLockUnavailable):
-        with pipeline_lock('failover-test',keepalive=True):pytest.fail('Cannot use a local lock on DB failure')
+    with pytest.raises(PipelineLockUnavailable), pipeline_lock('failover-test',keepalive=True):
+        pytest.fail('Cannot use a local lock on DB failure')

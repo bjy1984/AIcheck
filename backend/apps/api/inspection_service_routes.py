@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import UTC
 
 from fastapi import APIRouter, Query, Request
 from starlette.concurrency import run_in_threadpool
 
 from apps.api import routes as api
 from apps.api.std_samr_routes import StdSamrVerifyRequest, verify_std_samr_standard
-from libs.inspection_standard_corpus import standard_state
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.important_node_review import NODE_IDS, skill_catalog
@@ -19,6 +19,7 @@ from libs.inspection_services import (
     certificate_validity,
     service_capabilities,
 )
+from libs.inspection_standard_corpus import standard_state
 
 inspection_service_router = APIRouter(prefix="/inspection-services")
 
@@ -114,7 +115,7 @@ def standard_content(request: Request, file_id: str, page_no: int | None = Query
 
 @inspection_service_router.post("/standard-status")
 async def standard_status(body: StdSamrVerifyRequest, request: Request):
-    if re.fullmatch(r"TSG\s*[A-Z]*\s*\d+(?:[-—－]\d{4})?", body.standardRef.strip(), re.I):
+    if re.fullmatch(r"TSG\s*[A-Z]*\s*\d+(?:[-—－]\d{4})?", body.standardRef.strip(), re.IGNORECASE):
         return ok({"status": "UNSUPPORTED", "verdict": "unsupported_family", "citedRef": body.standardRef,
                    "reviewDate": body.reviewDate, "manualConfirmationRequired": True,
                    "reason": "TSG 属安全技术规范，当前标准公共平台适配器不支持；应核对总局公告原文。"}, request)
@@ -187,9 +188,14 @@ async def registry(request: Request):
 @inspection_service_router.post("/requests")
 async def register_review_request(request: Request):
     """Explicitly retained request text; never an engineering file upload."""
-    from datetime import datetime, timezone
+    from datetime import datetime
     from uuid import UUID
-    from libs.db.repository import ensure_collections_loaded, flush_state_records, postgres_persistence_configured
+
+    from libs.db.repository import (
+        ensure_collections_loaded,
+        flush_state_records,
+        postgres_persistence_configured,
+    )
 
     def save(payload):
         allowed = {"requestId", "requestText", "platform", "nodeIds"}
@@ -214,17 +220,17 @@ async def register_review_request(request: Request):
         ensure_collections_loaded("inspection_requests")
         rows = api.repo.state.setdefault("inspection_requests", [])
         old = next((row for row in rows if row["id"] == request_id and row.get("tenantId") == tenant), None)
-        values = dict(requestText=text, platform=platform, nodeIds=sorted(set(nodes)))
+        values = {"requestText": text, "platform": platform, "nodeIds": sorted(set(nodes))}
         if old:
             if any(old.get(k) != v for k, v in values.items()):
                 raise InspectionServiceError("同一requestId不能保存不同内容。", status=409)
             return {"requestId": request_id, "saved": True, "duplicate": True}
-        record = dict(id=request_id, tenantId=tenant, createdAt=datetime.now(timezone.utc).isoformat(),
+        record = dict(id=request_id, tenantId=tenant, createdAt=datetime.now(UTC).isoformat(),
                       identityVerified=False, **values)
         # Persist before making the row visible; failures must not report success.
         try:
             flush_state_records({"inspection_requests": [record]})
-        except Exception:
+        except Exception:  # noqa: BLE001 -- 落盘失败不论什么原因都按 503 报，不能报成保存成功
             raise InspectionServiceError("请求登记暂不可用，请保留requestId稍后重试。", status=503) from None
         rows.insert(0, record)
         return {"requestId": request_id, "saved": True, "duplicate": False}

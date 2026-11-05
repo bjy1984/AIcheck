@@ -1,4 +1,5 @@
 import pytest
+
 from libs.inspection_standard_identity import identity_check, matches_requested_identity
 from libs.knowledge_retrieval import standard_refs_from_text, strict_lexical_match
 from scripts.build_inspection_standard_corpus import add_section_paths
@@ -8,7 +9,7 @@ def test_quantities_appendices_and_toc_do_not_pollute_hierarchy():
     texts = ['5.3 试验要求', '1.25 倍设计压力', '1.50 MPa', '后续试验说明',
              '附录 A（规范性附录）', '附录引导文字', 'A.1 适用范围', 'a) 子项',
              '附录 B', 'B.1 方法', '参考文献', '其他文字', '目次', '5.3 试验……12']
-    blocks = [dict(text=text, sourceOrder=i, blockType='text') for i, text in enumerate(texts)]
+    blocks = [{'text': text, 'sourceOrder': i, 'blockType': 'text'} for i, text in enumerate(texts)]
     # Even a bogus OCR heading marker must not convert a pressure into a clause.
     blocks[2]['headingLevel'] = 1
     add_section_paths({'layoutBlocks': blocks})
@@ -70,11 +71,12 @@ def test_filename_replacement_annotation_is_not_file_identity():
 
 def test_canonical_builder_does_not_reintroduce_rejected_quantity(tmp_path):
     from test_standard_knowledge_canonical import canonical_source_fixture
-    from libs.standard_knowledge_canonical import build_standard_knowledge_record
+
     from libs.inspection_standard_content import select_content
+    from libs.standard_knowledge_canonical import build_standard_knowledge_record
     state = canonical_source_fixture()
     parsed = state['ocr_parse_results'][0]
-    parsed['layoutBlocks'] = [dict(text=text, pageNo=1, sourceOrder=i, blockType='text')
+    parsed['layoutBlocks'] = [{'text': text, 'pageNo': 1, 'sourceOrder': i, 'blockType': 'text'}
         for i, text in enumerate(['5.3 压力要求', '1.25 倍设计压力', '附录 A', 'A.1 附录要求'])]
     add_section_paths(parsed)
     record = build_standard_knowledge_record(state, state['knowledge_files'][0]['id'], tmp_path, include_supplemental=False)
