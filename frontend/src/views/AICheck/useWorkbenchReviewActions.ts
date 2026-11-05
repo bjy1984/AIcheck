@@ -210,10 +210,16 @@ export const useWorkbenchReviewActions = (ctx: WorkbenchReviewActionsContext) =>
   const handleReturnCorrectionFromFinding = (finding: WorkbenchAiFinding) => {
     if (!ctx.ensureWritableNode()) return
     ctx.pendingCorrectionFinding.value = finding
-    ctx.correctionReason.value =
-      `${finding.title}${finding.description ? `：${finding.description}` : ''}`.slice(0, 500)
+    // 结论区只有一个框（2026-11-04 节点页简化）：选上需补正，审查意见和补正要求是同一段话
+    const text = `${finding.title}${finding.description ? `：${finding.description}` : ''}`.slice(
+      0,
+      300
+    )
+    ctx.reviewResult.value = '需补正'
+    ctx.reviewOpinion.value = text
+    ctx.correctionReason.value = text
     ctx.activeSideTab.value = 'opinion'
-    ElMessage.info('已按该条发现填入退回原因，请核对后点击「退回补正」')
+    ElMessage.info('已把这条发现写进右侧「补正要求」，核对后点「保存并退回补正」')
   }
 
   const handleReturnCorrection = async () => {

@@ -2,10 +2,6 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('./Workbench.vue', import.meta.url), 'utf-8')
-const directorySource = readFileSync(
-  new URL('./components/AuditItemDirectory.vue', import.meta.url),
-  'utf-8'
-)
 const aiPanelSourceFile = readFileSync(
   new URL('./components/WorkbenchAiReviewPanel.vue', import.meta.url),
   'utf-8'
@@ -15,10 +11,15 @@ assert.match(
   /import WorkbenchAiReviewPanel from '.\/components\/WorkbenchAiReviewPanel\.vue'/,
   '完整工作台应使用独立的 AI 过程与结果组件'
 )
+assert.doesNotMatch(
+  source,
+  /<AuditItemDirectory/,
+  '节点页不再画「AI复核 → 人工结论」步骤条：状态只在页头说一次（2026-11-04 节点页简化）'
+)
 assert.match(
   source,
-  /<AuditItemDirectory[\s\S]*:items="inspectionReviewAuditItems"/,
-  '审计目录应只传入 AI复核和人工结论两个标签'
+  /class="sub node-review-summary"[\s\S]*nodeReviewHeadline\.parts\.join/,
+  '页头标题下一行摘要：AI 到哪了、要我确认几条、缺什么'
 )
 
 const aiPanelPosition = source.indexOf('<WorkbenchAiReviewPanel')
@@ -50,11 +51,13 @@ assert.match(
   /:show-ai-suggestion="false"/,
   '人工区不应重复渲染上方已经展示的 AI 建议'
 )
-assert.match(
-  directorySource,
-  /audit-item-directory__steps\.is-stacked\s*\{[\s\S]*min-width:\s*0/,
-  '两个审查标签不应继续使用七阶段目录的固定宽度并产生横向滚动条'
+assert.match(aiPanelSourceFile, /<h2>逐条核对<\/h2>/, 'AI 区只回答「要我逐条核对什么」')
+assert.doesNotMatch(
+  aiPanelSourceFile,
+  /一、AI 审查|ai-conclusion-counts|presentation\.summary }}<\/p>/,
+  '不再有四格计数、卡中卡和重复的总述'
 )
+assert.match(aiPanelSourceFile, /AI 运行记录（\{\{ runCount \}\} 次）/, '运行编号与历史收进底部')
 assert.match(
   aiPanelSourceFile,
   /class="ai-error-message">\{\{ presentation\.errorMessage \}\}/,
@@ -84,10 +87,21 @@ assert.match(
 )
 
 const humanSectionStart = source.indexOf('id="inspection-audit-panel-human_review"')
-const humanSectionEnd = source.indexOf('<section v-if="role === \'owner\'"', humanSectionStart)
+const humanSectionEnd = source.indexOf('</aside>', humanSectionStart)
 const humanSectionSource = source.slice(humanSectionStart, humanSectionEnd)
-assert.match(humanSectionSource, /class="overall-conclusion"/)
+assert.doesNotMatch(
+  humanSectionSource,
+  /class="overall-conclusion"|二、人工审查/,
+  '「总体意见」那句就是页头摘要，不再单占一张卡'
+)
 assert.match(humanSectionSource, /<ReviewDecisionPanel/)
+assert.match(humanSectionSource, /:satisfied-blocked="!readyForAiFormal"/)
+assert.match(humanSectionSource, /@save-and-return="handleSaveAndReturnCorrection"/)
+assert.match(
+  source,
+  /\.node-review-aside \{[\s\S]*position: sticky/,
+  '结论固定在右栏，拉到哪都看得到'
+)
 assert.doesNotMatch(
   humanSectionSource,
   /reviewConclusionPoints|class="right-card action-card"|<WorkbenchActionBar/,

@@ -251,7 +251,6 @@ import UploadSessionDrawer from './components/UploadSessionDrawer.vue'
 import { NDT_NODE_IDS, type NdtAtomicMaterial } from '@/utils/ndtAtomicMaterials'
 import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSections.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
-import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import StationAuditOverview from './components/StationAuditOverview.vue'
 import UserAvatarIcon from './components/UserAvatarIcon.vue'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
@@ -269,12 +268,13 @@ import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 import { getInspectionReviewProgress, workbenchRolePresentation } from './workbenchRolePresentation'
 import { useWorkbenchUploadSession } from './useWorkbenchUploadSession'
+import { buildNodeReviewHeadline, materialStats } from './nodeReviewSummary'
 import {
   nodeRunFindingViews,
   buildWorkbenchAiHistory,
   buildWorkbenchAiPresentation,
-  inspectionReviewDirectoryItems,
-  inspectionReviewDirectoryItemsWithAiStatus,
+  buildWorkbenchAiConclusion,
+  canShowWorkbenchAiConclusion,
   selectWorkbenchAiPresentation,
   workbenchFindingDisplay,
   type WorkbenchAiFinding
@@ -598,9 +598,6 @@ const inspectionAuditItems = computed<InspectionAuditItem[]>(() =>
     ? inspectionAuditWorkspace.value.items
     : emptyInspectionAuditItems()
 )
-const inspectionReviewAuditItemsBase = computed(() =>
-  inspectionReviewDirectoryItems(inspectionAuditItems.value)
-)
 const activeInspectionReviewAuditItem = computed<InspectionAuditItemKey>({
   get: () => (activeInspectionAuditItem.value === 'human_review' ? 'human_review' : 'ai_review'),
   set: (value) => {
@@ -858,12 +855,6 @@ const {
   nodeId: () => activeNodeId.value
 })
 const pendingCorrectionFinding = ref<WorkbenchAiFinding>()
-const inspectionReviewAuditItems = computed(() =>
-  inspectionReviewDirectoryItemsWithAiStatus(
-    inspectionReviewAuditItemsBase.value,
-    workbenchAiPresentation.value
-  )
-)
 
 const aiRecheckOutputMeta = computed(() => {
   const run = aiRecheckDisplayRun.value
@@ -1569,6 +1560,56 @@ const nodeRequirementRows = computed<NodeRequirementDisplayRow[]>(() => {
     matchedLinkCount: requirement.matchedLinkCount || 0
   }))
 })
+
+/** 节点页主体（资料、逐条核对、右栏结论）只在监检打开一个具体节点时出现。 */
+const inspectionNodeReviewVisible = computed(
+  () =>
+    role.value === 'inspection' &&
+    activeWorkbenchSection.value === 'node' &&
+    !inspectionNodeUnselected.value
+)
+/** 资料卡上的附件名能直接点开原件：先认证据链接里的文档，再认节点资料。 */
+const nodeMaterialFileIds = computed(() => {
+  const ids: Record<string, string> = {}
+  for (const file of nodePackage.value?.projectFiles || []) {
+    if (file.fileName && file.id) ids[file.fileName] = file.id
+  }
+  for (const link of evidenceLinks.value) {
+    if (link.fileName && link.documentId) ids[link.fileName] = link.documentId
+  }
+  return ids
+})
+/** 页头一行：状态只说一次（nodeReviewSummary 注释里有来龙去脉）。 */
+const nodeReviewHeadline = computed(() => {
+  const presentation = workbenchAiPresentation.value
+  const conclusion = canShowWorkbenchAiConclusion(presentation)
+    ? buildWorkbenchAiConclusion({
+        findings: presentation.findings,
+        deterministicResult: presentation.primaryResult || presentation.deterministicResult,
+        decisionSource: presentation.decisionSource
+      })
+    : undefined
+  return buildNodeReviewHeadline({
+    ai: presentation,
+    counts: conclusion
+      ? { needAction: conclusion.counts.needAction, confirm: conclusion.counts.confirm }
+      : undefined,
+    materials: materialStats(nodeRequirementRows.value),
+    latestOpinion: latestReviewOpinion.value
+  })
+})
+const nodeProcessOpen = ref(false)
+/** 折起来时也要看得出有没有要管的：「2 项需关注」，全顺就不写。 */
+const nodeProcessSummary = computed(() => {
+  const items = inspectionAuditItems.value.filter(
+    (item) => item.key !== 'ai_review' && item.key !== 'human_review'
+  )
+  const failed = items.filter((item) => item.status === 'failed').length
+  const attention = items.filter((item) => item.status === 'needs_attention').length
+  return [failed ? `${failed} 项失败` : '', attention ? `${attention} 项需关注` : '']
+    .filter(Boolean)
+    .join('、')
+})
 const evidenceConfirmationRows = computed<EvidenceConfirmationRow[]>(() => {
   const requirements = selectedNode.value?.requirementsSummary?.requirements || []
   const linksByPoint = new Map<string, EvidenceLink[]>()
@@ -1844,17 +1885,6 @@ const toolCatalogMap = computed(() => {
 
 const toolLabel = (toolId: string) => toolCatalogMap.value.get(toolId)?.name || toolId
 
-const projectAnalysisIsDisplayed = computed(
-  () => workbenchAiPresentation.value.sourceLabel === '全工程一键分析'
-)
-const workbenchHumanReviewMeta = computed(() =>
-  projectAnalysisIsDisplayed.value
-    ? nodePackage.value?.projectAnalysis?.run.finishedAt ||
-      nodePackage.value?.projectAnalysis?.run.updatedAt ||
-      workbenchAiPresentation.value.statusLabel
-    : latestAiRun.value?.finishedAt || latestAiRun.value?.status || '等待审查'
-)
-
 const toolTooltip = (toolId: string) => {
   const tool = toolCatalogMap.value.get(toolId)
   if (!tool) return `工具编号 ${toolId}`
@@ -1943,20 +1973,6 @@ const evidenceLabel = (evidence: EvidenceLink) => {
   const title = evidence.fileName || evidence.fieldName || evidence.objectId
   return evidence.pageNo ? `${title} P${evidence.pageNo}` : title
 }
-const reviewConclusionOverall = computed(() => {
-  if (projectAnalysisIsDisplayed.value) return workbenchAiPresentation.value.summary
-  // 同上：失败时 opinionDraft 还是那句排队占位，不能当结论用
-  if (latestAiRun.value?.status === '失败') {
-    return '本次 AI 审查执行失败，未产出结论。失败原因与处理方式见上方提示。'
-  }
-  if (latestAiRun.value?.suggestion.opinionDraft) return latestAiRun.value.suggestion.opinionDraft
-  const summary = selectedNode.value?.requirementsSummary
-  if (summary?.missingCount) {
-    return `当前节点已有 ${summary.satisfiedCount}/${summary.requiredCount} 项资料匹配，仍有 ${summary.missingCount} 项资料需要补充或人工确认。`
-  }
-  if (latestAiRun.value) return `当前节点 AI 审查结果为${latestAiRun.value.suggestion.result}。`
-  return '当前节点尚未形成 AI 审查结论，需先完成资料匹配、OCR 字段抽取和规则核验。'
-})
 const reviewChainSteps = computed(() => {
   const fieldNames = extractedFields.value.map((field) => field.fieldName).join('、')
   const aiRunFailed = latestAiReviewDisplay.value.failed
@@ -2820,9 +2836,10 @@ const runWorkbenchPageTransition = async (activateTargetPage: () => void | Promi
 const scrollInspectionAuditPanelToTop = async (itemKey: InspectionAuditItemKey) => {
   await nextTick()
   const center = document.querySelector<HTMLElement>('.center.has-flush-audit-directory')
+  // 节点页不再有吸顶的审计目录（2026-11-04 简化）；还有的页面照旧把它的高度让出来
   const directory = center?.querySelector<HTMLElement>('.audit-item-directory__scroll')
   const panel = center?.querySelector<HTMLElement>(`#inspection-audit-panel-${itemKey}`)
-  if (!center || !directory || !panel) return
+  if (!center || !panel) return
 
   const viewport = document.querySelector<HTMLElement>('.aicheck-static-viewport')
   const scrollContainer =
@@ -2833,15 +2850,10 @@ const scrollInspectionAuditPanelToTop = async (itemKey: InspectionAuditItemKey) 
         : center
   const containerBox = scrollContainer.getBoundingClientRect()
   const panelBox = panel.getBoundingClientRect()
-  const directoryBox = directory.getBoundingClientRect()
-  const stickyInset = Number.parseFloat(getComputedStyle(directory).top) || 0
+  const directoryHeight = directory?.getBoundingClientRect().height || 0
+  const stickyInset = directory ? Number.parseFloat(getComputedStyle(directory).top) || 0 : 0
   const targetTop =
-    scrollContainer.scrollTop +
-    panelBox.top -
-    containerBox.top -
-    stickyInset -
-    directoryBox.height -
-    8
+    scrollContainer.scrollTop + panelBox.top - containerBox.top - stickyInset - directoryHeight - 8
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   scrollContainer.scrollTo({
     top: Math.max(0, Math.round(targetTop)),
@@ -4119,8 +4131,9 @@ const handleAiRecheck = async () => {
   }
 }
 
-const handleSaveReviewOpinion = async () => {
-  if (!ensureWritableNode()) return
+/** 返回是否真的存上了：「保存并退回补正」要先存成功再退回。 */
+const handleSaveReviewOpinion = async (): Promise<boolean> => {
+  if (!ensureWritableNode()) return false
   if (reviewSaveDisabledReason.value) {
     rememberActionBlocker(
       '人工审查意见暂不能保存',
@@ -4128,11 +4141,11 @@ const handleSaveReviewOpinion = async () => {
       readinessBlockingReasons.value
     )
     ElMessage.warning(reviewSaveDisabledReason.value)
-    return
+    return false
   }
   if (!reviewOpinion.value.trim()) {
     ElMessage.warning('请填写人工审查意见')
-    return
+    return false
   }
   const projectId = activeProjectId.value
   const nodeId = activeNodeId.value
@@ -4152,24 +4165,54 @@ const handleSaveReviewOpinion = async () => {
     aiMapped && aiMapped !== draft.result
       ? await askAiOverrideReason(aiSuggested, draft.result)
       : undefined
-  if (aiMapped && aiMapped !== draft.result && !overrideReason) return
-  if (!isCurrent()) return
+  if (aiMapped && aiMapped !== draft.result && !overrideReason) return false
+  if (!isCurrent()) return false
   actionLoading.value = true
   try {
     const res = await saveReviewOpinionApi(projectId, nodeId, draft, { etag })
-    if (!isCurrent()) return
+    if (!isCurrent()) return false
     if (!res) {
       showActionError('审查意见保存失败，请检查审查意见和当前节点状态。')
-      return
+      return false
     }
     actionBlocker.value = undefined
     draftRequiresEvidenceSelection.value = false
     ElMessage.success('审查意见已保存')
     if (overrideReason) await recordAiOpinionOverride(overrideReason, aiSuggested, draft.result)
     await loadProjectBundle()
+    return true
   } finally {
     actionLoading.value = false
   }
+}
+
+/** 需补正：同一段话先存成结论，再作为补正要求退回施工方（退回本身还会再确认一次）。 */
+const handleSaveAndReturnCorrection = async () => {
+  correctionReason.value = reviewOpinion.value
+  if (!(await handleSaveReviewOpinion())) return
+  await handleReturnCorrection()
+}
+
+/** 资料卡「通知补正」：选上需补正，把缺的资料写进补正要求，再把视线带到右栏。 */
+const handleRequestMaterialCorrection = async (row: { name: string }) => {
+  if (!ensureWritableNode()) return
+  const line = `请补交：${row.name}`
+  const current = reviewOpinion.value.trim()
+  reviewResult.value = '需补正'
+  reviewOpinion.value = current.includes(line)
+    ? current
+    : [current, line].filter(Boolean).join('\n')
+  correctionReason.value = reviewOpinion.value
+  await nextTick()
+  const panel = document.getElementById('inspection-node-manual-review')
+  panel?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  panel?.querySelector<HTMLTextAreaElement>('textarea')?.focus({ preventScroll: true })
+}
+
+/** 处理流程里点一项：打开那一项的内容区并滚过去（原来目录条负责这件事）。 */
+const handleNodeProcessSelect = async (key: InspectionAuditItemKey) => {
+  const item = inspectionAuditItems.value.find((entry) => entry.key === key)
+  if (item) await handleInspectionAuditSelect(item)
 }
 
 const {
@@ -5287,13 +5330,24 @@ onBeforeUnmount(() => {
                         ? pageHeadline
                         : `${currentRoleConfig.title} · ${pageHeadline}`
                   }}
+                  <AuditStatusTag
+                    v-if="inspectionNodeReviewVisible"
+                    class="page-title-badge"
+                    :tone="nodeReviewHeadline.badge.tone"
+                    round
+                  >
+                    {{ nodeReviewHeadline.badge.label }}
+                  </AuditStatusTag>
                 </h1>
-                <div class="sub">
-                  {{
-                    role === 'inspection' && activeWorkbenchSection === 'node'
-                      ? `当前查看：${activeInspectionAuditItemData?.label || '资料提交'}`
-                      : pageIntro
-                  }}
+                <!-- 节点页的状态只在这里说一次（2026-11-04 节点页简化） -->
+                <div v-if="inspectionNodeReviewVisible" class="sub node-review-summary">
+                  {{ nodeReviewHeadline.parts.join(' · ') }}
+                </div>
+                <div
+                  v-else-if="!(role === 'inspection' && activeWorkbenchSection === 'node')"
+                  class="sub"
+                >
+                  {{ pageIntro }}
                 </div>
               </div>
               <div class="actions">
@@ -5353,19 +5407,6 @@ onBeforeUnmount(() => {
                 </template>
               </ElEmpty>
             </div>
-
-            <AuditItemDirectory
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected
-              "
-              v-model="activeInspectionReviewAuditItem"
-              :items="inspectionReviewAuditItems"
-              stacked
-              :loading="inspectionAuditLoading"
-              @select="handleInspectionAuditSelect"
-            />
 
             <WorkbenchStateBanner
               v-if="
@@ -5596,772 +5637,802 @@ onBeforeUnmount(() => {
               @file-delete="handleDeleteProjectFile"
             />
 
-            <!-- 先给要动手的（本节点所需资料），再给流程各阶段的状态：状态是背景，资料才是这个页面要办的事 -->
-            <WorkbenchNodeMaterialsCard
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected
-              "
-              :rows="nodeRequirementRows"
-              @open-materials="openNodeMaterialsDetail"
-            />
+            <!-- 2026-11-04 节点页简化：左栏按审查员的顺序排「资料 → 逐条核对」，右栏固定放结论。
+                 流程各阶段的状态收进左栏底部的「处理流程」，要处理时再展开。 -->
+            <div :class="{ 'node-review-layout': inspectionNodeReviewVisible }">
+              <div :class="{ 'node-review-main': inspectionNodeReviewVisible }">
+                <WorkbenchNodeMaterialsCard
+                  v-if="inspectionNodeReviewVisible"
+                  :rows="nodeRequirementRows"
+                  :file-ids="nodeMaterialFileIds"
+                  :can-request-correction="hasAction('review:return-correction') && !isReadOnly"
+                  @open-materials="openNodeMaterialsDetail"
+                  @open-file="handleOpenFileDetail"
+                  @request-correction="handleRequestMaterialCorrection"
+                />
 
-            <WorkbenchNodeStatusStrip
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected
-              "
-              :items="inspectionAuditItems"
-              :active="activeInspectionAuditItem"
-              :omit="['ai_review', 'human_review']"
-              @select="activeInspectionAuditItem = $event"
-            />
+                <WorkbenchAiReviewPanel
+                  v-if="inspectionNodeReviewVisible"
+                  :presentation="workbenchAiPresentation"
+                  :history="workbenchAiHistory"
+                  :can-act="hasAction('ai:recheck')"
+                  :acting="aiFeedbackBusy || actionLoading"
+                  :decisions="aiFindingDecisions"
+                  :stale-notice="staleAiNotice"
+                  @open-file="handleOpenFileDetail"
+                  @finding-decision="handleAiFindingDecision"
+                  @claim-supported="handleAiClaimSupported"
+                  @confirm-fact="handleAiConfirmFact"
+                  @start-node-review="handleAiRecheck"
+                  @supplement-finding="handleAiSupplementFinding"
+                  @return-correction="handleReturnCorrectionFromFinding"
+                />
 
-            <WorkbenchAiReviewPanel
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected
-              "
-              :presentation="workbenchAiPresentation"
-              :history="workbenchAiHistory"
-              :can-act="hasAction('ai:recheck')"
-              :acting="aiFeedbackBusy || actionLoading"
-              :decisions="aiFindingDecisions"
-              :stale-notice="staleAiNotice"
-              @open-file="handleOpenFileDetail"
-              @finding-decision="handleAiFindingDecision"
-              @claim-supported="handleAiClaimSupported"
-              @confirm-fact="handleAiConfirmFact"
-              @start-node-review="handleAiRecheck"
-              @supplement-finding="handleAiSupplementFinding"
-              @return-correction="handleReturnCorrectionFromFinding"
-            />
-
-            <section
-              v-if="
-                legacyInspectionAuditPanelsVisible &&
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected &&
-                activeInspectionAuditItem === 'ai_review' &&
-                hasAction('ai:recheck')
-              "
-              id="inspection-audit-panel-ai_review"
-              role="tabpanel"
-              aria-label="AI 复核"
-              class="node-ai-recheck-top"
-            >
-              <div class="node-ai-recheck-actions">
-                <div class="ai-review-mode-control">
-                  <ElRadioGroup v-model="selectedAiReviewMode" aria-label="AI 复核模式">
-                    <ElRadioButton
-                      value="formal"
-                      :disabled="!availableAiReviewModes.includes('formal')"
-                      :title="formalReviewBlockedReason || '按当前文件版本发起正式 AI 复核'"
-                    >
-                      正式复核
-                    </ElRadioButton>
-                    <ElRadioButton
-                      value="gap_precheck"
-                      :disabled="!availableAiReviewModes.includes('gap_precheck')"
-                    >
-                      缺项预审
-                    </ElRadioButton>
-                  </ElRadioGroup>
-                  <small>{{ aiReviewModeHint }}</small>
+                <!-- 处理流程：资料提交 → 抽取 → 证据确认 → 报告 → 归档。原来两行药丸加三条「去处理」
+                 摆在资料和 AI 之间；这些是背景，要处理的那条（缺资料）已经在资料卡和结论区说了。 -->
+                <div v-if="inspectionNodeReviewVisible" class="node-process-fold">
+                  <button
+                    type="button"
+                    class="node-process-toggle"
+                    :aria-expanded="nodeProcessOpen"
+                    aria-controls="node-process-strip"
+                    @click="nodeProcessOpen = !nodeProcessOpen"
+                  >
+                    处理流程<span v-if="nodeProcessSummary">：{{ nodeProcessSummary }}</span>
+                    <span class="node-process-caret" aria-hidden="true">
+                      {{ nodeProcessOpen ? '收起' : '›' }}
+                    </span>
+                  </button>
+                  <WorkbenchNodeStatusStrip
+                    v-if="nodeProcessOpen"
+                    id="node-process-strip"
+                    :items="inspectionAuditItems"
+                    :active="activeInspectionAuditItem"
+                    :omit="['ai_review', 'human_review']"
+                    @select="handleNodeProcessSelect"
+                  />
                 </div>
-                <ElButton
-                  class="node-ai-recheck-button"
-                  type="primary"
-                  :loading="actionLoading"
-                  :disabled="isReadOnly || Boolean(aiRecheckDisabledReason)"
-                  :title="aiRecheckDisabledReason || aiReviewModeHint"
-                  @click="handleAiRecheck"
+
+                <section
+                  v-if="
+                    legacyInspectionAuditPanelsVisible &&
+                    role === 'inspection' &&
+                    activeWorkbenchSection === 'node' &&
+                    !inspectionNodeUnselected &&
+                    activeInspectionAuditItem === 'ai_review' &&
+                    hasAction('ai:recheck')
+                  "
+                  id="inspection-audit-panel-ai_review"
+                  role="tabpanel"
+                  aria-label="AI 复核"
+                  class="node-ai-recheck-top"
                 >
-                  {{ aiRecheckButtonLabel }}
-                </ElButton>
-                <!-- 一键审查拆成独立组件：Workbench.vue 有行数棘轮，
+                  <div class="node-ai-recheck-actions">
+                    <div class="ai-review-mode-control">
+                      <ElRadioGroup v-model="selectedAiReviewMode" aria-label="AI 复核模式">
+                        <ElRadioButton
+                          value="formal"
+                          :disabled="!availableAiReviewModes.includes('formal')"
+                          :title="formalReviewBlockedReason || '按当前文件版本发起正式 AI 复核'"
+                        >
+                          正式复核
+                        </ElRadioButton>
+                        <ElRadioButton
+                          value="gap_precheck"
+                          :disabled="!availableAiReviewModes.includes('gap_precheck')"
+                        >
+                          缺项预审
+                        </ElRadioButton>
+                      </ElRadioGroup>
+                      <small>{{ aiReviewModeHint }}</small>
+                    </div>
+                    <ElButton
+                      class="node-ai-recheck-button"
+                      type="primary"
+                      :loading="actionLoading"
+                      :disabled="isReadOnly || Boolean(aiRecheckDisabledReason)"
+                      :title="aiRecheckDisabledReason || aiReviewModeHint"
+                      @click="handleAiRecheck"
+                    >
+                      {{ aiRecheckButtonLabel }}
+                    </ElButton>
+                    <!-- 一键审查拆成独立组件：Workbench.vue 有行数棘轮，
                      棘轮的用意就是逼新功能不要再往这个大文件里堆。 -->
-                <BatchRecheckPanel
-                  :loading="batchRecheckLoading"
-                  :disabled="isReadOnly"
-                  :result="batchRecheckResult"
-                  @run="handleAiRecheckBatch"
-                />
-              </div>
-              <!-- 自动审核状态 + 合并时间线（0817 第 3 条），拆在独立组件里 -->
-              <NodeReviewTimeline :events="nodeReviewTimeline" :status="nodeAutoReviewStatus" />
-              <div v-if="aiRecheckOutputVisible" class="ai-recheck-output" aria-live="polite">
-                <div class="ai-recheck-output-head">
-                  <strong>AI 复核输出</strong>
-                  <small>{{ aiRecheckOutputMeta }}</small>
-                </div>
-                <ElAlert
-                  v-if="aiRecheckOutputError"
-                  class="ai-recheck-output-alert"
-                  type="error"
-                  :title="aiRecheckOutputError"
-                  :closable="false"
-                  show-icon
-                />
-                <ElAlert
-                  v-if="aiRecheckIsLocalFallback"
-                  class="ai-recheck-output-alert"
-                  type="warning"
-                  title="当前调度器未启用，未调用外部模型；以下为基于真实证据状态生成的本地降级摘要，不是模型 DeepThink。"
-                  :closable="false"
-                  show-icon
-                />
-                <div v-if="activeHumanInputTask" class="ai-human-input-card">
-                  <div>
-                    <strong>
-                      {{
-                        isR19HumanInputTask
-                          ? 'AI 已暂停，等待 R19 关键事实确认'
-                          : 'AI 已暂停，等待官网人工核验'
-                      }}
-                    </strong>
-                    <span v-if="isR19HumanInputTask">
-                      需要确认
-                      {{
-                        activeHumanInputTask.questionCount ||
-                        activeHumanInputTask.questions?.length ||
-                        0
-                      }}
-                      个语义事实；提交后将作为新证据恢复 R19 Agent，并继续完成八个原子项判断。
-                    </span>
-                    <span v-else>
-                      已识别 {{ activeHumanInputTask.candidateCount || 0 }}
-                      张制造许可证；完成核验后，AI 将继续调用固定 Tool 比对工程元件覆盖范围。
-                    </span>
+                    <BatchRecheckPanel
+                      :loading="batchRecheckLoading"
+                      :disabled="isReadOnly"
+                      :result="batchRecheckResult"
+                      @run="handleAiRecheckBatch"
+                    />
                   </div>
-                  <ElButton type="warning" @click="humanInputDialogVisible = true">
-                    {{ isR19HumanInputTask ? '处理人工确认' : '处理人工核验' }}
-                  </ElButton>
-                </div>
-                <div class="ai-recheck-output-section">
-                  <label>AI 建议（待人工确认）</label>
-                  <!-- 模型输出是 findings JSON 时按条渲染。原先直接 <pre> 打出
+                  <!-- 自动审核状态 + 合并时间线（0817 第 3 条），拆在独立组件里 -->
+                  <NodeReviewTimeline :events="nodeReviewTimeline" :status="nodeAutoReviewStatus" />
+                  <div v-if="aiRecheckOutputVisible" class="ai-recheck-output" aria-live="polite">
+                    <div class="ai-recheck-output-head">
+                      <strong>AI 复核输出</strong>
+                      <small>{{ aiRecheckOutputMeta }}</small>
+                    </div>
+                    <ElAlert
+                      v-if="aiRecheckOutputError"
+                      class="ai-recheck-output-alert"
+                      type="error"
+                      :title="aiRecheckOutputError"
+                      :closable="false"
+                      show-icon
+                    />
+                    <ElAlert
+                      v-if="aiRecheckIsLocalFallback"
+                      class="ai-recheck-output-alert"
+                      type="warning"
+                      title="当前调度器未启用，未调用外部模型；以下为基于真实证据状态生成的本地降级摘要，不是模型 DeepThink。"
+                      :closable="false"
+                      show-icon
+                    />
+                    <div v-if="activeHumanInputTask" class="ai-human-input-card">
+                      <div>
+                        <strong>
+                          {{
+                            isR19HumanInputTask
+                              ? 'AI 已暂停，等待 R19 关键事实确认'
+                              : 'AI 已暂停，等待官网人工核验'
+                          }}
+                        </strong>
+                        <span v-if="isR19HumanInputTask">
+                          需要确认
+                          {{
+                            activeHumanInputTask.questionCount ||
+                            activeHumanInputTask.questions?.length ||
+                            0
+                          }}
+                          个语义事实；提交后将作为新证据恢复 R19 Agent，并继续完成八个原子项判断。
+                        </span>
+                        <span v-else>
+                          已识别 {{ activeHumanInputTask.candidateCount || 0 }}
+                          张制造许可证；完成核验后，AI 将继续调用固定 Tool 比对工程元件覆盖范围。
+                        </span>
+                      </div>
+                      <ElButton type="warning" @click="humanInputDialogVisible = true">
+                        {{ isR19HumanInputTask ? '处理人工确认' : '处理人工核验' }}
+                      </ElButton>
+                    </div>
+                    <div class="ai-recheck-output-section">
+                      <label>AI 建议（待人工确认）</label>
+                      <!-- 模型输出是 findings JSON 时按条渲染。原先直接 <pre> 打出
                        原始 JSON，监检要在花括号和转义引号里找结论——
                        **那不是不好看，是让人读不到判定**。
                        解析不出来仍原样显示文本：模型偶尔回纯文字，硬套结构会吃掉内容。 -->
-                  <ul v-if="visibleNodeAiPresentationFindings.length" class="ai-finding-list">
-                    <li v-for="(finding, index) in visibleNodeAiPresentationFindings" :key="index">
-                      <div
-                        v-if="finding.evidenceCount || finding.ruleCount"
-                        class="ai-finding-head"
-                      >
-                        <span v-if="finding.evidenceCount" class="ai-finding-meta">
-                          证据 {{ finding.evidenceCount }} 条
-                        </span>
-                        <span v-if="finding.ruleCount" class="ai-finding-meta">
-                          条款 {{ finding.ruleCount }} 条
-                        </span>
-                      </div>
-                      <div v-if="finding.title" class="ai-finding-title">{{ finding.title }}</div>
-                      <div v-if="finding.description" class="ai-finding-desc">
-                        {{ finding.description }}
-                      </div>
-                    </li>
-                  </ul>
-                  <pre v-else>{{ aiRecheckResultText }}</pre>
-                </div>
-                <ElCollapse
-                  v-model="aiTechnicalPanels"
-                  class="ai-recheck-technical-details"
-                  aria-label="模型执行详情"
-                >
-                  <ElCollapseItem name="execution-details" title="查看模型执行详情">
-                    <div class="ai-recheck-output-section">
-                      <label>推理过程</label>
-                      <pre>{{ aiRecheckReasoningText }}</pre>
-                    </div>
-                    <div class="ai-recheck-output-section">
-                      <label>{{ aiRecheckDeepThinkLabel }}</label>
-                      <pre>{{ aiRecheckDeepThinkText }}</pre>
-                    </div>
-                  </ElCollapseItem>
-                </ElCollapse>
-              </div>
-            </section>
-
-            <section
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected &&
-                activeInspectionAuditItem === 'ocr'
-              "
-              id="inspection-audit-panel-ocr"
-              role="tabpanel"
-              aria-label="OCR 抽取"
-              class="card inspection-ocr-panel"
-            >
-              <div class="card-head">
-                <h2>OCR 抽取与定位质量</h2>
-                <div class="sub">仅展示当前节点挂载文档的当前版本</div>
-              </div>
-              <div class="card-body">
-                <ElTable :data="nodeScopedFiles" border class="inspection-ocr-table">
-                  <ElTableColumn prop="fileName" label="文件" min-width="230" show-overflow-tooltip>
-                    <template #default="{ row }">
-                      <span class="file-name-with-icon">
-                        <FileTypeIcon
-                          :file-name="row.fileName"
-                          :file-type="row.fileType"
-                          :category="row.materialCategory"
-                        />
-                        <span>{{ row.fileName }}</span>
-                      </span>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="执行状态" width="126">
-                    <template #default="{ row }">
-                      <AuditStatusTag
-                        :tone="getPillClass(ocrReadinessLabel(row.ocrReadiness?.status))"
-                        round
-                      >
-                        {{ ocrReadinessLabel(row.ocrReadiness?.status) }}
-                      </AuditStatusTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="字段" width="88">
-                    <template #default="{ row }">
-                      {{ extractedFieldCountByVersion.get(row.currentVersionId) || 0 }}
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="定位覆盖" width="116">
-                    <template #default="{ row }">
-                      {{ Math.round((row.ocrReadiness?.bboxCoverage || 0) * 100) }}%
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="当前说明" min-width="250">
-                    <template #default="{ row }">
-                      {{
-                        row.ocrReadiness?.blockingReasons?.[0]?.message ||
-                        (row.ocrReadiness?.status === 'ready'
-                          ? '抽取产物及证据定位已就绪。'
-                          : '等待 OCR 任务产物。')
-                      }}
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="操作" width="96" fixed="right">
-                    <template #default="{ row }">
-                      <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
-                        查看
-                      </ElButton>
-                    </template>
-                  </ElTableColumn>
-                </ElTable>
-                <ElEmpty
-                  v-if="!nodeScopedFiles.length"
-                  class="inspection-audit-empty"
-                  :image-size="72"
-                  description="当前节点暂无挂载文档；这不会阻止查看或办理其他审计项。"
-                />
-              </div>
-            </section>
-
-            <section
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected &&
-                ['submission', 'evidence'].includes(activeInspectionAuditItem)
-              "
-              :id="`inspection-audit-panel-${activeInspectionAuditItem}`"
-              role="tabpanel"
-              :aria-label="activeInspectionAuditItemData?.label"
-              class="card"
-            >
-              <div class="card-head">
-                <h2>监检依据 · {{ activeInspectionAuditItemData?.label }}</h2>
-                <div class="sub">{{ businessBasis?.ruleName || selectedNode?.name }}</div>
-              </div>
-              <div class="card-body">
-                <div class="basis-meta-grid">
-                  <div v-for="item in nodeBasisMetaRows" :key="item.label" class="basis-meta-item">
-                    <span>{{ item.label }}</span>
-                    <strong>{{ item.value }}</strong>
-                  </div>
-                </div>
-
-                <div class="basis-block-grid">
-                  <article class="basis-block basis-block--criteria">
-                    <div class="basis-block-heading">
-                      <ElIcon class="basis-block-icon"><DocumentChecked /></ElIcon>
-                      <div>
-                        <span class="basis-block-kicker">判定依据</span>
-                        <h3>监检判断准则</h3>
-                      </div>
-                    </div>
-                    <ol class="basis-reference-list">
-                      <li v-for="(item, index) in basisCriteriaReferences" :key="item">
-                        <span class="basis-reference-index">
-                          {{ String(index + 1).padStart(2, '0') }}
-                        </span>
-                        <p>{{ item }}</p>
-                      </li>
-                    </ol>
-                    <div v-if="basisCriteriaDecisionNote" class="basis-decision-note">
-                      <ElIcon><Guide /></ElIcon>
-                      <div>
-                        <strong>冲突适用规则</strong>
-                        <span>{{ basisCriteriaDecisionNote }}</span>
-                      </div>
-                    </div>
-                  </article>
-                  <article class="basis-block basis-block--method">
-                    <div class="basis-block-heading">
-                      <ElIcon class="basis-block-icon"><Guide /></ElIcon>
-                      <div>
-                        <span class="basis-block-kicker">执行路径</span>
-                        <h3>核查方法与工作见证</h3>
-                      </div>
-                    </div>
-                    <div class="basis-method-list">
-                      <div
-                        v-for="(item, index) in basisCheckSteps"
-                        :key="item.text"
-                        class="basis-method-item"
-                      >
-                        <span class="basis-method-step">{{ index + 1 }}</span>
-                        <div>
-                          <small>{{ item.label }}</small>
-                          <p>{{ item.text }}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div v-if="basisAgentSteps.length" class="basis-agent-note">
-                      <div class="basis-agent-note__head">
-                        <ElIcon><MagicStick /></ElIcon>
-                        <strong>Agent 核查思路</strong>
-                        <span>辅助说明</span>
-                      </div>
-                      <ul>
-                        <li v-for="item in basisAgentSteps" :key="item">{{ item }}</li>
+                      <ul v-if="visibleNodeAiPresentationFindings.length" class="ai-finding-list">
+                        <li
+                          v-for="(finding, index) in visibleNodeAiPresentationFindings"
+                          :key="index"
+                        >
+                          <div
+                            v-if="finding.evidenceCount || finding.ruleCount"
+                            class="ai-finding-head"
+                          >
+                            <span v-if="finding.evidenceCount" class="ai-finding-meta">
+                              证据 {{ finding.evidenceCount }} 条
+                            </span>
+                            <span v-if="finding.ruleCount" class="ai-finding-meta">
+                              条款 {{ finding.ruleCount }} 条
+                            </span>
+                          </div>
+                          <div v-if="finding.title" class="ai-finding-title">{{
+                            finding.title
+                          }}</div>
+                          <div v-if="finding.description" class="ai-finding-desc">
+                            {{ finding.description }}
+                          </div>
+                        </li>
                       </ul>
+                      <pre v-else>{{ aiRecheckResultText }}</pre>
                     </div>
-                  </article>
-                </div>
-
-                <article
-                  v-if="activeInspectionAuditItem === 'submission'"
-                  id="inspection-node-requirements"
-                  class="basis-table-block"
-                >
-                  <div class="block-title-row">
-                    <h3>审查所需资料</h3>
-                    <AuditStatusTag tone="blue" round>
-                      {{ nodeRequirementRows.length }} 项
-                    </AuditStatusTag>
-                  </div>
-                  <div class="basis-table-wrap">
-                    <ElTable
-                      class="basis-table"
-                      :data="nodeRequirementRows"
-                      row-key="id"
-                      empty-text="暂无资料要求明细"
+                    <ElCollapse
+                      v-model="aiTechnicalPanels"
+                      class="ai-recheck-technical-details"
+                      aria-label="模型执行详情"
                     >
-                      <ElTableColumn prop="rowNo" label="序号" width="72" align="center" />
-                      <ElTableColumn label="资料名称" min-width="220">
+                      <ElCollapseItem name="execution-details" title="查看模型执行详情">
+                        <div class="ai-recheck-output-section">
+                          <label>推理过程</label>
+                          <pre>{{ aiRecheckReasoningText }}</pre>
+                        </div>
+                        <div class="ai-recheck-output-section">
+                          <label>{{ aiRecheckDeepThinkLabel }}</label>
+                          <pre>{{ aiRecheckDeepThinkText }}</pre>
+                        </div>
+                      </ElCollapseItem>
+                    </ElCollapse>
+                  </div>
+                </section>
+
+                <section
+                  v-if="
+                    role === 'inspection' &&
+                    activeWorkbenchSection === 'node' &&
+                    !inspectionNodeUnselected &&
+                    activeInspectionAuditItem === 'ocr'
+                  "
+                  id="inspection-audit-panel-ocr"
+                  role="tabpanel"
+                  aria-label="OCR 抽取"
+                  class="card inspection-ocr-panel"
+                >
+                  <div class="card-head">
+                    <h2>OCR 抽取与定位质量</h2>
+                    <div class="sub">仅展示当前节点挂载文档的当前版本</div>
+                  </div>
+                  <div class="card-body">
+                    <ElTable :data="nodeScopedFiles" border class="inspection-ocr-table">
+                      <ElTableColumn
+                        prop="fileName"
+                        label="文件"
+                        min-width="230"
+                        show-overflow-tooltip
+                      >
                         <template #default="{ row }">
-                          <strong>{{ row.name }}</strong>
-                          <small class="basis-table-secondary">{{ row.applicability }}</small>
+                          <span class="file-name-with-icon">
+                            <FileTypeIcon
+                              :file-name="row.fileName"
+                              :file-type="row.fileType"
+                              :category="row.materialCategory"
+                            />
+                            <span>{{ row.fileName }}</span>
+                          </span>
                         </template>
                       </ElTableColumn>
-                      <ElTableColumn
-                        prop="materialType"
-                        label="资料类别"
-                        min-width="140"
-                        show-overflow-tooltip
-                      />
-                      <ElTableColumn prop="responsibleParty" label="责任方" width="112" />
-                      <ElTableColumn prop="requiredType" label="要求" width="112" />
-                      <ElTableColumn label="当前匹配" min-width="190">
+                      <ElTableColumn label="执行状态" width="126">
                         <template #default="{ row }">
-                          <AuditStatusTag :tone="getPillClass(row.status)" round>
-                            {{ row.status }}
+                          <AuditStatusTag
+                            :tone="getPillClass(ocrReadinessLabel(row.ocrReadiness?.status))"
+                            round
+                          >
+                            {{ ocrReadinessLabel(row.ocrReadiness?.status) }}
                           </AuditStatusTag>
-                          <small v-if="row.matchedFileNames.length" class="basis-table-secondary">
-                            {{ row.matchedFileNames.slice(0, 2).join('、') }}
-                          </small>
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="字段" width="88">
+                        <template #default="{ row }">
+                          {{ extractedFieldCountByVersion.get(row.currentVersionId) || 0 }}
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="定位覆盖" width="116">
+                        <template #default="{ row }">
+                          {{ Math.round((row.ocrReadiness?.bboxCoverage || 0) * 100) }}%
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="当前说明" min-width="250">
+                        <template #default="{ row }">
+                          {{
+                            row.ocrReadiness?.blockingReasons?.[0]?.message ||
+                            (row.ocrReadiness?.status === 'ready'
+                              ? '抽取产物及证据定位已就绪。'
+                              : '等待 OCR 任务产物。')
+                          }}
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="操作" width="96" fixed="right">
+                        <template #default="{ row }">
+                          <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
+                            查看
+                          </ElButton>
                         </template>
                       </ElTableColumn>
                     </ElTable>
-                  </div>
-
-                  <div class="block-title-row inspection-bound-files-title">
-                    <h3>当前节点已挂载资料</h3>
-                    <AuditStatusTag tone="blue" round>
-                      {{ nodeScopedFiles.length }} 份
-                    </AuditStatusTag>
-                  </div>
-                  <ElTable :data="nodeScopedFiles" border class="inspection-bound-files-table">
-                    <ElTableColumn
-                      prop="fileName"
-                      label="文件"
-                      min-width="220"
-                      show-overflow-tooltip
-                    >
-                      <template #default="{ row }">
-                        <span class="file-name-with-icon">
-                          <FileTypeIcon
-                            :file-name="row.fileName"
-                            :file-type="row.fileType"
-                            :category="row.materialCategory"
-                          />
-                          <span>{{ row.fileName }}</span>
-                        </span>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn
-                      prop="sourceOrgName"
-                      label="来源"
-                      min-width="150"
-                      show-overflow-tooltip
+                    <ElEmpty
+                      v-if="!nodeScopedFiles.length"
+                      class="inspection-audit-empty"
+                      :image-size="72"
+                      description="当前节点暂无挂载文档；这不会阻止查看或办理其他审计项。"
                     />
-                    <ElTableColumn prop="currentOcrStatus" label="OCR" width="110" />
-                    <ElTableColumn label="状态" width="110">
-                      <template #default="{ row }">
-                        <AuditStatusTag
-                          :tone="getPillClass(row.primaryBinding?.bindingStatus || row.fileStatus)"
-                          round
-                        >
-                          {{ row.primaryBinding?.bindingStatus || row.fileStatus }}
-                        </AuditStatusTag>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn label="操作" width="96" fixed="right">
-                      <template #default="{ row }">
-                        <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
-                          查看
-                        </ElButton>
-                      </template>
-                    </ElTableColumn>
-                  </ElTable>
-                </article>
-
-                <article
-                  v-if="activeInspectionAuditItem === 'evidence'"
-                  id="inspection-node-evidence"
-                  class="basis-table-block evidence-confirmation-block"
-                >
-                  <div class="block-title-row">
-                    <h3>证据确认</h3>
-                    <AuditStatusTag tone="blue" round>
-                      {{ evidenceConfirmationRows.length }} 条
-                    </AuditStatusTag>
                   </div>
-                  <ElTable
-                    class="evidence-confirmation-table"
-                    :data="evidenceConfirmationRows"
-                    border
-                  >
-                    <ElTableColumn prop="materialType" label="资料类别" min-width="150" />
-                    <ElTableColumn label="状态" width="118">
-                      <template #default="{ row }">
-                        <AuditStatusTag :tone="getPillClass(row.status)" round>
-                          {{ row.status }}
-                        </AuditStatusTag>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn prop="fileName" label="候选文件" min-width="190">
-                      <template #default="{ row }">
-                        <span class="file-name-with-icon">
-                          <FileTypeIcon :file-name="row.fileName" :category="row.materialType" />
-                          <span>{{ row.fileName }}</span>
-                        </span>
-                      </template>
-                    </ElTableColumn>
-                    <ElTableColumn
-                      prop="evidenceText"
-                      label="命中证据"
-                      min-width="220"
-                      show-overflow-tooltip
-                    />
-                    <ElTableColumn prop="confidenceText" label="置信度" width="90" />
-                    <ElTableColumn label="操作" width="230" fixed="right">
-                      <template #default="{ row }">
-                        <div v-if="row.evidence" class="evidence-confirmation-actions">
-                          <ElButton text type="primary" @click="handleLocateEvidence(row.evidence)">
-                            查看原文
-                          </ElButton>
-                          <ElButton
-                            text
-                            type="success"
-                            :disabled="row.evidence.manualStatus === 'confirmed' || actionLoading"
-                            @click="handleConfirmEvidence(row.evidence)"
-                          >
-                            确认
-                          </ElButton>
-                          <ElButton
-                            text
-                            type="warning"
-                            :disabled="row.evidence.manualStatus === 'rejected' || actionLoading"
-                            @click="handleRejectEvidence(row.evidence)"
-                          >
-                            不采用
-                          </ElButton>
-                        </div>
-                        <span v-else class="empty-inline">-</span>
-                      </template>
-                    </ElTableColumn>
-                  </ElTable>
-                </article>
+                </section>
 
-                <article
-                  v-if="activeInspectionAuditItem === 'evidence'"
-                  class="standard-reference-block"
+                <section
+                  v-if="
+                    role === 'inspection' &&
+                    activeWorkbenchSection === 'node' &&
+                    !inspectionNodeUnselected &&
+                    ['submission', 'evidence'].includes(activeInspectionAuditItem)
+                  "
+                  :id="`inspection-audit-panel-${activeInspectionAuditItem}`"
+                  role="tabpanel"
+                  :aria-label="activeInspectionAuditItemData?.label"
+                  class="card"
                 >
-                  <div class="block-title-row">
-                    <h3>引用标准文件</h3>
-                    <AuditStatusTag tone="blue" round>
-                      {{ nodeReferencedStandards.length }} 项
-                    </AuditStatusTag>
+                  <div class="card-head">
+                    <h2>监检依据 · {{ activeInspectionAuditItemData?.label }}</h2>
+                    <div class="sub">{{ businessBasis?.ruleName || selectedNode?.name }}</div>
                   </div>
-                  <div v-if="standardReferenceTree.length" class="standard-reference-tree-shell">
-                    <ElTreeV2
-                      class="standard-reference-tree"
-                      :data="standardReferenceTree"
-                      :props="standardTreeProps"
-                      :height="standardReferenceTreeHeight"
-                      :item-size="52"
-                      :default-expanded-keys="standardTreeDefaultExpandedKeys"
-                      node-key="id"
-                      highlight-current
-                      scrollbar-always-on
-                      aria-label="引用标准文件树"
-                      @node-click="handleStandardTreeNodeClick"
-                    >
-                      <template #default="{ data }">
-                        <div
-                          class="standard-tree-node"
-                          :class="`is-${data.kind}`"
-                          :title="data.sourceRelativePath || data.fileName || data.label"
-                        >
-                          <component
-                            :is="data.kind === 'file' ? Document : FolderOpened"
-                            class="standard-tree-icon"
-                            aria-hidden="true"
-                          />
-                          <div class="standard-tree-copy">
-                            <strong>{{ data.label }}</strong>
-                            <small v-if="data.kind === 'file'">{{ data.fileName }}</small>
+                  <div class="card-body">
+                    <div class="basis-meta-grid">
+                      <div
+                        v-for="item in nodeBasisMetaRows"
+                        :key="item.label"
+                        class="basis-meta-item"
+                      >
+                        <span>{{ item.label }}</span>
+                        <strong>{{ item.value }}</strong>
+                      </div>
+                    </div>
+
+                    <div class="basis-block-grid">
+                      <article class="basis-block basis-block--criteria">
+                        <div class="basis-block-heading">
+                          <ElIcon class="basis-block-icon"><DocumentChecked /></ElIcon>
+                          <div>
+                            <span class="basis-block-kicker">判定依据</span>
+                            <h3>监检判断准则</h3>
                           </div>
-                          <span
-                            v-if="data.kind === 'file'"
-                            class="standard-tree-preview-state"
-                            :class="{ 'is-unavailable': !data.previewAvailable }"
+                        </div>
+                        <ol class="basis-reference-list">
+                          <li v-for="(item, index) in basisCriteriaReferences" :key="item">
+                            <span class="basis-reference-index">
+                              {{ String(index + 1).padStart(2, '0') }}
+                            </span>
+                            <p>{{ item }}</p>
+                          </li>
+                        </ol>
+                        <div v-if="basisCriteriaDecisionNote" class="basis-decision-note">
+                          <ElIcon><Guide /></ElIcon>
+                          <div>
+                            <strong>冲突适用规则</strong>
+                            <span>{{ basisCriteriaDecisionNote }}</span>
+                          </div>
+                        </div>
+                      </article>
+                      <article class="basis-block basis-block--method">
+                        <div class="basis-block-heading">
+                          <ElIcon class="basis-block-icon"><Guide /></ElIcon>
+                          <div>
+                            <span class="basis-block-kicker">执行路径</span>
+                            <h3>核查方法与工作见证</h3>
+                          </div>
+                        </div>
+                        <div class="basis-method-list">
+                          <div
+                            v-for="(item, index) in basisCheckSteps"
+                            :key="item.text"
+                            class="basis-method-item"
                           >
-                            <View aria-hidden="true" />
-                            {{ data.previewAvailable ? '预览' : '未关联' }}
+                            <span class="basis-method-step">{{ index + 1 }}</span>
+                            <div>
+                              <small>{{ item.label }}</small>
+                              <p>{{ item.text }}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div v-if="basisAgentSteps.length" class="basis-agent-note">
+                          <div class="basis-agent-note__head">
+                            <ElIcon><MagicStick /></ElIcon>
+                            <strong>Agent 核查思路</strong>
+                            <span>辅助说明</span>
+                          </div>
+                          <ul>
+                            <li v-for="item in basisAgentSteps" :key="item">{{ item }}</li>
+                          </ul>
+                        </div>
+                      </article>
+                    </div>
+
+                    <article
+                      v-if="activeInspectionAuditItem === 'submission'"
+                      id="inspection-node-requirements"
+                      class="basis-table-block"
+                    >
+                      <div class="block-title-row">
+                        <h3>审查所需资料</h3>
+                        <AuditStatusTag tone="blue" round>
+                          {{ nodeRequirementRows.length }} 项
+                        </AuditStatusTag>
+                      </div>
+                      <div class="basis-table-wrap">
+                        <ElTable
+                          class="basis-table"
+                          :data="nodeRequirementRows"
+                          row-key="id"
+                          empty-text="暂无资料要求明细"
+                        >
+                          <ElTableColumn prop="rowNo" label="序号" width="72" align="center" />
+                          <ElTableColumn label="资料名称" min-width="220">
+                            <template #default="{ row }">
+                              <strong>{{ row.name }}</strong>
+                              <small class="basis-table-secondary">{{ row.applicability }}</small>
+                            </template>
+                          </ElTableColumn>
+                          <ElTableColumn
+                            prop="materialType"
+                            label="资料类别"
+                            min-width="140"
+                            show-overflow-tooltip
+                          />
+                          <ElTableColumn prop="responsibleParty" label="责任方" width="112" />
+                          <ElTableColumn prop="requiredType" label="要求" width="112" />
+                          <ElTableColumn label="当前匹配" min-width="190">
+                            <template #default="{ row }">
+                              <AuditStatusTag :tone="getPillClass(row.status)" round>
+                                {{ row.status }}
+                              </AuditStatusTag>
+                              <small
+                                v-if="row.matchedFileNames.length"
+                                class="basis-table-secondary"
+                              >
+                                {{ row.matchedFileNames.slice(0, 2).join('、') }}
+                              </small>
+                            </template>
+                          </ElTableColumn>
+                        </ElTable>
+                      </div>
+
+                      <div class="block-title-row inspection-bound-files-title">
+                        <h3>当前节点已挂载资料</h3>
+                        <AuditStatusTag tone="blue" round>
+                          {{ nodeScopedFiles.length }} 份
+                        </AuditStatusTag>
+                      </div>
+                      <ElTable :data="nodeScopedFiles" border class="inspection-bound-files-table">
+                        <ElTableColumn
+                          prop="fileName"
+                          label="文件"
+                          min-width="220"
+                          show-overflow-tooltip
+                        >
+                          <template #default="{ row }">
+                            <span class="file-name-with-icon">
+                              <FileTypeIcon
+                                :file-name="row.fileName"
+                                :file-type="row.fileType"
+                                :category="row.materialCategory"
+                              />
+                              <span>{{ row.fileName }}</span>
+                            </span>
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn
+                          prop="sourceOrgName"
+                          label="来源"
+                          min-width="150"
+                          show-overflow-tooltip
+                        />
+                        <ElTableColumn prop="currentOcrStatus" label="OCR" width="110" />
+                        <ElTableColumn label="状态" width="110">
+                          <template #default="{ row }">
+                            <AuditStatusTag
+                              :tone="
+                                getPillClass(row.primaryBinding?.bindingStatus || row.fileStatus)
+                              "
+                              round
+                            >
+                              {{ row.primaryBinding?.bindingStatus || row.fileStatus }}
+                            </AuditStatusTag>
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn label="操作" width="96" fixed="right">
+                          <template #default="{ row }">
+                            <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
+                              查看
+                            </ElButton>
+                          </template>
+                        </ElTableColumn>
+                      </ElTable>
+                    </article>
+
+                    <article
+                      v-if="activeInspectionAuditItem === 'evidence'"
+                      id="inspection-node-evidence"
+                      class="basis-table-block evidence-confirmation-block"
+                    >
+                      <div class="block-title-row">
+                        <h3>证据确认</h3>
+                        <AuditStatusTag tone="blue" round>
+                          {{ evidenceConfirmationRows.length }} 条
+                        </AuditStatusTag>
+                      </div>
+                      <ElTable
+                        class="evidence-confirmation-table"
+                        :data="evidenceConfirmationRows"
+                        border
+                      >
+                        <ElTableColumn prop="materialType" label="资料类别" min-width="150" />
+                        <ElTableColumn label="状态" width="118">
+                          <template #default="{ row }">
+                            <AuditStatusTag :tone="getPillClass(row.status)" round>
+                              {{ row.status }}
+                            </AuditStatusTag>
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn prop="fileName" label="候选文件" min-width="190">
+                          <template #default="{ row }">
+                            <span class="file-name-with-icon">
+                              <FileTypeIcon
+                                :file-name="row.fileName"
+                                :category="row.materialType"
+                              />
+                              <span>{{ row.fileName }}</span>
+                            </span>
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn
+                          prop="evidenceText"
+                          label="命中证据"
+                          min-width="220"
+                          show-overflow-tooltip
+                        />
+                        <ElTableColumn prop="confidenceText" label="置信度" width="90" />
+                        <ElTableColumn label="操作" width="230" fixed="right">
+                          <template #default="{ row }">
+                            <div v-if="row.evidence" class="evidence-confirmation-actions">
+                              <ElButton
+                                text
+                                type="primary"
+                                @click="handleLocateEvidence(row.evidence)"
+                              >
+                                查看原文
+                              </ElButton>
+                              <ElButton
+                                text
+                                type="success"
+                                :disabled="
+                                  row.evidence.manualStatus === 'confirmed' || actionLoading
+                                "
+                                @click="handleConfirmEvidence(row.evidence)"
+                              >
+                                确认
+                              </ElButton>
+                              <ElButton
+                                text
+                                type="warning"
+                                :disabled="
+                                  row.evidence.manualStatus === 'rejected' || actionLoading
+                                "
+                                @click="handleRejectEvidence(row.evidence)"
+                              >
+                                不采用
+                              </ElButton>
+                            </div>
+                            <span v-else class="empty-inline">-</span>
+                          </template>
+                        </ElTableColumn>
+                      </ElTable>
+                    </article>
+
+                    <article
+                      v-if="activeInspectionAuditItem === 'evidence'"
+                      class="standard-reference-block"
+                    >
+                      <div class="block-title-row">
+                        <h3>引用标准文件</h3>
+                        <AuditStatusTag tone="blue" round>
+                          {{ nodeReferencedStandards.length }} 项
+                        </AuditStatusTag>
+                      </div>
+                      <div
+                        v-if="standardReferenceTree.length"
+                        class="standard-reference-tree-shell"
+                      >
+                        <ElTreeV2
+                          class="standard-reference-tree"
+                          :data="standardReferenceTree"
+                          :props="standardTreeProps"
+                          :height="standardReferenceTreeHeight"
+                          :item-size="52"
+                          :default-expanded-keys="standardTreeDefaultExpandedKeys"
+                          node-key="id"
+                          highlight-current
+                          scrollbar-always-on
+                          aria-label="引用标准文件树"
+                          @node-click="handleStandardTreeNodeClick"
+                        >
+                          <template #default="{ data }">
+                            <div
+                              class="standard-tree-node"
+                              :class="`is-${data.kind}`"
+                              :title="data.sourceRelativePath || data.fileName || data.label"
+                            >
+                              <component
+                                :is="data.kind === 'file' ? Document : FolderOpened"
+                                class="standard-tree-icon"
+                                aria-hidden="true"
+                              />
+                              <div class="standard-tree-copy">
+                                <strong>{{ data.label }}</strong>
+                                <small v-if="data.kind === 'file'">{{ data.fileName }}</small>
+                              </div>
+                              <span
+                                v-if="data.kind === 'file'"
+                                class="standard-tree-preview-state"
+                                :class="{ 'is-unavailable': !data.previewAvailable }"
+                              >
+                                <View aria-hidden="true" />
+                                {{ data.previewAvailable ? '预览' : '未关联' }}
+                              </span>
+                            </div>
+                          </template>
+                        </ElTreeV2>
+                      </div>
+                      <span v-else class="empty-inline">暂无引用标准文件</span>
+                    </article>
+                  </div>
+                </section>
+
+                <section
+                  v-if="
+                    legacyInspectionAuditPanelsVisible &&
+                    role === 'inspection' &&
+                    activeWorkbenchSection === 'node' &&
+                    !inspectionNodeUnselected &&
+                    activeInspectionAuditItem === 'ai_review'
+                  "
+                  id="inspection-node-execution"
+                  class="card node-package-card"
+                >
+                  <div class="card-head">
+                    <h2>二、AI 审查执行过程</h2>
+                    <div class="sub">LangGraph 编排执行步骤与操作反馈</div>
+                  </div>
+                  <div class="card-body">
+                    <!-- 结论与缺项置顶：这是监检打开这一页真正要看的东西 -->
+                    <div v-if="aiOutcomeHighlights" class="ai-outcome">
+                      <div class="ai-outcome-head">
+                        <span class="ai-outcome-label">AI 建议结论</span>
+                        <strong class="ai-outcome-result">{{ aiOutcomeHighlights.result }}</strong>
+                        <span
+                          v-if="aiOutcomeHighlights.confidence !== undefined"
+                          class="ai-outcome-conf"
+                        >
+                          置信度 {{ Math.round((aiOutcomeHighlights.confidence || 0) * 100) }}%
+                        </span>
+                      </div>
+                      <div
+                        v-if="aiOutcomeHighlights.manualConfirmItems.length"
+                        class="ai-outcome-block"
+                      >
+                        <span class="ai-outcome-block-label">需人工确认</span>
+                        <div class="ai-outcome-chips">
+                          <span
+                            v-for="item in aiOutcomeHighlights.manualConfirmItems"
+                            :key="item"
+                            class="ai-outcome-chip"
+                          >
+                            {{ item }}
                           </span>
                         </div>
-                      </template>
-                    </ElTreeV2>
-                  </div>
-                  <span v-else class="empty-inline">暂无引用标准文件</span>
-                </article>
-              </div>
-            </section>
+                      </div>
+                      <div v-if="aiOutcomeHighlights.rectification" class="ai-outcome-block">
+                        <span class="ai-outcome-block-label">结论说明</span>
+                        <p class="ai-outcome-text">{{ aiOutcomeHighlights.rectification }}</p>
+                      </div>
+                    </div>
 
-            <section
-              v-if="
-                legacyInspectionAuditPanelsVisible &&
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected &&
-                activeInspectionAuditItem === 'ai_review'
-              "
-              id="inspection-node-execution"
-              class="card node-package-card"
-            >
-              <div class="card-head">
-                <h2>二、AI 审查执行过程</h2>
-                <div class="sub">LangGraph 编排执行步骤与操作反馈</div>
-              </div>
-              <div class="card-body">
-                <!-- 结论与缺项置顶：这是监检打开这一页真正要看的东西 -->
-                <div v-if="aiOutcomeHighlights" class="ai-outcome">
-                  <div class="ai-outcome-head">
-                    <span class="ai-outcome-label">AI 建议结论</span>
-                    <strong class="ai-outcome-result">{{ aiOutcomeHighlights.result }}</strong>
-                    <span
-                      v-if="aiOutcomeHighlights.confidence !== undefined"
-                      class="ai-outcome-conf"
+                    <AiReviewRunAlerts
+                      :evidence-budget="aiEvidenceBudget"
+                      :failure="aiRunFailure"
+                      :failure-kind-label="aiFailureKindLabel"
+                      @retry="handleAiRecheck"
+                    />
+
+                    <!-- 过程默认折叠，与 AI 复核 B 版工作台的交互对齐 -->
+                    <button
+                      type="button"
+                      class="execution-toggle"
+                      :aria-expanded="aiExecutionExpanded"
+                      aria-controls="ai-execution-timeline"
+                      @click="aiExecutionExpanded = !aiExecutionExpanded"
                     >
-                      置信度 {{ Math.round((aiOutcomeHighlights.confidence || 0) * 100) }}%
-                    </span>
-                  </div>
-                  <div
-                    v-if="aiOutcomeHighlights.manualConfirmItems.length"
-                    class="ai-outcome-block"
-                  >
-                    <span class="ai-outcome-block-label">需人工确认</span>
-                    <div class="ai-outcome-chips">
-                      <span
-                        v-for="item in aiOutcomeHighlights.manualConfirmItems"
-                        :key="item"
-                        class="ai-outcome-chip"
-                      >
-                        {{ item }}
+                      <span class="execution-toggle-copy">
+                        <strong>执行过程</strong>
+                        <small>{{ aiExecutionSummary }}</small>
                       </span>
+                      <span
+                        :class="['execution-toggle-chevron', { 'is-open': aiExecutionExpanded }]"
+                        >⌄</span
+                      >
+                    </button>
+
+                    <div
+                      v-show="aiExecutionExpanded"
+                      id="ai-execution-timeline"
+                      class="execution-timeline"
+                    >
+                      <article
+                        v-for="(step, index) in aiExecutionSteps"
+                        :key="step.title"
+                        class="execution-step"
+                      >
+                        <div class="step-no">{{ index + 1 }}</div>
+                        <div class="execution-step-main">
+                          <div class="execution-step-head">
+                            <h3>{{ step.title }}</h3>
+                            <AuditStatusTag :tone="getPillClass(step.status)" round>
+                              {{ step.status }}
+                            </AuditStatusTag>
+                          </div>
+                          <dl class="execution-step-detail">
+                            <div>
+                              <dt>输入</dt>
+                              <dd>{{ step.input }}</dd>
+                            </div>
+                            <div>
+                              <dt>反馈</dt>
+                              <dd>{{ step.feedback }}</dd>
+                            </div>
+                          </dl>
+                          <div class="evidence-row">
+                            <ElTooltip
+                              v-for="tool in step.tools"
+                              :key="tool"
+                              :content="toolTooltip(tool)"
+                              placement="top"
+                            >
+                              <span class="execution-tool-tag">{{ toolLabel(tool) }}</span>
+                            </ElTooltip>
+                            <button
+                              v-for="evidence in step.evidenceLinks"
+                              :key="evidence.id"
+                              class="evidence-link-button"
+                              type="button"
+                              @click="handleLocateEvidence(evidence)"
+                            >
+                              {{ evidenceLabel(evidence) }}
+                            </button>
+                          </div>
+                        </div>
+                      </article>
                     </div>
                   </div>
-                  <div v-if="aiOutcomeHighlights.rectification" class="ai-outcome-block">
-                    <span class="ai-outcome-block-label">结论说明</span>
-                    <p class="ai-outcome-text">{{ aiOutcomeHighlights.rectification }}</p>
+                </section>
+              </div>
+
+              <!-- 结论固定在右栏：拉到哪都看得到能不能判、为什么、按哪个按钮（窄屏时排到最后） -->
+              <aside
+                v-if="inspectionNodeReviewVisible"
+                id="inspection-audit-panel-human_review"
+                role="tabpanel"
+                aria-label="人工结论"
+                class="workbench-human-review-section node-review-aside"
+              >
+                <div id="inspection-node-manual-review" class="manual-review-section">
+                  <div class="manual-review-grid">
+                    <ElAlert
+                      v-if="actionBlocker"
+                      class="operation-blocker-alert"
+                      type="warning"
+                      :title="actionBlocker.title"
+                      :description="actionBlocker.message"
+                      :closable="true"
+                      show-icon
+                      @close="actionBlocker = undefined"
+                    >
+                      <ul v-if="actionBlocker.reasons.length" class="operation-blocker-list">
+                        <li v-for="reason in actionBlocker.reasons" :key="reason">{{ reason }}</li>
+                      </ul>
+                    </ElAlert>
+                    <ReviewDecisionPanel
+                      :show-ai-suggestion="false"
+                      v-model:review-result="reviewResult"
+                      v-model:review-opinion="reviewOpinion"
+                      v-model:correction-reason="correctionReason"
+                      v-model:selected-evidence-ids="selectedReviewEvidenceIds"
+                      :role="role"
+                      :actions="availableActions"
+                      :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
+                      :evidence-count="evidenceLinks.length"
+                      :confirmed-evidence-links="confirmedEvidenceLinks"
+                      :save-disabled-reason="reviewSaveDisabledReason"
+                      :blocking-reasons="readinessBlockingReasons"
+                      :satisfied-blocked="!readyForAiFormal"
+                      :requires-evidence-selection="draftRequiresEvidenceSelection"
+                      :loading="actionLoading"
+                      @save-review="handleSaveReviewOpinion"
+                      @return-correction="handleReturnCorrection"
+                      @save-and-return="handleSaveAndReturnCorrection"
+                      @adopt-ai="handleAdoptAiSuggestion"
+                      @reject-ai="handleRejectAiSuggestion"
+                    />
                   </div>
                 </div>
-
-                <AiReviewRunAlerts
-                  :evidence-budget="aiEvidenceBudget"
-                  :failure="aiRunFailure"
-                  :failure-kind-label="aiFailureKindLabel"
-                  @retry="handleAiRecheck"
-                />
-
-                <!-- 过程默认折叠，与 AI 复核 B 版工作台的交互对齐 -->
-                <button
-                  type="button"
-                  class="execution-toggle"
-                  :aria-expanded="aiExecutionExpanded"
-                  aria-controls="ai-execution-timeline"
-                  @click="aiExecutionExpanded = !aiExecutionExpanded"
-                >
-                  <span class="execution-toggle-copy">
-                    <strong>执行过程</strong>
-                    <small>{{ aiExecutionSummary }}</small>
-                  </span>
-                  <span :class="['execution-toggle-chevron', { 'is-open': aiExecutionExpanded }]"
-                    >⌄</span
-                  >
-                </button>
-
-                <div
-                  v-show="aiExecutionExpanded"
-                  id="ai-execution-timeline"
-                  class="execution-timeline"
-                >
-                  <article
-                    v-for="(step, index) in aiExecutionSteps"
-                    :key="step.title"
-                    class="execution-step"
-                  >
-                    <div class="step-no">{{ index + 1 }}</div>
-                    <div class="execution-step-main">
-                      <div class="execution-step-head">
-                        <h3>{{ step.title }}</h3>
-                        <AuditStatusTag :tone="getPillClass(step.status)" round>
-                          {{ step.status }}
-                        </AuditStatusTag>
-                      </div>
-                      <dl class="execution-step-detail">
-                        <div>
-                          <dt>输入</dt>
-                          <dd>{{ step.input }}</dd>
-                        </div>
-                        <div>
-                          <dt>反馈</dt>
-                          <dd>{{ step.feedback }}</dd>
-                        </div>
-                      </dl>
-                      <div class="evidence-row">
-                        <ElTooltip
-                          v-for="tool in step.tools"
-                          :key="tool"
-                          :content="toolTooltip(tool)"
-                          placement="top"
-                        >
-                          <span class="execution-tool-tag">{{ toolLabel(tool) }}</span>
-                        </ElTooltip>
-                        <button
-                          v-for="evidence in step.evidenceLinks"
-                          :key="evidence.id"
-                          class="evidence-link-button"
-                          type="button"
-                          @click="handleLocateEvidence(evidence)"
-                        >
-                          {{ evidenceLabel(evidence) }}
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                </div>
-              </div>
-            </section>
-
-            <section
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected
-              "
-              id="inspection-audit-panel-human_review"
-              role="tabpanel"
-              aria-label="人工结论"
-              class="workbench-human-review-section"
-            >
-              <article class="card conclusion-card">
-                <div class="card-head">
-                  <h2>二、人工审查</h2>
-                  <div class="sub">{{ workbenchHumanReviewMeta }}</div>
-                </div>
-                <div class="card-body">
-                  <div class="overall-conclusion">
-                    <span>总体意见</span>
-                    <p>{{ reviewConclusionOverall }}</p>
-                  </div>
-                </div>
-              </article>
-
-              <div id="inspection-node-manual-review" class="manual-review-section">
-                <div class="card-head manual-review-head">
-                  <h2>人工审查操作</h2>
-                  <div class="sub">人工结论、补正要求和审查意见提交</div>
-                </div>
-                <div class="manual-review-grid">
-                  <ElAlert
-                    v-if="actionBlocker"
-                    class="operation-blocker-alert"
-                    type="warning"
-                    :title="actionBlocker.title"
-                    :description="actionBlocker.message"
-                    :closable="true"
-                    show-icon
-                    @close="actionBlocker = undefined"
-                  >
-                    <ul v-if="actionBlocker.reasons.length" class="operation-blocker-list">
-                      <li v-for="reason in actionBlocker.reasons" :key="reason">{{ reason }}</li>
-                    </ul>
-                  </ElAlert>
-                  <ReviewDecisionPanel
-                    :show-ai-suggestion="false"
-                    v-model:review-result="reviewResult"
-                    v-model:review-opinion="reviewOpinion"
-                    v-model:correction-reason="correctionReason"
-                    v-model:selected-evidence-ids="selectedReviewEvidenceIds"
-                    :role="role"
-                    :actions="availableActions"
-                    :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
-                    :evidence-count="evidenceLinks.length"
-                    :confirmed-evidence-links="confirmedEvidenceLinks"
-                    :save-disabled-reason="reviewSaveDisabledReason"
-                    :blocking-reasons="readinessBlockingReasons"
-                    :requires-evidence-selection="draftRequiresEvidenceSelection"
-                    :loading="actionLoading"
-                    @save-review="handleSaveReviewOpinion"
-                    @return-correction="handleReturnCorrection"
-                    @adopt-ai="handleAdoptAiSuggestion"
-                    @reject-ai="handleRejectAiSuggestion"
-                  />
-                </div>
-              </div>
-            </section>
+              </aside>
+            </div>
 
             <NdtWorkflowPanel
               v-if="role === 'ndt'"
@@ -9100,8 +9171,7 @@ h3 {
   border-radius: 6px;
 }
 
-.basis-meta-item span,
-.overall-conclusion span {
+.basis-meta-item span {
   display: block;
   margin-bottom: 6px;
   font-size: 13px;
@@ -9127,7 +9197,6 @@ h3 {
 .basis-block,
 .basis-table-block,
 .standard-reference-block,
-.overall-conclusion,
 .conclusion-point,
 .execution-step {
   padding: 14px;
@@ -9198,7 +9267,6 @@ h3 {
   color: var(--ink);
 }
 
-.overall-conclusion p,
 .conclusion-point p {
   margin: 8px 0 0;
   font-size: 14px;
@@ -9399,8 +9467,7 @@ h3 {
 
 .block-title-row,
 .execution-step-head,
-.conclusion-point-head,
-.manual-review-head {
+.conclusion-point-head {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -9773,15 +9840,6 @@ h3 {
 
 .manual-review-section {
   margin-bottom: 12px;
-}
-
-.manual-review-head {
-  padding: 16px;
-  margin-bottom: 10px;
-  background: #fff;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  box-shadow: var(--shadow);
 }
 
 .manual-review-grid {
@@ -10203,9 +10261,81 @@ h3 {
   scroll-margin-top: 190px;
 }
 
-.workbench-human-review-section .conclusion-card,
 .workbench-human-review-section .manual-review-section {
   margin: 0;
+}
+
+/* ── 2026-11-04 节点页简化：左栏「资料 → 逐条核对」，右栏固定放结论 ───────────── */
+.page-title-badge {
+  margin-left: 12px;
+  vertical-align: 4px;
+}
+
+.inspection-review-list-region {
+  container-type: inline-size;
+}
+
+.node-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 20px;
+  align-items: start;
+}
+
+.node-review-main {
+  min-width: 0;
+}
+
+/* 右下角有悬浮的 AI 助手按钮：结论栏底部留出它的位置，提交按钮不被盖住 */
+.node-review-aside {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 176px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.node-review-aside .manual-review-section {
+  margin: 0;
+}
+
+.node-process-fold {
+  margin: 4px 0 16px;
+}
+
+.node-process-toggle {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 2px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.node-process-toggle:hover {
+  color: var(--el-color-primary, #2f6bff);
+}
+
+.node-process-fold .node-status-strip {
+  margin: 8px 0 0;
+}
+
+/* 左栏少于约 560px 时核对项的证据行会挤成两行：改单栏，结论排到最后 */
+@container (width < 900px) {
+  .node-review-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .node-review-aside {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
 }
 </style>
 

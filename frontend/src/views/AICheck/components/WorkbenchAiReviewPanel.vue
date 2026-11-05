@@ -110,12 +110,6 @@ const needActionFindings = computed(() => displayGroup('needAction'))
 const confirmFindings = computed(() => displayGroup('confirm'))
 const insufficientFindings = computed(() => displayGroup('insufficient'))
 const passedFindings = computed(() => displayGroup('passed'))
-const groupFindings = (key: 'needAction' | 'confirm' | 'passed') =>
-  key === 'needAction'
-    ? needActionFindings.value
-    : key === 'confirm'
-      ? confirmFindings.value
-      : passedFindings.value
 
 /** 只有当前面板还没形成结论卡（旧路径：自由文本解析）时，才退回平铺列表。 */
 const flatFindings = computed(() =>
@@ -123,17 +117,29 @@ const flatFindings = computed(() =>
 )
 
 const insufficientOpen = ref(false)
+const passedOpen = ref(false)
+const runLogOpen = ref(false)
 const expandedFindings = ref<Set<string>>(new Set())
 const expandedModelText = ref<Set<string>>(new Set())
 
-watch(
-  () => props.presentation.runId,
-  () => {
-    insufficientOpen.value = false
-    expandedFindings.value = new Set()
-    expandedModelText.value = new Set()
-  }
+/**
+ * 逐条核对的每一条自带 AI 的判断（2026-11-04 节点页简化）：原来先画「需处理 0 条 /
+ * 待确认 1 条」的分组头，再在卡里贴「审查发现 / 人工确认 / 证据 2」一排芯片，
+ * 一条发现要读三层标签。现在只留一个标签说 AI 怎么看、要我做什么。
+ */
+const ITEM_TAGS: Record<'needAction' | 'confirm', { label: string; tone: 'red' | 'blue' }> = {
+  needAction: { label: 'AI：有问题', tone: 'red' },
+  confirm: { label: 'AI：请你确认', tone: 'blue' }
+}
+const checkItems = computed(() => [
+  ...needActionFindings.value.map((finding) => ({ ...finding, group: 'needAction' as const })),
+  ...confirmFindings.value.map((finding) => ({ ...finding, group: 'confirm' as const }))
+])
+/** 标题旁的「N 项」只数要人动手核的：证照核验算一项，折叠起来的通过 / 证据不足不算。 */
+const checkItemCount = computed(
+  () => checkItems.value.length + (props.presentation.certificateVerification ? 1 : 0)
 )
+const runCount = computed(() => props.history.length + (props.presentation.runId.trim() ? 1 : 0))
 
 const toggle = (bucket: 'finding' | 'model', id: string) => {
   const target = bucket === 'finding' ? expandedFindings : expandedModelText
@@ -157,6 +163,11 @@ const modelCertainty = (percent?: number) => {
   if (percent >= 80) return '较高'
   if (percent >= 50) return '一般'
   return '较低'
+}
+/** 把握度不再占一个标签，悬停在 AI 判断上才说：它不是概率，也不代表证据强弱。 */
+const certaintyHint = (percent?: number) => {
+  const level = modelCertainty(percent)
+  return level ? `模型对这条结论的把握${level}（模型自评，不是概率，也不代表证据强弱）` : undefined
 }
 
 const decisionLabel = (id: string) => {
@@ -202,6 +213,28 @@ const sortedCheckOutcomes = computed(() =>
   [...props.presentation.checkOutcomes].sort(
     (left, right) => checkOutcomeRank(left) - checkOutcomeRank(right)
   )
+)
+
+/** 有不通过、要人判断、证据不足的就默认展开：全通过时只报个数。 */
+const checksNeedLook = computed(() =>
+  props.presentation.checkOutcomes.some(
+    (outcome) =>
+      !['passed', 'not_applicable'].includes(outcome.result) || checkOutcomeRank(outcome) < 0
+  )
+)
+const checksOpen = ref(checksNeedLook.value)
+
+// 逐项核查晚于运行本身到达时（同一个 runId）也要按「有没有要看的」重新决定展开
+watch(
+  () => [props.presentation.runId, props.presentation.checkOutcomes.length],
+  () => {
+    insufficientOpen.value = false
+    passedOpen.value = false
+    runLogOpen.value = false
+    checksOpen.value = checksNeedLook.value
+    expandedFindings.value = new Set()
+    expandedModelText.value = new Set()
+  }
 )
 
 /** 「共 N 项：通过 3、证据不足 2」——按上面的顺序报，通过的也报。 */
@@ -426,11 +459,17 @@ const confirmable = (fact: WorkbenchAiGroundedFact) => unscoredByFactId.value.ge
 const confirmableOutcome = (fact: WorkbenchAiGroundedFact) =>
   unscoredByFactId.value.get(fact.factId)?.outcome
 
-/** 没跑确定性核查、模型也没写符合项时显示「—」：0 会被读成「查过了，一条都没通过」。 */
-const passedCountHint = computed(() =>
-  sortedCheckOutcomes.value.length
-    ? '本次逐项核查判定为通过的项数'
-    : '本次只做了模型通读，未执行确定性核查——发起节点复核才有逐项通过/不通过'
+/** 跑完了却什么都没有可核的：说清楚是 AI 没提，还是根本没跑。 */
+const nothingToCheck = computed(
+  () =>
+    !props.presentation.running &&
+    !props.presentation.errorMessage &&
+    !props.presentation.certificateVerification &&
+    !checkItems.value.length &&
+    !passedFindings.value.length &&
+    !insufficientFindings.value.length &&
+    !sortedCheckOutcomes.value.length &&
+    !flatFindings.value.length
 )
 
 const checkOutcomeLabel = (result: string) => CHECK_OUTCOME_LABELS[result] || result || '未记录'
@@ -448,18 +487,12 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 </script>
 
 <template>
+  <!-- 2026-11-04 节点页简化：这一块只回答「要我逐条核对什么」。AI 状态在页头说一次，
+       运行编号、来源、历史收进底部「AI 运行记录」；不再有卡中卡、四格计数和重复的总述。 -->
   <section id="inspection-audit-panel-ai_review" class="card workbench-ai-review-panel">
     <div class="card-head ai-panel-head">
-      <div>
-        <h2>一、AI 审查</h2>
-        <div class="sub">本次及历史 AI 复核结果</div>
-      </div>
-      <div class="ai-run-meta">
-        <AuditStatusTag :tone="presentation.statusTone" round>
-          {{ presentation.statusLabel }}
-        </AuditStatusTag>
-        <small v-if="presentation.meta">{{ presentation.meta }}</small>
-      </div>
+      <h2>逐条核对</h2>
+      <span v-if="checkItemCount" class="ai-panel-count">{{ checkItemCount }} 项</span>
     </div>
 
     <div class="card-body ai-panel-body">
@@ -474,523 +507,230 @@ const ruleLabel = (rule: Record<string, unknown>) => {
           <p class="ai-error-message">{{ presentation.errorMessage }}</p>
         </div>
       </div>
+      <p v-else-if="presentation.running" class="ai-running-note" role="status">
+        <strong>{{ presentation.statusLabel }}</strong
+        >{{ presentation.summary }}
+      </p>
 
-      <article
+      <div
         :class="['ai-current-result', `is-${presentation.statusTone}`]"
         aria-label="本次 AI 复核结果"
       >
-        <div class="ai-current-result-head">
-          <div>
-            <span>本次复核</span>
-            <strong>{{ presentation.sourceLabel }}</strong>
-          </div>
-          <AuditStatusTag :tone="presentation.statusTone" round>
-            {{ presentation.resultLabel }}
-          </AuditStatusTag>
-        </div>
-
-        <!-- 结论卡：要不要管 / 去查哪份 / 做什么，一屏回答（P9 R1，契约 12.3） -->
-        <section
-          v-if="conclusion"
-          :class="['ai-conclusion', `is-${conclusion.tone}`]"
-          aria-label="AI 结论卡"
+        <p
+          v-if="presentation.partialCoverageLabel"
+          class="ai-partial-note"
+          title="修复与升级模型重试后仍失败的证据分片，这些证据没有被 AI 审到"
         >
-          <div class="ai-conclusion-head">
-            <AuditStatusTag :tone="conclusion.tone" round>{{ conclusion.verdict }}</AuditStatusTag>
-            <strong class="ai-conclusion-headline">{{ conclusion.headline }}</strong>
-            <span class="ai-conclusion-note">AI 建议，未经人工确认</span>
-            <span
-              v-if="presentation.partialCoverageLabel"
-              class="ai-conclusion-note is-partial"
-              title="修复与升级模型重试后仍失败的证据分片，这些证据没有被 AI 审到"
-            >
-              {{ presentation.partialCoverageLabel }}
-            </span>
-          </div>
-          <dl class="ai-conclusion-counts">
-            <div class="is-red">
-              <dt>需处理</dt>
-              <dd>{{ conclusion.counts.needAction }}</dd>
-            </div>
-            <div class="is-blue">
-              <dt>待确认</dt>
-              <dd>{{ conclusion.counts.confirm }}</dd>
-            </div>
-            <div class="is-orange">
-              <dt>证据不足</dt>
-              <dd>{{ conclusion.counts.insufficient }}</dd>
-            </div>
-            <div class="is-green">
-              <dt>通过</dt>
-              <dd :title="passedCountHint">
-                {{
-                  conclusion.counts.passed || sortedCheckOutcomes.length
-                    ? conclusion.counts.passed
-                    : '—'
-                }}
-              </dd>
-            </div>
-          </dl>
-          <ul v-if="conclusion.keyFacts.length" class="ai-conclusion-facts">
-            <li v-for="(fact, index) in conclusion.keyFacts" :key="index">
-              <span>{{ fact.text }}</span>
-              <small v-if="fact.location">{{ fact.location }}</small>
-            </li>
-          </ul>
-          <div class="ai-conclusion-action">
-            <span>建议动作</span>
-            <strong>{{ conclusion.action }}</strong>
-            <small v-if="conclusion.deterministicLabel">{{ conclusion.deterministicLabel }}</small>
-            <ElButton
-              v-if="canAct"
-              size="small"
-              text
-              bg
-              :disabled="acting"
-              class="ai-conclusion-supplement"
-              @click="emit('supplementFinding')"
-            >
-              补充 AI 未发现的问题
-            </ElButton>
-          </div>
-        </section>
+          {{ presentation.partialCoverageLabel }}：这部分证据 AI 没有审到，请自己看原件
+        </p>
 
-        <!-- 逐项核查：通过的也要看得见，否则「没报问题」和「没查」分不开 -->
-        <section v-if="conclusion" class="ai-check-outcomes" aria-label="逐项核查结果">
-          <div class="ai-check-outcomes-head">
-            <strong>逐项核查</strong>
-            <span v-if="sortedCheckOutcomes.length">共 {{ sortedCheckOutcomes.length }} 项</span>
-            <small v-if="sortedCheckOutcomes.length">
-              {{ checkOutcomeTally.map((item) => `${item.label} ${item.count}`).join('、') }}
-            </small>
-            <small v-else>
-              本次运行没有留下逐项核查记录：一键分析只让模型通读资料，不执行确定性核查。
-            </small>
-            <ElButton
-              v-if="!sortedCheckOutcomes.length && canAct"
-              size="small"
-              type="primary"
-              text
-              bg
-              :disabled="acting"
-              @click="emit('startNodeReview')"
-            >
-              发起节点复核
-            </ElButton>
-          </div>
-          <ul v-if="sortedCheckOutcomes.length">
-            <li v-for="outcome in sortedCheckOutcomes" :key="outcome.atomicCheckId">
-              <AuditStatusTag :tone="checkOutcomeTone(outcome.result)" round>
-                {{ checkOutcomeLabel(outcome.result) }}
-              </AuditStatusTag>
-              <AuditStatusTag v-if="outcome.decisionSource === 'jev'" tone="blue" round>
-                Jev 建议 · 待人工确认
-              </AuditStatusTag>
-              <AuditStatusTag
-                v-else-if="outcome.decisionSource === 'jev_unavailable'"
-                tone="orange"
-                round
-              >
-                出题／判题未完成 · 待人工核查
-              </AuditStatusTag>
-              <AuditStatusTag v-if="outcome.jevFactCheck?.suspects.length" tone="orange" round>
-                Jev 核对：抽取值可疑 · 请先核对原文
-              </AuditStatusTag>
-              <AuditStatusTag
-                v-if="outcome.jevHint && !outcome.jevHint.agreesWithRuleEngine"
-                tone="orange"
-                round
-              >
-                Jev 提示不一致 · 请先核对原文
-              </AuditStatusTag>
-              <AuditStatusTag
-                v-if="outcome.secondOpinion"
-                :tone="outcome.secondOpinion.needsHumanReview ? 'orange' : 'green'"
-                round
-              >
-                {{
-                  outcome.secondOpinion.agreesWithRuleEngine
-                    ? outcome.secondOpinion.needsHumanReview
-                      ? '第二意见把握较低，建议人工'
-                      : '第二意见一致'
-                    : '第二意见分歧，建议人工'
-                }}
-              </AuditStatusTag>
-              <span>{{ outcome.name }}</span>
-              <small>{{ outcome.atomicCheckId }}</small>
-              <small v-if="outcome.decisionSource === 'jev' && outcome.deterministicResult">
-                规则结果：{{ checkOutcomeLabel(outcome.deterministicResult) }}
-                <template v-if="outcome.jevConfidence !== undefined">
-                  · Jev 把握值 {{ Math.round(outcome.jevConfidence * 100) }}%</template
-                >
-              </small>
-              <small v-if="outcome.jevFactCheck?.suspects.length">
-                原文与抽取值不符：{{ outcome.jevFactCheck.suspects.join('；') }}
-              </small>
-              <small v-if="outcome.jevHint">
-                Jev 看法：{{ checkOutcomeLabel(outcome.jevHint.choice) }} · 把握值
-                {{ Math.round(outcome.jevHint.confidence * 100) }}%（无理由，仅作提示）
-              </small>
-              <!-- 依据与证据：通过/不通过/需人工都列，监检才能核对而不是只看一个标签 -->
-              <div
-                v-if="
-                  outcome.reason ||
-                  (outcome.jevHint?.perPerson || outcome.perPerson)?.length ||
-                  outcome.checks.length ||
-                  outcome.facts.length
-                "
-                class="ai-outcome-basis"
-              >
-                <p v-if="outcome.reason" class="ai-outcome-reason">
-                  <span>原因</span>{{ outcome.reason }}
-                </p>
-                <ul
-                  v-if="(outcome.jevHint?.perPerson || outcome.perPerson)?.length"
-                  class="ai-outcome-checks"
-                  aria-label="逐人判定"
-                >
-                  <li
-                    v-for="person in outcome.jevHint?.perPerson || outcome.perPerson"
-                    :key="person.person"
-                  >
-                    <span class="ai-check-label">{{ person.person }}</span>
-                    <small
-                      >{{ checkOutcomeLabel(person.choice) }} · Jev 把握值
-                      {{ Math.round(person.confidence * 100) }}%</small
-                    >
-                  </li>
-                </ul>
-                <ul v-if="outcome.checks.length" class="ai-outcome-checks" aria-label="判定依据">
-                  <li v-for="check in outcome.checks" :key="`${check.tool}:${check.code}`">
-                    <i
-                      :class="['ai-check-mark', check.passed ? 'is-pass' : 'is-fail']"
-                      aria-hidden="true"
-                    >
-                      {{ check.passed ? '✓' : check.missing ? '－' : '✗' }}
-                    </i>
-                    <span class="ai-check-label">{{ check.label }}</span>
-                    <small v-if="check.actual || check.expected">
-                      <template v-if="check.actual">实际 {{ check.actual }}</template>
-                      <template v-if="check.actual && check.expected"> · </template>
-                      <template v-if="check.expected">要求 {{ check.expected }}</template>
-                    </small>
-                  </li>
-                </ul>
-              </div>
-            </li>
-          </ul>
-          <!-- 事实与证据按节点列一次：同一次锚定的结果对每个原子项都一样，逐项重复就是同一组引文抄五遍 -->
-          <div v-if="nodeFacts.length" class="ai-outcome-facts-block">
-            <div class="ai-check-outcomes-head">
-              <strong>事实与证据</strong>
-              <span v-if="identifiedFacts.length">共 {{ identifiedFacts.length }} 条</span>
-              <span v-else>未识别出可核事实</span>
-              <small v-if="nodeUnscoredCount">
-                其中 {{ nodeUnscoredCount }} 条引擎未给分，核对无误后下次复核即可计分
-              </small>
-            </div>
-            <template v-for="group in factGroups" :key="group.label">
-              <div v-if="factGroups.length > 1" class="ai-fact-group-head">
-                <strong>{{ group.label }}</strong>
-                <span>{{ group.facts.length }} 条</span>
-              </div>
-              <ul class="ai-outcome-facts">
-                <li
-                  v-for="fact in group.visible"
-                  :key="fact.factId"
-                  :class="{ 'is-platform-verified': fact.platformVerified }"
-                >
-                  <div class="ai-outcome-fact-head">
-                    <span class="ai-unscored-fact-label">{{ factDisplayLabel(fact) }}</span>
-                    <!-- 标签里已经含了这个值就别再印一遍（「焊工证 李卫伍 李卫伍」） -->
-                    <span
-                      v-if="fact.value && !factDisplayLabel(fact).includes(fact.value)"
-                      class="ai-unscored-fact-value"
-                    >
-                      {{ fact.value }}
-                    </span>
-                    <small v-if="sameFactCount(fact) > 1" class="ai-fact-same-count">
-                      另有 {{ sameFactCount(fact) - 1 }} 条同样内容
-                    </small>
-                    <!-- 平台核到的那几条要一眼看出来：登记原文比 OCR 可信 -->
-                    <small
-                      v-if="fact.platformVerified"
-                      class="ai-fact-platform"
-                      title="公示平台按证件号查到并与本条一致，有效期与合格项目以登记为准"
-                    >
-                      平台已核验
-                    </small>
-                    <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
-                    <template v-if="!fact.scored && confirmable(fact)">
-                      <template
-                        v-for="field in confirmable(fact)!.fields"
-                        :key="`${field.documentVersionId}:${field.fieldName}`"
-                      >
-                        <small v-if="field.humanCorrected" class="ai-fact-confirmed">
-                          {{ field.fieldName }} 已人工确认
-                        </small>
-                        <small
-                          v-else-if="factConfirmed(fact, field.fieldName)"
-                          class="ai-fact-confirmed"
-                        >
-                          {{ field.fieldName }} 已记录，下次复核生效
-                        </small>
-                        <ElButton
-                          v-else-if="canAct"
-                          size="small"
-                          text
-                          bg
-                          :disabled="acting"
-                          :title="field.quotedText"
-                          @click="
-                            emit(
-                              'confirmFact',
-                              confirmableOutcome(fact)!,
-                              confirmable(fact)!,
-                              field
-                            )
-                          "
-                        >
-                          核对无误：{{ field.fieldName }}
-                        </ElButton>
-                      </template>
-                      <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
-                      <template
-                        v-if="!confirmable(fact)!.fields.length && confirmable(fact)!.factPath"
-                      >
-                        <small v-if="factConfirmed(fact)" class="ai-fact-confirmed">
-                          已记录，下次复核生效
-                        </small>
-                        <ElButton
-                          v-else-if="canAct"
-                          size="small"
-                          text
-                          bg
-                          :disabled="acting"
-                          @click="
-                            emit('confirmFact', confirmableOutcome(fact)!, confirmable(fact)!, null)
-                          "
-                        >
-                          核对无误
-                        </ElButton>
-                      </template>
-                    </template>
-                  </div>
-                  <ul class="ai-outcome-quotes">
-                    <li v-for="item in fact.evidence" :key="item.evidenceRefId">
-                      <q :title="item.quotedText">{{ item.quotedText }}</q>
-                      <small v-if="item.source === 'cnse_platform'">公示平台登记</small>
-                      <!-- 点文件名打开原件：核对引文得看得到原图，不能只给一行字 -->
-                      <button
-                        v-else-if="item.documentId"
-                        type="button"
-                        class="ai-quote-source"
-                        :title="`打开 ${item.fileName || '原件'}`"
-                        @click="emit('openFile', item.documentId)"
-                      >
-                        {{ item.fileName || '打开原件'
-                        }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
-                      </button>
-                      <small v-else>
-                        {{ item.fileName
-                        }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
-                      </small>
-                      <small v-if="item.humanCorrected">已人工确认</small>
-                    </li>
-                  </ul>
-                </li>
-                <li v-if="group.hidden" class="ai-fact-more">
-                  <button type="button" @click="toggleFactGroup(group.label)">
-                    还有 {{ group.hidden }} 条同类记录，展开
-                  </button>
-                </li>
-                <li v-else-if="group.facts.length > FACT_PREVIEW" class="ai-fact-more">
-                  <button type="button" @click="toggleFactGroup(group.label)">收起</button>
-                </li>
-              </ul>
-            </template>
-            <!-- 认不出业务标识的：如实说有多少条，指到原件，不逐条铺 -->
-            <p v-if="unidentifiedFacts.length" class="ai-fact-unidentified">
-              另有
-              {{ unidentifiedFacts.length }}
-              条表格记录未能识别出可核字段（编号、牌号、焊口号等）或内容重复，未逐条列出。
-              <template v-for="file in unidentifiedFiles" :key="file.documentId">
-                <button type="button" @click="emit('openFile', file.documentId)">
-                  查看 {{ file.fileName }}
-                </button>
-              </template>
-            </p>
-          </div>
-        </section>
-
-        <p class="ai-result-summary">{{ presentation.summary }}</p>
         <CertificateVerificationCard
           v-if="presentation.certificateVerification"
           :verification="presentation.certificateVerification"
         />
 
-        <!-- 四组发现：需处理 → 待确认 → 通过 → 证据不足（折叠）。通过的也列全证据，监检才核得了 -->
-        <template v-if="conclusion && presentation.findings.length">
-          <div
-            v-for="groupKey in ['needAction', 'confirm', 'passed'] as const"
-            :key="groupKey"
-            v-show="groupFindings(groupKey).length"
-            class="ai-result-findings"
+        <template v-if="conclusion">
+          <!-- 要动手的排在前面：需处理 → 待你确认，连续编号，每条自带 AI 的判断和证据 -->
+          <article
+            v-for="(finding, findingIndex) in checkItems"
+            :key="finding.id"
+            :class="['ai-finding', 'ai-check-item', `is-${finding.group}`]"
           >
-            <div class="ai-result-findings-head">
-              <AuditStatusTag :tone="GROUP_META[groupKey].tone" round>
-                {{ GROUP_META[groupKey].title }}
+            <div class="ai-finding-head">
+              <span class="ai-finding-index">{{ findingIndex + 1 }}</span>
+              <h3>{{ humanizeAiText(finding.title) || '审查发现' }}</h3>
+              <span v-if="decisionLabel(finding.id)" class="ai-finding-decision">
+                {{ decisionLabel(finding.id) }}
+              </span>
+              <AuditStatusTag
+                :tone="ITEM_TAGS[finding.group].tone"
+                round
+                :title="certaintyHint(finding.confidencePercent)"
+              >
+                {{ ITEM_TAGS[finding.group].label }}
               </AuditStatusTag>
-              <span>{{ groupFindings(groupKey).length }} 条</span>
-              <small>{{ GROUP_META[groupKey].hint }}</small>
             </div>
-            <article
-              v-for="(finding, findingIndex) in groupFindings(groupKey)"
-              :key="finding.id"
-              :class="['ai-finding', `is-${finding.severityTone}`]"
+            <div v-if="finding.policyPending" class="ai-finding-chips">
+              <span class="ai-chip is-policy">
+                口径待确认{{ finding.policyName ? `：${finding.policyName}` : '' }}
+              </span>
+            </div>
+            <p
+              :class="[
+                'ai-finding-description',
+                { 'is-clamped': finding.clampable && !expandedFindings.has(finding.id) }
+              ]"
             >
-              <div class="ai-finding-head">
-                <span class="ai-finding-index">{{ findingIndex + 1 }}</span>
-                <h3>{{ humanizeAiText(finding.title) || '审查发现' }}</h3>
-                <AuditStatusTag v-if="finding.severityTag" :tone="finding.severityTone" round>
-                  {{ finding.severityTag }}
-                </AuditStatusTag>
-                <span v-if="decisionLabel(finding.id)" class="ai-finding-decision">
-                  {{ decisionLabel(finding.id) }}
-                </span>
-                <span
-                  v-if="modelCertainty(finding.confidencePercent)"
-                  class="ai-finding-confidence"
-                  title="模型对自己这条结论的把握，不是校准过的概率，也不代表证据强弱"
-                >
-                  模型把握{{ modelCertainty(finding.confidencePercent) }}
-                </span>
-              </div>
-              <div class="ai-finding-chips">
-                <span v-if="finding.typeLabel" class="ai-chip">{{ finding.typeLabel }}</span>
-                <span v-if="finding.actionLabel" class="ai-chip is-action">
-                  {{ finding.actionLabel }}
-                </span>
-                <span v-if="finding.policyPending" class="ai-chip is-policy">
-                  口径待确认{{ finding.policyName ? `：${finding.policyName}` : '' }}
-                </span>
-                <span v-if="finding.evidenceCount" class="ai-chip">
-                  证据 {{ finding.evidenceCount }}
-                </span>
-                <span v-if="finding.ruleCount" class="ai-chip">规则 {{ finding.ruleCount }}</span>
-              </div>
-              <p
-                :class="[
-                  'ai-finding-description',
-                  { 'is-clamped': finding.clampable && !expandedFindings.has(finding.id) }
-                ]"
+              {{ humanizeAiText(finding.description) }}
+            </p>
+            <button
+              v-if="finding.clampable"
+              type="button"
+              class="ai-link-button"
+              @click="toggle('finding', finding.id)"
+            >
+              {{ expandedFindings.has(finding.id) ? '收起' : '展开全文' }}
+            </button>
+            <div v-if="finding.evidenceGroups.length" class="ai-evidence-groups">
+              <div
+                v-for="group in finding.evidenceGroups"
+                :key="group.fileId || group.fileName"
+                class="ai-evidence-group"
               >
-                {{ humanizeAiText(finding.description) }}
-              </p>
-              <button
-                v-if="finding.clampable"
-                type="button"
-                class="ai-link-button"
-                @click="toggle('finding', finding.id)"
-              >
-                {{ expandedFindings.has(finding.id) ? '收起' : '展开全文' }}
-              </button>
-              <div v-if="finding.evidenceGroups.length" class="ai-evidence-groups">
-                <div
-                  v-for="group in finding.evidenceGroups"
-                  :key="group.fileId || group.fileName"
-                  class="ai-evidence-group"
+                <ul v-if="group.quotes.length" class="ai-evidence-quotes">
+                  <li v-for="quote in group.quotes" :key="quote">{{ quote }}</li>
+                </ul>
+                <button
+                  type="button"
+                  class="ai-evidence-file"
+                  :title="`打开 ${group.fileName}`"
+                  @click="emit('openFile', group.fileId)"
                 >
-                  <button
-                    type="button"
-                    class="ai-evidence-file"
-                    @click="emit('openFile', group.fileId)"
+                  <span class="ai-evidence-file-name">{{ group.fileName }}</span>
+                  <small v-if="group.pages.length">{{ pageLabel(group.pages) }}</small>
+                  <span class="ai-evidence-open">看原件</span>
+                </button>
+              </div>
+            </div>
+            <!-- 引用依据：标准名 + 章节 + 条款号 + 原文，监检能直接对着查。
+                 标准条款和本工程资料原文分开标——混在一起会让人把施工方案当规范要求。 -->
+            <ul v-if="finding.clauseRefs.length" class="ai-clause-list" aria-label="引用依据">
+              <li v-for="clause in finding.clauseRefs" :key="clause.clauseId">
+                <div class="ai-clause-head">
+                  <em :class="`ai-clause-kind is-${clause.sourceKind}`">{{
+                    CLAUSE_KIND_LABELS[clause.sourceKind]
+                  }}</em>
+                  <strong>{{ clause.standardCode || clause.standard || '条款' }}</strong>
+                  <span v-if="clause.standardCode && clause.standard">{{ clause.standard }}</span>
+                  <span v-if="clause.section">{{ clause.section }}</span>
+                  <small v-if="clause.clauseNo">{{ clause.clauseNo }}</small>
+                  <small v-if="clause.pageNo">第 {{ clause.pageNo }} 页</small>
+                  <!-- 条款原文一显示出来监检就会照着核，引旧版比不显示更糟 -->
+                  <strong
+                    v-if="clause.superseded"
+                    class="ai-clause-superseded"
+                    :title="clause.superseded.note"
                   >
-                    <span class="ai-evidence-file-icon" aria-hidden="true">▤</span>
-                    <span class="ai-evidence-file-name">{{ group.fileName }}</span>
-                    <small v-if="group.pages.length">{{ pageLabel(group.pages) }}</small>
-                  </button>
-                  <ul v-if="group.quotes.length" class="ai-evidence-quotes">
-                    <li v-for="quote in group.quotes" :key="quote">{{ quote }}</li>
-                  </ul>
+                    已被 {{ clause.superseded.supersededBy }} 取代（{{
+                      clause.superseded.effectiveFrom
+                    }}
+                    施行）
+                  </strong>
                 </div>
-              </div>
-              <!-- 引用依据：标准名 + 章节 + 条款号 + 原文，监检能直接对着查。
-                   标准条款和本工程资料原文分开标——混在一起会让人把施工方案当规范要求。 -->
-              <ul v-if="finding.clauseRefs.length" class="ai-clause-list" aria-label="引用依据">
-                <li v-for="clause in finding.clauseRefs" :key="clause.clauseId">
-                  <div class="ai-clause-head">
-                    <em :class="`ai-clause-kind is-${clause.sourceKind}`">{{
-                      CLAUSE_KIND_LABELS[clause.sourceKind]
-                    }}</em>
-                    <strong>{{ clause.standardCode || clause.standard || '条款' }}</strong>
-                    <span v-if="clause.standardCode && clause.standard">{{ clause.standard }}</span>
-                    <span v-if="clause.section">{{ clause.section }}</span>
-                    <small v-if="clause.clauseNo">{{ clause.clauseNo }}</small>
-                    <small v-if="clause.pageNo">第 {{ clause.pageNo }} 页</small>
-                    <!-- 条款原文一显示出来监检就会照着核，引旧版比不显示更糟 -->
-                    <strong
-                      v-if="clause.superseded"
-                      class="ai-clause-superseded"
-                      :title="clause.superseded.note"
-                    >
-                      已被 {{ clause.superseded.supersededBy }} 取代（{{
-                        clause.superseded.effectiveFrom
-                      }}
-                      施行）
-                    </strong>
-                  </div>
-                  <q>{{ clause.text }}</q>
-                </li>
-              </ul>
-              <div v-if="finding.ruleRefs.length" class="ai-rule-list">
-                <span v-for="(rule, index) in finding.ruleRefs" :key="index">
-                  {{ ruleLabel(rule) }}
-                </span>
-              </div>
-              <div v-if="canAct" class="ai-finding-actions">
-                <ElButton
-                  size="small"
-                  :disabled="acting || Boolean(decisionLabel(finding.id))"
-                  @click="emit('findingDecision', finding.raw, 'accept')"
-                >
-                  采纳
-                </ElButton>
-                <ElButton
-                  size="small"
-                  :disabled="acting || Boolean(decisionLabel(finding.id))"
-                  @click="emit('findingDecision', finding.raw, 'reject')"
-                >
-                  驳回
-                </ElButton>
-                <ElButton
-                  v-if="groupKey === 'needAction'"
-                  size="small"
-                  type="warning"
-                  plain
-                  :disabled="acting"
-                  @click="emit('returnCorrection', finding.raw)"
-                >
-                  据此退回补正
-                </ElButton>
-              </div>
-            </article>
-          </div>
+                <q>{{ clause.text }}</q>
+              </li>
+            </ul>
+            <div v-if="finding.ruleRefs.length" class="ai-rule-list">
+              <span v-for="(rule, index) in finding.ruleRefs" :key="index">
+                {{ ruleLabel(rule) }}
+              </span>
+            </div>
+            <div v-if="canAct" class="ai-finding-actions">
+              <ElButton
+                v-if="finding.group === 'needAction'"
+                size="small"
+                type="warning"
+                plain
+                :disabled="acting"
+                @click="emit('returnCorrection', finding.raw)"
+              >
+                据此退回补正
+              </ElButton>
+              <ElButton
+                size="small"
+                :disabled="acting || Boolean(decisionLabel(finding.id))"
+                @click="emit('findingDecision', finding.raw, 'accept')"
+              >
+                采纳
+              </ElButton>
+              <ElButton
+                size="small"
+                :disabled="acting || Boolean(decisionLabel(finding.id))"
+                @click="emit('findingDecision', finding.raw, 'reject')"
+              >
+                驳回
+              </ElButton>
+            </div>
+          </article>
 
-          <div v-if="insufficientFindings.length" class="ai-result-findings ai-insufficient">
+          <!-- 通过的不铺开，但证据还在里面：AI 判通过也要人确认 -->
+          <div v-if="passedFindings.length" class="ai-fold">
             <button
               type="button"
-              class="ai-result-findings-head ai-insufficient-toggle"
+              class="ai-fold-toggle"
+              :aria-expanded="passedOpen"
+              @click="passedOpen = !passedOpen"
+            >
+              <AuditStatusTag tone="green" round>{{ GROUP_META.passed.title }}</AuditStatusTag>
+              <span>{{ passedFindings.length }} 条</span>
+              <small>{{ GROUP_META.passed.hint }}</small>
+              <span class="ai-fold-caret">{{ passedOpen ? '收起' : '展开' }}</span>
+            </button>
+            <template v-if="passedOpen">
+              <article
+                v-for="finding in passedFindings"
+                :key="finding.id"
+                class="ai-finding ai-check-item is-passed"
+              >
+                <div class="ai-finding-head">
+                  <h3>{{ humanizeAiText(finding.title) || '审查发现' }}</h3>
+                  <span v-if="decisionLabel(finding.id)" class="ai-finding-decision">
+                    {{ decisionLabel(finding.id) }}
+                  </span>
+                </div>
+                <p class="ai-finding-description">{{ humanizeAiText(finding.description) }}</p>
+                <div v-if="finding.evidenceGroups.length" class="ai-evidence-groups">
+                  <div
+                    v-for="group in finding.evidenceGroups"
+                    :key="group.fileId || group.fileName"
+                    class="ai-evidence-group"
+                  >
+                    <ul v-if="group.quotes.length" class="ai-evidence-quotes">
+                      <li v-for="quote in group.quotes" :key="quote">{{ quote }}</li>
+                    </ul>
+                    <button
+                      type="button"
+                      class="ai-evidence-file"
+                      :title="`打开 ${group.fileName}`"
+                      @click="emit('openFile', group.fileId)"
+                    >
+                      <span class="ai-evidence-file-name">{{ group.fileName }}</span>
+                      <small v-if="group.pages.length">{{ pageLabel(group.pages) }}</small>
+                      <span class="ai-evidence-open">看原件</span>
+                    </button>
+                  </div>
+                </div>
+                <div v-if="canAct" class="ai-finding-actions">
+                  <ElButton
+                    size="small"
+                    :disabled="acting || Boolean(decisionLabel(finding.id))"
+                    @click="emit('findingDecision', finding.raw, 'accept')"
+                  >
+                    采纳
+                  </ElButton>
+                  <ElButton
+                    size="small"
+                    :disabled="acting || Boolean(decisionLabel(finding.id))"
+                    @click="emit('findingDecision', finding.raw, 'reject')"
+                  >
+                    驳回
+                  </ElButton>
+                </div>
+              </article>
+            </template>
+          </div>
+
+          <div v-if="insufficientFindings.length" class="ai-fold ai-insufficient">
+            <button
+              type="button"
+              class="ai-fold-toggle"
               :aria-expanded="insufficientOpen"
               @click="insufficientOpen = !insufficientOpen"
             >
               <AuditStatusTag tone="gray" round>{{ GROUP_META.insufficient.title }}</AuditStatusTag>
               <span>{{ insufficientFindings.length }} 条</span>
-              <small>
-                待核对 {{ conclusion.insufficientClaims.length }} 项 ·
-                {{ GROUP_META.insufficient.hint }}
-              </small>
-              <span class="ai-insufficient-caret">{{ insufficientOpen ? '收起' : '展开' }}</span>
+              <small>AI 有结论找不到证据，已忽略</small>
+              <span class="ai-fold-caret">{{ insufficientOpen ? '收起' : '展开' }}</span>
             </button>
             <template v-if="insufficientOpen">
               <ul v-if="conclusion.insufficientClaims.length" class="ai-claim-list">
@@ -1031,7 +771,6 @@ const ruleLabel = (rule: Record<string, unknown>) => {
                     humanizeAiText(finding.modelTitle || finding.title) || '证据不足，需人工确认'
                   }}</h3>
                   <span v-if="finding.unverified" class="ai-chip is-unverified">未经证据核实</span>
-                  <span v-if="finding.typeLabel" class="ai-chip">{{ finding.typeLabel }}</span>
                 </div>
                 <p class="ai-finding-description">{{ humanizeAiText(finding.description) }}</p>
                 <template v-if="finding.modelDescription">
@@ -1050,14 +789,288 @@ const ruleLabel = (rule: Record<string, unknown>) => {
               </article>
             </template>
           </div>
+
+          <!-- 规则逐项核查：通过的也要看得见，否则「没报问题」和「没查」分不开。
+               有不通过 / 要人判断的默认展开，全通过时收起只报个数。 -->
+          <section
+            v-if="sortedCheckOutcomes.length"
+            class="ai-fold ai-check-outcomes"
+            aria-label="逐项核查结果"
+          >
+            <button
+              type="button"
+              class="ai-fold-toggle"
+              :aria-expanded="checksOpen"
+              @click="checksOpen = !checksOpen"
+            >
+              <AuditStatusTag :tone="checksNeedLook ? 'blue' : 'green'" round>
+                规则逐项核查
+              </AuditStatusTag>
+              <span>{{ sortedCheckOutcomes.length }} 项</span>
+              <small>
+                {{ checkOutcomeTally.map((item) => `${item.label} ${item.count}`).join('、') }}
+              </small>
+              <span class="ai-fold-caret">{{ checksOpen ? '收起' : '展开' }}</span>
+            </button>
+            <template v-if="checksOpen">
+              <ul>
+                <li v-for="outcome in sortedCheckOutcomes" :key="outcome.atomicCheckId">
+                  <AuditStatusTag :tone="checkOutcomeTone(outcome.result)" round>
+                    {{ checkOutcomeLabel(outcome.result) }}
+                  </AuditStatusTag>
+                  <AuditStatusTag v-if="outcome.decisionSource === 'jev'" tone="blue" round>
+                    Jev 建议 · 待人工确认
+                  </AuditStatusTag>
+                  <AuditStatusTag
+                    v-else-if="outcome.decisionSource === 'jev_unavailable'"
+                    tone="orange"
+                    round
+                  >
+                    出题／判题未完成 · 待人工核查
+                  </AuditStatusTag>
+                  <AuditStatusTag v-if="outcome.jevFactCheck?.suspects.length" tone="orange" round>
+                    Jev 核对：抽取值可疑 · 请先核对原文
+                  </AuditStatusTag>
+                  <AuditStatusTag
+                    v-if="outcome.jevHint && !outcome.jevHint.agreesWithRuleEngine"
+                    tone="orange"
+                    round
+                  >
+                    Jev 提示不一致 · 请先核对原文
+                  </AuditStatusTag>
+                  <AuditStatusTag
+                    v-if="outcome.secondOpinion"
+                    :tone="outcome.secondOpinion.needsHumanReview ? 'orange' : 'green'"
+                    round
+                  >
+                    {{
+                      outcome.secondOpinion.agreesWithRuleEngine
+                        ? outcome.secondOpinion.needsHumanReview
+                          ? '第二意见把握较低，建议人工'
+                          : '第二意见一致'
+                        : '第二意见分歧，建议人工'
+                    }}
+                  </AuditStatusTag>
+                  <span>{{ outcome.name }}</span>
+                  <small>{{ outcome.atomicCheckId }}</small>
+                  <small v-if="outcome.decisionSource === 'jev' && outcome.deterministicResult">
+                    规则结果：{{ checkOutcomeLabel(outcome.deterministicResult) }}
+                    <template v-if="outcome.jevConfidence !== undefined">
+                      · Jev 把握值 {{ Math.round(outcome.jevConfidence * 100) }}%</template
+                    >
+                  </small>
+                  <small v-if="outcome.jevFactCheck?.suspects.length">
+                    原文与抽取值不符：{{ outcome.jevFactCheck.suspects.join('；') }}
+                  </small>
+                  <small v-if="outcome.jevHint">
+                    Jev 看法：{{ checkOutcomeLabel(outcome.jevHint.choice) }} · 把握值
+                    {{ Math.round(outcome.jevHint.confidence * 100) }}%（无理由，仅作提示）
+                  </small>
+                  <!-- 依据与证据：通过/不通过/需人工都列，监检才能核对而不是只看一个标签 -->
+                  <div
+                    v-if="
+                      outcome.reason ||
+                      (outcome.jevHint?.perPerson || outcome.perPerson)?.length ||
+                      outcome.checks.length ||
+                      outcome.facts.length
+                    "
+                    class="ai-outcome-basis"
+                  >
+                    <p v-if="outcome.reason" class="ai-outcome-reason">
+                      <span>原因</span>{{ outcome.reason }}
+                    </p>
+                    <ul
+                      v-if="(outcome.jevHint?.perPerson || outcome.perPerson)?.length"
+                      class="ai-outcome-checks"
+                      aria-label="逐人判定"
+                    >
+                      <li
+                        v-for="person in outcome.jevHint?.perPerson || outcome.perPerson"
+                        :key="person.person"
+                      >
+                        <span class="ai-check-label">{{ person.person }}</span>
+                        <small
+                          >{{ checkOutcomeLabel(person.choice) }} · Jev 把握值
+                          {{ Math.round(person.confidence * 100) }}%</small
+                        >
+                      </li>
+                    </ul>
+                    <ul
+                      v-if="outcome.checks.length"
+                      class="ai-outcome-checks"
+                      aria-label="判定依据"
+                    >
+                      <li v-for="check in outcome.checks" :key="`${check.tool}:${check.code}`">
+                        <i
+                          :class="['ai-check-mark', check.passed ? 'is-pass' : 'is-fail']"
+                          aria-hidden="true"
+                        >
+                          {{ check.passed ? '✓' : check.missing ? '－' : '✗' }}
+                        </i>
+                        <span class="ai-check-label">{{ check.label }}</span>
+                        <small v-if="check.actual || check.expected">
+                          <template v-if="check.actual">实际 {{ check.actual }}</template>
+                          <template v-if="check.actual && check.expected"> · </template>
+                          <template v-if="check.expected">要求 {{ check.expected }}</template>
+                        </small>
+                      </li>
+                    </ul>
+                  </div>
+                </li>
+              </ul>
+              <!-- 事实与证据按节点列一次：同一次锚定的结果对每个原子项都一样，逐项重复就是同一组引文抄五遍 -->
+              <div v-if="nodeFacts.length" class="ai-outcome-facts-block">
+                <div class="ai-check-outcomes-head">
+                  <strong>事实与证据</strong>
+                  <span v-if="identifiedFacts.length">共 {{ identifiedFacts.length }} 条</span>
+                  <span v-else>未识别出可核事实</span>
+                  <small v-if="nodeUnscoredCount">
+                    其中 {{ nodeUnscoredCount }} 条引擎未给分，核对无误后下次复核即可计分
+                  </small>
+                </div>
+                <template v-for="group in factGroups" :key="group.label">
+                  <div v-if="factGroups.length > 1" class="ai-fact-group-head">
+                    <strong>{{ group.label }}</strong>
+                    <span>{{ group.facts.length }} 条</span>
+                  </div>
+                  <ul class="ai-outcome-facts">
+                    <li
+                      v-for="fact in group.visible"
+                      :key="fact.factId"
+                      :class="{ 'is-platform-verified': fact.platformVerified }"
+                    >
+                      <div class="ai-outcome-fact-head">
+                        <span class="ai-unscored-fact-label">{{ factDisplayLabel(fact) }}</span>
+                        <!-- 标签里已经含了这个值就别再印一遍（「焊工证 李卫伍 李卫伍」） -->
+                        <span
+                          v-if="fact.value && !factDisplayLabel(fact).includes(fact.value)"
+                          class="ai-unscored-fact-value"
+                        >
+                          {{ fact.value }}
+                        </span>
+                        <small v-if="sameFactCount(fact) > 1" class="ai-fact-same-count">
+                          另有 {{ sameFactCount(fact) - 1 }} 条同样内容
+                        </small>
+                        <!-- 平台核到的那几条要一眼看出来：登记原文比 OCR 可信 -->
+                        <small
+                          v-if="fact.platformVerified"
+                          class="ai-fact-platform"
+                          title="公示平台按证件号查到并与本条一致，有效期与合格项目以登记为准"
+                        >
+                          平台已核验
+                        </small>
+                        <small v-if="!fact.scored" class="ai-fact-unscored">引擎未给分</small>
+                        <template v-if="!fact.scored && confirmable(fact)">
+                          <template
+                            v-for="field in confirmable(fact)!.fields"
+                            :key="`${field.documentVersionId}:${field.fieldName}`"
+                          >
+                            <small v-if="field.humanCorrected" class="ai-fact-confirmed">
+                              {{ field.fieldName }} 已人工确认
+                            </small>
+                            <small
+                              v-else-if="factConfirmed(fact, field.fieldName)"
+                              class="ai-fact-confirmed"
+                            >
+                              {{ field.fieldName }} 已记录，下次复核生效
+                            </small>
+                            <ElButton
+                              v-else-if="canAct"
+                              size="small"
+                              text
+                              bg
+                              :disabled="acting"
+                              :title="field.quotedText"
+                              @click="
+                                emit(
+                                  'confirmFact',
+                                  confirmableOutcome(fact)!,
+                                  confirmable(fact)!,
+                                  field
+                                )
+                              "
+                            >
+                              核对无误：{{ field.fieldName }}
+                            </ElButton>
+                          </template>
+                          <!-- 印章一类没有抽取字段的事实：按事实路径确认，否则这一项永远出不去「需人工判断」 -->
+                          <template
+                            v-if="!confirmable(fact)!.fields.length && confirmable(fact)!.factPath"
+                          >
+                            <small v-if="factConfirmed(fact)" class="ai-fact-confirmed">
+                              已记录，下次复核生效
+                            </small>
+                            <ElButton
+                              v-else-if="canAct"
+                              size="small"
+                              text
+                              bg
+                              :disabled="acting"
+                              @click="
+                                emit(
+                                  'confirmFact',
+                                  confirmableOutcome(fact)!,
+                                  confirmable(fact)!,
+                                  null
+                                )
+                              "
+                            >
+                              核对无误
+                            </ElButton>
+                          </template>
+                        </template>
+                      </div>
+                      <ul class="ai-outcome-quotes">
+                        <li v-for="item in fact.evidence" :key="item.evidenceRefId">
+                          <q :title="item.quotedText">{{ item.quotedText }}</q>
+                          <small v-if="item.source === 'cnse_platform'">公示平台登记</small>
+                          <!-- 点文件名打开原件：核对引文得看得到原图，不能只给一行字 -->
+                          <button
+                            v-else-if="item.documentId"
+                            type="button"
+                            class="ai-quote-source"
+                            :title="`打开 ${item.fileName || '原件'}`"
+                            @click="emit('openFile', item.documentId)"
+                          >
+                            {{ item.fileName || '打开原件'
+                            }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                          </button>
+                          <small v-else>
+                            {{ item.fileName
+                            }}<template v-if="item.pageNo"> · 第 {{ item.pageNo }} 页</template>
+                          </small>
+                          <small v-if="item.humanCorrected">已人工确认</small>
+                        </li>
+                      </ul>
+                    </li>
+                    <li v-if="group.hidden" class="ai-fact-more">
+                      <button type="button" @click="toggleFactGroup(group.label)">
+                        还有 {{ group.hidden }} 条同类记录，展开
+                      </button>
+                    </li>
+                    <li v-else-if="group.facts.length > FACT_PREVIEW" class="ai-fact-more">
+                      <button type="button" @click="toggleFactGroup(group.label)">收起</button>
+                    </li>
+                  </ul>
+                </template>
+                <!-- 认不出业务标识的：如实说有多少条，指到原件，不逐条铺 -->
+                <p v-if="unidentifiedFacts.length" class="ai-fact-unidentified">
+                  另有
+                  {{ unidentifiedFacts.length }}
+                  条表格记录未能识别出可核字段（编号、牌号、焊口号等）或内容重复，未逐条列出。
+                  <template v-for="file in unidentifiedFiles" :key="file.documentId">
+                    <button type="button" @click="emit('openFile', file.documentId)">
+                      查看 {{ file.fileName }}
+                    </button>
+                  </template>
+                </p>
+              </div>
+            </template>
+          </section>
         </template>
 
         <!-- 旧路径（无结论卡）：平铺列表 -->
-        <div v-else-if="flatFindings.length" class="ai-result-findings">
-          <div class="ai-result-findings-head">
-            <span>审查发现</span>
-            <small>{{ flatFindings.length }} 条 · 均需人工确认</small>
-          </div>
+        <template v-else-if="flatFindings.length">
           <article
             v-for="(finding, findingIndex) in flatFindings"
             :key="finding.id"
@@ -1072,33 +1085,110 @@ const ruleLabel = (rule: Record<string, unknown>) => {
             </div>
             <p class="ai-finding-description">{{ humanizeAiText(finding.description) }}</p>
           </article>
-        </div>
-      </article>
+        </template>
 
-      <!-- 一次都没跑过就不占位：「历史 0 次」的空卡片只会把真正要看的人工审查往下推一屏 -->
-      <section v-if="history.length" class="ai-history" aria-label="历史 AI 复核结果">
-        <div class="ai-history-head">
-          <div>
-            <h3>历史 AI 复核结果</h3>
-            <p>按复核时间倒序排列</p>
-          </div>
-          <span>{{ history.length }} 次</span>
+        <div v-if="nothingToCheck" class="ai-empty">
+          <p>
+            {{
+              presentation.runId.trim()
+                ? 'AI 这次没有提出需要你核对的事项，请对照资料自行判断。'
+                : 'AI 还没有审过这个节点。'
+            }}
+          </p>
+          <ElButton
+            v-if="canAct && !presentation.running"
+            size="small"
+            type="primary"
+            plain
+            :disabled="acting"
+            @click="emit('startNodeReview')"
+          >
+            发起节点复核
+          </ElButton>
         </div>
-        <div v-if="history.length" class="ai-history-list ai-history-timeline">
-          <article v-for="item in history" :key="item.runId" class="ai-history-item">
-            <div class="ai-history-item-head">
-              <div>
-                <strong>{{ item.sourceLabel }}</strong>
-                <small>{{ item.meta || item.activityAt }}</small>
-              </div>
-              <AuditStatusTag :tone="item.statusTone" round>
-                {{ item.resultLabel }}
-              </AuditStatusTag>
+      </div>
+
+      <footer class="ai-panel-foot">
+        <ElButton
+          v-if="conclusion && canAct"
+          size="small"
+          text
+          :disabled="acting"
+          @click="emit('supplementFinding')"
+        >
+          补充 AI 未发现的问题
+        </ElButton>
+        <!-- 一键分析不跑确定性核查：说一句，给出口，不再单占一整段 -->
+        <span
+          v-if="conclusion && !sortedCheckOutcomes.length && canAct && !nothingToCheck"
+          class="ai-foot-offer"
+        >
+          {{
+            presentation.sourceLabel === '全工程一键分析'
+              ? '这次是一键分析，没有规则逐项核查'
+              : '这次没有留下规则逐项核查记录'
+          }}
+          <ElButton
+            size="small"
+            text
+            type="primary"
+            :disabled="acting"
+            @click="emit('startNodeReview')"
+          >
+            发起节点复核
+          </ElButton>
+        </span>
+        <button
+          v-if="runCount"
+          type="button"
+          class="ai-runlog-toggle"
+          :aria-expanded="runLogOpen"
+          @click="runLogOpen = !runLogOpen"
+        >
+          AI 运行记录（{{ runCount }} 次）
+          <span class="ai-runlog-caret" aria-hidden="true">{{ runLogOpen ? '收起' : '›' }}</span>
+        </button>
+      </footer>
+
+      <section v-if="runLogOpen" class="ai-history" aria-label="AI 运行记录">
+        <article v-if="presentation.runId.trim()" class="ai-history-item is-current">
+          <div class="ai-history-item-head">
+            <div>
+              <strong>本次 · {{ presentation.sourceLabel }}</strong>
+              <small>{{ presentation.meta || presentation.activityAt }}</small>
             </div>
-            <p>{{ item.summary }}</p>
-          </article>
-        </div>
-        <p v-else class="ai-history-empty">暂无更早的 AI 复核结果</p>
+            <AuditStatusTag :tone="presentation.statusTone" round>
+              {{ presentation.resultLabel }}
+            </AuditStatusTag>
+          </div>
+          <p>
+            {{ conclusion?.headline || presentation.summary
+            }}<template v-if="conclusion?.deterministicLabel">
+              · {{ conclusion.deterministicLabel }}</template
+            >
+          </p>
+        </article>
+        <!-- 一次都没跑过就不占位：「历史 0 次」的空卡片只会把真正要看的东西往下推 -->
+        <template v-if="history.length">
+          <div class="ai-history-head">
+            <h3>历史 AI 复核结果</h3>
+            <span>{{ history.length }} 次</span>
+          </div>
+          <div class="ai-history-list ai-history-timeline">
+            <article v-for="item in history" :key="item.runId" class="ai-history-item">
+              <div class="ai-history-item-head">
+                <div>
+                  <strong>{{ item.sourceLabel }}</strong>
+                  <small>{{ item.meta || item.activityAt }}</small>
+                </div>
+                <AuditStatusTag :tone="item.statusTone" round>
+                  {{ item.resultLabel }}
+                </AuditStatusTag>
+              </div>
+              <p>{{ item.summary }}</p>
+            </article>
+          </div>
+        </template>
       </section>
     </div>
   </section>
@@ -1113,7 +1203,6 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 }
 
 .ai-panel-head,
-.ai-current-result-head,
 .ai-history-head,
 .ai-history-item-head {
   display: flex;
@@ -1123,33 +1212,21 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 }
 
 .ai-panel-head {
-  min-height: 62px;
-  padding: 14px 20px;
-  background: linear-gradient(105deg, #f8fbff 0%, #f3f7fd 100%);
+  padding: 14px 20px 4px;
 }
 
 .ai-panel-head h2 {
   margin: 0;
-  font-size: 18px;
-  line-height: 26px;
+  font-size: 16px;
+  line-height: 24px;
   color: var(--aicheck-text-strong, #172033);
 }
 
-.ai-panel-head .sub {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--aicheck-text-muted, #52647d);
+.ai-panel-count {
+  font-size: 13px;
+  color: var(--aicheck-text-subtle, #667085);
 }
 
-.ai-run-meta {
-  display: flex;
-  max-width: 52%;
-  gap: 6px;
-  align-items: flex-end;
-  flex-direction: column;
-}
-
-.ai-run-meta small,
 .ai-history-item small,
 .ai-history-head p {
   color: var(--aicheck-text-subtle, #667085);
@@ -1169,7 +1246,6 @@ const ruleLabel = (rule: Record<string, unknown>) => {
   background: linear-gradient(100deg, #fff5f4 0%, #fffafa 100%);
   border: 1px solid #f2d2cf;
   border-radius: 10px;
-  box-shadow: inset 3px 0 0 var(--aicheck-danger, #b42318);
   grid-template-columns: 30px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
@@ -1204,239 +1280,23 @@ const ruleLabel = (rule: Record<string, unknown>) => {
   color: #8f352e;
 }
 
+/* 不再是卡中卡：核对项直接排在卡片里，状态色只留在每条的左边线和标签上 */
 .ai-current-result {
-  --ai-result-accent: var(--aicheck-primary, #1f66d8);
-
-  padding: 20px;
-  background: linear-gradient(135deg, #f7faff 0%, #fff 58%);
-  border: 1px solid #dbe6f4;
-  border-radius: 12px;
-  box-shadow: 0 6px 18px rgb(31 72 125 / 6%);
+  display: grid;
+  gap: 12px;
 }
 
-.ai-current-result.is-red {
-  --ai-result-accent: var(--aicheck-danger, #b42318);
-
-  background: linear-gradient(135deg, #fff9f8 0%, #fff 58%);
-  border-color: #ecd9d7;
+.ai-current-result:empty {
+  display: none;
 }
 
-.ai-current-result.is-orange {
-  --ai-result-accent: var(--aicheck-warning, #b45309);
-
-  background: linear-gradient(135deg, #fffaf2 0%, #fff 58%);
-  border-color: #eee0c8;
-}
-
-.ai-current-result.is-green {
-  --ai-result-accent: var(--aicheck-success, #16803c);
-
-  background: linear-gradient(135deg, #f6fcf8 0%, #fff 58%);
-  border-color: #d9eade;
-}
-
-.ai-current-result.is-gray {
-  --ai-result-accent: var(--aicheck-text-subtle, #667085);
-
-  background: linear-gradient(135deg, #f8fafc 0%, #fff 58%);
-}
-
-.ai-current-result-head > div,
 .ai-history-item-head > div {
   display: grid;
   gap: 3px;
 }
 
-.ai-current-result-head span {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--aicheck-text-subtle, #667085);
-}
-
-.ai-current-result-head strong {
-  font-size: 16px;
-  line-height: 24px;
-  color: var(--aicheck-text-strong, #172033);
-}
-
-.ai-conclusion {
-  /* 结论卡 */
-
-  --ai-conclusion-accent: #667085;
-
-  display: grid;
-  padding: 14px 16px;
-  margin-top: 14px;
-  background: #fff;
-  border: 0;
-  border-radius: 10px;
-  gap: 10px;
-}
-
-.ai-conclusion.is-red {
-  --ai-conclusion-accent: var(--aicheck-danger, #b42318);
-}
-
-.ai-conclusion.is-orange {
-  --ai-conclusion-accent: var(--aicheck-warning, #b45309);
-}
-
-.ai-conclusion.is-green {
-  --ai-conclusion-accent: var(--aicheck-success, #16803c);
-}
-
-.ai-conclusion-head {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.ai-conclusion-headline {
-  flex: 1 1 260px;
-  min-width: 0;
-  font-size: 15px;
-  line-height: 22px;
-  color: var(--aicheck-text-strong, #172033);
-  overflow-wrap: anywhere;
-}
-
-.ai-conclusion-note {
-  padding: 2px 8px;
-  font-size: 12px;
-  color: #7a4b00;
-  background: #fff5e0;
-  border: 1px solid #f3dfb0;
-  border-radius: 999px;
-}
-
-.ai-conclusion-note.is-partial {
-  color: var(--aicheck-danger, #b42318);
-  background: #fff5f4;
-  border-color: #f2d2cf;
-}
-
-/* 四格一行：原来是三列，加了「通过」之后第四格掉到下一行，读起来像两组数。 */
-.ai-conclusion-counts {
-  display: grid;
-  margin: 0;
-  gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-@media (max-width: 720px) {
-  .ai-conclusion-counts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.ai-conclusion-counts > div {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  padding: 6px 10px;
-  background: #f8fafc;
-  border-radius: 8px;
-}
-
-.ai-conclusion-counts dt {
-  font-size: 12px;
-  color: var(--aicheck-text-subtle, #667085);
-}
-
-.ai-conclusion-counts dd {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  line-height: 24px;
-}
-
-.ai-conclusion-counts > .is-red dd {
-  color: var(--aicheck-danger, #b42318);
-}
-
-.ai-conclusion-counts > .is-orange dd {
-  color: var(--aicheck-warning, #b45309);
-}
-
-.ai-conclusion-counts > .is-green dd {
-  color: #1a7f4b;
-}
-
-.ai-conclusion-counts > .is-blue dd {
-  color: #2f6bff;
-}
-
-.ai-conclusion-counts > .is-gray dd {
-  color: var(--aicheck-text-subtle, #667085);
-}
-
-.ai-conclusion-facts {
-  display: grid;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-  gap: 4px;
-}
-
-.ai-conclusion-facts li {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  flex-wrap: wrap;
-  font-size: 13px;
-  line-height: 20px;
-  color: #27364b;
-}
-
-.ai-conclusion-facts li > span {
-  flex: 1 1 240px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.ai-conclusion-facts li::before {
-  color: var(--ai-conclusion-accent);
-  content: '•';
-}
-
-.ai-conclusion-facts small {
-  color: var(--aicheck-text-subtle, #667085);
-  overflow-wrap: anywhere;
-}
-
-.ai-conclusion-action {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 13px;
-}
-
-.ai-conclusion-action > span {
-  color: var(--aicheck-text-subtle, #667085);
-}
-
-.ai-conclusion-action > strong {
-  color: var(--aicheck-text-strong, #172033);
-}
-
-.ai-conclusion-action > small {
-  color: var(--aicheck-text-subtle, #667085);
-}
-
-.ai-conclusion-supplement {
-  margin-left: auto;
-}
-
 .ai-check-outcomes {
   display: grid;
-  padding: 12px 0 0;
-  margin-top: 14px;
-  border-top: 1px solid #e6edf7;
-  gap: 8px;
 }
 
 .ai-check-outcomes-head {
@@ -1475,7 +1335,8 @@ const ruleLabel = (rule: Record<string, unknown>) => {
   color: #27364b;
 }
 
-.ai-check-outcomes li > span {
+/* 只让检查项名称占满余下宽度；状态标签也是 span，原来跟着被拉成一长条 */
+.ai-check-outcomes li > span:not(.audit-status-tag) {
   flex: 1 1 240px;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -1626,7 +1487,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 
 .ai-clause-list li {
   padding-left: 10px;
-  border-left: 3px solid #d8e3f8;
+  border-left: 1px solid #d8e3f8;
 }
 
 .ai-clause-kind {
@@ -1723,7 +1584,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 
 .ai-outcome-quotes {
   padding-left: 12px;
-  border-left: 2px solid #e6edf7;
+  border-left: 1px solid #e6edf7;
 }
 
 .ai-outcome-quotes li {
@@ -1766,58 +1627,6 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 
 .ai-unscored-fact-value {
   font-variant-numeric: tabular-nums;
-}
-
-.ai-result-summary {
-  max-width: 960px;
-  margin: 13px 0 0;
-  font-size: 14px;
-  line-height: 1.75;
-  color: #27364b;
-}
-
-.ai-result-findings {
-  /* 发现分组 */
-
-  display: grid;
-  margin-top: 16px;
-  gap: 10px;
-}
-
-.ai-result-findings-head {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding-top: 14px;
-  border-top: 1px solid #e3ebf5;
-}
-
-.ai-result-findings-head > span {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--aicheck-text-strong, #172033);
-}
-
-.ai-result-findings-head > small {
-  font-size: 12px;
-  color: var(--aicheck-text-subtle, #667085);
-}
-
-.ai-insufficient-toggle {
-  width: 100%;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  background: transparent;
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-}
-
-.ai-insufficient-caret {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--aicheck-primary, #1f66d8);
 }
 
 .ai-claim-list {
@@ -2021,11 +1830,6 @@ const ruleLabel = (rule: Record<string, unknown>) => {
   text-decoration: underline;
 }
 
-.ai-evidence-file-icon {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
 .ai-evidence-file-name {
   overflow: hidden;
   font-weight: 500;
@@ -2142,7 +1946,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
   width: 9px;
   height: 9px;
   background: #fff;
-  border: 2px solid #9db5d3;
+  border: 1px solid #9db5d3;
   border-radius: 50%;
   content: '';
 }
@@ -2167,42 +1971,212 @@ const ruleLabel = (rule: Record<string, unknown>) => {
   white-space: nowrap;
 }
 
-.ai-history-empty {
-  padding: 15px;
-  margin: 10px 0 0;
+/* ── 2026-11-04 节点页简化：逐条核对。状态用细边框＋浅底色表达（用户：不要粗色条） ── */
+.ai-check-item.is-needAction {
+  --ai-finding-accent: var(--aicheck-danger, #b42318);
+
+  background: #fff7f6;
+  border-color: #f0c8c3;
+}
+
+.ai-check-item.is-confirm {
+  --ai-finding-accent: var(--aicheck-primary, #1f66d8);
+
+  background: #f5f8ff;
+  border-color: #c9d8f3;
+}
+
+.ai-check-item.is-passed {
+  --ai-finding-accent: var(--aicheck-success, #16803c);
+
+  background: #f4fbf6;
+  border-color: #c6e4d0;
+}
+
+.ai-insufficient .ai-finding.is-gray {
+  background: #f8fafc;
+  border-color: #e1e7ef;
+}
+
+/* 浅底色上证据框改白底，才分得出层次 */
+.ai-check-item .ai-evidence-group,
+.ai-check-item .ai-evidence-quotes li {
+  background: #fff;
+}
+
+.ai-check-item .ai-finding-head h3 {
+  flex: 1 1 200px;
+}
+
+.ai-check-item .ai-evidence-group {
+  display: flex;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #f6f8fb;
+  border: 0;
+  flex-wrap: wrap;
+}
+
+.ai-check-item .ai-evidence-quotes {
+  min-width: 0;
+  margin: 0;
+  flex: 1 1 260px;
+}
+
+.ai-check-item .ai-evidence-file {
+  margin-left: auto;
+}
+
+.ai-evidence-open {
+  font-weight: 500;
+}
+
+.ai-check-item .ai-finding-actions {
+  justify-content: flex-end;
+}
+
+.ai-running-note,
+.ai-partial-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.ai-running-note {
+  padding: 10px 12px;
+  color: #1f4f9c;
+  background: #f3f7fd;
+  border-radius: 8px;
+}
+
+.ai-running-note strong {
+  margin-right: 8px;
+}
+
+.ai-partial-note {
+  color: var(--aicheck-warning, #b45309);
+}
+
+.ai-fold {
+  border: 1px solid #e3ebf5;
+  border-radius: 10px;
+}
+
+.ai-fold-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 14px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.ai-fold-toggle > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aicheck-text-strong, #172033);
+}
+
+.ai-fold-toggle > small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--aicheck-text-subtle, #667085);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-fold-toggle > .ai-fold-caret {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--aicheck-primary, #1f66d8);
+  white-space: nowrap;
+}
+
+.ai-fold > :not(.ai-fold-toggle) {
+  margin: 0 14px 12px;
+}
+
+.ai-empty {
+  display: grid;
+  padding: 18px;
+  font-size: 13px;
   color: var(--aicheck-text-subtle, #667085);
   text-align: center;
   background: #f8fafc;
   border-radius: 10px;
+  justify-items: center;
+  gap: 10px;
+}
+
+.ai-empty p {
+  margin: 0;
+}
+
+.ai-panel-foot {
+  display: flex;
+  gap: 6px 16px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--aicheck-text-subtle, #667085);
+  flex-wrap: wrap;
+}
+
+.ai-panel-foot:empty {
+  display: none;
+}
+
+.ai-foot-offer {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.ai-runlog-toggle {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 0;
+  margin-left: auto;
+  font: inherit;
+  color: var(--aicheck-text-subtle, #667085);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.ai-runlog-toggle:hover {
+  color: var(--aicheck-primary, #1f66d8);
+}
+
+.ai-history-item.is-current {
+  padding: 0 0 12px;
+}
+
+.ai-history-item.is-current::before {
+  display: none;
+}
+
+.ai-history-item.is-current + .ai-history-head {
+  margin-top: 6px;
 }
 
 @media (width <= 720px) {
   .ai-panel-head,
-  .ai-current-result-head,
   .ai-history-item-head {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .ai-run-meta {
-    max-width: 100%;
-    align-items: flex-start;
-  }
-
-  .ai-run-meta small {
-    overflow-wrap: anywhere;
-  }
-
   .ai-panel-body {
     padding: 14px;
-  }
-
-  .ai-current-result {
-    padding: 16px;
-  }
-
-  .ai-conclusion-counts {
-    grid-template-columns: 1fr;
   }
 
   .ai-history-item-head {
