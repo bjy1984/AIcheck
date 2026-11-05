@@ -10,19 +10,19 @@ roles:
     platformRole: submitter
     defaultPath: /workbench/contractor
     defaultNodeId: 16
-    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, file:withdraw, submission:draft, submission:submit, rectification:submit, todo:update, message:update, feedback:submit]
+    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, file:withdraw, submission:draft, submission:submit, rectification:submit, todo:update, message:update]
   - code: ndt
     label: 无损检测
     platformRole: specialist_submitter
     defaultPath: /workbench/ndt
     defaultNodeId: 40
-    actions: [project:view, file:view, file:preview, file:download, ndt:film-create, ndt:record-import, ndt:report-upload, ndt:submit, rectification:submit, todo:update, message:update, feedback:submit]
+    actions: [project:view, file:view, file:preview, file:download, ndt:film-create, ndt:record-import, ndt:report-upload, ndt:submit, rectification:submit, todo:update, message:update]
   - code: owner
     label: 建设方
     platformRole: observer
     defaultPath: /workbench/owner
     defaultNodeId: 24
-    actions: [project:view, file:view, file:preview, report:view, archive:view, archive:download, feedback:submit]
+    actions: [project:view, file:view, file:preview, report:view, archive:view, archive:download]
   - code: admin
     label: 系统管理员
     platformRole: admin

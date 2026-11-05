@@ -1,4 +1,6 @@
-"""意见反馈：各业务角色提给管理员，管理员看全部、回复、改状态，提交人只看得到自己的。"""
+"""意见反馈：监检和管理员提给院管理员，院管理员看全部、回复、改状态，提交人只看得到自己的。
+
+2026-11-04 用户：施工方、无损检测、建设方不需要意见反馈——界面不显示入口，服务器也不收他们提交的。"""
 from __future__ import annotations
 
 import pytest
@@ -42,17 +44,24 @@ def submit(role: str, **body):
     return client.post(SUBMIT, headers=bearer(role), json=payload)
 
 
-def test_every_business_role_can_submit_and_only_sees_its_own():
-    for role in ("inspection", "contractor", "ndt", "owner"):
+def test_inspection_and_admin_can_submit_and_only_see_their_own():
+    for role in ("inspection", "admin"):
         feedback = data_of(submit(role, context={"page": "/workbench/x", "projectId": "P-1", "nodeId": 9, "evil": "x"}))["feedback"]
         assert feedback["status"] == "open" and feedback["statusLabel"] == "待处理"
         assert feedback["categoryLabel"] == "审计不准确"
         assert feedback["submittedBy"]["role"] == role
         # 上下文只收白名单字段
         assert feedback["context"] == {"page": "/workbench/x", "projectId": "P-1", "nodeId": "9"}
-    mine = data_of(client.get(MINE, headers=bearer("contractor")))["items"]
-    assert [item["submittedBy"]["role"] for item in mine] == ["contractor"]
-    assert repo.state["user_feedback"][0]["submittedBy"]["role"] == "owner"
+    mine = data_of(client.get(MINE, headers=bearer("inspection")))["items"]
+    assert [item["submittedBy"]["role"] for item in mine] == ["inspection"]
+    assert repo.state["user_feedback"][0]["submittedBy"]["role"] == "admin"
+
+
+def test_contractor_ndt_and_owner_cannot_submit():
+    for role in ("contractor", "ndt", "owner"):
+        assert "feedback:submit" not in repo.role_actions(role), role
+        assert submit(role).json()["code"] == 403, role
+    assert repo.state["user_feedback"] == []
 
 
 def test_submission_is_validated_and_needs_login():
@@ -60,7 +69,7 @@ def test_submission_is_validated_and_needs_login():
     assert submit("inspection", content="  缺 ").json()["code"] != 0
     assert client.post(SUBMIT, json={"category": "bug", "content": "按钮点了没反应"}).json()["code"] == 401
     assert required_action_for_request("POST", SUBMIT) == "feedback:submit"
-    assert "feedback:submit" in repo.role_actions("owner")
+    assert "feedback:submit" in repo.role_actions("inspection")
 
 
 def test_same_idempotency_key_does_not_create_a_second_record():
@@ -73,7 +82,7 @@ def test_same_idempotency_key_does_not_create_a_second_record():
 
 def test_admin_lists_filters_replies_and_the_submitter_sees_the_reply():
     feedback_id = data_of(submit("inspection"))["feedback"]["id"]
-    data_of(submit("contractor", category="usability", content="资料清单太长，看不出还缺哪几份。"))
+    data_of(submit("admin", category="usability", content="资料清单太长，看不出还缺哪几份。"))
 
     # 业务角色看不了全部、也处理不了
     assert client.get(ADMIN, headers=bearer("inspection")).json()["code"] != 0
