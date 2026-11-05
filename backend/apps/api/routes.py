@@ -56,7 +56,7 @@ from apps.api.upload_session_workflow import (
 )
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
-from libs import help_center, institutes, rule_version_helpers
+from libs import help_center, institutes, notifications, rule_version_helpers
 from libs.ai_run_failure import ai_run_failure_view
 from libs.ai_run_order import sort_ai_runs_latest_first
 from libs.audit_context import (
@@ -5637,7 +5637,7 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
     # 这里原来把局部变量也叫 visible_todos，正好遮住同名的过滤函数——
     # 于是这个端点想按责任人过滤也调不到它，`todoCount` 一直是全项目口径。
     # 顶部徽标读的就是这个数。改名并接上真正的过滤。
-    scoped_todos = visible_todos(
+    scoped_todos = notifications.pending(visible_todos(
         [
             item
             for item in repo.state["todos"]
@@ -5646,12 +5646,12 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
         ],
         getattr(request.state, "auth_user", None),
         str(resolved_role or ""),
-    )
-    visible_messages = [
+    ))
+    visible_messages = notifications.visible_messages([
         item
         for item in repo.state["messages"]
         if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
-    ]
+    ], str(resolved_role or ""))
     current_node_id = repo.role_current_node_id(project, resolved_role)
     role_project = versioned_project(repo.project_for_role(project, resolved_role))
     return ok(
@@ -5665,7 +5665,7 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
             "currentNodeId": current_node_id,
             "topbar": {
                 "todoCount": len(scoped_todos),
-                "messageCount": len([item for item in visible_messages if not item.get("read")]),
+                "messageCount": notifications.unread_count(visible_messages, str(request_user_id(request) or "")),
                 "statusText": project.get("status"),
                 "projectSwitcherEnabled": True,
             },
@@ -5715,7 +5715,7 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
     # 因为徽标读 workbench/summary（5 条待处理 + 2 未读），列表读 /api/todos（1 条）。
     # F-3 那轮我给 /todos 加了按责任人过滤，**漏了这里**——于是同一批待办两个口径，
     # 用户被告知有 7 件事要办，点进去只有 3 件。
-    role_todos = visible_todos(
+    role_todos = notifications.pending(visible_todos(
         [
             item
             for item in repo.state["todos"]
@@ -5724,7 +5724,7 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
         ],
         getattr(request.state, "auth_user", None),
         str(resolved_role or ""),
-    )
+    ))
     visible_nodes = [
         item
         for item in repo.state["tree_nodes"]
@@ -5732,11 +5732,11 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
     ]
     visible_documents = visible_project_documents_for_request(request, project_id)
     visible_reports = readable_project_reports(request, project_id, scope)
-    visible_messages = [
+    visible_messages = notifications.visible_messages([
         item
         for item in repo.state["messages"]
         if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
-    ]
+    ], str(resolved_role or ""))
     correction_count = len([item for item in visible_nodes if item["status"] in {"需补正", "补正中"}])
     metrics = [
         {"key": "todo", "label": "待办", "value": len(role_todos), "tone": "orange"},
@@ -5754,7 +5754,8 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
         {
             "metrics": metrics,
             "todos": [repo.clone(item) for item in role_todos[:5]],
-            "messages": [repo.clone(item) for item in visible_messages[:5]],
+            "messages": [notifications.message_view(repo.clone(item), str(request_user_id(request) or "")) for item in visible_messages[:5]],
+            "messageUnreadCount": notifications.unread_count(visible_messages, str(request_user_id(request) or "")),
             "updatedAt": server_time(),
         },
         request,
@@ -7346,6 +7347,7 @@ def update_node_evidence_manual_status(
     if not link:
         return fail(errors.NOT_FOUND, request)
     enqueue_node_evidence_change(repo.state, tenant_id=current_tenant_id(), project_id=project_id, node_ids=[node_id], reason=f"evidence_{manual_status}")
+    notifications.evidence_decided(repo.state, project_id=project_id, node_id=node_id, link=link, status=manual_status, document=repo.find_one("documents", str(link.get("documentId") or "")))
     audit_id = repo.add_audit("确认证据" if manual_status == "confirmed" else "不采用证据", "NodeEvidenceLink", evidence_link_id)
     return ok(
         {
@@ -8507,22 +8509,11 @@ def submit_node_package(
                         "after": "已提交",
                     }
                 )
-            todo_id = f"TODO-{uuid4().hex[:8].upper()}"
-            repo.state["todos"].insert(
-                0,
-                {
-                    "id": todo_id,
-                    "title": "项目资料已提交到资料池，待监检处理",
-                    "projectId": project_id,
-                    "nodeId": None,
-                    "targetType": "submission",
-                    "targetId": submission_id,
-                    "status": "待处理",
-                    "priority": "中",
-                    "assigneeName": project_role_assignee_name(project_id, "inspection"),
-                    "actions": ["file:view", "file:bind"],
-                },
-            )
+            todo_id = notifications.open_todo(
+                repo.state, kind="pool_submission_review", project_id=project_id, title="项目资料已提交到资料池，待监检处理",
+                target_type="submission", target_id=submission_id, assignee_role="inspection",
+                assignee_name=project_role_assignee_name(project_id, "inspection"), actions=["file:view", "file:bind"],
+            )["id"]
             submission = {
                 "submissionId": submission_id,
                 "snapshotId": snapshot_id,
@@ -8608,22 +8599,11 @@ def submit_node_package(
         enqueue_node_evidence_change(repo.state, tenant_id=current_tenant_id(), project_id=project_id, node_ids=[int(b.get("nodeId") or 0) for b in submitted_bindings], reason="manual_mount_submitted")
         for node_id in node_ids:
             changed.append(repo.set_node_status(project_id, node_id, "待审查"))
-        todo_id = f"TODO-{uuid4().hex[:8].upper()}"
-        repo.state["todos"].insert(
-            0,
-            {
-                "id": todo_id,
-                "title": "节点资料已提交，待监检核验",
-                "projectId": project_id,
-                "nodeId": node_ids[0] if node_ids else None,
-                "targetType": "submission",
-                "targetId": submission_id,
-                "status": "待处理",
-                "priority": "中",
-                "assigneeName": project_role_assignee_name(project_id, "inspection"),
-                "actions": ["review:save"],
-            },
-        )
+        todo_id = notifications.open_todo(
+            repo.state, kind="submission_review", project_id=project_id, title="节点资料已提交，待监检核验",
+            node_id=node_ids[0] if node_ids else None, node_ids=list(node_ids), target_type="submission", target_id=submission_id,
+            assignee_role="inspection", assignee_name=project_role_assignee_name(project_id, "inspection"), actions=["review:save"],
+        )["id"]
         submission = {
             "submissionId": submission_id,
             "snapshotId": snapshot_id,
@@ -8860,21 +8840,14 @@ def submit_rectification(
             "rectificationId": rectification.get("id"),
         }
         link_resubmission_to_rectification(submission, rectification)
-        todo = {
-            "id": f"TODO-{uuid4().hex[:8].upper()}",
-            "title": f"节点 {node_id} 补正资料已重新提交，待复审",
-            "projectId": project_id,
-            "nodeId": node_id,
-            "targetType": "submission",
-            "targetId": submission_id,
-            "status": "待处理",
-            "priority": "高",
-            "assigneeName": project_role_assignee_name(project_id, "inspection"),
-            "actions": ["review:save"],
-        }
+        todo = notifications.open_todo(
+            repo.state, kind="resubmission_review", project_id=project_id, title=f"节点 {node_id} 补正资料已重新提交，待复审",
+            node_id=node_id, target_type="submission", target_id=submission_id, priority="高", assignee_role="inspection",
+            assignee_name=project_role_assignee_name(project_id, "inspection"), actions=["review:save"],
+        )
+        notifications.correction_resubmitted(repo.state, project_id=project_id, node_id=node_id, rectification_id=rectification.get("id"))
         submission["createdTodoIds"] = [todo["id"]]
         repo.state["submissions"].insert(0, submission)
-        repo.state["todos"].insert(0, todo)
         changed = [repo.set_node_status(project_id, node_id, "复审中")]
         return ok(
             {
@@ -13184,6 +13157,7 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             before={"aiRunId": opinion["aiRunId"], "aiSuggestedResult": ai_suggested_result},
             after={"result": result, "nextStatus": next_status, "overriddenFromAi": opinion["overriddenFromAi"]},
         )
+        notifications.node_concluded(repo.state, project_id=project_id, node_id=int(node_id), result=result, node_name=str((repo.node(project_id, node_id) or {}).get("name") or ""))
         return ok({"opinion": opinion, "nextStatus": next_status, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
@@ -13622,19 +13596,13 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             for document in returned_documents
         )
         assignee_role = "ndt" if all_returned_ndt or all_supplement_ndt else "contractor"
-        todo = {
-            "id": f"TODO-{uuid4().hex[:8].upper()}",
-            "title": f"节点 {node_id} {'补充资料' if mode == 'supplement_request' else '退回补正'}",
-            "projectId": project_id,
-            "nodeId": node_id,
-            "targetType": "rectification",
-            "targetId": rectification["id"],
-            "status": "待处理",
-            "priority": "高",
-            "assigneeName": project_role_assignee_name(project_id, assignee_role),
-            "actions": ["rectification:submit"],
-        }
-        repo.state["todos"].insert(0, todo)
+        todo = notifications.open_todo(
+            repo.state, kind="rectification", project_id=project_id, node_id=node_id, priority="高",
+            title=f"节点 {node_id} {'补充资料' if mode == 'supplement_request' else '退回补正'}",
+            target_type="rectification", target_id=rectification["id"], assignee_role=assignee_role,
+            assignee_name=project_role_assignee_name(project_id, assignee_role), actions=["rectification:submit"],
+        )
+        notifications.correction_returned(repo.state, project_id=project_id, node_id=node_id, mode=mode, reason=correction_reason)
         mutation = repo.mutation_result(
             "退回补正" if mode == "return_correction" else "发起补充资料",
             "Rectification",
@@ -13966,8 +13934,7 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
         report["versionHistory"] = []
         repo.state["reports"].insert(0, report)
         repo.touch_project(project_id, "报告生成/复核中", node_id)
-        todo = {"id": f"TODO-{uuid4().hex[:8].upper()}", "title": "报告复核", "projectId": project_id, "targetType": "report", "targetId": report["id"], "status": "待处理", "priority": "中", "assigneeName": reviewer_name, "actions": ["report:review"]}
-        repo.state["todos"].insert(0, todo)
+        todo = notifications.open_todo(repo.state, kind="report_review", project_id=project_id, title="报告复核", target_type="report", target_id=report["id"], assignee_role="inspection", assignee_name=reviewer_name, actions=["report:review"])
         return ok({"report": report, "nextStatus": "报告生成/复核中", "createdTodos": [todo]}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
@@ -14285,6 +14252,7 @@ def archive_report(
             "contentHash": export_task.get("contentHash"),
         }
         repo.state["archive_items"].insert(0, item)
+        notifications.report_archived(repo.state, project_id=project_id, report=report)
         return ok({"report": versioned_report(report), "nextStatus": "已归档"}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
@@ -15480,20 +15448,11 @@ def submit_ndt_atomic_material(
                 "after": "已提交审批",
             }
         )
-        todo = {
-            "id": f"TODO-{uuid4().hex[:8].upper()}",
-            "title": f"无损检测资料待审查：{document.get('fileName')}",
-            "projectId": project_id,
-            "nodeId": todo_node_id,
-            "nodeIds": todo_node_ids,
-            "targetType": "submission",
-            "targetId": submission_id,
-            "status": "待处理",
-            "priority": "中",
-            "assigneeName": project_role_assignee_name(project_id, "inspection"),
-            "actions": ["review:save"],
-        }
-        repo.state["todos"].insert(0, todo)
+        todo = notifications.open_todo(
+            repo.state, kind="ndt_submission_review", project_id=project_id, title=f"无损检测资料待审查：{document.get('fileName')}",
+            node_id=todo_node_id, node_ids=list(todo_node_ids), target_type="submission", target_id=submission_id,
+            assignee_role="inspection", assignee_name=project_role_assignee_name(project_id, "inspection"), actions=["review:save"],
+        )
         submission = {
             "id": submission_id,
             "submissionId": submission_id,
@@ -15617,19 +15576,11 @@ def submit_ndt(
             film["submittedAt"] = submitted_at
         changed = [repo.set_node_status(project_id, node_id, "待审查")]
         node_evidence_links = upsert_ndt_node_evidence_links(project_id, node_id, submitable_reports)
-        todo = {
-            "id": f"TODO-{uuid4().hex[:8].upper()}",
-            "title": "无损检测资料待审查",
-            "projectId": project_id,
-            "nodeId": node_id,
-            "targetType": "submission",
-            "targetId": submission_id,
-            "status": "待处理",
-            "priority": "中",
-            "assigneeName": project_role_assignee_name(project_id, "inspection"),
-            "actions": ["review:save"],
-        }
-        repo.state["todos"].insert(0, todo)
+        todo = notifications.open_todo(
+            repo.state, kind="ndt_submission_review", project_id=project_id, title="无损检测资料待审查", node_id=node_id,
+            target_type="submission", target_id=submission_id, assignee_role="inspection",
+            assignee_name=project_role_assignee_name(project_id, "inspection"), actions=["review:save"],
+        )
         related_records = [
             repo.clone(record)
             for record in repo.state["ndt_records"]
@@ -15736,6 +15687,7 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
             repo.state["ndt_feedback"].insert(0, feedback)
         rectification = {"id": feedback["id"], "projectId": project_id, "nodeId": node_id, "status": feedback["status"]}
         repo.set_node_status(project_id, node_id, "复审中")
+        notifications.ndt_correction_submitted(repo.state, project_id=project_id, node_id=node_id, feedback_id=feedback["id"], assignee_name=project_role_assignee_name(project_id, "inspection"))
         return ok({"rectification": rectification, "nextStatus": "复审中"}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
@@ -16339,7 +16291,11 @@ def defer_todo(
 
 @router.get("/messages")
 def list_messages(request: Request, projectId: str | None = None, read: bool | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [versioned_record("message", item) for item in repo.state["messages"] if record_visible_for_request(request, item)]
+    effective, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    uid = str(request_user_id(request) or "")
+    items = [notifications.message_view(versioned_record("message", item), uid) for item in notifications.visible_messages(repo.state["messages"], str(effective or "")) if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if read is not None:
@@ -16363,12 +16319,11 @@ def mark_message_read(
             return scope_error
         if not record_if_match_valid("message", message, if_match):
             return fail(errors.ETAG_CONFLICT, request)
-        if not message.get("read"):
-            message["read"] = True
-            message["readAt"] = server_time()
-            bump_record_revision(message)
+        if not notifications.message_visible_to(message, str(effective_role_for_request(request)[0] or "")):
+            return fail(errors.NOT_FOUND, request)
+        notifications.mark_read(message, uid := str(request_user_id(request) or ""))  # 已读按人记，不再改全项目
         result = repo.mutation_result("标记消息已读", "Message", message_id)
-        return ok({**result, "message": versioned_record("message", message)}, request)
+        return ok({**result, "message": notifications.message_view(versioned_record("message", message), uid)}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"messageId": message_id})
 
@@ -16383,19 +16338,15 @@ def mark_all_messages_read(
     def produce():
         if if_match and if_match != "*":
             return fail(errors.ETAG_CONFLICT, request, message="批量消息操作仅支持 If-Match: *。")
-        affected = 0
-        updated_messages = []
+        affected, updated_messages = 0, []
+        role, uid = str(effective_role_for_request(request)[0] or ""), str(request_user_id(request) or "")
         for message in repo.state["messages"]:
             if body.get("projectId") and message.get("projectId") != body.get("projectId"):
                 continue
-            if not record_visible_for_request(request, message):
+            if not record_visible_for_request(request, message) or not notifications.message_visible_to(message, role):
                 continue
-            if not message.get("read"):
-                message["read"] = True
-                message["readAt"] = server_time()
-                bump_record_revision(message)
-                affected += 1
-            updated_messages.append(versioned_record("message", message))
+            affected += int(notifications.mark_read(message, uid))
+            updated_messages.append(notifications.message_view(versioned_record("message", message), uid))
         audit_id = repo.add_audit("全部消息已读", "Message", body.get("projectId") or "all")
         return ok({"affectedCount": affected, "messages": updated_messages, "auditLogId": audit_id}, request)
 

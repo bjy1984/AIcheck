@@ -9,6 +9,7 @@ than being hidden behind a circular import of ``apps.api.routes``.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from uuid import uuid4
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from libs import notifications
 from libs.content_hash import normalized_content_hash
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
@@ -1098,6 +1100,36 @@ def replay_upload_dispatch_outcomes(
     return outcomes
 
 
+LOGGER = logging.getLogger(__name__)
+
+
+def notify_upload_received(
+    services: UploadSessionServices,
+    request: Request,
+    *,
+    project_id: str,
+    files: list[dict[str, Any]],
+    outcome: dict[str, Any],
+) -> None:
+    """有资料进来了就告诉监检（2026-11-04）。上传不等于提交，提交才会变成监检的待办。
+
+    这条上传链的请求只落审计（scoped_flush_records = dict），消息得走它自己的落库；
+    通知失败不能让已经落库的上传报错。重放的完成请求不重复计数。
+    """
+    if outcome.get("replayed") or not files:
+        return
+    user = getattr(request.state, "auth_user", None) or {}
+    role = str(user.get("role") or request.headers.get("X-Role") or "")
+    try:
+        message = notifications.uploads_received(
+            services.repo.state, project_id=project_id, uploader_role=role, file_count=len(files)
+        )
+        if message is not None:
+            services.flush_mutation_records({"messages": [message]}, [])
+    except Exception:  # a notification must never fail an upload that is already committed
+        LOGGER.warning("upload_received_notification_failed", exc_info=True)
+
+
 def completed_upload_response(
     services: UploadSessionServices,
     request: Request,
@@ -1161,6 +1193,7 @@ def completed_upload_response(
             "auditLogId": None,
             "affectedIds": [session_id],
         }
+    notify_upload_received(services, request, project_id=project_id, files=files, outcome=outcome)
     request.state.scoped_flush_records = dict
     response = {
         **result,

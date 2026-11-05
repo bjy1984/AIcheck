@@ -7138,8 +7138,9 @@ def test_owner_write_forbidden_and_archived_readonly() -> None:
     )
     assert_error(owner_write, "FORBIDDEN")
     assert_error(client.post("/todos/TODO-001/complete", headers={"X-Role": "owner"}), "FORBIDDEN")
-    assert_error(client.post("/messages/MSG-001/read", headers={"X-Role": "owner"}), "FORBIDDEN")
-    assert_error(client.post("/messages/read-all", headers={"X-Role": "owner"}), "FORBIDDEN")
+    # 已读按人记（2026-11-04）：只读角色也能把自己的消息标成已读，这不是业务写入
+    assert client.post("/messages/MSG-001/read", headers={"X-Role": "owner"}).json()["code"] == 0
+    assert client.post("/messages/read-all", headers={"X-Role": "owner"}).json()["code"] == 0
 
     archived = client.post(
         "/projects/P-2025-CQARCH-007/documents/upload-session",
@@ -8414,7 +8415,7 @@ def test_required_action_inference_covers_core_mutations() -> None:
         ("POST", "/api/projects/P-2026-HDCP-001/reports/RPT-001/archive", "report:archive"),
         ("POST", "/api/projects/P-2026-HDCP-001/ndt/submissions", "ndt:submit"),
         ("POST", "/api/todos/TODO-001/complete", "todo:update"),
-        ("POST", "/api/messages/MSG-001/read", "message:update"),
+        ("POST", "/api/messages/MSG-001/read", "project:view"),  # 已读按人记，只读角色也能点
         ("POST", "/api/knowledge/retrieval-test", "knowledge:view"),
         ("POST", "/api/admin/config-overview/publish", "admin:config"),
         ("POST", "/api/fde/releases/REL-001/approve", "admin:config"),

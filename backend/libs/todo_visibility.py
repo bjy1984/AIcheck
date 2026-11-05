@@ -53,6 +53,12 @@ def todo_visible_to(todo: dict[str, Any], user: dict[str, Any] | None, role: str
     """
     if str(role or "") == "admin":
         return True
+    # 2026-11-04 起新建的待办带 assigneeRole（libs/notifications）：按角色投递，
+    # 这个项目里该角色的人都看得见；assigneeName 只用来显示，不再拿来挡人
+    # （后加入的成员原来看不到已指派给同事的待办）。
+    assignee_role = str((todo or {}).get("assigneeRole") or "")
+    if assignee_role:
+        return not role or str(role) == assignee_role
     names = _names_of(user)
     if not names:
         # 认不出请求者是谁（未开启鉴权、或令牌没有对应账号记录）就不过滤。
@@ -61,8 +67,10 @@ def todo_visible_to(todo: dict[str, Any], user: dict[str, Any] | None, role: str
         # 藏光比多看一条危险得多：流程会静默停住，而没人知道为什么。
         return True
     assignee = str((todo or {}).get("assigneeName") or "").strip()
-    if not assignee:
-        return True  # 未指派：不属于任何人，谁都能看见
+    if not assignee or assignee == "待分配":
+        # 未指派：不属于任何人，谁都能看见。「待分配」是没有成员可派时写的占位名，
+        # 原来按名字匹配谁都对不上，除管理员外没人看得见（2026-11-04 盘点）
+        return True
     return assignee in names
 
 

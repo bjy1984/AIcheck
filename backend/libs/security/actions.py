@@ -102,8 +102,10 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/ndt/submissions$", "ndt:submit"),
     ("POST", r"/projects/[^/]+/ndt/rectifications$", "rectification:submit"),
     ("POST", r"/todos/[^/]+/(complete|defer)$", "todo:update"),
-    ("POST", r"/messages/[^/]+/read$", "message:update"),
-    ("POST", r"/messages/read-all$", "message:update"),
+    # 消息已读只要 project:view（2026-11-04）：已读按人记，只改自己的状态、不碰业务数据，
+    # 只读的建设方也得能把自己的消息点掉——否则未读数只增不减。
+    ("POST", r"/messages/[^/]+/read$", "project:view"),
+    ("POST", r"/messages/read-all$", "project:view"),
     # 意见反馈：所有业务角色都能提给管理员；管理员处理走 /admin/ 下的 admin:config
     ("POST", r"/user-feedback$", "feedback:submit"),
     # 平台管理：动作沿用 admin:config，再由接口里判是不是平台管理员（院管理员一律 403）
