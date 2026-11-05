@@ -2,6 +2,7 @@
 import UserFeedbackLauncher from '@/views/AICheck/components/UserFeedbackLauncher.vue'
 import GuideSpotlight from '@/views/AICheck/userGuide/GuideSpotlight.vue'
 import UserGuideDrawer from '@/views/AICheck/userGuide/UserGuideDrawer.vue'
+import SkillInstallDialog from '@/views/AICheck/components/SkillInstallDialog.vue'
 </script>
 
 <template>
@@ -11,4 +12,6 @@ import UserGuideDrawer from '@/views/AICheck/userGuide/UserGuideDrawer.vue'
   <!-- 使用帮助：账号菜单「使用帮助」打开；「带我去」和「开始引导」的高亮层 -->
   <UserGuideDrawer />
   <GuideSpotlight />
+  <!-- 账号菜单「安装节点审计 skill」：一条提示词装到自己电脑上的 AI 助手（只给监检、管理员） -->
+  <SkillInstallDialog />
 </template>

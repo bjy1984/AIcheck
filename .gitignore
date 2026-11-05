@@ -95,3 +95,6 @@ output/inspection-standard-corpus/
 
 # Local launcher for generated demonstration videos.
 /scripts/start-video-demo.zsh
+
+# 部署时打的节点审计 skill 安装包（backend/scripts/build_skill_package.py），随 API 镜像上线，不进仓库
+backend/skill_package/

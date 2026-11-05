@@ -32696,6 +32696,127 @@
         ]
       }
     },
+    "/api/skill-install/d/{token}/install.md": {
+      "get": {
+        "operationId": "skill_install_guide_api_skill_install_d__token__install_md_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skill Install Guide",
+        "tags": [
+          "skill install"
+        ]
+      }
+    },
+    "/api/skill-install/d/{token}/package.zip": {
+      "get": {
+        "operationId": "skill_install_package_api_skill_install_d__token__package_zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skill Install Package",
+        "tags": [
+          "skill install"
+        ]
+      }
+    },
+    "/api/skill-install/links": {
+      "post": {
+        "operationId": "create_skill_install_link_api_skill_install_links_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Skill Install Link",
+        "tags": [
+          "skill install"
+        ]
+      }
+    },
     "/api/std-samr/standards/search": {
       "post": {
         "operationId": "search_std_samr_standards_api_std_samr_standards_search_post",
@@ -58612,6 +58733,127 @@
         "summary": "Search",
         "tags": [
           "AIcheck API"
+        ]
+      }
+    },
+    "/skill-install/d/{token}/install.md": {
+      "get": {
+        "operationId": "skill_install_guide_skill_install_d__token__install_md_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skill Install Guide",
+        "tags": [
+          "skill install"
+        ]
+      }
+    },
+    "/skill-install/d/{token}/package.zip": {
+      "get": {
+        "operationId": "skill_install_package_skill_install_d__token__package_zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skill Install Package",
+        "tags": [
+          "skill install"
+        ]
+      }
+    },
+    "/skill-install/links": {
+      "post": {
+        "operationId": "create_skill_install_link_skill_install_links_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Skill Install Link",
+        "tags": [
+          "skill install"
         ]
       }
     },

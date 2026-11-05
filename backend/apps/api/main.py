@@ -53,6 +53,7 @@ from apps.api.routes import (
     scope_error_for_record,
 )
 from apps.api.skill_auth_routes import skill_auth_router
+from apps.api.skill_install_routes import skill_install_router
 from apps.api.std_samr_routes import router as std_samr_router
 from apps.api.user_feedback_routes import user_feedback_router
 from libs import institutes
@@ -620,6 +621,9 @@ def auth_required_for_path(request: Request) -> bool:
         "/api/auth/skill/token",
         "/runtime/ui-context",
         "/api/runtime/ui-context",
+        # 一条提示词安装 skill 的下载两步：凭 10 分钟有效的签名链接，AI 助手这时还没有平台令牌
+        "/skill-install/d/",
+        "/api/skill-install/d/",
     )
     if compatibility_mocks_enabled():
         public_prefixes += ("/mock/", "/api/mock/")
@@ -640,6 +644,8 @@ def is_ephemeral_inspection_request(request: Request) -> bool:
         # 非公开（要登录、要 ai:recheck），但同样不落盘、不记审计、不抢租户写锁：渲染一次要几秒，
         # 抢了锁会把同租户所有写操作都堵住。
         "/inspection-services/audit-result-image",
+        # 只签一条链接，不落盘、不抢租户写锁
+        "/skill-install/links",
     }
 
 
@@ -1533,6 +1539,8 @@ if compatibility_mocks_enabled():
 # 意见反馈要排在主 router 前面：routes.py 有通配的 GET /admin/{kind}，会先吞掉 /admin/user-feedback
 app.include_router(user_feedback_router)
 app.include_router(user_feedback_router, prefix="/api")
+app.include_router(skill_install_router)
+app.include_router(skill_install_router, prefix="/api")
 app.include_router(improvement_router)
 app.include_router(improvement_router, prefix="/api")
 app.include_router(review_policy_router)

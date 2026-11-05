@@ -6,6 +6,7 @@ import { createImprovementTaskApi } from './improvementTasks'
 import { createPlatformApi } from './platform'
 import { createReviewPolicyApi } from './reviewPolicies'
 import { createUserFeedbackApi } from './userFeedback'
+import { createSkillInstallApi } from './skillInstall'
 export type {
   ProjectAnalysisMutationOptions,
   ProjectAnalysisPhase,
@@ -4409,6 +4410,8 @@ export const {
   escalateUserFeedbackApi,
   confirmUserFeedbackApi
 } = createUserFeedbackApi(request, mutationHeaders)
+
+export const { createSkillInstallLinkApi } = createSkillInstallApi(request, mutationHeaders)
 
 const projectAnalysisApi = createProjectAnalysisApi(request, mutationHeaders)
 export const {

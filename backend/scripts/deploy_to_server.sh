@@ -116,6 +116,11 @@ sync_backend() {
       -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
       $GIT_IMAGE rev-parse HEAD)
     [ \"\$BUILT_REV\" = \"$REVISION\" ] || { echo \"构建前树在 \$BUILT_REV，不是 $REVISION\" >&2; exit 1; }
+    # 节点审计 skill 安装包：用这棵树（就是要部署的提交）打，放进构建上下文，随镜像上线；平台「安装节点审计 skill」
+    # 给的链接下载的就是它。用上一版 API 镜像里的 Python 跑仓库里的打包脚本——宿主机只有 Python 3.6；
+    # 用 1001 跑：树在上面已 chown 给 1001，镜像默认用户写不进去。
+    docker run --rm --user 1001:1001 -e HOME=/tmp -v $REMOTE_HOME/AIcheck:/repo -w /repo/backend aicheck-api:local \
+      python /repo/backend/scripts/build_skill_package.py --repo /repo --out /repo/backend/skill_package --revision \$BUILT_REV
     docker build -q -f Dockerfile.server --build-arg AICHECK_REVISION=\$BUILT_REV -t aicheck-api:local . >/dev/null
     # 运行时 env 生成器以仓库版本为准，覆盖服务器上可能被手改过的副本。
     # 此前它只存在于服务器，部署逻辑有一半没有版本管理。

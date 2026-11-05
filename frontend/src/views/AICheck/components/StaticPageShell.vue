@@ -27,6 +27,7 @@ import AuditStatusTag from './AuditStatusTag.vue'
 import UserAvatarIcon from './UserAvatarIcon.vue'
 import { openUserGuide } from '../userGuide/useUserGuide'
 import { hasUserGuide } from '../userGuide/guideContent'
+import { canInstallSkill, openSkillInstall } from './SkillInstallDialog.vue'
 import GlobalCommandPalette from './GlobalCommandPalette.vue'
 import OperationTaskDrawer from './OperationTaskDrawer.vue'
 import StaticShellRightPanel from './StaticShellRightPanel.vue'
@@ -354,6 +355,8 @@ const handleUserCommand = (command: string | number | object) => {
     userStore.logoutConfirm()
   } else if (command === 'help') {
     openUserGuide()
+  } else if (command === 'skill') {
+    openSkillInstall()
   }
 }
 
@@ -479,6 +482,9 @@ onBeforeUnmount(() => {
                 <ElDropdownItem disabled>{{ userLabel }}</ElDropdownItem>
                 <ElDropdownItem v-if="hasUserGuide(userStore.getUserInfo?.role)" command="help">
                   使用帮助
+                </ElDropdownItem>
+                <ElDropdownItem v-if="canInstallSkill(userStore.getUserInfo?.role)" command="skill">
+                  安装节点审计 skill
                 </ElDropdownItem>
                 <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
               </ElDropdownMenu>

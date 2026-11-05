@@ -108,6 +108,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/messages/read-all$", "project:view"),
     # 意见反馈：所有业务角色都能提给管理员；管理员处理走 /admin/ 下的 admin:config
     ("POST", r"/user-feedback$", "feedback:submit"),
+    # 一条提示词安装 skill：只签链接；角色限制（监检、管理员）在端点里
+    ("POST", r"/skill-install/links$", "project:view"),
     # 平台管理：动作沿用 admin:config，再由接口里判是不是平台管理员（院管理员一律 403）
     ("POST", r"/platform/.*", "admin:config"),
     ("POST", r"/workflow/commands$", "admin:config"),
