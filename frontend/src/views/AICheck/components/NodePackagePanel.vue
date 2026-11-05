@@ -5,6 +5,7 @@ import type { NodePackagePayload } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
 import { submittedFileCountLabel } from '../workbenchRolePresentation'
+import { plainWording } from '@/utils/reviewerWording'
 
 const props = defineProps<{
   packageData?: NodePackagePayload
@@ -49,7 +50,7 @@ const alertType = computed(() => {
         · {{ submittedFiles }}
       </span>
       <ElTag :type="getStatusTagType(selectedNode?.status)" effect="light">
-        {{ selectedNode?.status || '-' }}
+        {{ plainWording(selectedNode?.status) || '-' }}
       </ElTag>
     </div>
 
@@ -77,7 +78,7 @@ const alertType = computed(() => {
       <!-- 资料名在 note 里（焊工资格证、焊工名册…）；name 是审查点名，每行都一样，不再重复 -->
       <ul v-if="requirements.length" class="node-list">
         <li v-for="row in requirements" :key="row.id">
-          <span class="node-list-main">{{ row.note || row.name }}</span>
+          <span class="node-list-main">{{ plainWording(row.note || row.name) }}</span>
           <ElTag :type="row.requiredType === '必传' ? 'danger' : 'info'" size="small">
             {{ row.requiredType }}
           </ElTag>
@@ -93,7 +94,7 @@ const alertType = computed(() => {
             <small>{{ [row.usage, row.sourceOrgName].filter(Boolean).join(' · ') }}</small>
           </button>
           <ElTag :type="getStatusTagType(row.bindingStatus)" size="small" effect="plain">
-            {{ row.bindingStatus }}
+            {{ plainWording(row.bindingStatus) }}
           </ElTag>
         </li>
       </ul>
@@ -119,7 +120,7 @@ const alertType = computed(() => {
               </small>
             </button>
             <ElTag :type="getStatusTagType(projectFileStatus(row))" size="small" effect="plain">
-              {{ projectFileStatus(row) }}
+              {{ plainWording(projectFileStatus(row)) }}
             </ElTag>
           </li>
         </ul>

@@ -270,6 +270,7 @@ import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 import { getInspectionReviewProgress, workbenchRolePresentation } from './workbenchRolePresentation'
 import { useWorkbenchUploadSession } from './useWorkbenchUploadSession'
 import { buildNodeReviewHeadline, materialStats } from './nodeReviewSummary'
+import { wordingFor } from '@/utils/reviewerWording'
 import {
   nodeRunFindingViews,
   buildWorkbenchAiHistory,
@@ -1168,6 +1169,8 @@ const closeProjectRegistration = () => {
   projectRegistrationVisible.value = state.visible
   projectRegistrationTarget.value = state.target
 }
+/** 施工方、无损检测、建设方不看「AI / 人工」字眼（utils/reviewerWording）。 */
+const say = (text?: string | null) => wordingFor(role.value)(text)
 const topbarStatus = computed(() => {
   return (
     context.value?.topbar.statusText ||
@@ -5134,7 +5137,7 @@ onBeforeUnmount(() => {
               :value="project.id"
             />
           </ElSelect>
-          <StatusTag :status="topbarStatus" effect="plain" />
+          <StatusTag :status="topbarStatus" :label="say(topbarStatus)" effect="plain" />
         </div>
         <div class="global-search-cluster">
           <ElButton
@@ -6782,8 +6785,9 @@ onBeforeUnmount(() => {
         :extracted-fields="extractedFields"
       />
 
+      <!-- 官网核验 / R19 关键事实确认只有监检用：别的角色连隐藏的弹窗都不挂 -->
       <R12RegistryVerificationDialog
-        v-if="!isR19HumanInputTask"
+        v-if="role === 'inspection' && !isR19HumanInputTask"
         v-model="humanInputDialogVisible"
         :task="activeHumanInputTask"
         :loading="humanInputLoading"
@@ -6792,7 +6796,7 @@ onBeforeUnmount(() => {
       />
 
       <R19SemanticEvidenceDialog
-        v-else
+        v-else-if="role === 'inspection'"
         v-model="humanInputDialogVisible"
         :task="activeHumanInputTask"
         :loading="humanInputLoading"

@@ -27,6 +27,7 @@ import {
 } from '../ownerHome'
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
 import FileTypeIcon from './FileTypeIcon.vue'
+import { plainWording } from '@/utils/reviewerWording'
 
 const props = defineProps<{
   project?: Project
@@ -185,7 +186,7 @@ const archiveTypeLabel = (item: ArchiveItem) =>
         <AuditStatusTag tone="red">需补正</AuditStatusTag>
         <span class="owner-row-main">
           <strong>{{ item.node.nodeId }}. {{ item.node.name }}</strong>
-          <small>{{ item.reason }}{{ item.at ? ` · ${item.at}` : '' }}</small>
+          <small>{{ plainWording(item.reason) }}{{ item.at ? ` · ${item.at}` : '' }}</small>
         </span>
         <ElIcon class="owner-chevron"><ArrowRight /></ElIcon>
       </button>
@@ -201,7 +202,7 @@ const archiveTypeLabel = (item: ArchiveItem) =>
       <ul v-if="feed.length" class="owner-card owner-feed">
         <li v-for="item in feed" :key="`${item.at}-${item.title}`">
           <i :class="`owner-dot is-${item.tone}`" aria-hidden="true"></i>
-          <span>{{ item.title }}</span>
+          <span>{{ plainWording(item.title) }}</span>
           <small>{{ item.at }}</small>
         </li>
       </ul>
@@ -225,7 +226,7 @@ const archiveTypeLabel = (item: ArchiveItem) =>
                 <FileTypeIcon :file-name="`${report.title}.pdf`" category="报告" />
                 <span class="owner-row-main">
                   <strong>{{ report.title }}</strong>
-                  <small>报告 · {{ report.status }} · {{ report.versionNo }}</small>
+                  <small>报告 · {{ plainWording(report.status) }} · {{ report.versionNo }}</small>
                 </span>
                 <span class="owner-file-action">查看</span>
               </button>
@@ -284,7 +285,9 @@ const archiveTypeLabel = (item: ArchiveItem) =>
           <li v-for="node in visibleNodes" :key="node.nodeId">
             <button type="button" class="owner-node-row" @click="emit('openNode', node)">
               <span class="owner-node-name">{{ node.nodeId }}. {{ node.name }}</span>
-              <AuditStatusTag :tone="nodeTone(node)">{{ node.status }}</AuditStatusTag>
+              <AuditStatusTag :tone="nodeTone(node)">{{
+                plainWording(node.status)
+              }}</AuditStatusTag>
               <ElIcon class="owner-chevron"><ArrowRight /></ElIcon>
             </button>
           </li>

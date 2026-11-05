@@ -4,6 +4,8 @@ import { ref, watch } from 'vue'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { ElButton, ElCard, ElEmpty, ElTag } from 'element-plus'
 
+import { plainWording } from '@/utils/reviewerWording'
+
 export type ContractorFeedbackRow = {
   id: string
   rectificationId: string
@@ -84,15 +86,15 @@ const tagType = getStatusTagType
           @click="toggle(item.id)"
         >
           <span class="feedback-id">{{ item.id }}</span>
-          <strong>{{ item.issue }}</strong>
+          <strong>{{ plainWording(item.issue) }}</strong>
           <ElTag :type="tagType(item.status)" size="small" effect="light">
-            {{ item.status }}
+            {{ plainWording(item.status) }}
           </ElTag>
           <component :is="expandedId === item.id ? ArrowUp : ArrowDown" aria-hidden="true" />
         </button>
 
         <div v-if="expandedId === item.id" class="feedback-detail">
-          <p>{{ item.requirement }}</p>
+          <p>{{ plainWording(item.requirement) }}</p>
           <dl>
             <div
               ><dt>问题环节</dt><dd>{{ item.node }}</dd></div

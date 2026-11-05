@@ -14,6 +14,8 @@ import {
 import type { InputInstance } from 'element-plus'
 import type { MessageItem, SearchResult, TodoItem } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+import { useUserStore } from '@/store/modules/user'
+import { wordingFor } from '@/utils/reviewerWording'
 
 const props = defineProps<{
   modelValue: boolean
@@ -77,6 +79,9 @@ const searchKeyword = computed({
   set: (value) => emit('update:keyword', value)
 })
 
+/** 施工方、无损检测、建设方不看「AI / 人工」字眼（utils/reviewerWording）。 */
+const userStore = useUserStore()
+const say = (text?: string | null) => wordingFor(userStore.getUserInfo?.role)(text)
 const unreadCount = computed(() => props.messages.filter((item) => !item.read).length)
 const searchTypeLabels: Record<SearchResult['type'], string> = {
   project: '项目',
@@ -157,7 +162,7 @@ const focusSearchInput = async () => {
             <ElTag size="small" effect="plain">{{
               searchTypeLabels[result.type] || result.type
             }}</ElTag>
-            <h3>{{ result.title }}</h3>
+            <h3>{{ say(result.title) }}</h3>
             <p v-if="result.description">{{ result.description }}</p>
             <p v-if="result.highlights.length" class="search-result-matches">
               命中：{{ result.highlights.join(' / ') }}
@@ -189,9 +194,9 @@ const focusSearchInput = async () => {
                 :title="row.nodeId ? '去该节点处理' : '切换到该待办所属项目'"
                 @click="emit('openTodo', row)"
               >
-                {{ row.title }}
+                {{ say(row.title) }}
               </ElButton>
-              <span v-else>{{ row.title }}</span>
+              <span v-else>{{ say(row.title) }}</span>
               <!-- 待办标题是一句固定的话，二十条一个样。写上它指向哪个节点，才分得出先处理哪条。 -->
               <small v-if="row.nodeLabel" class="todo-node-label">{{ row.nodeLabel }}</small>
             </template>
@@ -210,7 +215,7 @@ const focusSearchInput = async () => {
           <ElTableColumn label="状态" width="96">
             <template #default="{ row }">
               <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-                {{ row.status }}
+                {{ say(row.status) }}
               </ElTag>
             </template>
           </ElTableColumn>
@@ -266,9 +271,9 @@ const focusSearchInput = async () => {
                 :title="`去${messageTarget(row)}处理`"
                 @click="emit('openMessage', row)"
               >
-                {{ row.title }}
+                {{ say(row.title) }}
               </ElButton>
-              <span v-else>{{ row.title }}</span>
+              <span v-else>{{ say(row.title) }}</span>
             </template>
           </ElTableColumn>
           <ElTableColumn label="内容" min-width="260" show-overflow-tooltip>
@@ -280,9 +285,9 @@ const focusSearchInput = async () => {
                 class="message-content-link"
                 @click="emit('openMessage', row)"
               >
-                {{ row.content }}
+                {{ say(row.content) }}
               </ElButton>
-              <span v-else>{{ row.content }}</span>
+              <span v-else>{{ say(row.content) }}</span>
             </template>
           </ElTableColumn>
           <ElTableColumn prop="createdAt" label="时间" width="158" />

@@ -41,8 +41,11 @@ assert.ok(/v-if="row\.uploadedCount"/.test(panel), '0 项不做成可点——�
 assert.ok(/class="ndt-uploaded-files"/.test(panel), '要有展开后的文件清单区')
 
 // 文件行同时显示两种状态
+// 2026-11-04 起两种状态都过 plainWording（对无损检测不说「AI / 人工」），仍要分开显示
 assert.ok(
-  /\{\{ file\.fileStatus \}\} · 资料处理：\{\{ file\.currentOcrStatus \}\}/.test(panel),
+  /\{\{ plainWording\(file\.fileStatus\) \}\} · 资料处理：\{\{\s*plainWording\(file\.currentOcrStatus\)\s*\}\}/.test(
+    panel
+  ),
   '上传状态与 OCR 状态是两件事，要分开显示'
 )
 

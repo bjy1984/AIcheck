@@ -15,6 +15,12 @@ import {
 import type { NodeFileBinding, ProjectTreeNode, RectificationItem, TodoItem } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { correctionSubmissionCandidates } from '../correctionSubmission'
+import { useUserStore } from '@/store/modules/user'
+import { wordingFor } from '@/utils/reviewerWording'
+
+/** 施工方看补正单不看「AI / 人工」字眼；监检打开同一张单照原文（utils/reviewerWording）。 */
+const userStore = useUserStore()
+const say = (text?: string | null) => wordingFor(userStore.getUserInfo?.role)(text)
 
 const props = defineProps<{
   modelValue: boolean
@@ -81,10 +87,10 @@ watch(
       <ElDescriptions :column="2" border class="summary">
         <ElDescriptionsItem label="节点"> {{ node.nodeId }} · {{ node.name }} </ElDescriptionsItem>
         <ElDescriptionsItem label="状态">
-          <ElTag :type="getStatusTagType(node.status)" size="small">{{ node.status }}</ElTag>
+          <ElTag :type="getStatusTagType(node.status)" size="small">{{ say(node.status) }}</ElTag>
         </ElDescriptionsItem>
         <ElDescriptionsItem label="待办">
-          {{ nodeTodos.length ? nodeTodos.map((todo) => todo.title).join('；') : '无待办' }}
+          {{ nodeTodos.length ? nodeTodos.map((todo) => say(todo.title)).join('；') : '无待办' }}
         </ElDescriptionsItem>
         <ElDescriptionsItem label="补正资料">
           {{ correctionBindings.length }} 份
@@ -93,7 +99,7 @@ watch(
           {{ rectificationId }}
         </ElDescriptionsItem>
         <ElDescriptionsItem v-if="rectification?.comment" label="监检意见" :span="2">
-          {{ rectification.comment }}
+          {{ say(rectification.comment) }}
         </ElDescriptionsItem>
       </ElDescriptions>
 
@@ -124,7 +130,7 @@ watch(
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
             <ElTag :type="getStatusTagType(row.bindingStatus)" size="small" effect="plain">
-              {{ row.bindingStatus }}
+              {{ say(row.bindingStatus) }}
             </ElTag>
           </template>
         </ElTableColumn>

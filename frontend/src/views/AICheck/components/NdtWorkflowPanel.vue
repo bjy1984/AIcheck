@@ -30,6 +30,7 @@ import type {
 import { getStatusTagType } from './status'
 import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
+import { plainWording } from '@/utils/reviewerWording'
 import {
   canRetryDocumentUpload,
   canSubmitNdtDocumentUpload,
@@ -533,7 +534,11 @@ const handleRectifyNdt = async (rectificationId?: string) => {
                 <ElButton link type="primary" @click="emit('viewMaterialFile', file.id)">
                   {{ file.fileName }}
                 </ElButton>
-                <small>{{ file.fileStatus }} · 资料处理：{{ file.currentOcrStatus }}</small>
+                <small
+                  >{{ plainWording(file.fileStatus) }} · 资料处理：{{
+                    plainWording(file.currentOcrStatus)
+                  }}</small
+                >
               </li>
             </ul>
           </li>
@@ -558,7 +563,11 @@ const handleRectifyNdt = async (rectificationId?: string) => {
               </ElButton>
               <!-- 上传状态和识别状态是两件事：文件已上传但 OCR 还在排队，
                    跟文件根本没传上去，处置完全不同。 -->
-              <small>{{ file.fileStatus }} · 资料处理：{{ file.currentOcrStatus }}</small>
+              <small
+                >{{ plainWording(file.fileStatus) }} · 资料处理：{{
+                  plainWording(file.currentOcrStatus)
+                }}</small
+              >
             </li>
           </ul>
         </div>
@@ -621,14 +630,14 @@ const handleRectifyNdt = async (rectificationId?: string) => {
                 失败重新上传
               </ElButton>
               <ElTag v-else :type="getStatusTagType(row.uploadStatus)" size="small" effect="plain">
-                {{ row.uploadStatus }}
+                {{ plainWording(row.uploadStatus) }}
               </ElTag>
             </template>
           </ElTableColumn>
           <ElTableColumn label="审批状态" width="110">
             <template #default="{ row }">
               <ElTag :type="getStatusTagType(row.approvalStatus)" size="small" effect="plain">
-                {{ row.approvalStatus }}
+                {{ plainWording(row.approvalStatus) }}
               </ElTag>
             </template>
           </ElTableColumn>
@@ -692,9 +701,9 @@ const handleRectifyNdt = async (rectificationId?: string) => {
         <li v-for="row in feedback" :key="row.id" :class="{ 'is-open': row.status === '待反馈' }">
           <div class="ndt-feedback-main">
             <div class="ndt-feedback-head">
-              <strong>{{ row.title }}</strong>
+              <strong>{{ plainWording(row.title) }}</strong>
               <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-                {{ row.status }}
+                {{ plainWording(row.status) }}
               </ElTag>
             </div>
             <p v-if="row.description" class="ndt-feedback-desc">{{ row.description }}</p>
