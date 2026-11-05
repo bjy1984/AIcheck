@@ -1235,6 +1235,9 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 .ai-panel-body {
   display: grid;
   padding: 18px 20px 20px;
+
+  /* 列宽要能缩：auto 列会被长证书表、单行引文撑开，顶出右边界（生产节点 1 实测） */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -1283,6 +1286,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 /* 不再是卡中卡：核对项直接排在卡片里，状态色只留在每条的左边线和标签上 */
 .ai-current-result {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -1803,6 +1807,7 @@ const ruleLabel = (rule: Record<string, unknown>) => {
 .ai-evidence-groups {
   display: grid;
   margin-top: 12px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 

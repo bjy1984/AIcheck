@@ -325,6 +325,9 @@ const evidenceText = (evidence: EvidenceLink) =>
   background: #fff;
   border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 12px;
+
+  /* 列宽要能缩：auto 列会被长证书表、单行引文撑开，顶出右边界（生产节点 1 实测） */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -422,6 +425,7 @@ const evidenceText = (evidence: EvidenceLink) =>
 
 .review-field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -455,6 +459,7 @@ const evidenceText = (evidence: EvidenceLink) =>
 
 .review-evidence-options {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
 }
 
@@ -474,6 +479,7 @@ const evidenceText = (evidence: EvidenceLink) =>
 .review-evidence-options :deep(.el-checkbox__label) {
   display: flex;
   min-width: 0;
+  flex: 1 1 auto;
   padding-left: 8px;
   gap: 2px 6px;
   flex-wrap: wrap;
