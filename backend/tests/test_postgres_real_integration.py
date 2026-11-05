@@ -173,6 +173,21 @@ def test_real_postgres_cold_tenant_login_loads_user_and_persists_audit(isolated_
         repo.reset()
     finally:
         reset_request_tenant_id(token)
+    # 2026-11-02 起只有在平台院登记过、启用中的院能登录（libs/institutes.tenant_login_allowed）：
+    # 先像「特检院管理」开通那样登记这个冷租户，否则登录直接 403（CI 上这条一直因此失败）。
+    from libs.security.tenant import configured_tenant_id
+
+    platform_token = set_request_tenant_id(configured_tenant_id())
+    try:
+        repo.reset()
+        repo.configure_sync_postgres(isolated_postgres_url)
+        repo.upsert_state_records_to_sync_postgres({"institutes": [{
+            "id": tenant_id, "code": "COLDPG", "name": "冷租户院", "status": "active",
+            "tenantId": configured_tenant_id(),
+        }]})
+        repo.reset()
+    finally:
+        reset_request_tenant_id(platform_token)
 
     try:
         response = client.post(

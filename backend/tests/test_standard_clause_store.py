@@ -29,12 +29,14 @@ def test_clause_release_is_idempotent_and_review_snapshot_is_immutable() -> None
     second = publish_standard_clause_release(state, pack)
 
     assert first == second
+    # 2026-11-02 补绑 GB 50184（R09、R11）、TSG Z8001（R38）、GB 50460（R49）：标准 33 → 36、
+    # 条款引用 175 → 179、条款包条目 189 → 193、定位 243 → 253（同 test_business_pack.py）
     assert first == {
-            "standard_document_versions": 33,
-            "standard_clause_references": 175,
-            "standard_clause_locators": 243,
+            "standard_document_versions": 36,
+            "standard_clause_references": 179,
+            "standard_clause_locators": 253,
         "standard_clause_packages_db": 69,
-            "standard_clause_package_items": 189,
+            "standard_clause_package_items": 193,
     }
     assert bind_project_node_clause_packages(state, project, pack) == 69
     assert len(state["project_node_clause_packages"]) == 69
@@ -88,7 +90,7 @@ def test_clause_collections_persist_to_sqlite(tmp_path) -> None:
             ).fetchall()
         }
 
-    assert counts["standard_document_versions"] == 33
+    assert counts["standard_document_versions"] == 36
     assert counts["standard_clause_packages"] == 69
     assert counts["project_node_clause_packages"] >= 69
     assert "idx_project_node_clause_packages_lookup" in indexes

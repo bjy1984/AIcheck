@@ -106,12 +106,16 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     # 只读的建设方也得能把自己的消息点掉——否则未读数只增不减。
     ("POST", r"/messages/[^/]+/read$", "project:view"),
     ("POST", r"/messages/read-all$", "project:view"),
-    # 意见反馈：所有业务角色都能提给管理员；管理员处理走 /admin/ 下的 admin:config
+    # 意见反馈：监检和管理员提（施工方、无损检测、建设方 2026-11-04 起没有 feedback:submit）；管理员处理走 /admin/ 下的 admin:config
     ("POST", r"/user-feedback$", "feedback:submit"),
+    # 提交人确认「已解决 / 仍有问题」：谁提的谁确认（接口里核对提交人），以前提过反馈的施工方也要能确认，所以只要 project:view
+    ("POST", r"/user-feedback/[^/]+/confirm$", "project:view"),
     # 一条提示词安装 skill：只签链接；角色限制（监检、管理员）在端点里
     ("POST", r"/skill-install/links$", "project:view"),
     # 平台管理：动作沿用 admin:config，再由接口里判是不是平台管理员（院管理员一律 403）
     ("POST", r"/platform/.*", "admin:config"),
+    ("PUT", r"/platform/.*", "admin:config"),
+    ("DELETE", r"/platform/.*", "admin:config"),
     ("POST", r"/workflow/commands$", "admin:config"),
     ("POST", r"/review/findings$", "review:save"),
     ("POST", r"/review/findings/[^/]+/(accept|reject)$", "review:save"),

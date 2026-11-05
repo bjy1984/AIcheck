@@ -6,7 +6,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# 这几条读本机的离线测试资料 output/two_project_ai_review_20260825/（scripts/test_workspace.py 的 FIXTURES，
+# 不进仓库）：CI 和没有这份资料的机器上跳过，有资料时照常跑（2026-11-04：原来在 CI 上一直失败）。
+OFFLINE_REVIEW_INPUT = REPO_ROOT / "output/two_project_ai_review_20260825/review_input.json"
+needs_offline_fixtures = pytest.mark.skipif(
+    not OFFLINE_REVIEW_INPUT.exists(), reason="需要本机离线测试资料 output/two_project_ai_review_20260825/（不进仓库）"
+)
 BACKEND_ROOT = REPO_ROOT / "backend"
 
 
@@ -30,6 +39,7 @@ def test_exporter_cli_can_run_directly_from_backend() -> None:
     assert "--project-code" in result.stdout
 
 
+@needs_offline_fixtures
 def test_exported_test_package_contains_complete_design_license_ocr(tmp_path: Path) -> None:
     from scripts.export_review_evidence_package import export_project_review_package
 
@@ -48,6 +58,7 @@ def test_exported_test_package_contains_complete_design_license_ocr(tmp_path: Pa
     assert result["coveragePassed"] is False
 
 
+@needs_offline_fixtures
 def test_exported_packages_cover_every_linked_node_and_artifact(tmp_path: Path) -> None:
     from scripts.export_review_evidence_package import export_project_review_package
 
@@ -82,6 +93,7 @@ def test_exported_packages_cover_every_linked_node_and_artifact(tmp_path: Path) 
         assert all(node["coverage"]["missingArtifactIds"] == [] for node in manifest["nodes"])
 
 
+@needs_offline_fixtures
 def test_entry_prompt_references_shards_instead_of_embedding_excerpt_summaries(
     tmp_path: Path,
 ) -> None:
@@ -101,6 +113,7 @@ def test_entry_prompt_references_shards_instead_of_embedding_excerpt_summaries(
     assert "全部当前有效历史挂接资料" in prompt
 
 
+@needs_offline_fixtures
 def test_mega_prompt_deduplicates_ocr_corpus_and_keeps_every_node_reference_resolvable(
     tmp_path: Path,
 ) -> None:

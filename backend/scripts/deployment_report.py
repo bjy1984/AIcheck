@@ -97,6 +97,9 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/registration-links/{token}/apply"),
 }
 READ_ONLY_POST_ROUTES = {
+    # 一条提示词安装 skill：只签一条 10 分钟的链接返回，不写任何状态（路由在 ephemeral 集合里）。
+    ("POST", "/skill-install/links"),
+    ("POST", "/api/skill-install/links"),
     # Stateless review helpers intentionally never persist input or response bodies.
     ("POST", "/inspection-services/certificate-validity"),
     ("POST", "/api/inspection-services/certificate-validity"),

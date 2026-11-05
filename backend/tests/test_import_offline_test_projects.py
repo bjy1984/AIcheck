@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from libs.business_pack import load_business_pack
 from scripts.import_offline_test_projects import (
     apply_project_import_plan,
@@ -9,6 +11,13 @@ from scripts.import_offline_test_projects import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# 这几条读本机的离线测试资料 output/two_project_ai_review_20260825/（scripts/test_workspace.py 的 FIXTURES，
+# 不进仓库）：CI 和没有这份资料的机器上跳过，有资料时照常跑（2026-11-04：原来在 CI 上一直失败）。
+OFFLINE_REVIEW_INPUT = REPO_ROOT / "output/two_project_ai_review_20260825/review_input.json"
+needs_offline_fixtures = pytest.mark.skipif(
+    not OFFLINE_REVIEW_INPUT.exists(), reason="需要本机离线测试资料 output/two_project_ai_review_20260825/（不进仓库）"
+)
 
 
 def assert_plan_covers_full_corpus(project_code: str, plan) -> None:
@@ -24,6 +33,7 @@ def assert_plan_covers_full_corpus(project_code: str, plan) -> None:
     }
 
 
+@needs_offline_fixtures
 def test_test_project_plan_contains_every_source_file_and_all_69_nodes() -> None:
     plan = build_project_import_plan(REPO_ROOT, "test")
 
@@ -41,6 +51,7 @@ def test_test_project_plan_contains_every_source_file_and_all_69_nodes() -> None
     )
 
 
+@needs_offline_fixtures
 def test_test2_project_plan_contains_every_source_file_and_all_69_nodes() -> None:
     plan = build_project_import_plan(REPO_ROOT, "test2")
 
@@ -58,6 +69,7 @@ def test_test2_project_plan_contains_every_source_file_and_all_69_nodes() -> Non
     )
 
 
+@needs_offline_fixtures
 def test_offline_import_plan_is_stable_for_idempotent_upserts() -> None:
     first = build_project_import_plan(REPO_ROOT, "test")
     second = build_project_import_plan(REPO_ROOT, "test")
@@ -70,6 +82,7 @@ def test_offline_import_plan_is_stable_for_idempotent_upserts() -> None:
     ]
 
 
+@needs_offline_fixtures
 def test_applying_the_same_plan_twice_does_not_duplicate_project_data() -> None:
     state: dict[str, list[dict]] = {}
     plan = build_project_import_plan(REPO_ROOT, "test")
@@ -92,6 +105,7 @@ def test_applying_the_same_plan_twice_does_not_duplicate_project_data() -> None:
     assert all(item["id"].startswith("NEL-BIND-OFFLINE-") for item in state["node_evidence_links"])
 
 
+@needs_offline_fixtures
 def test_two_projects_keep_separate_requirements_with_shared_business_ids() -> None:
     state: dict[str, list[dict]] = {}
     pack = load_business_pack("engineering_inspection_v1")
@@ -109,6 +123,7 @@ def test_two_projects_keep_separate_requirements_with_shared_business_ids() -> N
     assert len(requirements_by_project["P-TEST-OCR-002"]) == 165
 
 
+@needs_offline_fixtures
 def test_reimport_removes_stale_records_owned_by_the_offline_scenario() -> None:
     state: dict[str, list[dict]] = {
         "documents": [
