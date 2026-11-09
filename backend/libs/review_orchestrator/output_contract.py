@@ -253,19 +253,31 @@ def store_generated_findings(review_run, drafts, *, complete, hash_payload):
     return {"findingDrafts": len(review_run["findingDrafts"]), "outputHash": review_run["outputHash"]}
 
 
+def run_check_records(run: dict[str, Any], state: dict[str, Any]) -> list[dict[str, Any]]:
+    """这次复核留下的规则核查记录（rule_check_results）。
+
+    节点页的逐项结论和 AI 审查助手的原子项结论都从这里取（libs/review_assistant_atomic_results），
+    两边用同一个筛法，才不会一边说通过、一边说证据不足。
+    """
+    run_id = run.get("reviewRunId") or run.get("id")
+    if not run_id:
+        return []
+    return [
+        record
+        for record in state.get("rule_check_results", [])
+        if isinstance(record, dict)
+        and record.get("reviewRunId") == run_id
+        and not any(record.get(key) not in (None, run.get(key)) for key in ("tenantId", "projectId", "nodeId"))
+    ]
+
+
 def review_view_with_limitations(run: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     """Project recorded capability warnings without interpreting them as missing files."""
     view = deepcopy(run)
-    run_id = run.get("reviewRunId") or run.get("id")
     limitations = set()
     approval_checks = []
-    run_records: list[dict[str, Any]] = []
-    for record in state.get("rule_check_results", []):
-        if not run_id or record.get("reviewRunId") != run_id:
-            continue
-        if any(record.get(key) not in (None, run.get(key)) for key in ("tenantId", "projectId", "nodeId")):
-            continue
-        run_records.append(record)
+    run_records = run_check_records(run, state)
+    for record in run_records:
         for atomic in record.get("atomicCheckResults") or []:
             if not isinstance(atomic, dict):
                 continue

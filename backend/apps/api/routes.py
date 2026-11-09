@@ -64,6 +64,7 @@ from apps.api.upload_session_workflow import (
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from libs import help_center, institutes, notifications, rule_version_helpers
+from libs import review_assistant_atomic_results as atomic_results
 from libs.ai_run_failure import ai_run_failure_view
 from libs.ai_run_order import sort_ai_runs_latest_first
 from libs.audit_context import (
@@ -10501,7 +10502,8 @@ def review_conversation_tool_result_summary(tool_name: str, output: dict[str, An
     if tool_name == "run_node_formal_judgment":
         summary = output.get("summary") if isinstance(output.get("summary"), dict) else {}
         return (
-            f"正式判定链（{output.get('sourceRuleId') or '-'}）：{output.get('result') or '-'}，"
+            f"{'复核留痕' if output.get('source') == 'formal_review_run' else '正式判定链'}"
+            f"（{output.get('sourceRuleId') or '-'}）：{output.get('result') or '-'}，"
             f"原子项 {summary.get('atomicCheckCount', 0)}："
             f"通过 {summary.get('passedCount', 0)} / 不符合 {summary.get('failedCount', 0)} / "
             f"证据不足 {summary.get('evidenceInsufficientCount', 0)}"
@@ -10521,11 +10523,16 @@ def review_conversation_formal_judgment(
     project: dict[str, Any],
     node: dict[str, Any],
     evidence_links: list[dict[str, Any]],
+    review_run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """对话 Agent 的高层判定工具：只读复用正式判定链（fact builder + tool plan + assembler）。
+    """对话 Agent 的高层判定工具：有复核留痕就直接返回留痕（与节点页同源）。
 
-    不创建 ReviewRun、不写 findingDrafts、不触发人工任务；结果仅作对话辅助判定。
+    没有留痕才只读重跑正式判定链（fact builder + tool plan + assembler）：不创建 ReviewRun、
+    不写 findingDrafts、不触发人工任务；结果仅作对话辅助判定。见 libs/review_assistant_atomic_results。
     """
+    recorded = atomic_results.recorded_tool_output(repo.state, review_run, evidence_links=evidence_links)
+    if recorded:
+        return recorded
     node_id = int(node.get("nodeId") or 0)
     if node_id in CONVERSATION_FORMAL_JUDGMENT_EXCLUDED_NODES:
         return {
@@ -10579,11 +10586,13 @@ def review_conversation_formal_judgment(
     lifecycle_status = str(binding_set.get("lifecycleStatus") or "draft")
     base = {
         "status": "succeeded",
+        "source": "advisory_rerun",
         "sourceRuleId": source_rule_id,
         "ruleName": rule.get("name"),
         "nodeId": node_id,
         "advisory": True,
         "bindingSetLifecycleStatus": lifecycle_status,
+        "pilotRuleEnabled": source_rule_id in {str(item) for item in binding_set.get("pilotRules") or []},
         "factsAvailable": bool(facts),
         "documentVersionIds": allowed_document_ids,
     }
@@ -10595,6 +10604,8 @@ def review_conversation_formal_judgment(
             "summary": {"atomicCheckCount": 0},
             "notice": "当前规则尚未配置原子核查项工具绑定，无法执行确定性判定。",
         }
+    # 锚定门的事实与正式链同一处取；原来不带，validate_evidence_grounding 拿到空事实，每项都证据不足
+    evidence_facts, evidence_refs = atomic_results.grounding_inputs(facts)
     execution = execute_node_tool_plan(
         plan,
         tool_runner=lambda name, arguments: dispatch_runtime_tool(
@@ -10605,6 +10616,8 @@ def review_conversation_formal_judgment(
         ),
         facts=facts,
         document_version_ids=allowed_document_ids,
+        evidence_facts=evidence_facts,
+        evidence_refs=evidence_refs,
     )
     compact_atomic: list[dict[str, Any]] = []
     for item in execution.get("atomicResults") or []:
@@ -10633,13 +10646,7 @@ def review_conversation_formal_judgment(
                 "tools": tools_compact,
             }
         )
-    notices = [
-        "本结果复用正式原子项工具链，但未经过完整 ReviewRun 的质量门禁与人工确认，仅作辅助判定。",
-    ]
-    if lifecycle_status != "published":
-        notices.append(f"原子项工具绑定当前为 {lifecycle_status} 状态（未发布），结果仅供参考。")
-    if not facts and builder is None:
-        notices.append("该节点暂无事实装配器，判定主要依赖绑定参数与证据文档，缺失事实按证据不足处理。")
+    notices = atomic_results.advisory_rerun_notices(binding_set, source_rule_id, has_facts=bool(facts or builder))
     return {
         **base,
         "result": execution.get("result"),
@@ -10842,7 +10849,7 @@ def review_conversation_agent_tool_output(
         return {"status": "succeeded", "basisCount": len(matches), "items": matches[:12], "fixedBinding": True}
     if tool_name == "run_node_formal_judgment":
         return review_conversation_formal_judgment(
-            project=project, node=node, evidence_links=evidence_links,
+            project=project, node=node, evidence_links=evidence_links, review_run=review_run,
         )
     runtime_tool_names = set(CONVERSATION_AGENT_RUNTIME_TOOL_NAMES) | {
         str(item["function"]["name"])
@@ -10904,6 +10911,7 @@ def review_conversation_llm_answer(
     basis: dict[str, Any],
     cancel_event: threading.Event | None = None,
     execution_id: str | None = None,
+    formal_atomic: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     mode = os.getenv(
         "AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION",
@@ -10967,6 +10975,7 @@ def review_conversation_llm_answer(
             "currentStep": (review_run or {}).get("currentStep"),
             "findingDrafts": repo.clone((review_run or {}).get("findingDrafts") or [])[:8],
         },
+        "formalAtomicResults": atomic_results.model_view(formal_atomic),
         # 近期对话（限天数、旧证据下的回答标 staleContext）、上一段对话要点、个人偏好
         **review_session_memory.conversation_memory_context(
             session,
@@ -11622,6 +11631,8 @@ def review_assistant_request_context(
         "evidence_links": evidence_links,
         "advisory_evidence_links": advisory_evidence_links,
         "review_run": review_run,
+        # 原子项结论只认复核留痕（与节点页同源），见 libs/review_assistant_atomic_results
+        "formal_atomic": atomic_results.formal_snapshot(repo.state, review_run, evidence_links=evidence_links),
     }
 
 
@@ -11747,6 +11758,10 @@ def review_agent_answer_blocks(
         }
     )
     blocks: list[dict[str, Any]] = []
+    # 模型可以解释，不可以改判：正文与复核留痕不一致时在正文后追加更正
+    answer_text, atomic_check = atomic_results.reconcile_answer(agent_result.get("text"), context.get("formal_atomic"))
+    if atomic_check:
+        execution["atomicConsistency"] = atomic_check
     # 推理过程排在正文之前，与串流期间的顺序一致；前端默认折叠成一行。
     # 存档而不是丢弃：这套系统出的是监督检验意见，事后被问「凭什么」时，
     # 「去查事件流」不是一个能给监检的答案。
@@ -11759,7 +11774,7 @@ def review_agent_answer_blocks(
             # 模型没跑成时，正文必须先说「没答上」再给状态数字。
             # 旧文案「我已加载…你可以继续让我检索证据」把没做的事说成做了，
             # 详见 libs/review_conversation_fallback 模块头。
-            "text": agent_result.get("text")
+            "text": answer_text
             or fallback_answer_text(
                 node_name=str(node.get("name") or node_id),
                 run_status=run_status,
@@ -11817,6 +11832,7 @@ def run_review_conversation_execution(
             basis=context["basis"],
             cancel_event=execution_entry.get("cancelEvent"),
             execution_id=execution_id,
+            formal_atomic=context.get("formal_atomic"),
         )
         blocks, execution = review_agent_answer_blocks(
             agent_result, session=session, context=context

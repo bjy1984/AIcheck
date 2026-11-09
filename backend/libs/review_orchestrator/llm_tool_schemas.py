@@ -535,10 +535,10 @@ REVIEW_CONVERSATION_CONTEXT_TOOLS = [
         "function": {
             "name": "run_node_formal_judgment",
             "description": (
-                "按当前节点固化规则执行正式判定链：复用正式 ReviewRun 的事实装配与原子项工具计划，"
-                "一次调用返回全部原子核查项的确定性判定结果（passed/failed/evidence_insufficient）。"
+                "返回当前节点全部原子核查项的判定结果（passed/failed/evidence_insufficient）。"
+                "有复核留痕时直接返回留痕（source=formal_review_run，与节点页一致）；没有留痕时才按"
+                "固化规则在对话内临时重跑（source=advisory_rerun，advisory=true，不是节点结论）。"
                 "用户要求对当前节点做整体核查或正式判定时应首选本工具，无需先聚合事实或逐个调用判定工具。"
-                "结果为辅助判定，未经过完整 ReviewRun 的质量门禁与人工确认环节。"
             ),
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
         },
