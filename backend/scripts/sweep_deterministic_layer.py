@@ -74,13 +74,16 @@ def sweep_node(project_id: str, node_id: int, evidence: dict[tuple[str, int], li
     from libs.business_pack.loader import DEFAULT_BUSINESS_PACK_ID
     from libs.db.repository import repo
     from libs.review_orchestrator.execution import run_step
-    from libs.rule_scope import select_published_rule
+    from libs.rule_scope import select_rule_for_project
 
     row: dict[str, Any] = {"nodeId": node_id, "projectId": project_id}
     document_version_ids = sorted(evidence.get((project_id, node_id)) or [])
     row["documentCount"] = len(document_version_ids)
 
-    rule = select_published_rule(repo.state.get("rule_versions", []), node_id, project_id=project_id)
+    # 和正式复核同一口径：业务包规则以项目冻结包的版本为准
+    rule = select_rule_for_project(
+        repo.state.get("rule_versions", []), node_id, project_id=project_id, project=repo.require_project(project_id)
+    )
     if not rule:
         row["blocked"] = "no_published_rule"
         return row

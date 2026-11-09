@@ -161,7 +161,7 @@ from libs.review_workstations import (
     station_snapshot,
     tool_allowed,
 )
-from libs.rule_scope import select_published_rule
+from libs.rule_scope import select_rule_for_project
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 from ._shared import (  # noqa: F401 - re-export，外部按 execution 路径引用
@@ -324,7 +324,8 @@ def mark_review_run_retry_exhausted(review_run_id: str) -> dict[str, Any] | None
 
 
 def current_published_rule_for_node(node_id: int, *, business_pack_id: str | None = None, project_id: str | None = None) -> dict[str, Any] | None:
-    return select_published_rule(repo.state.get("rule_versions", []), node_id, business_pack_id=business_pack_id, project_id=project_id)
+    # 业务包规则以项目冻结包的版本为准（见 select_rule_for_project，2026-11-09 R01 口径不一致）
+    return select_rule_for_project(repo.state.get("rule_versions", []), node_id, business_pack_id=business_pack_id, project_id=project_id, project=repo.require_project(project_id) if project_id else None)
 
 
 def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "temporal") -> dict[str, Any]:
