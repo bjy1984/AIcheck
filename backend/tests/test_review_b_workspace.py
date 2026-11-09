@@ -6,6 +6,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.api import review_session_retention
 from apps.api import routes as routes_module
 from apps.api.main import app
 from libs.db.repository import repo
@@ -1769,6 +1770,8 @@ def test_review_b_agent_executions_recorded_and_queryable(monkeypatch) -> None:
 
 
 def test_review_b_content_delta_events_are_emitted(monkeypatch) -> None:
+    # 这条测的是串流时发了什么；回答落定后压缩增量正文另见 test_review_session_retention
+    monkeypatch.setattr(review_session_retention, "compact_stream_deltas", lambda message: [])
     calls = {"count": 0}
 
     class DeltaQwenRuntime:
@@ -1956,6 +1959,8 @@ def test_review_b_model_timeout_retries_once(monkeypatch) -> None:
 
 
 def test_review_b_streamed_deltas_replace_per_turn_emission(monkeypatch) -> None:
+    # 这条测的是串流时发了什么；回答落定后压缩增量正文另见 test_review_session_retention
+    monkeypatch.setattr(review_session_retention, "compact_stream_deltas", lambda message: [])
     """串流模式：stream_handler 片段缓冲后发出 streamed delta，且不再重复发整轮 delta。"""
 
     class StreamingRuntime:

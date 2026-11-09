@@ -183,6 +183,8 @@ export type ReviewBWorkspace = {
   businessBasis?: Record<string, unknown>
   basisSnapshot: ReviewBBasisItem[]
   session: ReviewBSession | null
+  /** 没有可用会话时：上一本不能再用的会话编号。建会话的幂等键要拼上它，否则请求中间件会重放旧响应 */
+  sessionGeneration?: string
   activeReviewRun: ReviewBRun | null
   projectAnalysisResults: ReviewBProjectAnalysisResult[]
   activeHumanInputTask: Record<string, unknown> | null

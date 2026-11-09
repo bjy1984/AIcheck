@@ -101,6 +101,14 @@ const column = workbench.slice(
 )
 assert.ok(!/\n {8}<ReviewConversation/.test(column), '记忆组件不能做对话栏的直接子元素')
 
+// 建会话的幂等键要带会话代次：上一本归档后换键，否则中间件重放旧响应、永远建不出新会话
+const ensureSession = workbench.slice(workbench.indexOf('const ensureSession = async'))
+assert.ok(
+  ensureSession.slice(0, 1200).includes('sessionGeneration') &&
+    ensureSession.slice(0, 1200).includes('-after-${sessionGeneration}'),
+  '建会话的幂等键没有带会话代次'
+)
+
 const toolbar = read('./components/ReviewConversationMemory.vue')
 for (const label of ['新对话', '回答偏好']) {
   assert.ok(toolbar.includes(label), `工具条缺少「${label}」`)

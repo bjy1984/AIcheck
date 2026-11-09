@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, Header, Request
 
 from apps.api import review_session_memory as memory
+from apps.api import review_session_retention as retention
 from apps.api import routes as api
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
@@ -86,10 +87,7 @@ def restart_review_session(
         if task_error:
             return fail(errors.VALIDATION_ERROR, request, message=task_error)
         carry_over = memory.build_carry_over(previous)
-        previous["status"] = "archived"
-        previous["archivedAt"] = server_time()
-        previous["archivedBy"] = memory.owner_id_for_request(request)
-        _touch(previous)
+        retention.mark_archived(previous, reason="new_conversation", actor=memory.owner_id_for_request(request))
         session = memory.new_session_record(
             request,
             project_id,

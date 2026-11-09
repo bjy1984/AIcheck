@@ -970,7 +970,10 @@ const ensureSession = async () => {
   const nodeId = activeNodeId.value
   const reviewRunId = String(route.query.reviewRunId || '') || undefined
   const currentTask = workspace.value?.businessBasis?.inspectionItem as string | undefined
-  const idempotencyKey = `review-session-${projectId}-${nodeId}`
+  // 键里带上「会话代次」：上一本会话归档（新对话或闲置超期）后键就换了。固定的键会被
+  // 请求中间件原样重放旧响应，拿回那本已归档的会话，永远建不出新的。
+  const sessionGeneration = workspace.value?.sessionGeneration
+  const idempotencyKey = `review-session-${projectId}-${nodeId}${sessionGeneration ? `-after-${sessionGeneration}` : ''}`
   await createSessionWithAuthorizationRecovery(
     (key, silent) =>
       createReviewBSessionApi(

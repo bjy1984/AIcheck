@@ -37,6 +37,7 @@ from apps.api import (
     feedback_capture,
     review_session_index,
     review_session_memory,
+    review_session_retention,
     upload_session_workflow,
 )
 from apps.api.evidence_decision import apply_manual_evidence_decision
@@ -9724,6 +9725,8 @@ def active_review_session(
             and item.get("createdBy") == user_id
             and item.get("status") == "active"
             and tenant_id_for_record(item) == request_tenant_id(request)
+            # 闲置超期的不算当前会话，下次建会话时归档（review_session_retention）
+            and not review_session_retention.session_idle_expired(item)
         ),
         None,
     )
@@ -9965,6 +9968,8 @@ def review_workspace_payload(
         "businessBasis": repo.clone(basis),
         "basisSnapshot": fixed_basis,
         "session": review_session_view(session) if session else None,
+        # 没有可用会话时，前端建会话的幂等键要拼上它（见 review_session_retention 模块说明）
+        "sessionGeneration": "" if session else review_session_retention.session_generation(request, project_id, node_id),
         "activeReviewRun": review_run_view(review_run) if review_run else None,
         "projectAnalysisResults": project_analysis_results_for_review_workspace(
             project_id,
@@ -10037,6 +10042,7 @@ def create_node_review_session(
         scope_error = inspection_review_scope_error(request, project_id, node_id)
         if scope_error:
             return scope_error
+        review_session_retention.archive_idle_sessions(request, project_id, node_id)
         existing = active_review_session(request, project_id, node_id)
         if existing:
             return ok({"session": review_session_view(existing), "created": False}, request)
@@ -10050,6 +10056,7 @@ def create_node_review_session(
         session = review_session_memory.new_session_record(
             request, project_id, node_id, current_task=current_task, review_run_id=body.get("reviewRunId")
         )
+        review_session_retention.link_previous_session(request, session, project_id, node_id)
         repo.state["review_sessions"].insert(0, session)
         append_review_session_event(
             session,
@@ -11848,6 +11855,8 @@ def run_review_conversation_execution(
             review_messages=[message],
             review_sessions=[session],
         )
+        # 回答落定：增量事件里与存档重复的正文压掉；存档不全时不动（review_session_retention）
+        persist_review_session_records(review_session_events=review_session_retention.compact_stream_deltas(message))
     except Exception as exc:  # noqa: BLE001 - 兜底：占位消息不能永远停留在 running
         failure_reason = str(getattr(exc, "reason", None) or exc.__class__.__name__)[:160]
         message = repo.find_one("review_messages", assistant_message_id)
