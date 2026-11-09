@@ -53,7 +53,9 @@ const dismiss = async () => {
         <li v-for="line in lines" :key="line.key">
           <span :class="['carry-over-verdict', `is-${line.tone}`]">{{ line.verdict }}</span>
           <span class="carry-over-text"
-            >{{ line.question }}<template v-if="line.answer">：{{ line.answer }}</template></span
+            >{{ line.question
+            }}<span v-if="line.summary" class="carry-over-summary">（{{ line.summary }}）</span
+            ><template v-if="line.answer">：{{ line.answer }}</template></span
           >
         </li>
       </ul>
@@ -126,6 +128,10 @@ const dismiss = async () => {
 .carry-over-text {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.carry-over-summary {
+  color: var(--review-muted, #667085);
 }
 
 .carry-over-verdict {

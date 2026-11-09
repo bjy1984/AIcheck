@@ -24,7 +24,14 @@ const lines = carryOverLines({
   lastActivityAt: '2026-11-02 14:03:11',
   items: [
     { askedAt: '2026-11-02 14:00:00', question: '焊工证？', verdict: '不符合', answer: '已过期' },
-    { askedAt: '2026-11-02 14:01:00', question: '检测报告？', verdict: null, answer: '' }
+    { askedAt: '2026-11-02 14:01:00', question: '检测报告？', verdict: null, answer: '' },
+    {
+      askedAt: '2026-11-02 14:01:30',
+      question: '印章齐吗？',
+      verdict: '需人工确认',
+      verdictSummary: '3 项：需人工确认 1、符合 2',
+      answer: '印章待核'
+    }
   ],
   unanswered: [{ askedAt: '2026-11-02 14:02:00', question: '许可证？' }]
 })
@@ -33,9 +40,12 @@ assert.deepEqual(
   [
     ['answered', '不符合', 'danger', '11-02 14:00'],
     ['answered', '未下结论', 'info', '11-02 14:01'],
+    ['answered', '需人工确认', 'warning', '11-02 14:01'],
     ['unanswered', '没答完', 'info', '11-02 14:02']
   ]
 )
+assert.equal(lines[2].summary, '3 项：需人工确认 1、符合 2')
+assert.equal(lines[0].summary, '')
 assert.equal(carryOverLines(null).length, 0)
 
 const base = { id: 'RSESSION-2', etag: 'W/"x"' } as unknown as ReviewBSession

@@ -391,3 +391,62 @@ def test_gist_skips_tables_and_strips_reference_links() -> None:
     text = "| 结论 | 符合 |\n\n## 说明\n见 [TSG D7006 第 D2.1 条](basis:LOC-1)，许可证在有效期内。"
     assert memory.answer_gist(text) == "见 TSG D7006 第 D2.1 条，许可证在有效期内。"
     assert memory.answer_gist("| a |\n- 见 [焊工证.pdf](evidence:EVL-9) 第 2 页") == "见 焊工证.pdf 第 2 页"
+
+
+# 生产上真实回答的格式（11-09 看过 10 条）：一项一行、「结论」是一列，前面常有辅助判定提示，
+# 后面是「简要说明」或「说明」小节，有时还有「补充说明」。以下是按这个格式造的样例，不是生产原文。
+REAL_FORMAT_ANSWER = """## 核查结论
+
+> **⚠️ 辅助判定，需人工确认**
+
+| 核查项 | 结论 | 关键证据 | 适用标准条款 |
+|--------|------|----------|--------------|
+| 单位名称一致性 | **符合** | [设计说明书.pdf](evidence:EVL-1) 单位名称一致 | [TSG D7006—2020 D2.1](basis:LOC-1) |
+| 许可范围覆盖 | **证据不足** | 未提取到许可范围代码 | [TSG D7006—2020 D2.1](basis:LOC-1) |
+| 有效期覆盖 | 不符合（已过期） | 有效期至 2024-06-21 | [TSG D7006—2020 D2.1](basis:LOC-1) |
+| 印章核验 | 证据不足（需人工确认） | 未识别到印章 | [TSG 31—2025 3.1.1](basis:LOC-2) |
+
+---
+
+**⚠️ 辅助判定/绑定未发布，需人工确认**
+
+### 简要说明
+
+许可证已过期，许可范围与印章仍需补充证据：
+
+1. 有效期：见 [许可证.pdf](evidence:EVL-2)。
+
+### 补充说明
+
+- 这不是要点。
+"""
+
+
+def test_verdict_reads_the_conclusion_column_and_takes_the_most_severe_item() -> None:
+    verdicts = memory.answer_verdicts(REAL_FORMAT_ANSWER)
+    assert verdicts == ["符合", "证据不足", "不符合", "证据不足"]
+    assert memory.answer_verdict(REAL_FORMAT_ANSWER) == "不符合"
+    assert memory.verdict_summary(verdicts) == "4 项：不符合 1、证据不足 2、符合 1"
+    assert memory.verdict_summary(["符合"]) is None
+    # 没有「结论」列的表（标准条款表、缺件清单）不出结论
+    basis_only = "| 适用标准条款 | 摘要 |\n|---|---|\n| [TSG D7006](basis:LOC-1) | 符合性要求 |"
+    assert memory.answer_verdicts(basis_only) == []
+
+
+def test_gist_prefers_the_brief_explanation_section_and_skips_notices() -> None:
+    # 跳过提示行和「补充说明」，取「简要说明」第一句，去掉结尾冒号
+    assert memory.answer_gist(REAL_FORMAT_ANSWER) == "许可证已过期，许可范围与印章仍需补充证据"
+    only_supplement = "## 怎么换节点\n\n先收起面板，再点别的节点。\n\n### 补充说明\n- 对话会保留。"
+    assert memory.answer_gist(only_supplement) == "先收起面板，再点别的节点。"
+    quoted = "## 步骤\n> 出自《节点审查流程》\n\n在节点面板右下操作。"
+    assert memory.answer_gist(quoted) == "在节点面板右下操作。"
+
+
+def test_carry_over_item_carries_verdict_count_for_multi_item_answers(runtime) -> None:
+    runtime.answers = [REAL_FORMAT_ANSWER]
+    session = create_session()
+    data(ask(session["id"], "设计单位许可资质齐吗？"))
+    item = data(restart(session["id"]))["session"]["carryOver"]["items"][0]
+    assert item["verdict"] == "不符合"
+    assert item["verdictSummary"] == "4 项：不符合 1、证据不足 2、符合 1"
+    assert item["answer"] == "许可证已过期，许可范围与印章仍需补充证据"

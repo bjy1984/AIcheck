@@ -33,7 +33,15 @@ export type ReviewBSession = {
 export type ReviewBCarryOver = {
   fromSessionId: string
   lastActivityAt?: string | null
-  items: { askedAt?: string; question: string; verdict?: string | null; answer?: string }[]
+  items: {
+    askedAt?: string
+    question: string
+    /** 最重的一项：不符合 > 证据不足 > 需人工确认 > 符合 */
+    verdict?: string | null
+    /** 多项时的计数，例如「5 项：证据不足 3、符合 2」 */
+    verdictSummary?: string | null
+    answer?: string
+  }[]
   unanswered: { askedAt?: string; question: string }[]
   createdAt?: string
 }

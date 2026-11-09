@@ -19,13 +19,15 @@ export type CarryOverLine = {
   verdict: string
   tone: 'danger' | 'warning' | 'success' | 'info'
   question: string
+  /** 多项时的结论计数，例如「5 项：证据不足 3、符合 2」 */
+  summary: string
   answer: string
   askedAt: string
 }
 
 const verdictTone = (verdict?: string | null): CarryOverLine['tone'] => {
   if (verdict === '不符合') return 'danger'
-  if (verdict === '证据不足') return 'warning'
+  if (verdict === '证据不足' || verdict === '需人工确认') return 'warning'
   if (verdict === '符合') return 'success'
   return 'info'
 }
@@ -39,6 +41,7 @@ export const carryOverLines = (carry?: ReviewBCarryOver | null): CarryOverLine[]
       verdict: item.verdict || '未下结论',
       tone: verdictTone(item.verdict),
       question: item.question,
+      summary: item.verdictSummary || '',
       answer: item.answer || '',
       askedAt: shortStamp(item.askedAt)
     })),
@@ -48,6 +51,7 @@ export const carryOverLines = (carry?: ReviewBCarryOver | null): CarryOverLine[]
       verdict: '没答完',
       tone: 'info' as const,
       question: item.question,
+      summary: '',
       answer: '',
       askedAt: shortStamp(item.askedAt)
     }))

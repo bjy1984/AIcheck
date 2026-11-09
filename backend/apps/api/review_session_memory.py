@@ -253,32 +253,90 @@ def session_memory_view(session: dict[str, Any], *, now: datetime | None = None)
 # ---- 3. 新对话与交接要点 ----
 
 _TABLE_ROW = re.compile(r"^\s*\|")
+_TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{2,}")
 _LINK = re.compile(r"\[([^\]]+)\]\((?:basis|evidence):[^)]+\)")
 _MARKDOWN_NOISE = re.compile(r"^[#>*\-\s]+|[*`]+")
-_CONCLUSION_CELL = re.compile(r"\|\s*结论[^|\n]*\|\s*([^|\n]+)")
+# 由重到轻。「不符合」里含「符合」，「证据不足（需人工确认）」里含「需人工确认」，所以按这个顺序先认重的
+VERDICTS = ("不符合", "证据不足", "需人工确认", "符合")
+GIST_SECTIONS = {"说明", "简要说明"}
+
+
+def _table_cells(line: str) -> list[str]:
+    return [cell.strip().strip("*").strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _classify_verdict(cell: str) -> str | None:
+    return next((verdict for verdict in VERDICTS if verdict in cell), None)
+
+
+def answer_verdicts(text: str) -> list[str]:
+    """表格里逐项的结论。只认「结论」格，散文里的「符合」多半是「是否符合」，不能当结论。
+
+    生产上的真实回答（11-09 看过 10 条）是一项一行、「结论」是一列：
+    `| 核查项 | 结论 | 关键证据 | 适用标准条款 |`；也兼容一行一个字段的 `| 结论 | 不符合 |`。"""
+    lines = text.splitlines()
+    found: list[str] = []
+    column: int | None = None
+    for index, line in enumerate(lines):
+        if not _TABLE_ROW.match(line):
+            column = None
+            continue
+        if _TABLE_SEPARATOR.match(line):
+            continue
+        cells = _table_cells(line)
+        following = lines[index + 1] if index + 1 < len(lines) else ""
+        if _TABLE_SEPARATOR.match(following):
+            # 表头：记下「结论」在第几列，下面每行按这一列读
+            column = next((i for i, cell in enumerate(cells) if cell.startswith("结论")), None)
+            continue
+        if column is not None and column < len(cells):
+            verdict = _classify_verdict(cells[column])
+        elif len(cells) > 1 and cells[0].startswith("结论"):
+            verdict = _classify_verdict(cells[1])
+        else:
+            verdict = None
+        if verdict:
+            found.append(verdict)
+    return found
 
 
 def answer_verdict(text: str) -> str | None:
-    """只从表格的「结论」格里认结论；散文里的「符合」多半是「是否符合」，不能当结论。"""
-    match = _CONCLUSION_CELL.search(text)
-    if not match:
+    """整条回答的结论取最重的一项：有一项不符合，这条就是不符合。"""
+    found = answer_verdicts(text)
+    return min(found, key=VERDICTS.index) if found else None
+
+
+def verdict_summary(verdicts: list[str]) -> str | None:
+    """多项时给个计数，例如「5 项：证据不足 3、符合 2」；只有一项就不用了。"""
+    if len(verdicts) < 2:
         return None
-    cell = match.group(1)
-    for verdict in ("不符合", "证据不足", "符合"):
-        if verdict in cell:
-            return verdict
-    return None
+    counts = [f"{verdict} {verdicts.count(verdict)}" for verdict in VERDICTS if verdict in verdicts]
+    return f"{len(verdicts)} 项：" + "、".join(counts)
+
+
+def _first_prose_line(lines: list[str]) -> str:
+    for line in lines:
+        stripped = line.strip()
+        # 表格、标题、引用（「> 出自…」、辅助判定提示）都不是说明
+        if not stripped or _TABLE_ROW.match(line) or stripped.startswith(("#", ">")):
+            continue
+        plain = _MARKDOWN_NOISE.sub("", _LINK.sub(r"\1", line)).strip()
+        if plain and not plain.startswith("⚠"):
+            return plain.rstrip("：:")[:ANSWER_CHARS]
+    return ""
 
 
 def answer_gist(text: str) -> str:
-    """回答的第一句说明：跳过表格和标题，去掉引用链接和 Markdown 记号。"""
-    for line in text.splitlines():
-        if not line.strip() or _TABLE_ROW.match(line) or line.lstrip().startswith("#"):
-            continue
-        plain = _MARKDOWN_NOISE.sub("", _LINK.sub(r"\1", line)).strip()
-        if plain:
-            return plain[:ANSWER_CHARS]
-    return ""
+    """回答的一句话说明：有「说明 / 简要说明」小节就取它的第一句，没有再取全文第一句。
+
+    只认这两个标题：「补充说明」是附带的话，拿它当要点会把正题丢掉（11-09 真实回答里见过）。"""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith("#") and line.strip().lstrip("#").strip().strip("*") in GIST_SECTIONS:
+            gist = _first_prose_line(lines[index + 1 :])
+            if gist:
+                return gist
+    return _first_prose_line(lines)
 
 
 def build_carry_over(previous: dict[str, Any]) -> dict[str, Any] | None:
@@ -306,11 +364,13 @@ def build_carry_over(previous: dict[str, Any]) -> dict[str, Any] | None:
             close_pending()
         else:
             answer = message_text(item)
+            verdicts = answer_verdicts(answer)
             items.append(
                 {
                     "askedAt": pending.get("createdAt"),
                     "question": message_text(pending)[:QUESTION_CHARS],
-                    "verdict": answer_verdict(answer),
+                    "verdict": min(verdicts, key=VERDICTS.index) if verdicts else None,
+                    "verdictSummary": verdict_summary(verdicts),
                     "answer": answer_gist(answer),
                 }
             )
