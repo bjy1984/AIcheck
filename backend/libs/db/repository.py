@@ -132,6 +132,8 @@ STATE_COLLECTIONS = {
     "cnse_lookup_cache": "cnse_lookup_cache",
     "ai_feedback": "ai_feedback",
     "user_feedback": "user_feedback",
+    # 「AI审查」对话助手的个人回答偏好：按院＋本人一行（apps/api/review_session_memory.py）
+    "review_assistant_preferences": "review_assistant_preferences",
     # 改进任务：意见反馈送平台审批后生成，只放在平台院（libs/improvement_tasks.py）
     "improvement_tasks": "improvement_tasks",
     # 多特检院：特检院注册表与全局用户名目录，只放在平台院（libs/institutes.py）

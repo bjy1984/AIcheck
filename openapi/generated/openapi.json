@@ -17626,7 +17626,7 @@
     },
     "/api/mcp/data-services": {
       "delete": {
-        "operationId": "mcp_api_mcp_data_services_get",
+        "operationId": "mcp_api_mcp_data_services_delete",
         "responses": {
           "200": {
             "content": {
@@ -17640,7 +17640,7 @@
         "summary": "Mcp"
       },
       "get": {
-        "operationId": "mcp_api_mcp_data_services_get",
+        "operationId": "mcp_api_mcp_data_services_delete",
         "responses": {
           "200": {
             "content": {
@@ -17654,7 +17654,7 @@
         "summary": "Mcp"
       },
       "post": {
-        "operationId": "mcp_api_mcp_data_services_get",
+        "operationId": "mcp_api_mcp_data_services_delete",
         "responses": {
           "200": {
             "content": {
@@ -23022,6 +23022,43 @@
           }
         },
         "summary": "List Important Reviews"
+      }
+    },
+    "/api/projects/{project_id}/inspection/node-audit-tasks": {
+      "get": {
+        "operationId": "list_node_audit_tasks_api_projects__project_id__inspection_node_audit_tasks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Node Audit Tasks"
       }
     },
     "/api/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction": {
@@ -30700,6 +30737,76 @@
         "summary": "Submit Registration"
       }
     },
+    "/api/review-assistant/preferences": {
+      "get": {
+        "operationId": "get_review_assistant_preferences_api_review_assistant_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Review Assistant Preferences"
+      },
+      "put": {
+        "description": "保存或清空（传空字符串）个人回答偏好。清空保留这一行，只把文字置空。",
+        "operationId": "put_review_assistant_preferences_api_review_assistant_preferences_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Review Assistant Preferences"
+      }
+    },
     "/api/review-plugins": {
       "get": {
         "description": "可选的审查插件，以及本部署能不能用（只有布林值，不含金钥或内部设定）。",
@@ -31375,6 +31482,76 @@
         ]
       }
     },
+    "/api/review-sessions/{session_id}/carry-over/dismiss": {
+      "post": {
+        "description": "不再把上一段对话的要点带给 AI：用户能看见 AI 被告知了什么，也能拿掉它。",
+        "operationId": "dismiss_review_session_carry_over_api_review_sessions__session_id__carry_over_dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Review Session Carry Over"
+      }
+    },
     "/api/review-sessions/{session_id}/events": {
       "get": {
         "operationId": "list_review_session_events_api_review_sessions__session_id__events_get",
@@ -31620,6 +31797,87 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/api/review-sessions/{session_id}/restart": {
+      "post": {
+        "description": "结束当前对话、开一本新的。旧会话留档不删，新会话带上旧会话的几行要点。",
+        "operationId": "restart_review_session_api_review_sessions__session_id__restart_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restart Review Session"
       }
     },
     "/api/review/findings": {
@@ -49064,6 +49322,43 @@
         "summary": "List Important Reviews"
       }
     },
+    "/projects/{project_id}/inspection/node-audit-tasks": {
+      "get": {
+        "operationId": "list_node_audit_tasks_projects__project_id__inspection_node_audit_tasks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Node Audit Tasks"
+      }
+    },
     "/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction": {
       "post": {
         "operationId": "return_correction_projects__project_id__inspection_nodes__node_id__actions_return_correction_post",
@@ -56740,6 +57035,76 @@
         "summary": "Submit Registration"
       }
     },
+    "/review-assistant/preferences": {
+      "get": {
+        "operationId": "get_review_assistant_preferences_review_assistant_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Review Assistant Preferences"
+      },
+      "put": {
+        "description": "保存或清空（传空字符串）个人回答偏好。清空保留这一行，只把文字置空。",
+        "operationId": "put_review_assistant_preferences_review_assistant_preferences_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Review Assistant Preferences"
+      }
+    },
     "/review-plugins": {
       "get": {
         "description": "可选的审查插件，以及本部署能不能用（只有布林值，不含金钥或内部设定）。",
@@ -57415,6 +57780,76 @@
         ]
       }
     },
+    "/review-sessions/{session_id}/carry-over/dismiss": {
+      "post": {
+        "description": "不再把上一段对话的要点带给 AI：用户能看见 AI 被告知了什么，也能拿掉它。",
+        "operationId": "dismiss_review_session_carry_over_review_sessions__session_id__carry_over_dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Review Session Carry Over"
+      }
+    },
     "/review-sessions/{session_id}/events": {
       "get": {
         "operationId": "list_review_session_events_review_sessions__session_id__events_get",
@@ -57660,6 +58095,87 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/review-sessions/{session_id}/restart": {
+      "post": {
+        "description": "结束当前对话、开一本新的。旧会话留档不删，新会话带上旧会话的几行要点。",
+        "operationId": "restart_review_session_review_sessions__session_id__restart_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restart Review Session"
       }
     },
     "/review/findings": {

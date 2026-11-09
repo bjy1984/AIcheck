@@ -32,7 +32,12 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from apps.api import document_access_policy, feedback_capture, upload_session_workflow
+from apps.api import (
+    document_access_policy,
+    feedback_capture,
+    review_session_memory,
+    upload_session_workflow,
+)
 from apps.api.evidence_decision import apply_manual_evidence_decision
 from apps.api.idempotency_scope import replay_authorization_digests
 from apps.api.office_preview_routes import router as office_preview_router
@@ -9698,6 +9703,7 @@ def review_session_view(session: dict[str, Any]) -> dict[str, Any]:
     view = repo.clone(session)
     view["revision"] = record_revision(session)
     view["etag"] = record_etag("review-session", session)
+    view["memory"] = review_session_memory.session_memory_view(session)
     return view
 
 
@@ -9728,7 +9734,10 @@ def review_session_scope_error(request: Request, session: dict[str, Any]) -> JSO
     scope_error = scope_error_for_record(request, session, project_id)
     if scope_error:
         return scope_error
-    return inspection_review_scope_error(request, project_id, node_id)
+    # 会话按本人开，按编号读写时也只认本人（见 review_session_memory）
+    return inspection_review_scope_error(request, project_id, node_id) or review_session_memory.session_owner_error(
+        request, session
+    )
 
 
 def inspection_review_scope_error(
@@ -9754,6 +9763,8 @@ def review_session_precondition_error(
     session: dict[str, Any],
     if_match: str | None,
 ) -> JSONResponse | None:
+    if closed_error := review_session_memory.session_closed_error(request, session):
+        return closed_error
     if not if_match:
         return fail(
             errors.PRECONDITION_REQUIRED,
@@ -10044,30 +10055,9 @@ def create_node_review_session(
         )
         if task_error:
             return fail(errors.VALIDATION_ERROR, request, message=task_error)
-        now = server_time()
-        confirmed_evidence_ids = [
-            str(item.get("id"))
-            for item in build_node_evidence_readiness(repo, project_id, node_id).get("nodeEvidenceLinks", [])
-            if item.get("id") and item.get("manualStatus") == "confirmed"
-        ]
-        session = {
-            "id": f"RSESSION-{uuid4().hex[:10].upper()}",
-            "projectId": project_id,
-            "nodeId": node_id,
-            "role": effective_role_for_request(request)[0] or "inspection",
-            "status": "active",
-            "currentTask": current_task,
-            "activeReviewRunId": body.get("reviewRunId"),
-            "selectedEvidenceLinkIds": confirmed_evidence_ids,
-            "selectedJudgmentIds": [],
-            "contextRevision": 1,
-            "revision": 1,
-            "createdBy": request_user_id(request) or "USER-UNKNOWN",
-            "createdByName": request_actor_name(request),
-            "tenantId": request_tenant_id(request),
-            "createdAt": now,
-            "updatedAt": now,
-        }
+        session = review_session_memory.new_session_record(
+            request, project_id, node_id, current_task=current_task, review_run_id=body.get("reviewRunId")
+        )
         repo.state["review_sessions"].insert(0, session)
         append_review_session_event(
             session,
@@ -10948,22 +10938,6 @@ def review_conversation_llm_answer(
         if str(item.get("id") or "") in selected_ids
     ][:12]
     session_tool_memory = load_review_session_tool_memory(session)
-    recent_messages = []
-    for item in repo.state.get("review_messages", []):
-        if item.get("sessionId") != session.get("id"):
-            continue
-        text_blocks = [
-            str(block.get("text") or "")
-            for block in item.get("contentBlocks") or []
-            if isinstance(block, dict) and block.get("type") == "text"
-        ]
-        if text_blocks:
-            recent_messages.append(
-                {
-                    "role": item.get("role"),
-                    "text": "\n".join(text_blocks)[:1200],
-                }
-            )
     context = {
         "sessionId": session.get("id"),
         "currentTask": session.get("currentTask"),
@@ -10991,7 +10965,12 @@ def review_conversation_llm_answer(
             "currentStep": (review_run or {}).get("currentStep"),
             "findingDrafts": repo.clone((review_run or {}).get("findingDrafts") or [])[:8],
         },
-        "recentConversation": recent_messages[-6:],
+        # 近期对话（限天数、旧证据下的回答标 staleContext）、上一段对话要点、个人偏好
+        **review_session_memory.conversation_memory_context(
+            session,
+            user_text=user_text,
+            review_run_id=str((review_run or {}).get("reviewRunId") or (review_run or {}).get("id") or ""),
+        ),
         "previousToolFindings": [
             {"toolName": item.get("toolName"), "summary": item.get("summary")}
             for item in list(session_tool_memory.values())[:12]
@@ -12042,6 +12021,7 @@ def create_review_session_message(
                 "contentBlocks": assistant_blocks,
                 "execution": assistant_execution,
                 "reviewRunId": review_run_id,
+                **review_session_memory.message_context_stamp(session),
                 "createdAt": server_time(),
                 "tenantId": request_tenant_id(request),
             }
@@ -12095,6 +12075,7 @@ def create_review_session_message(
                 "turnCount": 0,
             },
             "reviewRunId": review_run_id,
+            **review_session_memory.message_context_stamp(session),
             "createdAt": server_time(),
             "tenantId": request_tenant_id(request),
         }

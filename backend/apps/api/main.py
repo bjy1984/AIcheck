@@ -43,6 +43,7 @@ from apps.api.report_template_routes import report_template_router
 from apps.api.review_handoff_routes import router as review_handoff_router
 from apps.api.review_plugin_routes import review_plugin_router
 from apps.api.review_policy_routes import review_policy_router
+from apps.api.review_session_memory_routes import review_session_memory_router
 from apps.api.routes import (
     binding_node_ids,
     document_node_ids,
@@ -1540,6 +1541,8 @@ if compatibility_mocks_enabled():
 # 意见反馈要排在主 router 前面：routes.py 有通配的 GET /admin/{kind}，会先吞掉 /admin/user-feedback
 app.include_router(user_feedback_router)
 app.include_router(user_feedback_router, prefix="/api")
+app.include_router(review_session_memory_router)
+app.include_router(review_session_memory_router, prefix="/api")
 app.include_router(skill_install_router)
 app.include_router(skill_install_router, prefix="/api")
 app.include_router(improvement_router)

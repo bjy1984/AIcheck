@@ -2,6 +2,7 @@ import request from '@/axios'
 import { PATH_URL } from '@/axios/service'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import type {
+  ReviewAssistantPreferences,
   ReviewBAuditView,
   ReviewBEvent,
   ReviewBMessage,
@@ -98,6 +99,47 @@ export const runReviewBSessionActionApi = (
     url: `/api/review-sessions/${sessionId}/actions/${actionKey}`,
     data,
     headers: mutationHeaders('review-action', options)
+  })
+}
+
+/** 结束当前对话、开一本新的：旧会话留档只读，新会话带上旧会话的几行要点。 */
+export const restartReviewBSessionApi = (
+  sessionId: string,
+  data: { currentTask?: string },
+  options?: MutationOptions
+): Promise<IResponse<{ session: ReviewBSession; archivedSessionId: string }>> => {
+  return request.post({
+    url: `/api/review-sessions/${sessionId}/restart`,
+    data,
+    headers: mutationHeaders('review-session-restart', options)
+  })
+}
+
+/** 不再把上一段对话的要点带给 AI。 */
+export const dismissReviewBCarryOverApi = (
+  sessionId: string,
+  options?: MutationOptions
+): Promise<IResponse<{ session: ReviewBSession }>> => {
+  return request.post({
+    url: `/api/review-sessions/${sessionId}/carry-over/dismiss`,
+    headers: mutationHeaders('review-carry-over-dismiss', options)
+  })
+}
+
+export const getReviewAssistantPreferencesApi = (): Promise<
+  IResponse<{ preferences: ReviewAssistantPreferences }>
+> => {
+  return request.get({ url: '/api/review-assistant/preferences' })
+}
+
+/** 保存个人回答偏好；传空字符串就是清空。 */
+export const saveReviewAssistantPreferencesApi = (
+  text: string
+): Promise<IResponse<{ preferences: ReviewAssistantPreferences }>> => {
+  return request.put({
+    url: '/api/review-assistant/preferences',
+    data: { text },
+    headers: mutationHeaders('review-assistant-preferences')
   })
 }
 

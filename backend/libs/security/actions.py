@@ -79,6 +79,11 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/review-sessions$", "review:save"),
     ("POST", r"/review-sessions/[^/]+/messages$", "review:save"),
     ("POST", r"/review-sessions/[^/]+/actions/[^/]+$", "review:save"),
+    # 对话记忆（2026-11-09，apps/api/review_session_memory_routes.py）：新对话、不再带上上次要点、
+    # 个人回答偏好。会话只认本人、偏好只给监检，都在接口里再核一遍
+    ("POST", r"/review-sessions/[^/]+/restart$", "review:save"),
+    ("POST", r"/review-sessions/[^/]+/carry-over/dismiss$", "review:save"),
+    ("PUT", r"/review-assistant/preferences$", "review:save"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/review-opinions$", "review:save"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/fact-corrections$", "review:save"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/fact-corrections/[^/]+/revoke$", "review:save"),

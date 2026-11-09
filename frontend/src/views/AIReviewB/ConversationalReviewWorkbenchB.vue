@@ -4,6 +4,8 @@ import ReviewNodeOverview from './components/ReviewNodeOverview.vue'
 import { cloneDocumentSelectionVersions, documentSelectionPayload } from './documentPageSelection'
 import { runObjectCandidates, runReviewedObjectIds } from './objectSelection'
 import ReviewDecisionSummary from './components/ReviewDecisionSummary.vue'
+import ReviewConversationMemory from './components/ReviewConversationMemory.vue'
+import ReviewConversationCarryOver from './components/ReviewConversationCarryOver.vue'
 import { needsAttention, overviewResult } from './workstationOverview'
 import ReviewWorkstationTools from './ReviewWorkstationTools.vue'
 import PipelineConflictDetails from './PipelineConflictDetails.vue'
@@ -88,6 +90,7 @@ import type {
   ReviewBMessage,
   ReviewBProjectAnalysisResult,
   ReviewBReference,
+  ReviewBSession,
   ReviewBWorkspace
 } from '@/types/ai-review-b'
 import type {
@@ -940,6 +943,23 @@ const stopLiveAgentTrace = () => {
     window.clearInterval(liveTraceTimer)
     liveTraceTimer = undefined
   }
+}
+
+const nodeInspectionItem = computed(
+  () => (workspace.value?.businessBasis?.inspectionItem as string | undefined) || undefined
+)
+
+/** 「新对话」之后换成新会话：旧消息和事件清空，按新会话重新拉一遍。 */
+const handleConversationRestarted = async (next: ReviewBSession) => {
+  stopLiveAgentTrace()
+  messages.value = []
+  events.value = []
+  if (workspace.value) workspace.value = { ...workspace.value, session: next }
+  await loadSessionData(true)
+}
+
+const handleConversationMemoryUpdated = (next: ReviewBSession) => {
+  if (workspace.value) workspace.value = { ...workspace.value, session: next }
 }
 
 const ensureSession = async () => {
@@ -2136,6 +2156,13 @@ onBeforeUnmount(() => {
               >查看执行轨迹</ElButton
             >
           </div>
+          <ReviewConversationMemory
+            v-show="activePane === 'assistant'"
+            :session="session"
+            :busy="executionInFlight || cancelling"
+            :current-task="nodeInspectionItem"
+            @restarted="handleConversationRestarted"
+          />
         </section>
 
         <ReviewWorkstationTools
@@ -2208,6 +2235,11 @@ onBeforeUnmount(() => {
         >
           <ElSkeleton v-if="nodeLoading && !workspace" :rows="8" animated />
           <template v-else>
+            <ReviewConversationCarryOver
+              :session="session"
+              :has-messages="conversationMessages.length > 0"
+              @updated="handleConversationMemoryUpdated"
+            />
             <article v-if="!conversationMessages.length" class="welcome-card">
               <div>
                 <strong>AI 复核助手已就绪</strong>

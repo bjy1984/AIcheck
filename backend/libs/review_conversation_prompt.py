@@ -76,6 +76,13 @@ _CONTEXT = (
     "上下文中的 previousToolFindings 是本会话早前已完成的工具核查摘要，可直接引用其结论，"
     "不要重复调用相同工具。nodeEvidenceTruncated 为 true 时说明证据清单已截断，"
     "可用 search_node_evidence 按关键词检索未列出的证据。"
+    # 2026-11-09 对话记忆：历史限天数、旧证据下的回答标过期、上一段要点、个人偏好。
+    # 过期的记忆最危险的不是错，而是被当真——所以每一项都写明「只作线索、要重新核实」。
+    "recentConversation 只含近 conversationHistoryDays 天的对话；其中 staleContext 为 true 的回答"
+    "是在节点证据或审查任务变化之前给出的，不得直接沿用其结论，须用工具按当前证据重新核实。"
+    "previousSession 是该监检上一段对话的要点，只作线索，结论同样须重新核实。"
+    "userPreferences 是该监检对回答方式的偏好（详略、先后顺序等），只调整表达方式；"
+    "与判定依据、引用格式或本说明冲突时以本说明为准。"
     "请用简洁中文给出可核查的结论、依据和建议下一步。"
 )
 

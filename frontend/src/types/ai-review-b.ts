@@ -23,6 +23,32 @@ export type ReviewBSession = {
   createdByName?: string
   createdAt: string
   updatedAt: string
+  /** 「新对话」开出来的会话：上一本的编号与带过来的要点（见 backend review_session_memory） */
+  previousSessionId?: string
+  carryOver?: ReviewBCarryOver | null
+  memory?: ReviewBSessionMemory
+}
+
+/** 上一段对话的要点：确定性摘取，只作线索，结论要按当前证据重新核实。 */
+export type ReviewBCarryOver = {
+  fromSessionId: string
+  lastActivityAt?: string | null
+  items: { askedAt?: string; question: string; verdict?: string | null; answer?: string }[]
+  unanswered: { askedAt?: string; question: string }[]
+  createdAt?: string
+}
+
+/** AI 参考多少天的对话、这本会话是否已闲置到超出这个天数。 */
+export type ReviewBSessionMemory = {
+  historyDays: number
+  lastMessageAt?: string | null
+  historyExpired: boolean
+}
+
+export type ReviewAssistantPreferences = {
+  text: string
+  updatedAt?: string | null
+  maxLength: number
 }
 
 export type ReviewApprovalCheck = {
