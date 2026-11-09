@@ -35,6 +35,7 @@ from fastapi.responses import (
 from apps.api import (
     document_access_policy,
     feedback_capture,
+    review_session_index,
     review_session_memory,
     upload_session_workflow,
 )
@@ -9787,17 +9788,8 @@ def review_session_precondition_error(
 
 
 def next_review_session_sequence(collection: str, session_id: str) -> int:
-    return (
-        max(
-            (
-                int(item.get("sequence") or 0)
-                for item in repo.state.get(collection, [])
-                if item.get("sessionId") == session_id
-            ),
-            default=0,
-        )
-        + 1
-    )
+    # 消息、事件按会话建了索引，不再整表扫（review_session_index）
+    return review_session_index.next_sequence(collection, session_id)
 
 
 def append_review_session_event(
@@ -10312,7 +10304,8 @@ def load_review_session_tool_memory(session: dict[str, Any]) -> dict[str, dict[s
     revision = review_session_tool_memory_revision(session)
     memory: dict[str, dict[str, Any]] = {}
     for item in repo.state.get("review_session_tool_memory", []):
-        if item.get("sessionId") != session.get("id"):
+        # 按会话取，同时核院：编号撞了也拿不到别的院的工具结果（没带院编号的老条目算没命中）
+        if item.get("sessionId") != session.get("id") or item.get("tenantId") != session.get("tenantId"):
             continue
         if int(item.get("memoryRevision") if item.get("memoryRevision") is not None else -1) != revision:
             continue
@@ -10339,6 +10332,7 @@ def store_review_session_tool_memory(
             item
             for item in entries
             if item.get("sessionId") == session_id
+            and item.get("tenantId") == session.get("tenantId")
             and item.get("signature") == signature
             and int(item.get("memoryRevision") if item.get("memoryRevision") is not None else -1) == revision
         ),
@@ -10354,6 +10348,7 @@ def store_review_session_tool_memory(
         {
             "id": f"RTMEM-{uuid4().hex[:10].upper()}",
             "sessionId": session_id,
+            "tenantId": session.get("tenantId"),
             "memoryRevision": revision,
             "signature": signature,
             "toolName": tool_name,
@@ -11918,8 +11913,8 @@ def list_review_session_messages(
     messages = sorted(
         [
             review_message_view(item)
-            for item in repo.state["review_messages"]
-            if item.get("sessionId") == session_id and int(item.get("sequence") or 0) > after
+            for item in review_session_index.session_rows("review_messages", session_id)
+            if int(item.get("sequence") or 0) > after
         ],
         key=lambda item: int(item.get("sequence") or 0),
     )
@@ -12414,9 +12409,7 @@ def review_session_event_snapshot(session_id: str, session: dict[str, Any]) -> l
         and int(item.get("nodeId") or 0) == int(session.get("nodeId") or 0)
     }
     events: list[dict[str, Any]] = []
-    for item in repo.state["review_session_events"]:
-        if item.get("sessionId") != session_id:
-            continue
+    for item in review_session_index.session_rows("review_session_events", session_id):
         events.append(
             {
                 "schema": "review-event/v1",

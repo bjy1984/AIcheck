@@ -29,6 +29,7 @@ from uuid import uuid4
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from apps.api import review_session_index
 from libs.contracts import errors
 from libs.contracts.responses import SERVER_TZ, fail, server_time
 from libs.db.repository import repo
@@ -144,7 +145,7 @@ def answer_unsettled(message: dict[str, Any]) -> bool:
 
 
 def session_messages(session_id: str) -> list[dict[str, Any]]:
-    rows = [item for item in repo.state.get("review_messages", []) if item.get("sessionId") == session_id]
+    rows = review_session_index.session_rows("review_messages", session_id)
     return sorted(rows, key=lambda item: int(item.get("sequence") or 0))
 
 
@@ -164,8 +165,7 @@ def answer_is_stale(message: dict[str, Any], *, fingerprint: str, review_run_id:
 def last_message_at(session_id: str) -> datetime | None:
     stamps = [
         parse_server_time(item.get("createdAt"))
-        for item in repo.state.get("review_messages", [])
-        if item.get("sessionId") == session_id
+        for item in review_session_index.session_rows("review_messages", session_id)
     ]
     stamps = [stamp for stamp in stamps if stamp is not None]
     return max(stamps) if stamps else None
