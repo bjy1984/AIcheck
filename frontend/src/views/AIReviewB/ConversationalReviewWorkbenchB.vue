@@ -3708,11 +3708,19 @@ onBeforeUnmount(() => {
   margin-left: 72px;
 }
 
+/* 用户的提问用主色实心气泡、白字，右对齐：和下面 AI 回答（灰底上的正文）一眼分得开。
+   原来是 #eef3fb 浅蓝灰，和页面底色（#f5f7fa）、上面的「上次对话要点」条几乎一个颜色，
+   分不清哪句是自己问的。白字压主色约 5.3:1。右下角收一个小圆角，像对话的尾巴。 */
 .conversation-message.is-user .message-body {
   max-width: 78%;
   padding: 9px 14px;
-  background: #eef3fb;
-  border-radius: 14px;
+  color: #fff;
+  background: var(--el-color-primary);
+  border-radius: 14px 14px 4px 14px;
+}
+
+.conversation-message.is-user .message-body :deep(.markdown-reference) {
+  color: inherit;
 }
 
 /* 回答上方的署名行：谁说的、几点说的。原来回答没有任何署名，和用户气泡之外的内容混在一起。 */

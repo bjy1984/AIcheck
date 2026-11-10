@@ -114,4 +114,11 @@ assert.ok(
   '页签样式用 > 限定，不能 :deep 到同一行的工具条按钮'
 )
 
+// 7) 用户的提问要和 AI 回答一眼分开：主色实心气泡＋白字（2026-11-10 用户反馈原来的浅蓝灰
+//    #eef3fb 和页面底色几乎一个颜色）。白字压主色约 5.3:1。
+const userBubble =
+  /\.conversation-message\.is-user \.message-body \{([^}]*)\}/.exec(source)?.[1] || ''
+assert.ok(userBubble.includes('background: var(--el-color-primary)'), '提问气泡用主色实心')
+assert.ok(/color:\s*#fff/.test(userBubble), '提问气泡用白字')
+
 console.log('Assistant dialog layout contract passed')
