@@ -360,6 +360,9 @@ export const checkReasonLabels: Record<string, string> = {
   required_pipeline_grades_missing: '未抽到管道级别（GC1/GC2…）',
   fewer_than_two_comparable_values: '可比的值不足两处',
   no_certificates: '未抽到证书',
+  // AI审查助手读正式复核结论时的两种「拿不到」（libs/review_assistant_atomic_results.py）
+  no_review_run: '本节点还没有复核记录',
+  no_recorded_atomic_results: '这次复核没有留下逐项核对结果',
   pipe_fit_up_records_missing: '缺少管道组对记录',
   welding_records_missing: '缺少焊接记录',
   repair_occurrence_or_records_missing: '缺少返修发生记录',

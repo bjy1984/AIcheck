@@ -5789,12 +5789,17 @@ class InMemoryRepository:
         )
         self.apply_tenant_scope()
 
-    def load_review_session_scope_from_sync_postgres(self, session_id: str) -> None:
+    def load_review_session_scope_from_sync_postgres(self, session_id: str, *, include_runs: bool = True) -> None:
         """会话级 live read：只合并这个会话、它的消息/事件/Agent 执行，以及同节点运行的事件。
 
         轮询 /review-sessions/{id}/events 原先每次整表重载 review_runs（77 MB）与
         review_events（51 MB），2026-09-25 实测单次 12.6 秒，节点页要等它。
         会话相关行都带 sessionId，走 payload 的 GIN 索引；运行事件走 reviewRunId 索引。
+
+        2026-11-10：运行按节点在 SQL 里筛（原来取回整个项目再在 Python 里筛，
+        测试项目3 每次 345 条、113 MB，只留 31 条）；运行事件只取内存里还没有的
+        （它们只追加、不改，见 _shared.append_review_event）。include_runs=False
+        只读会话自己的行，给只看消息的轮询用。
         """
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
@@ -5821,27 +5826,39 @@ class InMemoryRepository:
                 (payload for collection, _, payload in rows if collection == STATE_COLLECTIONS["review_sessions"]),
                 None,
             )
-            if session:
+            if session and include_runs:
                 run_rows = self.sync_postgres.execute(
                     """
                     SELECT collection, object_id, payload
                     FROM aicheck_state
                     WHERE tenant_id = %s AND collection = %s AND payload @> %s::jsonb
+                      AND payload ->> 'nodeId' = %s
                     """,
-                    (tenant_id, STATE_COLLECTIONS["review_runs"], json.dumps({"projectId": session.get("projectId")})),
+                    (
+                        tenant_id,
+                        STATE_COLLECTIONS["review_runs"],
+                        json.dumps({"projectId": session.get("projectId")}),
+                        str(session.get("nodeId")),
+                    ),
                 ).fetchall()
-                run_rows = [row for row in run_rows if str(row[2].get("nodeId")) == str(session.get("nodeId"))]
                 run_ids = [str(row[2].get("reviewRunId") or row[1]) for row in run_rows]
                 rows.extend(run_rows)
                 if run_ids:
+                    wanted = set(run_ids)
+                    known_event_ids = [
+                        str(item["id"])
+                        for item in self.state.get("review_events", [])
+                        if item.get("id") and str(item.get("reviewRunId") or "") in wanted
+                    ]
                     rows.extend(
                         self.sync_postgres.execute(
                             """
                             SELECT collection, object_id, payload
                             FROM aicheck_state
                             WHERE tenant_id = %s AND collection = %s AND payload ->> 'reviewRunId' = ANY(%s)
+                              AND NOT (object_id = ANY(%s::text[]))
                             """,
-                            (tenant_id, STATE_COLLECTIONS["review_events"], run_ids),
+                            (tenant_id, STATE_COLLECTIONS["review_events"], run_ids, known_event_ids),
                         ).fetchall()
                     )
             self._merge_scoped_state_rows(rows)

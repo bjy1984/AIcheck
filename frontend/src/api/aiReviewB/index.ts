@@ -55,7 +55,15 @@ export const createReviewBSessionApi = (
 export const listReviewBMessagesApi = (
   sessionId: string,
   after = 0
-): Promise<IResponse<{ sessionId: string; messages: ReviewBMessage[]; lastSequence: number }>> => {
+): Promise<
+  IResponse<{
+    sessionId: string
+    messages: ReviewBMessage[]
+    lastSequence: number
+    /** 当前会话（含最新 etag）。回答落定会把 revision 加一，下一问要用这个。 */
+    session?: ReviewBSession
+  }>
+> => {
   return request.get({
     url: `/api/review-sessions/${sessionId}/messages`,
     params: { after }

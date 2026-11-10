@@ -21,7 +21,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { blockingReasonsAsItems, buildSuggestedQuestions } from './suggestedQuestions'
 import { evidenceStatusView } from '../AICheck/evidenceProvenance'
-import { isRunSettled } from './runPolling'
+import { shouldRefreshLiveState } from './runPolling'
 import {
   ElAlert,
   ElButton,
@@ -1408,6 +1408,11 @@ const waitForAssistantCompletion = async (
       if (!isCurrentContext()) return
       mergeMessages(res.data.messages)
       applyStreamingDeltas(messageId)
+      // 回答落定会把会话 revision 加一：就用这次响应里的会话，下一问直接能发，
+      // 不必等整个工作台刷新回来（那一下原来要陪着「停止回答」再转十几秒）。
+      const finished = messages.value.find((item) => item.id === messageId)
+      if (finished?.status && finished.status !== 'running' && res.data.session && workspace.value)
+        workspace.value = { ...workspace.value, session: res.data.session }
       await scrollTimelineToEnd()
     } catch {
       // 等待期间的轮询失败不终止等待，下一轮继续重试。
@@ -1458,6 +1463,7 @@ const sendMessage = async (preset?: string) => {
   const generation = reviewContextGeneration.value
   const isCurrentContext = () =>
     generation === reviewContextGeneration.value && session.value?.id === sessionId
+  let answerSettled = false
   sending.value = true
   executionStarted.value = true
   // **不要**在发送时自动展开。展开态渲染的是全量轨迹，收起态才是那三行滚动预览；
@@ -1511,8 +1517,7 @@ const sendMessage = async (preset?: string) => {
       await waitForAssistantCompletion(sessionId, res.data.assistantMessage.id, isCurrentContext)
     }
     if (!isCurrentContext()) return
-    await Promise.all([loadSessionData(false), refreshLiveState()])
-    if (!isCurrentContext()) return
+    answerSettled = true
     // 过程看完了，镜头对准结果的第一行——不是滚到最底看结论的尾巴
     await scrollToLatestAnswer()
   } catch (error) {
@@ -1530,6 +1535,10 @@ const sendMessage = async (preset?: string) => {
     // 不再强制收起：用户中途点开是想看全过程，
     // 执行一结束就替他合上，等于把他刚打开的东西关掉。
   }
+  // 回答已经在屏幕上了，「停止回答」先停。工作台、事件、审计视图的收尾刷新放到后台：
+  // 原来排在 finally 之前，生产上这一下要十几秒，按钮就陪着多转十几秒。
+  if (answerSettled && isCurrentContext())
+    void Promise.all([loadSessionData(false), refreshLiveState()]).catch(() => undefined)
 }
 
 /** 叫停当前正在跑的东西：聊天走会话取消，复核走 ReviewRun 取消。
@@ -1973,8 +1982,16 @@ onMounted(async () => {
     // 但没有理由继续这样空转。
     //
     // 执行期间的动态由 SSE 推送承担，这里只负责收尾那一下。
-    if (document.hidden) return
-    if (!executionStarted.value && isRunSettled(activeRun.value?.status)) return
+    // 问过一句之后不再无限轮下去——条件见 shouldRefreshLiveState。
+    if (
+      !shouldRefreshLiveState({
+        hidden: document.hidden,
+        sending: sending.value,
+        reviewStarting: reviewStarting.value,
+        runStatus: activeRun.value?.status
+      })
+    )
+      return
     void refreshLiveState()
   }, 3000)
 })

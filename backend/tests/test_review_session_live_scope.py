@@ -82,3 +82,52 @@ def test_a_pinned_record_is_not_overwritten_by_the_session_scope(isolated_postgr
             reader.unpin_object("review_sessions", "S1")
     finally:
         reset_request_tenant_id(token)
+
+
+def test_message_only_scope_skips_runs_and_run_events(isolated_postgres_url) -> None:
+    """只看消息的轮询（回答落定前每 0.8 秒一次）不该连带重读整个节点的运行。"""
+    apply_migrations(isolated_postgres_url)
+    writer, reader = InMemoryRepository(seed=False), InMemoryRepository(seed=False)
+    token = set_request_tenant_id("T")
+    try:
+        writer.configure_sync_postgres(isolated_postgres_url)
+        reader.configure_sync_postgres(isolated_postgres_url)
+        writer.upsert_state_records_to_sync_postgres(_state())
+
+        reader.load_review_session_scope_from_sync_postgres("S1", include_runs=False)
+
+        assert _ids(reader, "review_sessions") == {"S1"}
+        assert _ids(reader, "review_messages") == {"M1"}
+        assert _ids(reader, "agent_executions") == {"A1"}
+        assert _ids(reader, "review_runs") == set()
+        assert _ids(reader, "review_events") == set()
+    finally:
+        reset_request_tenant_id(token)
+
+
+def test_run_events_already_in_memory_are_not_read_again(isolated_postgres_url) -> None:
+    """运行事件只追加不改：内存里有的不再从库里重读，新追加的照样读到。"""
+    apply_migrations(isolated_postgres_url)
+    writer, reader = InMemoryRepository(seed=False), InMemoryRepository(seed=False)
+    token = set_request_tenant_id("T")
+    try:
+        writer.configure_sync_postgres(isolated_postgres_url)
+        reader.configure_sync_postgres(isolated_postgres_url)
+        writer.upsert_state_records_to_sync_postgres(_state())
+        reader.load_review_session_scope_from_sync_postgres("S1")
+        assert _ids(reader, "review_events") == {"V68"}
+
+        # 库里那条被改了（真实代码里不会发生）：内存里已有，就不再读它
+        writer.upsert_state_records_to_sync_postgres(
+            {"review_events": [{"id": "V68", "reviewRunId": "R68", "tenantId": "T", "title": "改过"}]}
+        )
+        # 同一次运行新追加的事件照样读到
+        writer.upsert_state_records_to_sync_postgres(
+            {"review_events": [{"id": "V68B", "reviewRunId": "R68", "tenantId": "T"}]}
+        )
+        reader.load_review_session_scope_from_sync_postgres("S1")
+
+        assert _ids(reader, "review_events") == {"V68", "V68B"}
+        assert "title" not in reader.find_one("review_events", "V68")
+    finally:
+        reset_request_tenant_id(token)

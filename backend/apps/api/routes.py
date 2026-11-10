@@ -36,6 +36,7 @@ from apps.api import (
     document_access_policy,
     feedback_capture,
     review_session_index,
+    review_session_live,
     review_session_memory,
     review_session_retention,
     upload_session_workflow,
@@ -11928,7 +11929,8 @@ def list_review_session_messages(
 ):
     ensure_review_session_state()
     # live read：其他 worker 后台线程finalize的消息需先从共享存储刷新（进程级节流）。
-    refresh_review_live_state_shared(session_id=session_id)
+    # 只看消息不碰运行：回答落定前前端每 0.8 秒问一次，原来每次都连带重读整个节点的运行。
+    refresh_review_live_state_shared(session_id=session_id, include_runs=False)
     session = repo.find_one("review_sessions", session_id)
     if not session:
         return fail(errors.NOT_FOUND, request)
@@ -11948,6 +11950,8 @@ def list_review_session_messages(
             "sessionId": session_id,
             "messages": messages,
             "lastSequence": max((int(item.get("sequence") or 0) for item in messages), default=after),
+            # 回答落定会把会话 revision 加一；前端凭这里的 etag 接着发下一问，不必等整页刷新
+            "session": review_session_view(session),
         },
         request,
     )
@@ -12371,25 +12375,24 @@ REVIEW_SESSION_EVENT_LIVE_KEYS = {
     "agent_executions",
 }
 
-_REVIEW_LIVE_REFRESH_LOCK = threading.Lock()
-_REVIEW_LIVE_REFRESH_MONOTONIC: dict[str, float] = {}
-
-
-def refresh_review_live_state_shared(min_interval_seconds: float = 0.4, *, session_id: str = "") -> None:
+def refresh_review_live_state_shared(
+    min_interval_seconds: float = 0.4, *, session_id: str = "", include_runs: bool = True
+) -> None:
     """进程级共享节流的 live-read 刷新；给了 session_id 就只读这个会话相关的行。
 
     N 个 SSE / 轮询客户端共享一次 DB 读取（节流窗口内直接命中本地快照）。整表重载
     review_runs/review_events 单次 12.6 秒（2026-09-25），会话页只需要自己那几行。
+    同节点的运行另按 3 秒节流；只看消息的读取不碰运行（见 review_session_live）。
     """
     if repo.sync_postgres is None:
         return
-    now, key = time.monotonic(), session_id or "*"
-    with _REVIEW_LIVE_REFRESH_LOCK:
-        if now - _REVIEW_LIVE_REFRESH_MONOTONIC.get(key, 0.0) < min_interval_seconds:
-            return
-        _REVIEW_LIVE_REFRESH_MONOTONIC[key] = now
+    refresh, refresh_runs = review_session_live.plan_refresh(
+        session_id or "*", time.monotonic(), min_interval_seconds=min_interval_seconds, include_runs=include_runs
+    )
+    if not refresh:
+        return
     if session_id:
-        repo.load_review_session_scope_from_sync_postgres(session_id)
+        repo.load_review_session_scope_from_sync_postgres(session_id, include_runs=refresh_runs)
         return
     refresh_state_from_postgres_for_live_read(REVIEW_SESSION_EVENT_LIVE_KEYS)
 
@@ -12453,6 +12456,15 @@ def review_session_event_snapshot(session_id: str, session: dict[str, Any]) -> l
     for source_sequence, item in enumerate(repo.state.get("review_events", []), start=1):
         if str(item.get("reviewRunId") or "") not in run_ids:
             continue
+        # 先折叠再复制：大事件每条约 42 KB，整份深拷贝后再丢掉是白费。hash 照原文算——
+        # 折叠只是传输层的事，指纹要指向真正的内容。两样都按事件 id 缓存（运行事件只追加不改）。
+        slim_payload, payload_hash = review_session_live.run_event_projection(
+            item,
+            lambda event: (
+                repo.clone(slim_event_payload(str(event.get("eventType") or ""), event.get("details") or {})),
+                stable_hash_payload(event.get("details") or {}),
+            ),
+        )
         events.append(
             {
                 "schema": "review-event/v1",
@@ -12461,11 +12473,8 @@ def review_session_event_snapshot(session_id: str, session: dict[str, Any]) -> l
                 "title": item.get("title"),
                 "sessionId": session_id,
                 "reviewRunId": item.get("reviewRunId"),
-                # 先折叠再复制：大事件每条约 42 KB，整份深拷贝后再丢掉是白费。
-                "payload": repo.clone(slim_event_payload(str(item.get("eventType") or ""), item.get("details") or {})),
-                # hash 照原文算——折叠只是传输层的事，指纹要指向真正的内容，
-                # 否则拿摘要算出来的哈希会让人以为内容变了。
-                "payloadHash": stable_hash_payload(item.get("details") or {}),
+                "payload": repo.clone(slim_payload),
+                "payloadHash": payload_hash,
                 "occurredAt": item.get("createdAt"),
                 "status": item.get("status"),
                 "_sourceKind": 1,
@@ -12576,7 +12585,7 @@ def stream_review_session_events(
 def list_review_session_agent_executions(request: Request, session_id: str):
     """按会话查询持久化 Agent 执行记录（审计/恢复用）。"""
     ensure_review_session_state()
-    refresh_review_live_state_shared(session_id=session_id)
+    refresh_review_live_state_shared(session_id=session_id, include_runs=False)
     session = repo.find_one("review_sessions", session_id)
     if not session:
         return fail(errors.NOT_FOUND, request)
