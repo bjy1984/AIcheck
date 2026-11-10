@@ -63,6 +63,8 @@ def test_列表接口用的是原文哈希():
     source = (
         pathlib.Path(__file__).resolve().parents[1] / "apps" / "api" / "routes.py"
     ).read_text(encoding="utf-8")
-    idx = source.index('"payload": repo.clone(slim_event_payload(')
+    # 2026-11-10 起折叠与哈希一起按事件 id 缓存（review_session_live.run_event_projection），
+    # 两样在同一个 lambda 里算：哈希仍要拿原文 details 算。行为见 test_review_session_live。
+    idx = source.index("repo.clone(slim_event_payload(str(event.get(")
     block = source[idx : idx + 500]
-    assert 'stable_hash_payload(item.get("details") or {})' in block
+    assert 'stable_hash_payload(event.get("details") or {})' in block
