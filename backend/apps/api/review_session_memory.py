@@ -30,6 +30,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from apps.api import review_session_index
+from apps.api.review_human_records import human_records_change_text, human_records_signature
 from libs.contracts import errors
 from libs.contracts.responses import SERVER_TZ, fail, server_time
 from libs.db.repository import repo
@@ -125,8 +126,13 @@ def parse_server_time(value: Any) -> datetime | None:
 
 
 def message_context_stamp(session: dict[str, Any]) -> dict[str, Any]:
-    """回答落库时记下当时的证据指纹，之后据此判断它是不是在旧证据下说的。"""
-    return {"evidenceFingerprint": str(session.get("evidenceFingerprint") or "")}
+    """回答落库时记下当时的证据指纹和它看得到的人工记录，之后据此判断它是不是在旧证据下说的、为什么过期。"""
+    return {
+        "evidenceFingerprint": str(session.get("evidenceFingerprint") or ""),
+        "humanRecordsSeen": human_records_signature(
+            repo.state, str(session.get("projectId") or ""), int(session.get("nodeId") or 0)
+        ),
+    }
 
 
 def message_text(message: dict[str, Any]) -> str:
@@ -153,13 +159,28 @@ def settled_session_messages(session_id: str) -> list[dict[str, Any]]:
     return [item for item in session_messages(session_id) if not answer_unsettled(item)]
 
 
-def answer_is_stale(message: dict[str, Any], *, fingerprint: str, review_run_id: str) -> bool:
+def answer_stale_reason(
+    message: dict[str, Any],
+    *,
+    fingerprint: str,
+    review_run_id: str,
+    human_records: dict[str, Any] | None = None,
+) -> str | None:
+    """这条回答为什么过期；没过期返回 None。原因写给模型：知道是哪一类变了，才知道先核实什么。"""
     # 没有指纹的是本次改动之前的老回答：当时的证据已无从核对，按需重新核实处理
     if "evidenceFingerprint" not in message:
-        return True
+        return "这条回答早于记忆改造，当时的证据已无从核对"
     if str(message.get("evidenceFingerprint") or "") != fingerprint:
-        return True
-    return str(message.get("reviewRunId") or "") != review_run_id
+        seen = message.get("humanRecordsSeen")
+        changed = human_records_change_text(seen, human_records or {}) if isinstance(seen, dict) else ""
+        return f"此后人工记录有变化：{changed}" if changed else "此后节点的证据或人工记录有变化"
+    if str(message.get("reviewRunId") or "") != review_run_id:
+        return "此后节点有了新的复核运行"
+    return None
+
+
+def answer_is_stale(message: dict[str, Any], *, fingerprint: str, review_run_id: str) -> bool:
+    return answer_stale_reason(message, fingerprint=fingerprint, review_run_id=review_run_id) is not None
 
 
 def last_message_at(session_id: str) -> datetime | None:
@@ -185,6 +206,9 @@ def recent_conversation(
     """交给模型的近期对话：只含最近 HISTORY_DAYS 天、已落定的消息，不含本次提问本身。"""
     cutoff = history_cutoff(now)
     fingerprint = str(session.get("evidenceFingerprint") or "")
+    human_records = human_records_signature(
+        repo.state, str(session.get("projectId") or ""), int(session.get("nodeId") or 0)
+    )
     rows = []
     for item in settled_session_messages(str(session.get("id") or "")):
         created = parse_server_time(item.get("createdAt"))
@@ -203,9 +227,12 @@ def recent_conversation(
             "text": text[:MESSAGE_CHARS],
         }
         if item.get("role") == "assistant":
-            entry["staleContext"] = answer_is_stale(
-                item, fingerprint=fingerprint, review_run_id=review_run_id
+            reason = answer_stale_reason(
+                item, fingerprint=fingerprint, review_run_id=review_run_id, human_records=human_records
             )
+            entry["staleContext"] = reason is not None
+            if reason:
+                entry["staleReason"] = reason
         conversation.append(entry)
     return conversation
 

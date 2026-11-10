@@ -295,6 +295,7 @@ from libs.review_conversation_fallback import fallback_answer_text
 from libs.review_conversation_prompt import (
     REVIEW_CONVERSATION_LANGUAGE_REMINDER,
     REVIEW_CONVERSATION_SYSTEM_PROMPT,
+    preference_reminder,
 )
 from libs.review_evidence import attach_review_evidence_package_to_ai_run
 from libs.review_input_data import apply_field_corrections_to_parse_results
@@ -11024,7 +11025,9 @@ def review_conversation_llm_answer(
             # deepseek-v4-pro 照样用英文推理（2026-08-14 实测 中文 168 字 / 英文 251 词）。
             # 推理通道不吃 system 的输出语言约束，贴近生成位置再说一遍是仅有的低成本手段。
             "content": json.dumps(context, ensure_ascii=False, default=str)
-            + f"\n\n{REVIEW_CONVERSATION_LANGUAGE_REMINDER}",
+            + f"\n\n{REVIEW_CONVERSATION_LANGUAGE_REMINDER}"
+            # 个人偏好也贴着生成位置再说一遍（JSON 与提醒之间仍只有一处空行，下游按它切分）
+            + (f"\n{preference_reminder(context['userPreferences'])}" if context.get("userPreferences") else ""),
         },
     ]
     execution_id = execution_id or f"RAGENT-{uuid4().hex[:10].upper()}"

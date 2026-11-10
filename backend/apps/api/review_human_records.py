@@ -31,6 +31,54 @@ def _text(value: Any, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+def _same_node(row: dict[str, Any], project_id: str, node_id: int) -> bool:
+    return str(row.get("projectId") or "") == project_id and int(row.get("nodeId") or 0) == int(
+        node_id
+    )
+
+
+def human_records_signature(state: dict[str, Any], project_id: str, node_id: int) -> dict[str, Any]:
+    """这一刻节点上的人工记录指纹：有效修正的编号、最新人工意见。
+
+    每条回答落库时记下它（`humanRecordsSeen`），之后拿它和现在比，就能说清回答为什么过期：
+    是「此后有人工修正」，而不是笼统的「证据变了」。"""
+    active = sorted(
+        str(row.get("id") or "")
+        for row in state.get("fact_corrections", []) or []
+        if _same_node(row, project_id, node_id) and row.get("status") == "active"
+    )
+    opinions = sorted(
+        (
+            row
+            for row in state.get("review_opinions", []) or []
+            if _same_node(row, project_id, node_id)
+        ),
+        key=lambda row: str(row.get("createdAt") or ""),
+        reverse=True,
+    )
+    latest = opinions[0] if opinions else {}
+    return {
+        "correctionIds": active[:50],
+        "opinionId": latest.get("id"),
+        "opinionResult": latest.get("result"),
+    }
+
+
+def human_records_change_text(seen: dict[str, Any], current: dict[str, Any]) -> str:
+    """回答当时看到的人工记录和现在比，变了什么；没变返回空串。"""
+    before, after = set(seen.get("correctionIds") or []), set(current.get("correctionIds") or [])
+    parts = []
+    if after - before:
+        parts.append(f"新增人工修正 {len(after - before)} 处")
+    if before - after:
+        parts.append(f"撤销或替换人工修正 {len(before - after)} 处")
+    if seen.get("opinionId") != current.get("opinionId") or seen.get(
+        "opinionResult"
+    ) != current.get("opinionResult"):
+        parts.append(f"人工意见变为“{current.get('opinionResult') or '无'}”")
+    return "，".join(parts)
+
+
 def human_review_records(
     state: dict[str, Any],
     project_id: str,
