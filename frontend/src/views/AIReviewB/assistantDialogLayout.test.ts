@@ -121,4 +121,20 @@ const userBubble =
 assert.ok(userBubble.includes('background: var(--el-color-primary)'), '提问气泡用主色实心')
 assert.ok(/color:\s*#fff/.test(userBubble), '提问气泡用白字')
 
+// 8) AI 的回答是一张白卡（2026-11-10 用户要求「回答的内容也用一个 card 包裹」），
+//    卡里的依据/证据/审查进度块不再套卡
+const answerCard =
+  /\.conversation-message\.is-assistant \.message-body \{([^}]*)\}/.exec(source)?.[1] || ''
+assert.ok(answerCard.includes('background: #fff'), '回答是白底卡片')
+assert.ok(
+  /border:\s*1px solid/.test(answerCard) && /border-radius:\s*14px/.test(answerCard),
+  '卡片有细边框和圆角'
+)
+assert.ok(
+  /\.conversation-message\.is-assistant \.message-body \.content-card \{[^}]*background: transparent/.test(
+    source
+  ),
+  '卡里的 content-card 平铺，不套卡'
+)
+
 console.log('Assistant dialog layout contract passed')

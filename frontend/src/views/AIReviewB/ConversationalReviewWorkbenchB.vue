@@ -3764,6 +3764,32 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+/* AI 的回答是一张白卡：署名行、正文、末尾的按钮都在里面。
+   用户的提问是右边的蓝色气泡，回答是左边的白卡，页面灰底上两者一眼分得开
+   （原来回答是直接铺在灰底上的正文，和页面、和上面的要点条混在一起）。 */
+.conversation-message.is-assistant {
+  padding: 0;
+  margin-right: 12px;
+}
+
+.conversation-message.is-assistant .message-body {
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--el-border-color-lighter, #e4e7ec);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 5%);
+}
+
+/* 卡里面不再套卡：依据、证据、审查进度这类块平铺，只用一条细线与正文隔开 */
+.conversation-message.is-assistant .message-body .content-card {
+  padding: 12px 0 0;
+  margin-top: 12px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid #eaecf0;
+  border-radius: 0;
+}
+
 .message-execution-meta {
   margin: 9px 0 0;
   font-size: 11px;
