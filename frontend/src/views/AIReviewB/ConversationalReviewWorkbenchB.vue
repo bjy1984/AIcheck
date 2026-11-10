@@ -2695,9 +2695,14 @@ onBeforeUnmount(() => {
           id="review-context-panel-content"
           class="sidebar-content context-panel-content"
         >
-          <section class="side-card">
-            <h2>当前上下文</h2>
-            <dl>
+          <!-- 悬浮助手里：任务名在对话框标题、状态在待办页的标题和折叠行里，这三行是重复的；
+               只在有冲突/需重审的提醒，或「追问助手」页（那里没有发起按钮）时留着这张卡。 -->
+          <section
+            v-if="!props.embedded || pipelineConflict || inputChanged || activePane !== 'overview'"
+            class="side-card"
+          >
+            <h2 v-if="!props.embedded">当前上下文</h2>
+            <dl v-if="!props.embedded">
               <div
                 ><dt>当前任务</dt><dd>{{ currentTask }}</dd></div
               >
@@ -2746,7 +2751,11 @@ onBeforeUnmount(() => {
             </ElButton>
           </section>
 
-          <section class="side-card evidence-workset">
+          <!-- 悬浮助手里没选过引用证据时整张卡不要：原来是一个占 250px 的空状态插画 -->
+          <section
+            v-if="!props.embedded || selectedEvidence.length"
+            class="side-card evidence-workset"
+          >
             <div class="side-card-title">
               <h2>{{ workstationMode ? '已选引用证据' : '文件资料' }}</h2
               ><small>{{ selectedEvidenceSummary }}</small>
@@ -2784,7 +2793,8 @@ onBeforeUnmount(() => {
             />
           </section>
 
-          <section class="side-card quick-actions">
+          <!-- 这三个命令在悬浮助手的输入区里已经有了（/标准条款 /检索证据 /草拟意见） -->
+          <section v-if="!props.embedded" class="side-card quick-actions">
             <h2>快捷操作</h2>
             <div>
               <ElButton :icon="Document" @click="sendMessage('/标准条款')">查看标准条款</ElButton>
@@ -3290,7 +3300,7 @@ onBeforeUnmount(() => {
 }
 
 .review-b-shell.is-embedded :deep(.node-overview h3) {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .review-b-shell.is-embedded :deep(.node-overview p),
@@ -3300,7 +3310,7 @@ onBeforeUnmount(() => {
 }
 
 .review-b-shell.is-embedded :deep(.node-overview .overview-section) {
-  padding: 12px 14px;
+  padding: 12px 0 0;
 }
 
 .review-b-shell.is-embedded :deep(.node-overview .el-button) {

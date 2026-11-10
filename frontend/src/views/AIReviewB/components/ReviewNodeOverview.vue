@@ -117,6 +117,9 @@ const missing = computed(() => props.workspace?.evidenceReadiness.missingRequire
           >按节点现有资料发起。当前就绪检查记录
           {{ workspace.evidenceReadiness.supportingDocumentCount }} 份支持文件。</p
         >
+        <p v-if="workspace.activeReviewRun?.ruleVersion" class="overview-meta"
+          >审查规则：{{ workspace.activeReviewRun.ruleVersion }}</p
+        >
         <details v-if="missing.length || blockers.length">
           <summary>看看哪些资料还需要核对（节点现有资料）</summary>
           <ul
@@ -128,38 +131,28 @@ const missing = computed(() => props.workspace?.evidenceReadiness.missingRequire
           <p v-if="selection">这里是节点现有资料的检查结果；你刚选的文件会在发起时重新检查。</p>
         </details>
       </section>
-      <section class="overview-section" aria-label="规则与协作">
-        <h3>按什么规则审，是否需要其他工位帮忙</h3>
-        <p
-          >本次任务规则：{{
-            workspace.activeReviewRun?.ruleVersion || '尚未提供版本信息'
-          }}。修改草稿不会改变当前任务。</p
-        >
-        <div class="overview-actions"
-          ><ElButton @click="emit('navigate', 'rules')">查看工程规则</ElButton
-          ><ElButton :disabled="!workspace.activeReviewRun" @click="emit('navigate', 'handoffs')"
-            >查看工位交接</ElButton
-          ></div
-        >
-      </section>
-      <footer class="overview-section">
-        <h3>最后，由你确认</h3
-        ><p>先核对问题和原文，再填写人工结论。AI 的建议不会自动成为正式结论。</p>
+      <footer class="overview-section overview-confirm">
         <ElButton
           :disabled="!workspace.permissions.canSubmitReviewOpinion"
           @click="emit('navigate', 'human')"
           >核对并填写人工结论</ElButton
         >
-        <p v-if="!workspace.permissions.canSubmitReviewOpinion">当前没有保存人工结论的权限。</p>
+        <span class="overview-meta">AI 的建议不会自动成为正式结论。</span>
+        <p v-if="!workspace.permissions.canSubmitReviewOpinion" class="overview-meta"
+          >当前没有保存人工结论的权限。</p
+        >
       </footer>
     </template>
   </section>
 </template>
 
 <style scoped>
+/* 悬浮助手里这页原来是五张带边框的白卡，每张「标题 + 一段说明 + 按钮」，
+   其中「按什么规则审」「最后，由你确认」两张的按钮和上面工具行里的同名按钮是同一件事。
+   现在：去掉重复的卡，其余平铺成小节，只用细线隔开。 */
 .node-overview {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   color: var(--el-text-color-primary);
   overflow-wrap: anywhere;
 }
@@ -171,21 +164,23 @@ p {
 }
 
 h2 {
-  font-size: 20px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 h3 {
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 p,
 li {
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 p {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 ul {
@@ -207,14 +202,24 @@ ul {
 }
 
 .overview-section {
-  padding: 16px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 10px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
-.overview-actions {
-  margin-top: 12px;
+.overview-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.overview-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.overview-confirm .overview-meta {
+  margin: 0;
 }
 
 .attention-panel {
@@ -225,13 +230,13 @@ ul {
 }
 
 .result-notice {
-  padding: 12px 0;
+  padding: 8px 0;
 }
 
 summary {
   min-height: 44px;
   padding: 12px 0;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   box-sizing: border-box;
 }

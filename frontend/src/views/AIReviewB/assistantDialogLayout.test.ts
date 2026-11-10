@@ -49,4 +49,28 @@ assert.ok(
   '紧凑尺寸只给鼠标，触屏保持 44px'
 )
 
+// 5) 待办与结果页签去掉的重复内容（2026-11-10「无关干扰信息还是太多」）：
+//    - 「按什么规则审」那张卡的两个按钮和工具行里的同名按钮是同一件事；
+//    - 快捷操作的三个命令在输入区已经有了；
+//    - 没选引用证据时那张卡只是一个 250px 的空状态插画；
+//    - 任务名、状态、关联证据在对话框标题、待办页标题和折叠行里都有。
+const overview = readFileSync(
+  fileURLToPath(new URL('./components/ReviewNodeOverview.vue', import.meta.url)),
+  'utf8'
+)
+assert.ok(!overview.includes('aria-label="规则与协作"'), '规则与协作那张卡已并入「本次资料」')
+assert.ok(!overview.includes('<h3>最后，由你确认</h3>'), '最后一张卡缩成一行')
+assert.ok(overview.includes('核对并填写人工结论'), '去人工结论的入口要保留')
+assert.ok(
+  /<section\s+v-if="!props\.embedded"\s+class="side-card quick-actions"/.test(source),
+  '快捷操作在悬浮助手里不显示'
+)
+assert.ok(
+  /v-if="!props\.embedded \|\| selectedEvidence\.length"\s+class="side-card evidence-workset"/.test(
+    source
+  ),
+  '没选引用证据时不显示空卡'
+)
+assert.ok(/<dl v-if="!props\.embedded">/.test(source), '悬浮助手里不重复任务名、状态、关联证据')
+
 console.log('Assistant dialog layout contract passed')
