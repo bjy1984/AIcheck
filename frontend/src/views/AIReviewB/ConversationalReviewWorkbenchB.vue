@@ -45,6 +45,7 @@ import {
   ElTag
 } from 'element-plus'
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
   ChatDotRound,
@@ -175,6 +176,7 @@ const navigateOverview = async (
     evidenceReturnFocus = undefined
     evidenceDialogVisible.value = false
     rightSidebarCollapsed.value = false
+    contextFolded.value = false
     await nextTick()
     const target =
       humanPanelRef.value?.querySelector<HTMLElement>('.human-task-card, .human-decision-card') ||
@@ -343,6 +345,9 @@ const suggestedQuestions = computed(() =>
   )
 )
 
+/** 输入区的三个快捷命令（和每条回答末尾、欢迎卡里的同名按钮是同一件事）。 */
+const COMPOSER_COMMANDS = ['/检索证据', '/标准条款', '/草拟意见'] as const
+
 const useSuggestedQuestion = (text: string) => {
   // 填进输入框而不是直接发出去：监检往往要在这个基础上补一句
   // （「…针对第 3 份资料」）。直接发送会剥夺这次修改的机会。
@@ -505,6 +510,17 @@ const runStatusTone = computed(() => {
   if (['queued', 'running', 'resuming', '推理中'].includes(runStatus.value)) return 'primary'
   return 'info'
 })
+/** 窄屏（单列）时，节点的资料与操作（当前上下文、文件、快捷操作、人工复核意见…）排在对话下面，
+ *  一千多像素和聊天无关的内容。在「追问助手」页签里把它折起来，只留一行摘要；
+ *  「待办与结果」页签里照常展开——人工结论是在那里做的。宽屏时它在右栏，不折。 */
+const contextFolded = ref(true)
+const contextFoldable = computed(
+  () => props.embedded && !evidenceWide.value && activePane.value === 'assistant'
+)
+const contextHidden = computed(() => contextFoldable.value && contextFolded.value)
+const contextFoldSummary = computed(
+  () => `${runStatusText.value} · 关联证据 ${selectedEvidence.value.length} 份`
+)
 const conversationStarted = computed(
   () => executionStarted.value || messages.value.some((message) => message.role === 'user')
 )
@@ -1582,7 +1598,8 @@ const handleSuggestion = (actionKey: string, message?: ReviewBMessage) => {
   if (actionKey === 'copy_opinion_draft') {
     const textBlock = message?.contentBlocks.find((block) => block.type === 'text')
     reviewOpinion.value = textBlock && 'text' in textBlock ? String(textBlock.text || '') : ''
-    ElMessage.success('草稿已填入右侧人工意见')
+    contextFolded.value = false
+    ElMessage.success('草稿已填入人工意见')
   }
 }
 
@@ -2543,57 +2560,66 @@ onBeforeUnmount(() => {
         <!-- 嵌在悬浮助手里时输入框永远在：工位版默认停在「待办与结果」，
              原来输入框只在「追问助手与记录」页签里，面板一打开看不到任何能打字的地方。
              在哪个页签发送都行——sendMessage 会切到对话页签看回复。 -->
-        <section v-show="props.embedded || activePane === 'assistant'" class="composer-card">
-          <!-- 推荐问题按「这个节点此刻卡在哪」定制，不经 LLM——系统已经知道答案，
-               让模型再生成一遍只会加两秒延迟和一次 token（见 suggestedQuestions）。 -->
-          <div v-if="suggestedQuestions.length" class="composer-suggestions">
-            <span class="composer-suggestions-label">试试问：</span>
-            <button
-              v-for="question in suggestedQuestions"
-              :key="question.text"
-              type="button"
-              class="composer-suggestion"
-              :title="question.text"
-              @click="useSuggestedQuestion(question.text)"
-            >
-              {{ question.text }}
-            </button>
-          </div>
-          <ElInput
-            v-model="composer"
-            type="textarea"
-            :rows="props.embedded ? 1 : 2"
-            :autosize="props.embedded ? { minRows: 1, maxRows: 4 } : false"
-            resize="none"
-            maxlength="4000"
-            placeholder="向 AI 复核助手输入问题，回车发送，Shift+回车换行"
-            @keydown.enter="onComposerEnter"
-          />
-          <div class="composer-actions">
-            <div>
-              <ElButton size="small" @click="sendMessage('/检索证据')">/检索证据</ElButton>
-              <ElButton size="small" @click="sendMessage('/标准条款')">/标准条款</ElButton>
-              <ElButton size="small" @click="sendMessage('/草拟意见')">/草拟意见</ElButton>
+        <section v-show="props.embedded || activePane === 'assistant'" class="composer-dock">
+          <div class="composer-card">
+            <!-- 快捷命令和推荐问题合成一条：原来是「试试问」一排、三个斜杠命令一排，
+               再加输入框和发送一排，小面板里输入区占掉一半高度。推荐问题按「这个节点此刻卡在哪」
+               定制，不经 LLM——系统已经知道答案，让模型再生成一遍只会加两秒延迟（见 suggestedQuestions）。 -->
+            <div class="composer-suggestions" role="group" aria-label="快捷命令与推荐问题">
+              <button
+                v-for="command in COMPOSER_COMMANDS"
+                :key="command"
+                type="button"
+                class="composer-command"
+                @click="sendMessage(command)"
+              >
+                {{ command }}
+              </button>
+              <template v-if="suggestedQuestions.length">
+                <span class="composer-suggestions-divider" aria-hidden="true"></span>
+                <button
+                  v-for="question in suggestedQuestions"
+                  :key="question.text"
+                  type="button"
+                  class="composer-suggestion"
+                  :title="question.text"
+                  @click="useSuggestedQuestion(question.text)"
+                >
+                  {{ question.text }}
+                </button>
+              </template>
             </div>
-            <div>
-              <!-- 停止/发送两个按钮原来只认聊天（sending）。正式复核跑起来时
+            <div class="composer-field">
+              <ElInput
+                v-model="composer"
+                type="textarea"
+                :rows="props.embedded ? 1 : 2"
+                :autosize="props.embedded ? { minRows: 1, maxRows: 4 } : false"
+                resize="none"
+                maxlength="4000"
+                placeholder="向 AI 复核助手输入问题，回车发送，Shift+回车换行"
+                @keydown.enter="onComposerEnter"
+              />
+              <div class="composer-actions">
+                <!-- 停止/发送两个按钮原来只认聊天（sending）。正式复核跑起来时
                    sending 是 false：发送按钮不转圈、还能再点，也没有任何叫停的
                    入口——用户只能干等（实测反馈）。两条路径统一用 executionInFlight。 -->
-              <ElButton
-                v-if="executionInFlight"
-                :loading="cancelling"
-                @click="stopCurrentExecution"
-              >
-                {{ reviewStarting ? '停止复核' : '停止回答' }}
-              </ElButton>
-              <ElButton
-                type="primary"
-                :icon="Promotion"
-                :loading="executionInFlight"
-                :disabled="executionInFlight"
-                @click="sendMessage()"
-                >发送</ElButton
-              >
+                <ElButton
+                  v-if="executionInFlight"
+                  :loading="cancelling"
+                  @click="stopCurrentExecution"
+                >
+                  {{ reviewStarting ? '停止复核' : '停止回答' }}
+                </ElButton>
+                <ElButton
+                  type="primary"
+                  :icon="Promotion"
+                  :loading="executionInFlight"
+                  :disabled="executionInFlight"
+                  @click="sendMessage()"
+                  >发送</ElButton
+                >
+              </div>
             </div>
           </div>
         </section>
@@ -2646,10 +2672,25 @@ onBeforeUnmount(() => {
             <ArrowLeft v-else />
           </ElIcon>
         </button>
+        <button
+          v-if="contextFoldable"
+          type="button"
+          class="context-fold"
+          :aria-expanded="!contextFolded"
+          aria-controls="review-context-panel-content"
+          @click="contextFolded = !contextFolded"
+        >
+          <span class="context-fold-title">节点资料与操作</span>
+          <span class="context-fold-summary">{{ contextFoldSummary }}</span>
+          <ElIcon :class="['context-fold-chevron', { 'is-open': !contextFolded }]">
+            <ArrowDown />
+          </ElIcon>
+        </button>
         <div
           v-show="
             (props.embedded || sidebarLayout.rightExpanded) &&
-            !(workstationMode && evidenceWide && evidenceDialogVisible)
+            !(workstationMode && evidenceWide && evidenceDialogVisible) &&
+            !contextHidden
           "
           id="review-context-panel-content"
           class="sidebar-content context-panel-content"
@@ -3050,14 +3091,106 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-/* 悬浮助手里输入框钉在面板底部，像在线客服窗口：内容再长、停在哪个页签，都有个能打字的地方。
-   内容不够一屏时 margin-top:auto 把它推到底；够长时 sticky 让它留在可视区底边。 */
-.review-b-shell.is-embedded .composer-card {
+/* 右栏的几张卡（当前上下文、文件资料、快捷操作…）是白底卡片放在白底栏里，每张再描一圈边：
+   一屏里七八个框。悬浮助手里改成平铺的小节，只用细线分开，标题字号降一档。 */
+.context-fold {
+  display: flex;
+  width: 100%;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: #344054;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid #eaecf0;
+  gap: 8px;
+  align-items: center;
+}
+
+.context-fold:hover {
+  background: #f9fafb;
+}
+
+.context-fold:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: -2px;
+}
+
+.context-fold-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.context-fold-summary {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--review-muted, #667085);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.context-fold-chevron {
+  font-size: 15px;
+  color: #98a2b3;
+  transition: transform 0.18s ease;
+  flex: none;
+}
+
+.context-fold-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.review-b-shell.is-embedded .side-card {
+  padding: 14px 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #eaecf0;
+  border-radius: 0;
+}
+
+.review-b-shell.is-embedded .side-card:last-child {
+  border-bottom: 0;
+}
+
+.review-b-shell.is-embedded .side-card h2 {
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+/* 悬浮助手里输入区钉在面板底部，像在线客服窗口：内容再长、停在哪个页签，都有个能打字的地方。
+   内容不够一屏时 margin-top:auto 把它推到底；够长时 sticky 让它留在可视区底边。
+   整条通栏（左右抵消壳的 16px 内边距）、带一条细线和面板底色：原来是一张悬在内容上的白卡，
+   卡的左右两侧还露着从它后面滚过去的文字。 */
+.review-b-shell.is-embedded .composer-dock {
   position: sticky;
   bottom: 0;
   z-index: 3;
-  margin-top: auto;
-  box-shadow: 0 -8px 18px rgb(15 23 42 / 8%);
+  padding: 10px 16px 12px;
+  margin: auto -16px 0;
+  background: var(--el-bg-color-page, #f5f7fa);
+  border-top: 1px solid var(--review-line, #e4e7ec);
+}
+
+/* 窄屏（单列）时对话列是 display: contents，输入区夹在对话和「当前上下文」中间：
+   滚过对话之后它就跟着内容滚走了，只有在对话那一段才钉在底部。排到最后一个，
+   它才在整个面板里始终钉在底边。 */
+@media (width < 1280px) {
+  .review-b-shell.is-embedded .composer-dock {
+    order: 99;
+  }
+
+  /* 单列时节点资料栏排在对话下面：原来按内容收缩成半宽的一块白底，折叠行和展开后的小节
+     都只占一半宽度。让它撑满，用页面底色，不再描左边线。 */
+  .review-b-shell.is-embedded .context-panel {
+    background: transparent;
+    border-left: 0;
+    align-self: stretch;
+  }
 }
 
 /* 列自己的下内边距会让 sticky 停在离底边 28px 的地方，下面露出一截被压住的内容，
@@ -3174,18 +3307,8 @@ onBeforeUnmount(() => {
   min-height: 32px;
 }
 
-.review-b-shell.is-embedded .composer-card {
-  padding: 8px 12px;
-  border-radius: 12px;
-}
-
 .review-b-shell.is-embedded .composer-card :deep(.el-textarea__inner) {
-  min-height: 34px;
-  padding: 6px 4px;
-}
-
-.review-b-shell.is-embedded .composer-actions {
-  margin-top: 4px;
+  min-height: 32px;
 }
 
 /* 屏幕矮的时候，概览页签里不放「试试问」那一排：输入框连同它占到面板的三分之一，
@@ -3631,8 +3754,72 @@ onBeforeUnmount(() => {
 .welcome-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-top: 12px;
+}
+
+/* 回答末尾和欢迎卡里的三个按钮，和输入区的快捷命令同一个样子：浅灰小胶囊，悬停才上色。
+   原来是三个带边框的白按钮，一屏里出现好几组。 */
+.suggestion-actions :deep(.el-button),
+.welcome-actions :deep(.el-button) {
+  height: auto;
+  padding: 2px 10px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #475467;
+  background: #f2f4f7;
+  border-color: transparent;
+  border-radius: 999px;
+}
+
+.suggestion-actions :deep(.el-button:hover),
+.welcome-actions :deep(.el-button:hover) {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #dbeafe;
+}
+
+/* 审查进度是一条状态，不是一张卡：去掉边框和底色，只留一条细线与正文隔开。 */
+.content-card.judgment-card {
+  padding: 10px 0 0;
+  margin-top: 14px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid #eaecf0;
+  border-radius: 0;
+}
+
+.judgment-card h3 {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475467;
+}
+
+.judgment-card p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--review-muted);
+}
+
+/* 全局规则在窄屏（≤900px）把所有按钮撑到 44px，那是给手指准备的。悬浮助手在桌面窄窗口里
+   用鼠标：输入区、工具条、胶囊按钮全按 44px 算，小面板里内容只剩一条缝。
+   只对精确指针（鼠标）收回到 32px；触屏仍是 44px。 */
+@media (max-width: 900px) and (pointer: fine) {
+  .review-b-shell.is-embedded :deep(.el-button),
+  .review-b-shell.is-embedded :deep(button) {
+    min-width: 0 !important;
+    min-height: 32px !important;
+  }
+
+  .review-b-shell.is-embedded .composer-command,
+  .review-b-shell.is-embedded .composer-suggestion,
+  .review-b-shell.is-embedded .suggestion-actions :deep(.el-button),
+  .review-b-shell.is-embedded .welcome-actions :deep(.el-button) {
+    min-height: 0 !important;
+  }
 }
 
 .execution-activity {
@@ -3802,6 +3989,10 @@ onBeforeUnmount(() => {
 /* 推荐问题：按当前节点卡点定制，点击填进输入框而不是直接发送。
    单行横向滚动——推荐最多 4 条，换行会把对话框顶高、挤掉消息区。
    滚动条隐藏——它出现在这么窄的一条上只是噪音，横向滚动靠触控板/滚轮即可。 */
+/* 输入区是工具，不和内容抢分量。
+   原来推荐问题（蓝底蓝字）、三个斜杠命令（深色粗体）、整张带阴影的卡、发送按钮各占一行，
+   小面板里叠成四层、占掉一半高度。现在：快捷命令和推荐问题合成一条横滚，输入框和发送在同一行，
+   颜色只留给悬停和发送。 */
 .composer-suggestions {
   display: flex;
 
@@ -3822,58 +4013,74 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-.composer-suggestions-label {
-  font-size: 12px;
-  color: #94a3b8;
-  white-space: nowrap;
+.composer-suggestions-divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 2px;
+  background: var(--review-line, #e4e7ec);
   flex: none;
 }
 
+/* 不截断：既然已经横向滚动，再设 max-width + ellipsis 就是既滚又截——
+   实测 4 条里 2 条被切掉后半句，而后半句往往才是限定条件
+   （「…分别对应哪个审查点？」）。滚动是为了读全，不是为了少读。
+   flex: none 是必须的：flex 默认收缩子项，会把所有按钮挤成一堆省略号。 */
+.composer-command,
 .composer-suggestion {
-  /* 不截断：既然已经横向滚动，再设 max-width + ellipsis 就是既滚又截——
-     实测 4 条里 2 条被切掉后半句，而后半句往往才是限定条件
-     （「…分别对应哪个审查点？」）。滚动是为了读全，不是为了少读。
-     flex: none 是必须的：flex 默认收缩子项，会把所有按钮挤成一堆省略号。 */
-  padding: 5px 12px;
+  padding: 2px 10px;
   font: inherit;
   font-size: 12px;
-  line-height: 1.5;
-  color: #1d4ed8;
+  line-height: 1.7;
+  color: #475467;
   white-space: nowrap;
   cursor: pointer;
-  background: #eff6ff;
-  border: 1px solid #dbeafe;
   border-radius: 999px;
   flex: none;
   transition:
+    color 0.15s,
     background 0.15s,
     border-color 0.15s,
     transform 0.1s;
 }
 
-.composer-suggestion:hover {
-  background: #dbeafe;
-  border-color: #93c5fd;
+/* 命令是固定的三个：浅灰底、无边框；推荐问题是随节点变的：只描边。两者都不上色，悬停才亮。 */
+.composer-command {
+  background: #f2f4f7;
+  border: 1px solid transparent;
 }
 
+.composer-suggestion {
+  background: transparent;
+  border: 1px solid #e4e7ec;
+}
+
+.composer-command:hover,
+.composer-suggestion:hover {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #dbeafe;
+}
+
+.composer-command:active,
 .composer-suggestion:active {
   transform: scale(0.97);
 }
 
+.composer-command:focus-visible,
+.composer-suggestion:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}
+
 .composer-card {
   /* 不加约束时它会被内部最宽的子项撑开：实测 conversation-column 只有 270px，
-     而这张卡撑到 1182px，直接溢出到父容器外面去。加推荐问题只是让这个既有
-     缺陷显形——快捷命令那排按钮本来也在撑它，只是没人在窄屏下看过。 */
+     而这张卡撑到 1182px，直接溢出到父容器外面去。 */
   max-width: 100%;
   min-width: 0;
-  padding: 12px 14px 10px;
+  padding: 8px 8px 8px 12px;
   background: #fff;
-  border: 1px solid #dbe6f7;
-  border-radius: 14px;
-
-  /* 阴影收敛：原来 30px 的大扩散让这张卡在页面上「浮」得过重，
-     压过了它上面的消息区——输入框是工具，不该比内容更显眼。 */
-  box-shadow: 0 2px 12px rgb(20 104 232 / 6%);
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
@@ -3882,12 +4089,23 @@ onBeforeUnmount(() => {
 /* 聚焦时才强调：没在输入时它安静待着，光标进来才把注意力收过来 */
 .composer-card:focus-within {
   border-color: #93c5fd;
-  box-shadow: 0 2px 16px rgb(20 104 232 / 12%);
+  box-shadow: 0 0 0 3px rgb(59 130 246 / 12%);
+}
+
+.composer-field {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.composer-field :deep(.el-textarea) {
+  min-width: 0;
+  flex: 1;
 }
 
 /* 输入框去掉自带边框，与卡片融为一体——两层框套着显得局促 */
 .composer-card :deep(.el-textarea__inner) {
-  padding: 2px 0;
+  padding: 6px 0;
   font-size: 13px;
   line-height: 1.6;
   background: transparent;
@@ -3895,28 +4113,22 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
+/* 占位字 ≥4.5:1：原来的 #b6c2d4 在白底上只有 1.9:1，看不清等于没提示 */
 .composer-card :deep(.el-textarea__inner::placeholder) {
-  color: #b6c2d4;
-}
-
-/* 快捷命令是次要入口，不该与「发送」抢视觉重量 */
-.composer-actions :deep(.el-button:not(.el-button--primary)) {
-  color: #64748b;
-  background: transparent;
-  border-color: transparent;
-}
-
-.composer-actions :deep(.el-button:not(.el-button--primary):hover) {
-  color: #1d4ed8;
-  background: #f1f5f9;
+  color: #6b7280;
 }
 
 .composer-actions {
   display: flex;
-  gap: 12px;
+  gap: 6px;
   align-items: center;
-  justify-content: space-between;
-  padding-top: 9px;
+  flex: none;
+}
+
+.composer-actions :deep(.el-button) {
+  height: 34px;
+  padding: 0 14px;
+  margin: 0;
 }
 
 .trace-collapse {

@@ -105,6 +105,7 @@ const savePreferences = async (text: string) => {
     <ElButton size="small" text @click="openPreferences">回答偏好</ElButton>
     <ElButton
       size="small"
+      text
       :loading="restarting"
       :disabled="busy || restarting"
       :title="busy ? '有回答在执行，等它完成再开始新对话' : '结束这段对话，开一段新的'"
@@ -165,6 +166,17 @@ const savePreferences = async (text: string) => {
   font-size: 12px;
   color: var(--review-muted, #667085);
   white-space: nowrap;
+}
+
+/* 两个动作同一个样子：原来「回答偏好」是文字按钮、「新对话」是带边框的白按钮，一行里三种分量。 */
+.conversation-memory-toolbar :deep(.el-button) {
+  font-weight: 400;
+  color: #475467;
+}
+
+.conversation-memory-toolbar :deep(.el-button:hover:not(.is-disabled)) {
+  color: #1d4ed8;
+  background: #eff6ff;
 }
 
 .preference-note {

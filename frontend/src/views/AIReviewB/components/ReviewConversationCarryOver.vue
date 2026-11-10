@@ -92,11 +92,11 @@ const dismiss = async () => {
   border-radius: 8px;
 }
 
+/* 不描边，只用比页面略深的底色圈出来：一条提示不该比它下面的对话更像一张卡。 */
 .carry-over {
-  padding: 10px 12px;
-  background: #f8fafc;
-  border: 1px solid var(--review-line, #e3e9f3);
-  border-radius: 8px;
+  padding: 8px 12px;
+  background: rgb(16 24 40 / 4%);
+  border-radius: 10px;
 }
 
 .carry-over summary {
@@ -166,7 +166,7 @@ const dismiss = async () => {
 .carry-over-verdict {
   flex: 0 0 auto;
   padding: 0 6px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   border-radius: 4px;
 }

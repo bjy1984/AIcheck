@@ -156,7 +156,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 .ai-assistant-head {
   display: flex;
-  padding: 12px 16px;
+  padding: 10px 14px;
   color: #fff;
   background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-dark-2));
   flex: none;
@@ -166,9 +166,9 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 .ai-assistant-avatar {
   display: inline-flex;
-  width: 34px;
-  height: 34px;
-  font-size: 18px;
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
   background: rgb(255 255 255 / 20%);
   border-radius: 50%;
   flex: none;
@@ -185,7 +185,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 .ai-assistant-heading strong {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.3;
 }
 

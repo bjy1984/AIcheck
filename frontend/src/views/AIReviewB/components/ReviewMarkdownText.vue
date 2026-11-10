@@ -13,6 +13,7 @@ type MarkdownBlock =
   | { type: 'paragraph'; content: InlinePart[] }
   | { type: 'list'; ordered: boolean; items: InlinePart[][] }
   | { type: 'table'; header: InlinePart[][]; rows: InlinePart[][][] }
+  | { type: 'rule' }
 
 const props = withDefaults(
   defineProps<{
@@ -146,9 +147,12 @@ const isTableSeparator = (line: string) => {
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
 }
 
+/** 单独一行的 --- / *** / ___ 是分隔线。模型常在结论表和说明之间写它，不认的话页面上就是三个裸的短横。 */
+const isRuleLine = (line: string) => /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)
+
 const isBlockStart = (lines: string[], index: number) => {
   const line = lines[index] || ''
-  if (!line.trim()) return true
+  if (!line.trim() || isRuleLine(line)) return true
   if (/^#{1,6}\s+/.test(line) || /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) return true
   return line.includes('|') && isTableSeparator(lines[index + 1] || '')
 }
@@ -161,6 +165,12 @@ const blocks = computed<MarkdownBlock[]>(() => {
   while (index < lines.length) {
     const line = lines[index]
     if (!line.trim()) {
+      index += 1
+      continue
+    }
+
+    if (isRuleLine(line)) {
+      result.push({ type: 'rule' })
       index += 1
       continue
     }
@@ -260,6 +270,7 @@ const blocks = computed<MarkdownBlock[]>(() => {
         </template>
       </p>
 
+      <hr v-else-if="block.type === 'rule'" class="markdown-rule" />
       <component :is="block.ordered ? 'ol' : 'ul'" v-else-if="block.type === 'list'">
         <li v-for="(item, itemIndex) in block.items" :key="itemIndex">
           <template v-for="(part, partIndex) in item" :key="partIndex">
@@ -416,10 +427,17 @@ const blocks = computed<MarkdownBlock[]>(() => {
   color: inherit;
 }
 
+.markdown-rule {
+  height: 0;
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid #eaecf0;
+}
+
 .markdown-table-wrap {
   margin: 10px 0 14px;
   overflow-x: auto;
-  border: 1px solid #e4e7ec;
+  border: 1px solid #eaecf0;
   border-radius: 8px;
 }
 
@@ -429,28 +447,28 @@ const blocks = computed<MarkdownBlock[]>(() => {
   border-collapse: collapse;
 }
 
+/* min-width: 4.5em 是给「结论」「符合」「证据不足」这种短列的：自动表格布局按内容宽度分配，
+   短列被压到只剩一个字宽，中文又能在任意字之间断行，于是「符合」被竖着排成「符 / 合」。 */
 .markdown-table-wrap th,
 .markdown-table-wrap td {
+  min-width: 4.5em;
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.55;
   text-align: left;
   vertical-align: top;
-  border-right: 1px solid #eaecf0;
-  border-bottom: 1px solid #eaecf0;
+  border-bottom: 1px solid #f2f4f7;
 }
 
+/* 竖线去掉，靠行线和留白分列：满屏的格子线是这块最吵的地方 */
 .markdown-table-wrap th {
-  color: #344054;
-  background: #f8fafc;
+  font-weight: 500;
+  color: #475467;
+  background: #f9fafb;
+  border-bottom-color: #eaecf0;
 }
 
 .markdown-table-wrap tr:last-child td {
   border-bottom: 0;
-}
-
-.markdown-table-wrap th:last-child,
-.markdown-table-wrap td:last-child {
-  border-right: 0;
 }
 </style>
