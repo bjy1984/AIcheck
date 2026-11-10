@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ReviewBReference } from '@/types/ai-review-b'
+import { isVerdictColumn, verdictOf, type VerdictInfo } from '../markdownVerdict'
 
 type InlinePart = {
   type: 'text' | 'strong' | 'code'
@@ -12,7 +13,12 @@ type MarkdownBlock =
   | { type: 'heading'; level: number; content: InlinePart[] }
   | { type: 'paragraph'; content: InlinePart[] }
   | { type: 'list'; ordered: boolean; items: InlinePart[][] }
-  | { type: 'table'; header: InlinePart[][]; rows: InlinePart[][][] }
+  | {
+      type: 'table'
+      header: InlinePart[][]
+      rows: InlinePart[][][]
+      verdicts: (VerdictInfo | null)[][]
+    }
   | { type: 'rule' }
 
 const props = withDefaults(
@@ -157,6 +163,21 @@ const isBlockStart = (lines: string[], index: number) => {
   return line.includes('|') && isTableSeparator(lines[index + 1] || '')
 }
 
+const partsText = (cell: InlinePart[]) => cell.map((part) => part.text).join('')
+
+/** 结论列里能认出结论词的单元格；带引用的单元格（点开看原文的）不动。 */
+const tableVerdicts = (header: InlinePart[][], rows: InlinePart[][][]) =>
+  rows.map((row) =>
+    row.map((cell, column) =>
+      isVerdictColumn(partsText(header[column] || [])) && !cell.some((part) => part.reference)
+        ? verdictOf(partsText(cell))
+        : null
+    )
+  )
+
+const verdictAt = (verdicts: (VerdictInfo | null)[][], row: number, column: number) =>
+  verdicts[row]?.[column] ?? null
+
 const blocks = computed<MarkdownBlock[]>(() => {
   const lines = props.content.replace(/\r/g, '').split('\n')
   const result: MarkdownBlock[] = []
@@ -190,7 +211,7 @@ const blocks = computed<MarkdownBlock[]>(() => {
         rows.push(tableCells(lines[index]).map(inlineParts))
         index += 1
       }
-      result.push({ type: 'table', header, rows })
+      result.push({ type: 'table', header, rows, verdicts: tableVerdicts(header, rows) })
       continue
     }
 
@@ -321,7 +342,21 @@ const blocks = computed<MarkdownBlock[]>(() => {
           <tbody>
             <tr v-for="(row, rowIndex) in block.rows" :key="rowIndex">
               <td v-for="(cell, cellIndex) in row" :key="cellIndex">
-                <template v-for="(part, partIndex) in cell" :key="partIndex">
+                <template v-if="verdictAt(block.verdicts, rowIndex, cellIndex)">
+                  <span
+                    :class="[
+                      'verdict-pill',
+                      `is-${verdictAt(block.verdicts, rowIndex, cellIndex)?.tone}`
+                    ]"
+                    >{{ verdictAt(block.verdicts, rowIndex, cellIndex)?.verdict }}</span
+                  >
+                  <span
+                    v-if="verdictAt(block.verdicts, rowIndex, cellIndex)?.rest"
+                    class="verdict-rest"
+                    >{{ verdictAt(block.verdicts, rowIndex, cellIndex)?.rest }}</span
+                  >
+                </template>
+                <template v-for="(part, partIndex) in cell" v-else :key="partIndex">
                   <button
                     v-if="part.reference"
                     type="button"
@@ -432,6 +467,45 @@ const blocks = computed<MarkdownBlock[]>(() => {
   margin: 12px 0;
   border: 0;
   border-top: 1px solid #eaecf0;
+}
+
+/* 结论列的彩色胶囊：软底色配深色字，对比度都在 5:1 以上 */
+.verdict-pill {
+  display: inline-block;
+  padding: 1px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.verdict-pill.is-success {
+  color: #067647;
+  background: #ecfdf3;
+}
+
+.verdict-pill.is-danger {
+  color: #b42318;
+  background: #fef3f2;
+}
+
+.verdict-pill.is-warning {
+  color: #b54708;
+  background: #fffaeb;
+}
+
+.verdict-pill.is-info {
+  color: #475467;
+  background: #f2f4f7;
+}
+
+.verdict-rest {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #667085;
 }
 
 .markdown-table-wrap {

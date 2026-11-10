@@ -86,4 +86,32 @@ assert.ok(
 )
 assert.ok(/<dl v-if="!props\.embedded">/.test(source), '悬浮助手里不重复任务名、状态、关联证据')
 
+// 6) 头部状态标签和同一行的页签+工具条（2026-11-10 按效果图做）：
+//    - 头部在外面的 AiAssistantWidget 里，审查面板用 Teleport 把状态标签放进去；挂载点不在就不渲染；
+//    - 悬浮助手（工位版）里对话工具条放进页签那一行，别的版面还在原来的头部里；
+//    - 页签样式只管页签按钮本身（用 > 限定），不能把同一行的工具条按钮也带成页签样子。
+assert.ok(widget.includes('id="ai-assistant-head-status"'), '头部要有状态标签的挂载点')
+assert.ok(
+  /<Teleport v-if="props\.embedded && headStatusReady" to="#ai-assistant-head-status">/.test(
+    source
+  ),
+  '状态标签 Teleport 到头部，挂载点不存在时不渲染'
+)
+assert.ok(
+  /v-if="!\(workstationMode && props\.embedded\)"/.test(source) &&
+    /v-if="workstationMode && props\.embedded"\s+v-show="activePane === 'assistant'"\s+class="nav-memory"/.test(
+      source
+    ),
+  '悬浮助手里工具条在页签那一行，别处仍在头部'
+)
+assert.ok(
+  !/\.workstation-navigation :deep\(\.el-button/.test(
+    source.slice(
+      source.indexOf('.review-b-shell.is-embedded .workstation-navigation {'),
+      source.indexOf('.nav-memory {')
+    )
+  ),
+  '页签样式用 > 限定，不能 :deep 到同一行的工具条按钮'
+)
+
 console.log('Assistant dialog layout contract passed')

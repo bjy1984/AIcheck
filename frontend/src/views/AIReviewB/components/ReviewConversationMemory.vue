@@ -104,6 +104,7 @@ const savePreferences = async (text: string) => {
     >
     <ElButton size="small" text @click="openPreferences">回答偏好</ElButton>
     <ElButton
+      class="memory-new"
       size="small"
       text
       :loading="restarting"
@@ -177,6 +178,12 @@ const savePreferences = async (text: string) => {
 .conversation-memory-toolbar :deep(.el-button:hover:not(.is-disabled)) {
   color: #1d4ed8;
   background: #eff6ff;
+}
+
+/* 工具条里真正的动作只有「新对话」，用主色；回答偏好是设置，保持灰 */
+.conversation-memory-toolbar :deep(.memory-new:not(.is-disabled)) {
+  font-weight: 500;
+  color: var(--el-color-primary);
 }
 
 .preference-note {

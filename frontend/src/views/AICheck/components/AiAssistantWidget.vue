@@ -66,6 +66,8 @@ const handleKeydown = (event: KeyboardEvent) => {
               subtitle
             }}</span>
           </div>
+          <!-- 当前节点的审查状态：由里面的审查面板用 Teleport 放进来，放不进来就不显示 -->
+          <span id="ai-assistant-head-status" class="ai-assistant-head-status"></span>
           <button
             type="button"
             class="ai-assistant-minimize"
@@ -154,11 +156,14 @@ const handleKeydown = (event: KeyboardEvent) => {
   flex-direction: column;
 }
 
+/* 头部：白底加一条细线，只留一处品牌色（左边的小图标）。原来是整条蓝色渐变，
+   和下面的蓝色页签、蓝色发送按钮叠成三块蓝。 */
 .ai-assistant-head {
   display: flex;
-  padding: 10px 14px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-dark-2));
+  padding: 11px 12px 11px 16px;
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex: none;
   gap: 12px;
   align-items: center;
@@ -166,11 +171,12 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 .ai-assistant-avatar {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
-  font-size: 16px;
-  background: rgb(255 255 255 / 20%);
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 17px;
+  color: #fff;
+  background: var(--el-color-primary);
+  border-radius: 9px;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -186,6 +192,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 .ai-assistant-heading strong {
   font-size: 14px;
+  font-weight: 600;
   line-height: 1.3;
 }
 
@@ -193,9 +200,13 @@ const handleKeydown = (event: KeyboardEvent) => {
   overflow: hidden;
   font-size: 12px;
   line-height: 1.3;
+  color: var(--el-text-color-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.88;
+}
+
+.ai-assistant-head-status:empty {
+  display: none;
 }
 
 .ai-assistant-minimize {
@@ -203,20 +214,23 @@ const handleKeydown = (event: KeyboardEvent) => {
   width: 32px;
   height: 32px;
   font-size: 18px;
-  color: inherit;
+  color: var(--el-text-color-secondary);
   cursor: pointer;
   background: transparent;
   border: none;
-  border-radius: 50%;
+  border-radius: 8px;
   flex: none;
   align-items: center;
   justify-content: center;
-  transition: background-color 160ms ease;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 
 .ai-assistant-minimize:hover,
 .ai-assistant-minimize:focus-visible {
-  background: rgb(255 255 255 / 22%);
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color);
 }
 
 .ai-assistant-body {

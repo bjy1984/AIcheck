@@ -208,6 +208,8 @@ const updateEvidenceWidth = () => {
 }
 /** 悬浮助手在页宽 ≤900px 时叠成单列（AiAssistantWidget.vue 里的断点）；更宽时是左右两栏。
  *  节点资料栏只有在单列、排到对话下面时才折叠；两栏时它本来就是右栏。 */
+/** 头部状态标签的挂载点（AiAssistantWidget 的头部）是否存在：不在就不渲染，免得 Teleport 报警告。 */
+const headStatusReady = ref(false)
 const stackedLayout = ref(false)
 let stackedMedia: MediaQueryList | undefined
 const updateStackedLayout = () => {
@@ -1978,6 +1980,10 @@ const blockActions = (block: ReviewBContentBlock) =>
     ? (block as { actions?: Array<{ actionKey: string; label: string }> }).actions || []
     : []
 
+/** 回答落定的时间（时:分）。占位消息被回填时才有 updatedAt，没有就用创建时间。 */
+const messageClock = (message: ReviewBMessage) =>
+  /\s(\d{2}:\d{2})/.exec(String(message.updatedAt || message.createdAt || ''))?.[1] || ''
+
 const formatTime = (value?: string) => {
   if (!value) return ''
   const date = new Date(value.replace(' ', 'T'))
@@ -1994,6 +2000,7 @@ onMounted(async () => {
   evidenceMedia = window.matchMedia('(min-width: 1280px)')
   updateEvidenceWidth()
   evidenceMedia.addEventListener('change', updateEvidenceWidth)
+  headStatusReady.value = Boolean(document.getElementById('ai-assistant-head-status'))
   stackedMedia = window.matchMedia('(max-width: 900px)')
   updateStackedLayout()
   stackedMedia.addEventListener('change', updateStackedLayout)
@@ -2050,6 +2057,10 @@ onBeforeUnmount(() => {
       }
     ]"
   >
+    <!-- 对话框头部右侧的审查状态小标签：头部在外面的 AiAssistantWidget 里，用 Teleport 放过去 -->
+    <Teleport v-if="props.embedded && headStatusReady" to="#ai-assistant-head-status">
+      <span :class="['head-status', `is-${runStatusTone}`]">{{ runStatusText }}</span>
+    </Teleport>
     <header v-if="!props.embedded" class="review-b-topbar">
       <div class="brand">
         <span class="brand-mark">AI</span>
@@ -2205,6 +2216,7 @@ onBeforeUnmount(() => {
             >
           </div>
           <ReviewConversationMemory
+            v-if="!(workstationMode && props.embedded)"
             v-show="activePane === 'assistant'"
             :session="session"
             :busy="executionInFlight || cancelling"
@@ -2245,6 +2257,16 @@ onBeforeUnmount(() => {
             @click="activePane = 'assistant'"
             >追问助手与记录</ElButton
           >
+          <!-- 悬浮助手里页签和对话工具条同一行：原来是上下两行，小窗口里先占掉两行才到内容 -->
+          <ReviewConversationMemory
+            v-if="workstationMode && props.embedded"
+            v-show="activePane === 'assistant'"
+            class="nav-memory"
+            :session="session"
+            :busy="executionInFlight || cancelling"
+            :current-task="nodeInspectionItem"
+            @restarted="handleConversationRestarted"
+          />
         </nav>
         <ReviewNodeOverview
           v-if="workstationMode"
@@ -2312,6 +2334,15 @@ onBeforeUnmount(() => {
               :aria-label="message.role === 'user' ? `${displayUser}的消息` : 'AI 复核助手回复'"
             >
               <div class="message-body">
+                <div v-if="message.role === 'assistant'" class="message-author">
+                  <span class="message-author-icon" aria-hidden="true"
+                    ><ElIcon><ChatDotRound /></ElIcon
+                  ></span>
+                  <span class="message-author-name">AI 复核助手</span>
+                  <time v-if="messageClock(message)" class="message-author-time">{{
+                    messageClock(message)
+                  }}</time>
+                </div>
                 <template
                   v-for="(block, blockIndex) in message.contentBlocks"
                   :key="`${message.id}-${blockIndex}`"
@@ -2992,22 +3023,19 @@ onBeforeUnmount(() => {
 
 /* 已保存的人工结论：绿色左条，一眼看出「这条已经存下了」 */
 .saved-decision {
-  padding: 8px 10px;
+  padding: 10px 12px;
   margin-bottom: 10px;
-  background: #f0f9f2;
-  border-left: 3px solid #52a86a;
-  border-radius: 6px;
+  background: #ecfdf3;
+  border-radius: 10px;
 }
 
 .saved-decision strong {
-  font-size: 13px;
-  color: #1f6b3a;
+  color: #067647;
 }
 
 .saved-decision small {
   margin-left: 8px;
-  font-size: 12px;
-  color: #667085;
+  color: #475467;
 }
 
 .saved-decision p {
@@ -3114,6 +3142,41 @@ onBeforeUnmount(() => {
 
 /* 右栏的几张卡（当前上下文、文件资料、快捷操作…）是白底卡片放在白底栏里，每张再描一圈边：
    一屏里七八个框。悬浮助手里改成平铺的小节，只用细线分开，标题字号降一档。 */
+/* 头部右侧的审查状态：软底色小胶囊，颜色跟着状态走（和「上次对话要点」里的结论标签同一套） */
+.head-status {
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.7;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.head-status.is-success {
+  color: #067647;
+  background: #ecfdf3;
+}
+
+.head-status.is-primary {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.head-status.is-warning {
+  color: #b54708;
+  background: #fffaeb;
+}
+
+.head-status.is-danger {
+  color: #b42318;
+  background: #fef3f2;
+}
+
+.head-status.is-info {
+  color: #475467;
+  background: #f2f4f7;
+}
+
 .context-fold {
   display: flex;
   width: 100%;
@@ -3238,37 +3301,50 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.review-b-shell.is-embedded .workstation-navigation {
-  order: -2;
-  width: fit-content;
-  max-width: 100%;
-  padding: 3px;
-  margin: 0 0 10px;
-  gap: 2px;
-  background: var(--el-fill-color);
-  border-radius: 18px;
-}
-
-.review-b-shell.is-embedded .workstation-navigation :deep(.el-button) {
-  min-height: 30px;
-  padding: 0 16px;
-  font-size: 13px;
-  border: none;
-  border-radius: 15px;
-}
-
-/* 分段控件：选中的一格是白底蓝字加一点阴影，没选的透明。
+/* 页签：下划线式（只管页签按钮本身，用 > 限定；同一行里还有对话工具条，它的按钮不能被带上）。原来是灰底圆角的分段控件，选中一格再加白底和阴影，
+   和同一屏里的蓝色按钮、胶囊标签是四种「圆角块」。
    注意 Element 的主按钮同时带 --primary 和 --default，所以未选中那条要排除 --primary。 */
-.review-b-shell.is-embedded .workstation-navigation :deep(.el-button:not(.el-button--primary)) {
-  color: var(--el-text-color-regular);
-  background: transparent;
+.review-b-shell.is-embedded .workstation-navigation {
+  order: -3;
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+  margin: 0 0 12px;
+  background: none;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-radius: 0;
+  gap: 2px 20px;
+  align-items: center;
 }
 
-.review-b-shell.is-embedded .workstation-navigation :deep(.el-button--primary) {
+.review-b-shell.is-embedded .workstation-navigation > .el-button {
+  min-height: 38px;
+  padding: 0 2px;
+  margin: 0 0 -1px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+.review-b-shell.is-embedded .workstation-navigation > .el-button:not(.el-button--primary) {
+  color: var(--el-text-color-secondary);
+}
+
+.review-b-shell.is-embedded .workstation-navigation > .el-button:not(.el-button--primary):hover {
+  color: var(--el-text-color-primary);
+}
+
+.review-b-shell.is-embedded .workstation-navigation > .el-button--primary {
   font-weight: 600;
   color: var(--el-color-primary);
-  background: var(--el-bg-color);
-  box-shadow: 0 1px 3px rgb(15 23 42 / 16%);
+  border-bottom-color: var(--el-color-primary);
+}
+
+.review-b-shell.is-embedded .workstation-navigation .nav-memory {
+  margin-left: auto;
 }
 
 .review-b-shell.is-embedded :deep(.workstation-tools) {
@@ -3281,6 +3357,26 @@ onBeforeUnmount(() => {
 }
 
 /* 对话页签里用不到选资料、规则、交接这三个按钮，收起来给对话让位。 */
+/* 三个工具按钮和输入区、回答末尾的按钮同一个样子：浅灰小胶囊，悬停才上色 */
+.review-b-shell.is-embedded :deep(.workstation-tools__actions .el-button) {
+  height: auto;
+  min-height: 0;
+  padding: 3px 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #475467;
+  background: #f2f4f7;
+  border-color: transparent;
+  border-radius: 999px;
+}
+
+.review-b-shell.is-embedded :deep(.workstation-tools__actions .el-button:hover:not(.is-disabled)) {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #dbeafe;
+}
+
 .review-b-shell.is-embedded.is-pane-assistant :deep(.workstation-tools) {
   display: none;
 }
@@ -3614,9 +3710,39 @@ onBeforeUnmount(() => {
 
 .conversation-message.is-user .message-body {
   max-width: 78%;
-  padding: 11px 16px;
-  background: #f0f1f3;
-  border-radius: 20px;
+  padding: 9px 14px;
+  background: #eef3fb;
+  border-radius: 14px;
+}
+
+/* 回答上方的署名行：谁说的、几点说的。原来回答没有任何署名，和用户气泡之外的内容混在一起。 */
+.message-author {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.message-author-icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--el-color-primary);
+  border-radius: 50%;
+  place-items: center;
+}
+
+.message-author-name {
+  font-weight: 500;
+  color: var(--el-text-color-regular);
+}
+
+.message-author-time {
+  color: #667085;
 }
 
 .conversation-message.is-assistant,
@@ -4354,8 +4480,11 @@ onBeforeUnmount(() => {
   color: #475467;
 }
 
+/* 四个结论一行排开，选中的一格填主色：原来 3+1 折成两行，第四个拉成一条整宽的蓝条 */
 .human-decision-card :deep(.el-radio-group) {
+  display: flex;
   width: 100%;
+  flex-wrap: nowrap;
 }
 
 .human-decision-card :deep(.el-radio-button) {
@@ -4364,6 +4493,9 @@ onBeforeUnmount(() => {
 
 .human-decision-card :deep(.el-radio-button__inner) {
   width: 100%;
+  padding: 8px 4px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 /* stylelint-disable-next-line order/order -- Responsive overrides must follow base rules. */
 @media (width <= 1380px) {

@@ -275,6 +275,8 @@ export type ReviewBMessage = {
   reviewRunId?: string | null
   createdBy?: string
   createdAt: string
+  /** 回答落定的时间（占位消息被回填时写入） */
+  updatedAt?: string
 }
 
 export type ReviewBEvent = {
