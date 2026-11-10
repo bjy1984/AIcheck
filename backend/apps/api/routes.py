@@ -48,6 +48,7 @@ from apps.api.project_analysis_views import (
     node_project_analysis_view,
     project_analysis_results_for_review_workspace,
 )
+from apps.api.review_human_records import human_records_for_context, human_review_records
 from apps.api.review_input_selection import (
     ReviewInputSelectionError,
     resolve_review_input_selection,
@@ -296,6 +297,7 @@ from libs.review_conversation_prompt import (
     REVIEW_CONVERSATION_SYSTEM_PROMPT,
 )
 from libs.review_evidence import attach_review_evidence_package_to_ai_run
+from libs.review_input_data import apply_field_corrections_to_parse_results
 from libs.review_orchestrator import (
     apply_review_human_input_for_review_run,
     build_review_orchestration_scorecard,
@@ -10301,7 +10303,8 @@ REVIEW_SESSION_TOOL_MEMORY_LIMIT = max(
     8, int(os.getenv("AICHECK_REVIEW_CONVERSATION_TOOL_MEMORY_LIMIT", "40"))
 )
 # 聚合整条判定链的工具不进入记忆：体量大、且应反映最新证据状态。
-REVIEW_SESSION_TOOL_MEMORY_EXCLUDED_TOOLS = {"run_node_formal_judgment"}
+# get_human_review_records 要读最新：人工修正随时会来，缓存下来就是把旧状态当真
+REVIEW_SESSION_TOOL_MEMORY_EXCLUDED_TOOLS = {"run_node_formal_judgment", "get_human_review_records"}
 
 
 def review_session_tool_memory_revision(session: dict[str, Any]) -> int:
@@ -10488,6 +10491,8 @@ def review_conversation_tool_result_summary(tool_name: str, output: dict[str, An
         return f"命中 {output.get('candidateCount', 0)} 条证据候选"
     if tool_name == "get_fixed_basis":
         return f"命中 {output.get('basisCount', 0)} 条固化条款"
+    if tool_name == "get_human_review_records":
+        return f"人工修正 {output.get('correctionCount', 0)} 处，人工意见 {'有' if output.get('latestOpinion') else '无'}"
     if tool_name == help_center.TOOL_NAME:
         return f"命中 {output.get('sectionCount', 0)} 节使用教程"
     if tool_name in {"check_all_equal", "check_date_covers", "check_design_license_scope", "check_installation_license_scope"}:
@@ -10693,6 +10698,10 @@ def review_conversation_agent_tool_output(
         }
     if tool_name == help_center.TOOL_NAME:
         return help_center.search_help_docs_tool(arguments, role="inspection")
+    if tool_name == "get_human_review_records":
+        return human_review_records(
+            repo.state, str(project.get("id") or ""), int(node.get("nodeId") or 0), evidence_links=evidence_links
+        )
     if tool_name == "search_node_evidence":
         query = str(arguments.get("query") or "").strip().lower()
         manual_status = str(arguments.get("manualStatus") or "").strip().lower()
@@ -10766,12 +10775,18 @@ def review_conversation_agent_tool_output(
         }
         documents = []
         field_count = 0
-        for parse_result in repo.state.get("ocr_parse_results", []):
-            if not isinstance(parse_result, dict):
-                continue
+        # 先把监检的人工修正覆盖上去，和正式复核看到的一样（原来这里读的是 OCR 原值）
+        patched_results = apply_field_corrections_to_parse_results(
+            repo.state,
+            [
+                item
+                for item in repo.state.get("ocr_parse_results", [])
+                if isinstance(item, dict) and str(item.get("documentVersionId") or "") in target_ids
+            ],
+            context={"correctionScope": {"projectId": project.get("id"), "nodeId": node.get("nodeId")}},
+        )
+        for parse_result in patched_results:
             version_id = str(parse_result.get("documentVersionId") or "")
-            if version_id not in target_ids:
-                continue
             raw_fields = parse_result.get("fields")
             fields_iter = (
                 list(raw_fields.values()) if isinstance(raw_fields, dict) else list(raw_fields or [])
@@ -10787,6 +10802,11 @@ def review_conversation_agent_tool_output(
                             field.get("fieldValue") or field.get("value") or field.get("text") or ""
                         )[:300],
                         "pageNo": field.get("pageNo"),
+                        **(
+                            {"humanCorrected": True, "originalValue": str(field.get("originalValue") or "")[:300]}
+                            if field.get("humanCorrected")
+                            else {}
+                        ),
                     }
                 )
             raw_seals = parse_result.get("seals")
@@ -10889,7 +10909,10 @@ def review_conversation_agent_tool_output(
                 repo.state,
                 tool_name,
                 scoped_arguments,
-                context={"documentVersionIds": sorted(allowed_document_ids)},
+                context={
+                    "documentVersionIds": sorted(allowed_document_ids),
+                    "correctionScope": {"projectId": project.get("id"), "nodeId": node.get("nodeId")},
+                },
             )
         return runtime_tools.dispatch_bound_tool(repo.state, tool_name, arguments or {}, project, node, review_run)
     return {
@@ -10977,6 +11000,10 @@ def review_conversation_llm_answer(
             "findingDrafts": repo.clone((review_run or {}).get("findingDrafts") or [])[:8],
         },
         "formalAtomicResults": atomic_results.model_view(formal_atomic),
+        # 人工已经定了什么（修正的字段、最新人工意见、证据人工状态）；细节用 get_human_review_records
+        "humanRecords": human_records_for_context(
+            repo.state, str(project.get("id") or ""), int(node.get("nodeId") or 0), evidence_links
+        ),
         # 近期对话（限天数、旧证据下的回答标 staleContext）、上一段对话要点、个人偏好
         **review_session_memory.conversation_memory_context(
             session,

@@ -58,6 +58,26 @@ export const carryOverLines = (carry?: ReviewBCarryOver | null): CarryOverLine[]
   ]
 }
 
+export type CarryOverDigestChip = {
+  verdict: string
+  tone: CarryOverLine['tone']
+  count: number
+}
+
+/** 收起时标题行里的结论摘要：同一结论合并计数，按首次出现的顺序，最多 4 个。
+ *
+ * 要点卡片收起后只剩一行标题，用户看不出 AI 被告知了什么（2026-11-09 生产验收：
+ * 「要点卡片默认收起」）。这一行把结论摆出来，展开才看原话。 */
+export const carryOverDigest = (lines: CarryOverLine[], limit = 4): CarryOverDigestChip[] => {
+  const order: CarryOverDigestChip[] = []
+  for (const line of lines) {
+    const found = order.find((chip) => chip.verdict === line.verdict)
+    if (found) found.count += 1
+    else order.push({ verdict: line.verdict, tone: line.tone, count: 1 })
+  }
+  return order.slice(0, limit)
+}
+
 export const hasCarryOver = (session?: ReviewBSession | null) =>
   carryOverLines(session?.carryOver).length > 0
 

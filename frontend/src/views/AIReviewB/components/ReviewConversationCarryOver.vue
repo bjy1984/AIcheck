@@ -10,7 +10,7 @@ import { ElButton, ElMessage } from 'element-plus'
 import { dismissReviewBCarryOverApi } from '@/api/aiReviewB'
 import type { ReviewBSession } from '@/types/ai-review-b'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
-import { carryOverLines, historyHint, shortStamp } from '../conversationMemory'
+import { carryOverDigest, carryOverLines, historyHint, shortStamp } from '../conversationMemory'
 
 const props = defineProps<{
   session?: ReviewBSession | null
@@ -21,6 +21,7 @@ const emit = defineEmits<{ updated: [session: ReviewBSession] }>()
 
 const dismissing = ref(false)
 const lines = computed(() => carryOverLines(props.session?.carryOver))
+const digest = computed(() => carryOverDigest(lines.value))
 const hint = computed(() => historyHint(props.session))
 const lastActivity = computed(() => shortStamp(props.session?.carryOver?.lastActivityAt))
 
@@ -46,6 +47,15 @@ const dismiss = async () => {
     <details v-if="lines.length" class="carry-over" :open="!hasMessages">
       <summary>
         <strong>上次对话要点</strong>
+        <!-- 收起时也看得出 AI 被告知了什么：结论摘要放在标题行里，展开才看原话 -->
+        <span class="carry-over-digest">
+          <span
+            v-for="chip in digest"
+            :key="chip.verdict"
+            :class="['carry-over-verdict', `is-${chip.tone}`]"
+            >{{ chip.verdict }}<template v-if="chip.count > 1"> ×{{ chip.count }}</template></span
+          >
+        </span>
         <span v-if="lastActivity" class="carry-over-time">{{ lastActivity }}</span>
       </summary>
       <p class="carry-over-note">AI 只把这几条当线索，结论会按当前资料重新核实。</p>
@@ -90,15 +100,34 @@ const dismiss = async () => {
 }
 
 .carry-over summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
   font-size: 13px;
   color: var(--review-ink, #172033);
   cursor: pointer;
 }
 
+.carry-over-digest {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .carry-over-time {
-  margin-left: 8px;
+  margin-left: auto;
   font-size: 12px;
   color: var(--review-muted, #667085);
+}
+
+/* 展开后封顶、内部滚动：悬浮助手里输入框（约 160px）钉在底部，可视区随屏幕高度缩小，
+   一张不封顶的卡片会被输入框压住最后几条（2026-11-09 生产验收）。
+   430px ≈ 面板顶部偏移 + 标题与工具行 + 输入框，按 560 高实测：卡片底边停在输入框上方。 */
+.carry-over[open] {
+  max-height: clamp(88px, calc(100vh - 430px), 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .carry-over-note {

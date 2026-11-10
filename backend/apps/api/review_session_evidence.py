@@ -15,7 +15,7 @@ from libs.db.repository import repo
 def review_session_evidence_fingerprint(session: dict[str, Any]) -> str:
     """本会话节点的证据指纹：证据链接与绑定的 (id, revision, 状态) 稳定哈希。
 
-    任何证据变化（自动挂载、人工绑定、驳回）都会改变指纹。"""
+    任何证据变化（自动挂载、人工绑定、驳回，以及人工修正字段、人工意见）都会改变指纹。"""
     from apps.api.routes import stable_hash_payload
 
     project_id = str(session.get("projectId") or "")
@@ -35,6 +35,15 @@ def review_session_evidence_fingerprint(session: dict[str, Any]) -> str:
                         str(row.get("manualStatus") or row.get("bindingStatus") or ""),
                     )
                 )
+    # 人工修正的字段、人工意见也算「证据变了」：之前的工具结果读的是修正前的值，
+    # 之前的回答也没把这条人工记录考虑进去。没有这两类记录的节点指纹不变。
+    for state_key, status_key in (("fact_corrections", "status"), ("review_opinions", "result")):
+        for row in repo.state.get(state_key, []):
+            if (
+                str(row.get("projectId") or "") == project_id
+                and int(row.get("nodeId") or 0) == node_id
+            ):
+                rows.append((state_key, str(row.get("id") or ""), 0, str(row.get(status_key) or "")))
     return stable_hash_payload(sorted(rows))
 
 

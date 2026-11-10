@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { ReviewBSession } from '@/types/ai-review-b'
 import {
+  carryOverDigest,
   carryOverLines,
   hasCarryOver,
   historyHint,
@@ -47,6 +48,25 @@ assert.deepEqual(
 assert.equal(lines[2].summary, '3 项：需人工确认 1、符合 2')
 assert.equal(lines[0].summary, '')
 assert.equal(carryOverLines(null).length, 0)
+
+// 收起时标题行的结论摘要：同一结论合并计数、按首次出现排序、最多 4 个
+assert.deepEqual(
+  carryOverDigest([...lines, ...lines]).map((chip) => [chip.verdict, chip.tone, chip.count]),
+  [
+    ['不符合', 'danger', 2],
+    ['未下结论', 'info', 2],
+    ['需人工确认', 'warning', 2],
+    ['没答完', 'info', 2]
+  ]
+)
+assert.equal(
+  carryOverDigest(
+    ['a', 'b', 'c', 'd', 'e', 'f'].map((verdict) => ({ ...lines[0], verdict })),
+    3
+  ).length,
+  3
+)
+assert.deepEqual(carryOverDigest([]), [])
 
 const base = { id: 'RSESSION-2', etag: 'W/"x"' } as unknown as ReviewBSession
 assert.equal(hasCarryOver(base), false)
@@ -118,3 +138,13 @@ assert.ok(toolbar.includes('saveReviewAssistantPreferencesApi'), '回答偏好�
 const carryOver = read('./components/ReviewConversationCarryOver.vue')
 assert.ok(carryOver.includes('不再带上'), '要点卡片没有「不再带上」')
 assert.ok(carryOver.includes('dismissReviewBCarryOverApi'), '不再带上没有调后端')
+// 要点卡片：收起时标题行里要有结论摘要；展开后封顶，不能占满悬浮助手的可视区
+const carrySource = readFileSync(
+  fileURLToPath(new URL('./components/ReviewConversationCarryOver.vue', import.meta.url)),
+  'utf8'
+)
+assert.ok(carrySource.includes('carry-over-digest'), '收起时标题行要有结论摘要')
+assert.ok(
+  /\.carry-over\[open\]\s*\{[^}]*max-height:[^;]+;[^}]*overflow-y:\s*auto/.test(carrySource),
+  '展开后要封顶并内部滚动'
+)

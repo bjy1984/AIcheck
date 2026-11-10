@@ -124,8 +124,11 @@ def apply_field_corrections_to_parse_results(
     不跨节点传播（业务口径：节点独立）。返回副本，不改动持久化状态。
     """
     review_run = (context or {}).get("reviewRun") or {}
-    project_id = str(review_run.get("projectId") or "")
-    node_id = review_run.get("nodeId")
+    # AI审查对话助手没有冻结的 ReviewRun：用 correctionScope 指明项目与节点，
+    # 否则它读到的永远是 OCR 原值，看不到监检已经改过的字段（2026-11-10）。
+    scope = (context or {}).get("correctionScope") or {}
+    project_id = str(review_run.get("projectId") or scope.get("projectId") or "")
+    node_id = review_run.get("nodeId") if review_run.get("nodeId") is not None else scope.get("nodeId")
     if not project_id or node_id is None:
         return results
     corrections = [

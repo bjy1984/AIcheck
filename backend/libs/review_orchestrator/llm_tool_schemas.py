@@ -511,6 +511,18 @@ REVIEW_CONVERSATION_CONTEXT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_human_review_records",
+            "description": (
+                "读取监检人员在系统里已经留下的人工记录：人工修正过的事实字段（修正前后的值、原因、"
+                "谁在何时改的）、最新的人工意见（满足要求/需补正等）、证据的人工确认与驳回计数。"
+                "人工记录优先于 OCR 抽取值和 AI 判定；回答涉及字段值或节点结论时先看它。只读。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "assemble_node_judgment_facts",
             "description": (
                 "一次性聚合当前节点判定所需事实：项目参建单位名称、各证据文档的结构化字段、"
