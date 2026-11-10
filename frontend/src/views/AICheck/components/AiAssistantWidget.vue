@@ -319,7 +319,11 @@ const handleKeydown = (event: KeyboardEvent) => {
     padding: 0;
     overflow: hidden;
     grid-template-columns: minmax(0, 1fr) minmax(290px, 330px);
-    grid-template-rows: none;
+
+    /* 唯一的一行要撑满面板高度。原来是 rows: none + 上面继承来的 align-content: start，
+       那一行只有内容那么高，对话列跟着只有内容那么高，输入区就悬在中间、下面一片空白（实测）。 */
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
   }
 
   .ai-assistant-body :deep(.review-b-shell.is-embedded.is-workstation-mode .conversation-column) {
@@ -350,7 +354,10 @@ const handleKeydown = (event: KeyboardEvent) => {
   .ai-assistant-body :deep(.review-b-shell.is-embedded) {
     height: auto;
     overflow: visible;
-    flex: none;
+
+    /* 内容不够一屏时壳和 layout 要长到撑满面板，输入区才贴着底边；够长时不收缩，由 body 滚。
+       原来是 flex: none，内容短时输入区悬在中间、下面空一截（实测 900×700）。 */
+    flex: 1 0 auto;
   }
 
   .ai-assistant-body :deep(.review-b-shell.is-embedded .review-b-layout) {
@@ -358,7 +365,7 @@ const handleKeydown = (event: KeyboardEvent) => {
     height: auto;
     padding: 14px 16px 0;
     overflow: visible;
-    flex: none;
+    flex: 1 0 auto;
     flex-direction: column;
   }
 
@@ -372,9 +379,8 @@ const handleKeydown = (event: KeyboardEvent) => {
 
   /* sticky 只在元素「自然位置」落在可视区下面时才钉住；输入框排在右边栏前面，滚过去它就脱钩。
      用 order 把它排到最后，自然位置在整个内容的底部，从头到尾都钉着。 */
-  .ai-assistant-body :deep(.review-b-shell.is-embedded .composer-card) {
+  .ai-assistant-body :deep(.review-b-shell.is-embedded .composer-dock) {
     order: 10;
-    margin-top: 0;
   }
 
   .ai-assistant-body :deep(.review-b-shell.is-embedded .context-panel) {

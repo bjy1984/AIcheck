@@ -18,7 +18,7 @@ const source = readFileSync(
 // 1) 节点资料栏只在「窄屏 + 悬浮助手 + 追问助手页签」里折叠；待办与结果页签、宽屏右栏不折
 const foldable = /const contextFoldable = computed\(([\s\S]*?)\n\)/.exec(source)?.[1] || ''
 assert.ok(foldable.includes('props.embedded'), '只在悬浮助手里折')
-assert.ok(foldable.includes('!evidenceWide.value'), '宽屏时它在右栏，不折')
+assert.ok(foldable.includes('stackedLayout.value'), '只在单列（≤900px）时折；两栏时它本来就是右栏')
 assert.ok(foldable.includes("activePane.value === 'assistant'"), '待办与结果页签里不折')
 assert.ok(source.includes('const contextFolded = ref(true)'), '默认折叠')
 assert.ok(/!contextHidden/.test(source), '内容区要跟着折叠状态隐藏')
@@ -35,12 +35,25 @@ assert.ok(
   '草稿填进人工意见后要展开它'
 )
 
-// 3) 输入区是整个面板的底边：窄屏要排到最后一个，否则滚过对话它就跟着内容滚走了
+// 3) 输入区是整个面板的底边，两种版面都要贴着底（2026-11-10 在 900–1280px 之间实测它悬在中间）：
+//    - 页宽 901–1279px 是左右两栏：那一行必须撑满面板高度，不能只有内容那么高；
+//    - 页宽 ≤900px 是单列：壳和 layout 要能长到撑满面板，输入区排最后。
+const widget = readFileSync(
+  fileURLToPath(new URL('../AICheck/components/AiAssistantWidget.vue', import.meta.url)),
+  'utf8'
+)
+const twoColumns = /@media \(900px < width < 1280px\) \{([\s\S]*?)\n\}/.exec(widget)?.[1] || ''
+assert.ok(twoColumns.includes('grid-template-rows: minmax(0, 1fr)'), '两栏时唯一的一行撑满高度')
+assert.ok(twoColumns.includes('align-content: stretch'), '不能再继承 align-content: start')
+const stacked = /@media \(width <= 900px\) \{([\s\S]*?)\n\}\n\n@media/.exec(widget)?.[1] || ''
+assert.ok(/composer-dock\)\s*\{\s*order:\s*10/.test(stacked), '单列时输入区排最后')
 assert.ok(
-  /@media \(width < 1280px\)\s*\{\s*\.review-b-shell\.is-embedded \.composer-dock\s*\{\s*order:\s*99/.test(
-    source
-  ),
-  '窄屏时输入区排最后'
+  /review-b-shell\.is-embedded\)\s*\{[^}]*flex:\s*1 0 auto/.test(stacked),
+  '单列时壳要能长到撑满面板，内容短时输入区才贴底'
+)
+assert.ok(
+  /review-b-layout\)\s*\{[^}]*flex:\s*1 0 auto/.test(stacked),
+  '单列时 layout 要能长到撑满面板'
 )
 
 // 4) 44px 是给手指的：只有精确指针（鼠标）才收回到 32px，触屏不动

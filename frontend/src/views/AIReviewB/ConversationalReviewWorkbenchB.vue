@@ -206,6 +206,13 @@ const updateEvidenceWidth = () => {
   evidenceWide.value = evidenceMedia?.matches === true
   if (workstationMode && !evidenceWide.value) leftSidebarCollapsed.value = true
 }
+/** 悬浮助手在页宽 ≤900px 时叠成单列（AiAssistantWidget.vue 里的断点）；更宽时是左右两栏。
+ *  节点资料栏只有在单列、排到对话下面时才折叠；两栏时它本来就是右栏。 */
+const stackedLayout = ref(false)
+let stackedMedia: MediaQueryList | undefined
+const updateStackedLayout = () => {
+  stackedLayout.value = stackedMedia?.matches === true
+}
 let evidenceReturnFocus: HTMLElement | undefined
 watch(evidenceDialogVisible, async (visible) => {
   if (!visible && evidenceReturnFocus?.isConnected) {
@@ -510,12 +517,12 @@ const runStatusTone = computed(() => {
   if (['queued', 'running', 'resuming', '推理中'].includes(runStatus.value)) return 'primary'
   return 'info'
 })
-/** 窄屏（单列）时，节点的资料与操作（当前上下文、文件、快捷操作、人工复核意见…）排在对话下面，
+/** 单列（页宽 ≤900px）时，节点的资料与操作（当前上下文、文件、快捷操作、人工复核意见…）排在对话下面，
  *  一千多像素和聊天无关的内容。在「追问助手」页签里把它折起来，只留一行摘要；
  *  「待办与结果」页签里照常展开——人工结论是在那里做的。宽屏时它在右栏，不折。 */
 const contextFolded = ref(true)
 const contextFoldable = computed(
-  () => props.embedded && !evidenceWide.value && activePane.value === 'assistant'
+  () => props.embedded && stackedLayout.value && activePane.value === 'assistant'
 )
 const contextHidden = computed(() => contextFoldable.value && contextFolded.value)
 const contextFoldSummary = computed(
@@ -1987,6 +1994,9 @@ onMounted(async () => {
   evidenceMedia = window.matchMedia('(min-width: 1280px)')
   updateEvidenceWidth()
   evidenceMedia.addEventListener('change', updateEvidenceWidth)
+  stackedMedia = window.matchMedia('(max-width: 900px)')
+  updateStackedLayout()
+  stackedMedia.addEventListener('change', updateStackedLayout)
   const context = resolveReviewWorkbenchContext(props)
   if (context.source === 'standalone') await loadPage()
   else await loadEmbeddedContext()
@@ -2022,6 +2032,7 @@ watch(
 
 onBeforeUnmount(() => {
   evidenceMedia?.removeEventListener('change', updateEvidenceWidth)
+  stackedMedia?.removeEventListener('change', updateStackedLayout)
   reviewContextGeneration.value++
   if (pollTimer) window.clearInterval(pollTimer)
   stopLiveAgentTrace()
@@ -3186,16 +3197,10 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--review-line, #e4e7ec);
 }
 
-/* 窄屏（单列）时对话列是 display: contents，输入区夹在对话和「当前上下文」中间：
-   滚过对话之后它就跟着内容滚走了，只有在对话那一段才钉在底部。排到最后一个，
-   它才在整个面板里始终钉在底边。 */
-@media (width < 1280px) {
-  .review-b-shell.is-embedded .composer-dock {
-    order: 99;
-  }
-
-  /* 单列时节点资料栏排在对话下面：原来按内容收缩成半宽的一块白底，折叠行和展开后的小节
-     都只占一半宽度。让它撑满，用页面底色，不再描左边线。 */
+/* 单列（页宽 ≤900px）时节点资料栏排在对话下面：原来按内容收缩成半宽的一块白底，折叠行和展开后的
+   小节都只占一半宽度。让它撑满，用页面底色，不再描左边线。
+   输入区钉在底边的规则在 AiAssistantWidget.vue（那里按面板宽度分单列/两栏）。 */
+@media (width <= 900px) {
   .review-b-shell.is-embedded .context-panel {
     background: transparent;
     border-left: 0;
