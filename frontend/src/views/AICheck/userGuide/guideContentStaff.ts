@@ -458,8 +458,8 @@ export const ADMIN_GUIDE: RoleGuide = {
         alt: '后台组织用户',
         device: 'desktop',
         markers: [
-          { n: 1, x: 94.4, y: 28.4 },
-          { n: 3, x: 88.8, y: 55.3 }
+          { n: 1, x: 83.5, y: 55.3 },
+          { n: 3, x: 94.4, y: 28.4 }
         ]
       },
       jump: {

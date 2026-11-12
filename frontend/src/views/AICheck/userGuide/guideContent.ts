@@ -93,8 +93,8 @@ const CONTRACTOR_GUIDE: RoleGuide = {
         alt: '施工方首页：三个数字、上传按钮',
         device: 'phone',
         markers: [
-          { n: 1, x: 15, y: 71.2 },
-          { n: 3, x: 60, y: 41 }
+          { n: 1, x: 4, y: 13 },
+          { n: 3, x: 4, y: 38 }
         ]
       },
       jump: {
@@ -117,8 +117,8 @@ const CONTRACTOR_GUIDE: RoleGuide = {
         alt: '待提交列表和全部提交按钮',
         device: 'phone',
         markers: [
-          { n: 1, x: 10.7, y: 37.1 },
-          { n: 2, x: 80, y: 28.7 }
+          { n: 1, x: 6, y: 23 },
+          { n: 2, x: 79, y: 6 }
         ]
       },
       jump: {

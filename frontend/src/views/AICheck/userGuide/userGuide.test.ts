@@ -138,4 +138,11 @@ for (const [name, source] of [
 const permission = readFileSync(join(viewsRoot, '..', '..', 'permission.ts'), 'utf8')
 assert.ok(/to\.query\.voluntary/.test(permission), '主动改密码被路由守卫挡回首页')
 
+// 11-12 施工方手机实测：顶栏项目名在手机上是 display: contents，量出来是 0，引导第一步一直说「没有显示」；
+// 同一页面找不到的一块要很快照实说，不能对着上一步的提示等 6 秒
+const guideRuntime = readFileSync(join(here, 'useUserGuide.ts'), 'utf8')
+assert.match(guideRuntime, /display !== 'contents'/, 'display: contents 的锚点要拿子元素量位置')
+assert.match(guideRuntime, /SAME_PAGE_TIMEOUT_MS/, '同一页面找不到的一块不要等 6 秒')
+assert.match(guideRuntime, /spotlight\.hint = spot\.hint\n/, '找元素前先换上这一步的提示')
+
 console.log('user guide anchors, images and wording passed')
