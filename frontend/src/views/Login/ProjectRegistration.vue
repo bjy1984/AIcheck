@@ -28,7 +28,7 @@
  * 审核通过前没有账号、登录不了。同一个链接里「查看我的申请」凭用户名＋口令
  * 看进度；被拒了能看到理由，并带着原来填的内容重新提交。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ElAlert,
@@ -62,6 +62,13 @@ const submitting = ref(false)
 const submitted = ref(false)
 const info = ref<RegistrationLinkInfo | undefined>(undefined)
 const loadError = ref('')
+
+/* 手机上标签放在输入框上面：左右排时输入框太窄，单位名的提示被截掉（11-12 线上验证） */
+const isPhone = ref(false)
+const updateViewport = () => {
+  isPhone.value = window.innerWidth <= 640
+}
+const formLabelPosition = computed(() => (isPhone.value ? 'top' : 'right'))
 
 // apply：填申请；status：查看我的申请
 const mode = ref<'apply' | 'status'>('apply')
@@ -106,7 +113,11 @@ const ROLE_LABELS: Record<string, string> = {
   owner: '建设单位'
 }
 
+onBeforeUnmount(() => window.removeEventListener('resize', updateViewport))
+
 onMounted(async () => {
+  updateViewport()
+  window.addEventListener('resize', updateViewport)
   if (!token.value) {
     loadError.value = '注册链接不完整。'
     loading.value = false
@@ -140,17 +151,17 @@ const handleSubmit = async () => {
     return
   }
   if (!form.value.password) {
-    ElMessage.warning('请填写口令。')
+    ElMessage.warning('请填写密码。')
     return
   }
   if (form.value.password.length < 6) {
-    ElMessage.warning('口令至少 6 位。')
+    ElMessage.warning('密码至少 6 位。')
     return
   }
   /* 两次口令不一致要在提交前拦住：交给服务端的话，申请提上去了但口令
      不是他以为的那个，等审核通过去登录才发现——那时已经改不了了。 */
   if (form.value.password !== form.value.confirm) {
-    ElMessage.warning('两次输入的口令不一致。')
+    ElMessage.warning('两次输入的密码不一致。')
     return
   }
   submitting.value = true
@@ -177,7 +188,7 @@ const handleSubmit = async () => {
 
 const handleCheckStatus = async () => {
   if (!statusForm.value.username.trim() || !statusForm.value.password) {
-    ElMessage.warning('请填写申请时的用户名和口令。')
+    ElMessage.warning('请填写申请时的用户名和密码。')
     return
   }
   statusLoading.value = true
@@ -189,7 +200,7 @@ const handleCheckStatus = async () => {
     })
     if (res) statusResult.value = res.data
   } catch (error) {
-    ElMessage.error(getAicheckErrorMessage(error, '没有找到这个用户名和口令对应的申请。'))
+    ElMessage.error(getAicheckErrorMessage(error, '没有找到这个用户名和密码对应的申请。'))
   } finally {
     statusLoading.value = false
   }
@@ -236,17 +247,21 @@ const switchMode = (next: 'apply' | 'status') => {
         <p class="registration-summary">
           查看你在 <strong>{{ info.projectName || info.projectId }}</strong> 的申请
         </p>
-        <ElForm label-width="96px" @submit.prevent="handleCheckStatus">
+        <ElForm
+          label-width="96px"
+          :label-position="formLabelPosition"
+          @submit.prevent="handleCheckStatus"
+        >
           <ElFormItem label="用户名">
             <ElInput v-model="statusForm.username" autocomplete="username" />
           </ElFormItem>
-          <ElFormItem label="口令">
+          <ElFormItem label="密码">
             <ElInput
               v-model="statusForm.password"
               type="password"
               show-password
               autocomplete="current-password"
-              placeholder="申请时设置的口令"
+              placeholder="申请时设置的密码"
               @keyup.enter="handleCheckStatus"
             />
           </ElFormItem>
@@ -267,7 +282,7 @@ const switchMode = (next: 'apply' | 'status') => {
           <p>申请角色：{{ ROLE_LABELS[statusResult.role] || statusResult.role }}</p>
           <p>所属单位：{{ statusResult.orgName || '未填写' }}</p>
           <p v-if="statusResult.status === '待审核'" class="status-hint">
-            还在等项目负责人审核，通过后用这个用户名和口令登录。
+            还在等项目负责人审核，通过后用这个用户名和密码登录。
           </p>
           <template v-else-if="statusResult.status === '已通过'">
             <p class="status-hint">已通过，可以登录了。</p>
@@ -284,7 +299,7 @@ const switchMode = (next: 'apply' | 'status') => {
         v-else-if="submitted"
         icon="success"
         title="已提交，等待项目负责人审核"
-        sub-title="审核通过后你的账号才会创建，届时可用刚才设置的用户名和口令登录。现在还不能登录。"
+        sub-title="审核通过后你的账号才会创建，届时可用刚才设置的用户名和密码登录。现在还不能登录。"
       >
         <template #extra>
           <ElButton @click="switchMode('status')">查看审核进度</ElButton>
@@ -304,7 +319,7 @@ const switchMode = (next: 'apply' | 'status') => {
           </li>
         </ol>
 
-        <ElForm label-width="96px" @submit.prevent>
+        <ElForm label-width="96px" :label-position="formLabelPosition" @submit.prevent>
           <ElFormItem label="用户名">
             <ElInput v-model="form.username" autocomplete="username" />
           </ElFormItem>
@@ -333,7 +348,7 @@ const switchMode = (next: 'apply' | 'status') => {
               data-testid="registration-org-name"
             />
           </ElFormItem>
-          <ElFormItem label="设置口令">
+          <ElFormItem label="设置密码">
             <ElInput
               v-model="form.password"
               type="password"
@@ -342,7 +357,7 @@ const switchMode = (next: 'apply' | 'status') => {
               placeholder="至少 6 位"
             />
           </ElFormItem>
-          <ElFormItem label="确认口令">
+          <ElFormItem label="确认密码">
             <ElInput
               v-model="form.confirm"
               type="password"

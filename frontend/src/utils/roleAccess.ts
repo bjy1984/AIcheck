@@ -81,6 +81,8 @@ export const isPathAllowedForRole = (path: string, role?: string): boolean => {
   // skill 网页授权页：已登录的人都能打开，页面上说明谁能授权；真正的限制（只有监检、管理员）在后端。
   // 不放行的话，非监检账号登录后会被悄悄送回首页，而 skill 一直等到超时，没人知道为什么。
   if (pathname.startsWith('/skill-authorize/')) return true
+  // 修改密码：每个登录的人都能改自己的密码（账号菜单「修改密码」，2026-11-12）
+  if (pathname === '/change-password') return true
   // /ai-review-b 已下线（两套监检界面合并为一套）。老链接仍判为监检可访问，
   // 由重定向送去 /workbench/inspection——直接判不可访问会让收藏夹里的旧地址
   // 弹「无权访问」，那是最容易被当成故障的表现。

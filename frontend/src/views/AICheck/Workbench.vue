@@ -6510,7 +6510,7 @@ onBeforeUnmount(() => {
         v-if="canManageRegistration && projectRegistrationTarget"
         v-model="projectRegistrationVisible"
         :title="`${projectRegistrationTarget.name} · 邀请成员`"
-        size="640px"
+        size="min(820px, 100vw)"
         append-to-body
       >
         <ProjectRegistrationPanel

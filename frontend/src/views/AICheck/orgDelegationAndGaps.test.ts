@@ -111,7 +111,11 @@ assert.match(registrationPanel, /inputErrorMessage: '必须填写理由'/, '拒�
 assert.match(registrationPanel, /row\.rejectReason/, '拒绝理由没有显示，过后没人说得清为什么')
 
 // 链接的有效期和次数都要写出来——它会被转发、被截图
-assert.match(registrationPanel, /有效期至 \{\{ linkExpiresAt \}\}/, '没说链接什么时候作废')
+assert.match(
+  registrationPanel,
+  /有效期至 \{\{ formatExpiry\(linkExpiresAt\) \}\}/,
+  '没说链接什么时候作废'
+)
 assert.match(registrationPanel, /最多可注册\s*\n?\s*\{\{ linkMaxUses \}\} 人/, '没说链接还能用几次')
 
 assert.match(adminOverview, /ProjectRegistrationPanel/, '后台没有挂上注册审核面板')

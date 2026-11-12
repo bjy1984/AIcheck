@@ -73,6 +73,14 @@ const requests = ref<RegistrationRequestItem[]>([])
 const listLoading = ref(false)
 const reviewing = ref('')
 
+/* 有效期按本地时间写到分钟：原样显示服务端的 2026-11-19T07:26:44.376954+00:00 没人看得懂 */
+const formatExpiry = (value: string) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 const pending = computed(() => requests.value.filter((item) => item.status === '待审核'))
 
 const ROLE_LABELS: Record<string, string> = {
@@ -300,7 +308,7 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
       </div>
       <!-- 有效期和次数都要写出来：链接会被转发、被截图 -->
       <small
-        >有效期至 {{ linkExpiresAt }}，最多可注册
+        >有效期至 {{ formatExpiry(linkExpiresAt) }}，最多可注册
         {{ linkMaxUses }} 人；提交后需审核通过才生效</small
       >
     </div>
@@ -314,9 +322,9 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
       show-icon
     />
     <ElTable v-else v-loading="listLoading" :data="requests" class="registration-table">
-      <ElTableColumn prop="username" label="用户名" min-width="120" />
-      <ElTableColumn prop="displayName" label="姓名" min-width="100" />
-      <ElTableColumn label="单位" min-width="160">
+      <ElTableColumn prop="username" label="用户名" min-width="100" />
+      <ElTableColumn prop="displayName" label="姓名" min-width="80" />
+      <ElTableColumn label="单位" min-width="150">
         <template #default="{ row }">
           <span>{{ orgOf(row) || '未填写' }}</span>
           <!-- 和项目已登记的单位名字不同：审核时要选并入还是新单位 -->
@@ -325,11 +333,11 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
           </small>
         </template>
       </ElTableColumn>
-      <ElTableColumn label="申请角色" width="110">
+      <ElTableColumn label="申请角色" width="90">
         <template #default="{ row }">{{ ROLE_LABELS[row.role] || row.role }}</template>
       </ElTableColumn>
-      <ElTableColumn prop="createdAt" label="提交时间" width="170" />
-      <ElTableColumn label="状态" width="150">
+      <ElTableColumn prop="createdAt" label="提交时间" width="150" />
+      <ElTableColumn label="状态" width="110">
         <template #default="{ row }">
           <ElTag
             size="small"
@@ -345,7 +353,7 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
           <small v-if="row.rejectReason" class="reject-reason">{{ row.rejectReason }}</small>
         </template>
       </ElTableColumn>
-      <ElTableColumn label="操作" width="150" fixed="right">
+      <ElTableColumn label="操作" width="110" fixed="right">
         <template #default="{ row }">
           <template v-if="row.status === '待审核'">
             <ElButton

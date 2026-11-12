@@ -37,7 +37,6 @@ import {
 } from './adminMenuTree'
 import {
   ElAlert,
-  ElBadge,
   ElButton,
   ElCard,
   ElCheckbox,
@@ -3827,20 +3826,20 @@ onMounted(() => {
                   <!-- 邀请成员是建完项目最常用的一步，留在行上并带待审核数；归档/删除收进「更多」 -->
                   <ElTableColumn label="操作" width="230" fixed="right">
                     <template #default="{ row }">
-                      <ElBadge
-                        :value="row.pendingRegistrationCount || 0"
-                        :hidden="!row.pendingRegistrationCount"
-                        class="invite-badge"
+                      <!-- 待审核数写在按钮里：角标会被表格单元格裁掉一半（11-12 线上验证） -->
+                      <ElButton
+                        link
+                        type="primary"
+                        data-testid="project-invite"
+                        data-guide="admin-project-invite"
+                        @click="openProjectRegistration(row)"
+                        >邀请成员<span
+                          v-if="row.pendingRegistrationCount"
+                          class="invite-pending-count"
+                          :aria-label="`${row.pendingRegistrationCount} 条待审核`"
+                          >{{ row.pendingRegistrationCount }}</span
+                        ></ElButton
                       >
-                        <ElButton
-                          link
-                          type="primary"
-                          data-testid="project-invite"
-                          data-guide="admin-project-invite"
-                          @click="openProjectRegistration(row)"
-                          >邀请成员</ElButton
-                        >
-                      </ElBadge>
                       <ElButton link type="primary" @click="handleOpenProjectDetail(row)"
                         >详情</ElButton
                       >
@@ -5659,7 +5658,7 @@ onMounted(() => {
       <ElDrawer
         v-model="projectRegistrationVisible"
         :title="`${projectRegistrationTarget?.name || ''} · 邀请成员`"
-        size="min(640px, 100vw)"
+        size="min(820px, 100vw)"
       >
         <ProjectRegistrationPanel
           v-if="projectRegistrationTarget"
@@ -7497,9 +7496,9 @@ onMounted(() => {
 }
 
 .secondary-summary-collapse .metric-card {
+  background: transparent;
   border: 0;
   border-radius: 0;
-  background: transparent;
 }
 
 .panel {
@@ -7639,10 +7638,10 @@ onMounted(() => {
 
 .admin-readable-table :deep(.el-table__body .cell) {
   overflow: visible;
+  line-height: 1.55;
+  word-break: normal;
   white-space: normal;
   overflow-wrap: anywhere;
-  word-break: normal;
-  line-height: 1.55;
 }
 
 .admin-readable-table :deep(.el-table__row td) {
@@ -8059,8 +8058,8 @@ onMounted(() => {
 }
 
 .admin-role-label {
-  white-space: normal;
   word-break: keep-all;
+  white-space: normal;
 }
 
 @media (width <= 1280px) {
@@ -8178,5 +8177,19 @@ onMounted(() => {
 
 .review-plugin-setting__hint--warning {
   color: var(--el-color-warning-dark-2);
+}
+
+.invite-pending-count {
+  display: inline-block;
+  height: 18px;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #fff;
+  text-align: center;
+  background: var(--el-color-danger);
+  border-radius: 9px;
 }
 </style>

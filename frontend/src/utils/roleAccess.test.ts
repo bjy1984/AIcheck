@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { getRoleDefaultPath, resolveRoleEntryPath } from './roleAccess'
+import { getRoleDefaultPath, isPathAllowedForRole, resolveRoleEntryPath } from './roleAccess'
 
 // 两套监检界面合并为一套（2026-08-16）：/ai-review-b 下线，
 // 对话式复核以 embedded 方式留在 /workbench/inspection 里。
@@ -25,3 +25,8 @@ assert.equal(getRoleDefaultPath('ndt'), '/workbench/ndt')
 assert.equal(getRoleDefaultPath('owner'), '/workbench/owner')
 assert.equal(getRoleDefaultPath('admin'), '/admin/overview')
 assert.equal(getRoleDefaultPath('fde'), '/fde/dashboard')
+
+// 2026-11-12 线上验证发现：账号菜单「修改密码」被「没有该页面的访问权限」挡回——每个角色都要能改自己的密码
+for (const role of ['admin', 'inspection', 'contractor', 'ndt', 'owner', 'fde']) {
+  assert.equal(isPathAllowedForRole('/change-password', role), true, `${role} 打不开修改密码页`)
+}
