@@ -5785,6 +5785,12 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
 
 @router.get("/projects/{project_id}/tree")
 def project_tree(request: Request, project_id: str):
+    # 平台管理员加 ?_profile=1 时剖析这一次请求（2026-11-12：无损检测页首屏要等目录树 0.6–2.3 秒）
+    with request_profile(request, f"project-tree {project_id}"):
+        return _project_tree(request, project_id)
+
+
+def _project_tree(request: Request, project_id: str):
     project = repo.require_project(project_id)
     if not project:
         return fail(errors.NOT_FOUND, request)
@@ -6679,6 +6685,12 @@ def node_requirements(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/nodes/{node_id}/package")
 def node_package(request: Request, project_id: str, node_id: int):
+    # 平台管理员加 ?_profile=1 时剖析这一次请求（2026-11-12：首屏第二个慢请求）
+    with request_profile(request, f"node-package {project_id}#{node_id}"):
+        return _node_package(request, project_id, node_id)
+
+
+def _node_package(request: Request, project_id: str, node_id: int):
     effective_project_id = project_id
     project = repo.require_project(effective_project_id)
     node = repo.node(effective_project_id, node_id)
