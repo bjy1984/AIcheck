@@ -11,7 +11,13 @@ import { ElDialog, ElDrawer } from 'element-plus'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { GUIDE_ROLES, guideForRole } from './guideContent'
 import type { GuideRole, GuideTask } from './guideTypes'
-import { guideOpen, jumpToGuideSpot, openUserGuide, startGuideTour } from './useUserGuide'
+import {
+  closeSpotlight,
+  guideOpen,
+  jumpToGuideSpot,
+  openUserGuide,
+  startGuideTour
+} from './useUserGuide'
 
 const route = useRoute()
 const router = useRouter()
@@ -86,6 +92,14 @@ const markSeen = () => {
   }
 }
 let nudgeTimer = 0
+/* 换了账号（退出再登录不刷新页面）：上一个账号开着的帮助和引导要关掉，
+ * 不然新账号进来看到的是别人的帮助，欢迎框也被它挡住（11-12 施工方→无损检测切换时实测） */
+watch(seenKey, (key, previous) => {
+  if (previous && key !== previous) {
+    guideOpen.value = false
+    closeSpotlight()
+  }
+})
 watch(
   [ownRole, seenKey],
   () => {

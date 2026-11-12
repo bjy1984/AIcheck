@@ -145,4 +145,7 @@ assert.match(guideRuntime, /display !== 'contents'/, 'display: contents 的锚�
 assert.match(guideRuntime, /SAME_PAGE_TIMEOUT_MS/, '同一页面找不到的一块不要等 6 秒')
 assert.match(guideRuntime, /spotlight\.hint = spot\.hint\n/, '找元素前先换上这一步的提示')
 
+// 换账号时关掉上一个账号的帮助和引导（11-12 施工方→无损检测实测：欢迎框被上一个人开着的帮助挡住）
+assert.match(drawer, /watch\(seenKey, \(key, previous\)/, '换账号要关掉帮助和引导')
+
 console.log('user guide anchors, images and wording passed')
