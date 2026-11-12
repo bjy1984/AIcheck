@@ -80,7 +80,7 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
     name: 'ChangePassword',
     meta: {
       hidden: true,
-      title: '修改初始密码',
+      title: '修改密码',
       noTagsView: true
     }
   },

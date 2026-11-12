@@ -5,7 +5,6 @@ import { colorIsDark, hexToRGB, lighten, mix } from '@/utils/color'
 import { ElMessage, ComponentSize } from 'element-plus'
 import { useCssVar } from '@vueuse/core'
 import { unref } from 'vue'
-import { useDark } from '@vueuse/core'
 
 interface AppState {
   breadcrumb: boolean
@@ -323,11 +322,17 @@ export const useAppStore = defineStore('app', {
       }
     },
     initTheme() {
-      const isDark = useDark({
-        valueDark: 'dark',
-        valueLight: 'light'
-      })
-      isDark.value = this.getIsDark
+      /* 只认用户自己开关的结果，不跟随操作系统（2026-11-12 线上验证）。
+       * 原来用 vueuse 的 useDark：值等于系统当前偏好时它存成 auto，之后系统一换成深色，
+       * 整页就挂上 dark 类——Element 的卡片、表格变黑，而本系统自己的样式只有浅色，
+       * 结果半黑半白。电脑设成深色模式的用户都会看到。 */
+      document.documentElement.classList.toggle('dark', this.getIsDark)
+      document.documentElement.classList.toggle('light', !this.getIsDark)
+      try {
+        window.localStorage.removeItem('vueuse-color-scheme')
+      } catch {
+        /* 存储不可用就算了：上面已经按用户的选择设好了 */
+      }
       const newTitle = import.meta.env.VITE_APP_TITLE
       newTitle !== this.getTitle && this.setTitle(newTitle)
     }

@@ -3824,7 +3824,7 @@ onMounted(() => {
                   <ElTableColumn prop="todoCount" label="待办" width="76" sortable="custom" />
                   <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
                   <!-- 邀请成员是建完项目最常用的一步，留在行上并带待审核数；归档/删除收进「更多」 -->
-                  <ElTableColumn label="操作" width="230" fixed="right">
+                  <ElTableColumn label="操作" width="260" fixed="right">
                     <template #default="{ row }">
                       <!-- 待审核数写在按钮里：角标会被表格单元格裁掉一半（11-12 线上验证） -->
                       <ElButton
