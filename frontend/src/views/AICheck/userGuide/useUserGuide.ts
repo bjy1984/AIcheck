@@ -117,7 +117,10 @@ const showSpot = async (router: Router | undefined, spot: GuideSpot) => {
   spotlight.missing = !element
   spotlight.active = true
   if (element) {
-    scrollTargetOf(element).scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const scrollTarget = scrollTargetOf(element)
+    // 比屏幕还高的一块（整张节点列表）滚到它的开头，不要停在中间
+    const tall = scrollTarget.getBoundingClientRect().height > window.innerHeight * 0.7
+    scrollTarget.scrollIntoView({ behavior: 'smooth', block: tall ? 'start' : 'center' })
     // 平滑滚动要一点时间（从页底回到顶部要近 1 秒），先量一次，滚的途中和滚完再量
     measureSpotlight()
     window.setTimeout(measureSpotlight, 450)

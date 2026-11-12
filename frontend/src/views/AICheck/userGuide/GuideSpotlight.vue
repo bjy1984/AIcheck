@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* 高亮层：框出页面上的一块，旁边一句话；引导时带「上一步 / 下一步」。
  * 点暗处或按 Esc 退出。框的位置跟着滚动和窗口大小走。 */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { closeSpotlight, measureSpotlight, moveGuideTour, spotlight } from './useUserGuide'
 
@@ -10,6 +10,9 @@ const bubbleRef = ref<HTMLElement>()
 const GUTTER = 16
 const GAP = 12
 const BUBBLE_HEIGHT_GUESS = 140
+/* 提示框真实高度：字多时比估的高，按估值摆会把按钮挤出屏幕 */
+const bubbleHeight = ref(BUBBLE_HEIGHT_GUESS)
+let bubbleObserver: ResizeObserver | undefined
 
 const isTour = computed(() => spotlight.steps.length > 1)
 const isLast = computed(() => spotlight.index >= spotlight.steps.length - 1)
@@ -52,11 +55,12 @@ const bubbleStyle = computed(() => {
   const viewportWidth = window.innerWidth
   const viewportHeight = window.innerHeight
   const width = Math.min(340, viewportWidth - GUTTER * 2)
+  const height = bubbleHeight.value
   if (!rect) {
     return {
       width: `${width}px`,
       left: `${(viewportWidth - width) / 2}px`,
-      top: `${Math.max(GUTTER, viewportHeight / 2 - BUBBLE_HEIGHT_GUESS / 2)}px`
+      top: `${Math.max(GUTTER, viewportHeight / 2 - height / 2)}px`
     }
   }
   const left = Math.min(
@@ -64,15 +68,20 @@ const bubbleStyle = computed(() => {
     viewportWidth - width - GUTTER
   )
   const below = rect.top + rect.height + GAP
-  const fitsBelow = below + BUBBLE_HEIGHT_GUESS <= viewportHeight - GUTTER
-  const fitsAbove = rect.top - GAP - BUBBLE_HEIGHT_GUESS >= GUTTER
+  const fitsBelow = below + height <= viewportHeight - GUTTER
+  const fitsAbove = rect.top - GAP - height >= GUTTER
   // 目标比屏幕还高时，提示贴在屏幕下方，不盖住正中间
   const top = fitsBelow
     ? below
     : fitsAbove
-      ? rect.top - GAP - BUBBLE_HEIGHT_GUESS
-      : viewportHeight - BUBBLE_HEIGHT_GUESS - GUTTER
-  return { width: `${width}px`, left: `${left}px`, top: `${Math.max(GUTTER, top)}px` }
+      ? rect.top - GAP - height
+      : viewportHeight - height - GUTTER
+  const maxTop = viewportHeight - height - GUTTER
+  return {
+    width: `${width}px`,
+    left: `${left}px`,
+    top: `${Math.max(GUTTER, Math.min(top, maxTop))}px`
+  }
 })
 
 const next = () => moveGuideTour(router, 1)
@@ -90,11 +99,23 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', onViewportChange)
   window.addEventListener('scroll', onViewportChange, true)
+  if (typeof ResizeObserver !== 'undefined') {
+    bubbleObserver = new ResizeObserver(() => {
+      if (bubbleRef.value) bubbleHeight.value = bubbleRef.value.offsetHeight || BUBBLE_HEIGHT_GUESS
+    })
+    if (bubbleRef.value) bubbleObserver.observe(bubbleRef.value)
+  }
+})
+// 提示框随引导开关出现、消失，每次出现都重新盯它的高度
+watch(bubbleRef, (element, previous) => {
+  if (previous) bubbleObserver?.unobserve(previous)
+  if (element) bubbleObserver?.observe(element)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onViewportChange)
   window.removeEventListener('scroll', onViewportChange, true)
+  bubbleObserver?.disconnect()
 })
 </script>
 

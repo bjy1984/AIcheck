@@ -148,4 +148,10 @@ assert.match(guideRuntime, /spotlight\.hint = spot\.hint\n/, '找元素前先换
 // 换账号时关掉上一个账号的帮助和引导（11-12 施工方→无损检测实测：欢迎框被上一个人开着的帮助挡住）
 assert.match(drawer, /watch\(seenKey, \(key, previous\)/, '换账号要关掉帮助和引导')
 
+// 11-12 监检实测：「项目总览」整张节点列表比屏幕高，滚到中间、提示框按钮掉到屏幕外
+assert.match(guideRuntime, /block: tall \? 'start' : 'center'/, '比屏幕高的一块要滚到开头')
+const spotlightSource = readFileSync(join(here, 'GuideSpotlight.vue'), 'utf8')
+assert.match(spotlightSource, /ResizeObserver/, '提示框按真实高度摆放')
+assert.match(spotlightSource, /Math\.min\(top, maxTop\)/, '提示框不能超出屏幕底边')
+
 console.log('user guide anchors, images and wording passed')
