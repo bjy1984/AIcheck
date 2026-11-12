@@ -78,6 +78,8 @@ const bundleState = {
     loadedNodes.push(id)
   },
   getWorkbenchSummaryApi: async () => ({ data: {} }),
+  prefetchNodePackage: noop,
+  discardPrefetchedNodePackage: noop,
   loadProjectRectifications: asyncNoop,
   loadReportArchive: asyncNoop,
   loadNdtData: asyncNoop,
@@ -92,6 +94,38 @@ assert.equal(bundleState.activeWorkbenchSection.value, 'node')
 await refresh({ preserveSelection: false })
 assert.equal(loadedNodes.at(-1), 1)
 assert.equal(bundleState.activeWorkbenchSection.value, 'overview')
+
+// W04b（2026-11-12 无损检测实测）：页面上下文一到就预取当前节点资料包，不等目录树。
+// 目录树要 0.6–2.3 秒，以前节点包排在它后面，整页 5 秒才出来。
+{
+  const events: string[] = []
+  let releaseTree!: () => void
+  const treeGate = new Promise<void>((resolve) => {
+    releaseTree = resolve
+  })
+  const prefetchState = {
+    ...bundleState,
+    activeNodeId: ref(0),
+    context: ref<any>(undefined),
+    getProjectTreeApi: async () => {
+      await treeGate
+      events.push('tree')
+      return { data: { groups: [] } }
+    },
+    prefetchNodePackage: (id: number) => events.push(`prefetch:${id}`),
+    discardPrefetchedNodePackage: () => events.push('discard'),
+    loadNodePackage: async (id: number) => {
+      events.push(`load:${id}`)
+    }
+  }
+  const load = handler('./Workbench.vue', 'loadProjectBundle', prefetchState)
+  const pending = load({ preserveSelection: false })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(events, ['prefetch:1'], '节点包要在目录树回来之前就发出去')
+  releaseTree()
+  await pending
+  assert.deepEqual(events, ['prefetch:1', 'tree', 'load:1', 'discard'])
+}
 
 // W08: search routes to a visible target; failed targets keep the results open.
 const opened: string[] = []

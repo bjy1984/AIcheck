@@ -2112,6 +2112,29 @@ const loadInspectionAuditWorkspace = async (nodeId = activeNodeId.value) => {
 //
 // 与其在六千行里追每个触发点（追一个漏一个），不如在请求这层去重。
 let inFlightNodePackage: { key: string; promise: Promise<unknown> } | undefined
+// 页面上下文一到就先去取当前节点的资料包，不再等目录树（2026-11-12 无损检测实测：
+// 目录树要 0.6–2.3 秒，节点包排在它后面再等一轮，整页 5 秒才出来）。
+// 目录树到了、确认节点能加载时，loadNodePackage 直接用这次的结果；用不上就丢掉。
+let prefetchedNodePackage:
+  | { key: string; request: ReturnType<typeof getNodePackageApi> }
+  | undefined
+const prefetchNodePackage = (nodeId: number) => {
+  if (!activeProjectId.value || !nodeId) return
+  const key = `${activeProjectId.value}#${nodeId}`
+  if (prefetchedNodePackage?.key === key || inFlightNodePackage?.key === key) return
+  const request = getNodePackageApi(activeProjectId.value, nodeId)
+  // 没人用时失败了也别成未处理的 rejection；真正用它的地方照旧 await 原 promise
+  request.catch(() => undefined)
+  prefetchedNodePackage = { key, request }
+}
+const discardPrefetchedNodePackage = () => {
+  prefetchedNodePackage = undefined
+}
+const takePrefetchedNodePackage = (key: string) => {
+  const prefetched = prefetchedNodePackage
+  prefetchedNodePackage = undefined
+  return prefetched?.key === key ? prefetched.request : undefined
+}
 
 const loadNodePackage = async (
   nodeId = activeNodeId.value,
@@ -2144,7 +2167,8 @@ const loadNodePackage = async (
     nodeIssue.value = undefined
   }
   try {
-    const request = getNodePackageApi(activeProjectId.value, nodeId)
+    const request =
+      takePrefetchedNodePackage(requestKey) ?? getNodePackageApi(activeProjectId.value, nodeId)
     // 先登记再 await：登记晚一步，同一轮里的第二次调用就看不到它，去重也就不成立。
     inFlightNodePackage = { key: requestKey, promise: request.catch(() => undefined) }
     const res = await request
@@ -2502,10 +2526,14 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
     // 改成并行也不够：API 是单进程，同时来的请求互相分 CPU，节点链路（目录树、节点包、
     // 节点工作区，单独约 3.4 秒）被拖到 11 秒。所以先只要 context 与目录树，加载当前节点、
     // 撤掉整页 loading，再发汇总和次要数据。函数仍等全部完成再返回，调用方语义不变。
-    const [contextRes, treeRes] = await Promise.all([
-      getWorkbenchContextApi(activeProjectId.value, role.value),
-      getProjectTreeApi(activeProjectId.value)
-    ])
+    const treeRequest = getProjectTreeApi(activeProjectId.value)
+    treeRequest.catch(() => undefined)
+    const contextRes = await getWorkbenchContextApi(activeProjectId.value, role.value)
+    const guessedNodeId = preserveSelection
+      ? activeNodeId.value
+      : Number(contextRes?.data.currentNodeId || 0)
+    if (contextRes && guessedNodeId) prefetchNodePackage(guessedNodeId)
+    const treeRes = await treeRequest
     if (!contextRes || !treeRes) {
       pageIssue.value = {
         type: 'forbidden',
@@ -2535,6 +2563,8 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
       dateComparisons.value = []
       inspectionAuditWorkspace.value = undefined
     }
+    // 预取的那个节点用不上（比如目录树里没有它）就丢掉，免得以后拿到旧结果
+    discardPrefetchedNodePackage()
     const summaryPromise = getWorkbenchSummaryApi(activeProjectId.value, role.value)
     let secondary: Promise<unknown>
     if (role.value === 'ndt') {
@@ -5037,7 +5067,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="aicheck-static-viewport" v-loading="loading">
+  <div class="aicheck-static-viewport" v-loading="loading" element-loading-text="正在加载项目资料…">
     <div class="aicheck-page app-shell">
       <a class="skip-main" href="#aicheck-workbench-main">跳到主内容</a>
       <header class="topbar" :class="{ 'is-business-topbar': role !== 'inspection' }">
