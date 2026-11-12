@@ -94,4 +94,48 @@ for (const [name, source] of [
 }
 assert.ok(/<UserGuideDrawer \/>/.test(layout) && /<GuideSpotlight \/>/.test(layout))
 
+/* 2026-11-12 用户：新手引导每个角色都要、尽量全面 */
+for (const role of GUIDE_ROLES) {
+  const guide = guideForRole(role)
+  const ids = guide.tasks.map((task) => task.id)
+  assert.ok(ids.includes('account'), `${role}：缺「修改密码、退出登录」`)
+  assert.equal(
+    guide.tour[guide.tour.length - 1].target,
+    'topbar-user',
+    `${role}：引导最后一步要指到账号菜单（以后在这里重看帮助）`
+  )
+  assert.ok(guide.tour.length >= 5, `${role}：引导至少讲五块`)
+  assert.ok(guide.faq.length >= 3, `${role}：常见问题至少三条`)
+}
+for (const role of ['contractor', 'ndt', 'owner', 'inspection'] as const) {
+  assert.ok(
+    guideForRole(role).tasks.some((task) => task.id === 'switch-project'),
+    `${role}：缺「切换项目」`
+  )
+}
+// 新流程：管理员和监检负责人要教「邀请成员」「审核加入申请」，不再教「先建单位」
+for (const role of ['admin', 'inspection'] as const) {
+  const ids = guideForRole(role).tasks.map((task) => task.id)
+  assert.ok(ids.includes('invite') && ids.includes('review-join'), `${role}：缺邀请和审核`)
+}
+assert.ok(
+  !/先建单位，再给单位里的人开账号/.test(JSON.stringify(guideForRole('admin'))),
+  '管理员说明还在教旧流程'
+)
+
+// 第一次进来是欢迎框（不是角落小卡片），列出这个角色常做的事
+const drawer = readFileSync(join(here, 'UserGuideDrawer.vue'), 'utf8')
+assert.ok(/<ElDialog/.test(drawer) && /welcomeTasks/.test(drawer), '首次进入要弹欢迎框')
+assert.ok(/开始引导/.test(drawer) && /markSeen/.test(drawer))
+
+// 账号菜单有「修改密码」；路由放行主动修改
+for (const [name, source] of [
+  ['Workbench.vue', workbench],
+  ['StaticPageShell.vue', shell]
+] as const) {
+  assert.ok(/command="password"/.test(source), `${name} 的账号菜单要有「修改密码」`)
+}
+const permission = readFileSync(join(viewsRoot, '..', '..', 'permission.ts'), 'utf8')
+assert.ok(/to\.query\.voluntary/.test(permission), '主动改密码被路由守卫挡回首页')
+
 console.log('user guide anchors, images and wording passed')

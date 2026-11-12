@@ -2,10 +2,12 @@
 /* 使用帮助面板：账号菜单「使用帮助」打开，挂在 AICheckStaticLayout 上，所有角色共用。
  * 每件事：截图（编号圈）+ 两三步 +「带我去」。监检和管理员可以切看其他角色的说明，
  * 方便照着教施工方、无损检测、建设方；看别人的说明时不给「带我去」（那不是自己的页面）。
- * 第一次进来时底部提示一次「开始引导」，点过或关掉就不再出现（按账号记在本机）。 */
+ * 第一次进来时弹出欢迎框（2026-11-12 用户：新手引导每个角色都要）：说清这个角色在系统里
+ * 要做哪几件事，点「开始引导」在页面上一块一块讲；点过或关掉就不再出现（按账号记在本机）。
+ * 原来是右下角一张小卡片，施工方很多人看不到、也不知道点。 */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElDrawer } from 'element-plus'
+import { ElDialog, ElDrawer } from 'element-plus'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { GUIDE_ROLES, guideForRole } from './guideContent'
 import type { GuideRole, GuideTask } from './guideTypes'
@@ -103,6 +105,21 @@ const nudgeStart = () => {
   markSeen()
   if (ownRole.value) startGuideTour(router, guideForRole(ownRole.value).tour)
 }
+const nudgeOpenHelp = () => {
+  markSeen()
+  openUserGuide()
+}
+/* 欢迎框里列出这个角色常办的事（不含改密码这类账号杂项），最多 5 件 */
+const welcomeGuide = computed(() => (ownRole.value ? guideForRole(ownRole.value) : null))
+const welcomeTasks = computed(() =>
+  (welcomeGuide.value?.tasks || [])
+    .filter((task) => !['account', 'switch-project', 'messages'].includes(task.id))
+    .slice(0, 5)
+)
+const welcomeName = computed(() => {
+  const user = userStore.getUserInfo
+  return user?.displayName || user?.username || ''
+})
 
 onMounted(() => {
   updateViewport()
@@ -224,18 +241,44 @@ onBeforeUnmount(() => {
     </div>
   </ElDrawer>
 
-  <Teleport to="body">
-    <div v-if="nudgeVisible" class="guide-nudge" role="status">
-      <p>
-        <strong>第一次使用？</strong>
-        花 1 分钟看看这个页面怎么用。以后在右上角账号菜单的「使用帮助」里也能找到。
-      </p>
-      <div class="guide-nudge-actions">
-        <button type="button" class="is-quiet" @click="markSeen">以后再说</button>
-        <button type="button" class="is-primary" @click="nudgeStart">开始引导</button>
+  <!-- 第一次进来：欢迎框。关掉也算看过，帮助随时在账号菜单里 -->
+  <ElDialog
+    :model-value="nudgeVisible && Boolean(welcomeGuide)"
+    :width="isPhone ? '92%' : '460px'"
+    :close-on-click-modal="false"
+    append-to-body
+    align-center
+    class="guide-welcome"
+    :show-close="true"
+    @close="markSeen"
+  >
+    <template #header>
+      <div class="guide-welcome-head">
+        <strong>欢迎{{ welcomeName ? `，${welcomeName}` : '' }}</strong>
+        <small>你的身份：{{ welcomeGuide?.roleLabel }}</small>
       </div>
-    </div>
-  </Teleport>
+    </template>
+    <p class="guide-welcome-intro">{{ welcomeGuide?.intro }}</p>
+    <p class="guide-welcome-label">你在这里常做的事：</p>
+    <ol class="guide-welcome-tasks" data-testid="guide-welcome-tasks">
+      <li v-for="task in welcomeTasks" :key="task.id">
+        <strong>{{ task.title }}</strong>
+        <small>{{ task.summary }}</small>
+      </li>
+    </ol>
+    <p class="guide-welcome-note">
+      不会用了随时点右上角你的名字 →「使用帮助」，可以重看这份说明和引导。
+    </p>
+    <template #footer>
+      <div class="guide-nudge-actions">
+        <button type="button" class="is-quiet" @click="markSeen">先自己看看</button>
+        <button type="button" class="is-quiet" @click="nudgeOpenHelp">看图文说明</button>
+        <button type="button" class="is-primary" @click="nudgeStart">
+          开始引导（约 1 分钟）
+        </button>
+      </div>
+    </template>
+  </ElDialog>
 </template>
 
 <style scoped>
@@ -244,9 +287,8 @@ onBeforeUnmount(() => {
     padding: 14px 16px 24px;
   }
 
-  .guide-nudge {
-    right: 16px;
-    bottom: 16px;
+  .guide-nudge-actions .is-primary {
+    flex: 1 1 100%;
   }
 }
 
@@ -541,42 +583,66 @@ onBeforeUnmount(() => {
   color: #475467;
 }
 
-.guide-nudge {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 2100;
+.guide-welcome-head {
   display: grid;
-  width: min(360px, calc(100vw - 32px));
-  padding: 14px 16px 12px;
-  background: #fff;
-  border: 1px solid #e6ebf2;
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgb(15 23 42 / 18%);
-  gap: 10px;
+  gap: 2px;
 }
 
-.guide-nudge p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 21px;
-  color: #475467;
-}
-
-.guide-nudge strong {
-  display: block;
-  font-size: 15px;
+.guide-welcome-head strong {
+  font-size: 18px;
   color: #172033;
+}
+
+.guide-welcome-head small,
+.guide-welcome-tasks small {
+  font-size: 13px;
+  color: #667085;
+}
+
+.guide-welcome-intro {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 24px;
+  color: #344054;
+}
+
+.guide-welcome-label {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: #172033;
+}
+
+.guide-welcome-tasks {
+  display: grid;
+  padding-left: 22px;
+  margin: 0 0 12px;
+  gap: 8px;
+}
+
+.guide-welcome-tasks li {
+  display: grid;
+  line-height: 21px;
+}
+
+.guide-welcome-note {
+  padding: 8px 10px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: #475467;
+  background: #f5f7fb;
+  border-radius: 8px;
 }
 
 .guide-nudge-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
 
 .guide-nudge-actions button {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
   font: inherit;
   font-size: 14px;

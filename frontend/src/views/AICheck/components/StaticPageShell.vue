@@ -355,6 +355,8 @@ const handleUserCommand = (command: string | number | object) => {
     userStore.logoutConfirm()
   } else if (command === 'help') {
     openUserGuide()
+  } else if (command === 'password') {
+    router.push({ path: '/change-password', query: { voluntary: '1' } })
   } else if (command === 'skill') {
     openSkillInstall()
   }
@@ -486,6 +488,7 @@ onBeforeUnmount(() => {
                 <ElDropdownItem v-if="canInstallSkill(userStore.getUserInfo?.role)" command="skill">
                   安装节点审计 skill
                 </ElDropdownItem>
+                <ElDropdownItem command="password">修改密码</ElDropdownItem>
                 <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
               </ElDropdownMenu>
             </template>

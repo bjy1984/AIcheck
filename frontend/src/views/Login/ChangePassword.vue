@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import {
   ElAlert,
@@ -19,6 +19,15 @@ import { getRoleDefaultPath } from '@/utils/roleAccess'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 
 const router = useRouter()
+const route = useRoute()
+/* 账号菜单「修改密码」进来（voluntary=1）：可以返回，不提「首次登录」 */
+const voluntary = computed(
+  () => Boolean(route.query.voluntary) && !userStore.getUserInfo?.mustChangePassword
+)
+const goBack = () => {
+  if (window.history.length > 1) router.back()
+  else router.replace(getRoleDefaultPath(userStore.getUserInfo?.role))
+}
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
 const formRef = ref<FormInstance>()
@@ -92,8 +101,11 @@ const logout = async () => {
       <header>
         <img src="@/assets/imgs/logo.png" alt="压力管道监检协作系统" />
         <div>
-          <h1 id="password-title">设置安全密码</h1>
-          <p>首次登录必须修改初始密码，完成后才能进入业务工作台。</p>
+          <h1 id="password-title">{{ voluntary ? '修改密码' : '设置安全密码' }}</h1>
+          <p v-if="voluntary"
+            >输入现在的密码和新密码。改好后其他设备上的登录会失效，要用新密码重新登录。</p
+          >
+          <p v-else>首次登录必须修改初始密码，完成后才能进入业务工作台。</p>
         </div>
       </header>
 
@@ -143,8 +155,11 @@ const logout = async () => {
           />
         </ElFormItem>
         <div class="password-actions">
-          <ElButton native-type="button" @click="logout">退出登录</ElButton>
-          <ElButton type="primary" native-type="submit" :loading="loading">保存并进入系统</ElButton>
+          <ElButton v-if="voluntary" native-type="button" @click="goBack">返回</ElButton>
+          <ElButton v-else native-type="button" @click="logout">退出登录</ElButton>
+          <ElButton type="primary" native-type="submit" :loading="loading">{{
+            voluntary ? '保存新密码' : '保存并进入系统'
+          }}</ElButton>
         </div>
       </ElForm>
     </section>

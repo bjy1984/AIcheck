@@ -4,6 +4,7 @@
  * （userGuide.test.ts 会核对 data-guide 锚点在页面里还在）。
  * 施工方、无损检测、建设方三份不出现「AI」「人工智能」。 */
 import type { GuideRole, RoleGuide } from './guideTypes'
+import { ACCOUNT_SPOT, ACCOUNT_TASK, PROJECT_SPOT, SWITCH_PROJECT_TASK } from './guideCommon'
 import { ADMIN_GUIDE, INSPECTION_GUIDE } from './guideContentStaff'
 
 const shot = (name: string) => new URL(`./images/${name}.jpg`, import.meta.url).href
@@ -23,11 +24,28 @@ const MESSAGES_TASK = {
   }
 }
 
+/** 对外三个角色共用的常见问题 */
+const COMMON_FAQ = [
+  {
+    q: '同事也要用，怎么让他加入？',
+    a: '请项目负责人把「邀请链接」或二维码发给他。他打开后自己填姓名、单位和角色，审核通过就能登录，不用你帮他填。'
+  },
+  {
+    q: '忘了密码怎么办？',
+    a: '请项目负责人或管理员在后台帮你重置，然后用新密码登录，进去后可以在账号菜单「修改密码」改成自己的。'
+  },
+  {
+    q: '手机上能用吗？',
+    a: '能。用手机浏览器打开同一个网址登录就行，上传时可以直接拍照。'
+  }
+]
+
 const CONTRACTOR_GUIDE: RoleGuide = {
   role: 'contractor',
   roleLabel: '施工方',
   intro: '你要做的就三件事：把资料传上来，提交给监检审核，处理监检退回的意见。手机、电脑都能用。',
   tour: [
+    PROJECT_SPOT,
     {
       target: 'contractor-status',
       hint: '这三个数是你要办的事：需补正（被监检退回）、待提交（传了还没交）、审核中（监检在看）。点一个数，下面只显示那一类。'
@@ -53,7 +71,12 @@ const CONTRACTOR_GUIDE: RoleGuide = {
     {
       target: 'topbar-messages',
       hint: '有退回、审核结果时，「待办消息」会提醒你。'
-    }
+    },
+    {
+      target: 'contractor-guide',
+      hint: '不知道该传什么，点这里看上传指引：按类别列出要交的资料和要求。'
+    },
+    ACCOUNT_SPOT
   ],
   tasks: [
     {
@@ -168,7 +191,9 @@ const CONTRACTOR_GUIDE: RoleGuide = {
         '按类别看要交哪些资料、有什么要求；直接上传就行，类别系统会自动识别。'
       ],
       jump: { label: '去「上传指引」', target: 'contractor-guide', hint: '点这里展开上传指引。' }
-    }
+    },
+    SWITCH_PROJECT_TASK,
+    ACCOUNT_TASK
   ],
   faq: [
     {
@@ -186,7 +211,12 @@ const CONTRACTOR_GUIDE: RoleGuide = {
     {
       q: '「提交」是灰的，点不了？',
       a: '文件还在上传或处理中，等处理完就能提交；已经提交过的也不能重复提交。'
-    }
+    },
+    {
+      q: '一份资料要传几次？',
+      a: '传一次就行。同一份资料用在好几个环节，系统会自动关联，不用重复上传。'
+    },
+    ...COMMON_FAQ
   ]
 }
 
@@ -195,6 +225,7 @@ const NDT_GUIDE: RoleGuide = {
   roleLabel: '无损检测',
   intro: '你要做的：传检测报告、底片、记录等资料并提交给监检；监检有反馈时按要求补充或回复。',
   tour: [
+    PROJECT_SPOT,
     {
       target: 'ndt-feedback',
       hint: '监检反馈放在最上面，红色卡片是要你处理的，注意期限。',
@@ -215,7 +246,12 @@ const NDT_GUIDE: RoleGuide = {
     {
       target: 'ndt-uploaded',
       hint: '传过的资料都在「已上传」。点「提交」交给监检；「⋯」里还能调整适用的业务规则。'
-    }
+    },
+    {
+      target: 'topbar-messages',
+      hint: '监检有反馈、审核有结果时，「待办消息」会提醒你。'
+    },
+    ACCOUNT_SPOT
   ],
   tasks: [
     {
@@ -332,7 +368,9 @@ const NDT_GUIDE: RoleGuide = {
         hint: '点文件右边的「⋯」，选「调整业务规则」。'
       }
     },
-    MESSAGES_TASK
+    MESSAGES_TASK,
+    SWITCH_PROJECT_TASK,
+    ACCOUNT_TASK
   ],
   faq: [
     {
@@ -346,7 +384,8 @@ const NDT_GUIDE: RoleGuide = {
     {
       q: '「资料处理」一直在排队？',
       a: '文件已经传上来了，系统还在读取内容，稍等一会儿刷新就好；长时间不动请联系监检人员。'
-    }
+    },
+    ...COMMON_FAQ
   ]
 }
 
@@ -355,6 +394,7 @@ const OWNER_GUIDE: RoleGuide = {
   roleLabel: '建设方',
   intro: '这里只看不改：项目审查到哪了、哪些环节要关注、报告和归档资料在哪下载。',
   tour: [
+    PROJECT_SPOT,
     {
       target: 'owner-progress',
       hint: '项目整体进度和各状态的环节数，点一个状态，下面只显示那一类环节。'
@@ -375,7 +415,12 @@ const OWNER_GUIDE: RoleGuide = {
     {
       target: 'owner-nodes',
       hint: '全部环节都在这里，点一个环节看它的资料和审查情况。'
-    }
+    },
+    {
+      target: 'topbar-messages',
+      hint: '审查有进展、报告签发时，「待办消息」会提醒你。'
+    },
+    ACCOUNT_SPOT
   ],
   tasks: [
     {
@@ -425,7 +470,9 @@ const OWNER_GUIDE: RoleGuide = {
       summary: '审查有进展时会出现在这里和「待办消息」里。',
       steps: ['「最新动态」列出最近的几条，点「全部」看全部消息。', '也可以点顶部的「待办消息」。'],
       jump: { label: '去「最新动态」', target: 'owner-news', hint: '最近的动态在这里。' }
-    }
+    },
+    SWITCH_PROJECT_TASK,
+    ACCOUNT_TASK
   ],
   faq: [
     {
@@ -435,7 +482,8 @@ const OWNER_GUIDE: RoleGuide = {
     {
       q: '「报告与归档」是空的？',
       a: '环节通过审查、报告签发后才会出现在这里。'
-    }
+    },
+    ...COMMON_FAQ
   ]
 }
 

@@ -1,7 +1,16 @@
 /** 监检和管理员的使用帮助（内部角色，可以提「AI」）。 */
+import { ACCOUNT_SPOT, ACCOUNT_TASK, SWITCH_PROJECT_TASK } from './guideCommon'
 import type { RoleGuide } from './guideTypes'
 
 const shot = (name: string) => new URL(`./images/${name}.jpg`, import.meta.url).href
+
+/** 2026-11-11 起：不用先建单位和账号，建项目后发邀请链接，各方自己申请、负责人审核 */
+const REVIEW_JOIN_STEPS = [
+  '打开「邀请成员」，下面列着提交上来的申请：姓名、单位、申请的角色。',
+  '点「通过」：先核对单位名，有简称或错字就当场改；系统里没有这个单位会自动新建。',
+  '单位名和项目已登记的不一样时会让你选：同一家公司选「并入」，另一家公司选「算作新单位」（两家资料互相看不到）。',
+  '不认识的人点「拒绝」并写原因，对方在链接里能看到原因、改了再交。'
+]
 
 const NEED_NODE =
   '这一块在节点页里：先在项目总览或左边项目树里点一个节点，再回到使用帮助点这个按钮。'
@@ -42,7 +51,13 @@ export const INSPECTION_GUIDE: RoleGuide = {
     {
       target: 'inspection-assistant',
       hint: '右下角「AI审查」是助手：问节点要什么资料、让它找证据，也能问系统怎么用。'
-    }
+    },
+    {
+      target: 'inspection-invite',
+      hint: '项目负责人才有「邀请成员」：把链接发给施工、无损、建设单位，他们自己申请，你在这里审核。',
+      emptyHint: '「邀请成员」只有项目负责人看得到。要邀请人请找项目负责人或管理员。'
+    },
+    ACCOUNT_SPOT
   ],
   tasks: [
     {
@@ -257,7 +272,38 @@ export const INSPECTION_GUIDE: RoleGuide = {
         '点一条跳到对应的节点或资料；办完的待办点「完成」。'
       ],
       jump: { label: '去「待办消息」', target: 'topbar-messages', hint: '待办和消息都在这里。' }
-    }
+    },
+    {
+      id: 'invite',
+      title: '邀请各单位加入项目（项目负责人）',
+      summary: '发一个链接，施工、无损、建设单位自己申请，你审核。',
+      steps: [
+        '顶部点「邀请成员」，链接和二维码已经生成好。',
+        '点「复制」发到微信群，或截图二维码；对方用手机扫码就能填申请。',
+        '有人申请时「待办消息」会提醒你，回到「邀请成员」审核。',
+        '链接 7 天有效、最多 200 人；要作废旧链接就点「重新生成链接」。'
+      ],
+      jump: {
+        label: '去「邀请成员」',
+        target: 'inspection-invite',
+        hint: '点这里打开邀请链接和申请列表。',
+        emptyHint: '「邀请成员」只有项目负责人看得到。要邀请人请找项目负责人或管理员。'
+      }
+    },
+    {
+      id: 'review-join',
+      title: '审核加入申请（项目负责人）',
+      summary: '通过之后对方才能登录。',
+      steps: REVIEW_JOIN_STEPS,
+      jump: {
+        label: '去「邀请成员」',
+        target: 'inspection-invite',
+        hint: '申请列表在「邀请成员」里。',
+        emptyHint: '「邀请成员」只有项目负责人看得到。'
+      }
+    },
+    SWITCH_PROJECT_TASK,
+    ACCOUNT_TASK
   ],
   faq: [
     {
@@ -278,7 +324,11 @@ export const INSPECTION_GUIDE: RoleGuide = {
     },
     {
       q: '怎么教施工方、无损检测、建设方用？',
-      a: '在使用帮助顶部切到他们的角色，看他们那边的说明，照着讲就行。'
+      a: '在使用帮助顶部切到他们的角色，看他们那边的说明，照着讲就行。他们第一次登录时也会自动弹出引导。'
+    },
+    {
+      q: '施工方说申请了，我这里没看到？',
+      a: '只有项目负责人能看到申请。请确认对方用的是本项目的链接、链接没有过期；对方可以在链接里点「查看我的申请」看进度。'
     }
   ]
 }
@@ -293,7 +343,17 @@ export const ADMIN_GUIDE: RoleGuide = {
       target: 'admin-menu',
       hint: '左边是后台全部功能：基础管理、规则与业务配置、AI 知识库、运行与审计；平台管理员还有「平台」。'
     },
-    { path: '/admin/overview', target: 'admin-new-project', hint: '新建项目从这里开始。' },
+    {
+      path: '/admin/overview',
+      target: 'admin-new-project',
+      hint: '新建项目从这里开始。只填项目名称就能立项，参建单位和人员不用在这里配。'
+    },
+    {
+      path: '/admin/overview',
+      target: 'admin-project-invite',
+      hint: '每个项目这一行的「邀请成员」：发链接给各单位，他们自己申请；有待审核的会显示数字。',
+      emptyHint: '还没有项目。立项后每个项目行上会有「邀请成员」。'
+    },
     {
       path: '/admin/overview',
       target: 'admin-search',
@@ -302,28 +362,24 @@ export const ADMIN_GUIDE: RoleGuide = {
     {
       path: '/admin/overview',
       target: 'topbar-user',
-      hint: '账号菜单里有「使用帮助」和「退出登录」。'
+      hint: ACCOUNT_SPOT.hint
     }
   ],
   tasks: [
     {
       id: 'projects',
-      title: '新建和管理项目',
-      summary: '建项目、改信息、归档。',
+      title: '新建项目',
+      summary: '只填项目名称就能立项，其他都可以以后补。',
       steps: [
-        '点「新建项目」，按向导填写项目信息。',
-        '用搜索框按项目名称、编号或区域查找。',
-        '每行「详情」看状态、成员和登记资料，「编辑」改信息，「更多」里可以归档或删除。'
+        '点「新建项目」，选压力管道类别，填项目名称。',
+        '参建单位、初始成员都是选填：可以直接打字填单位名，也可以空着，之后由各单位自己申请。',
+        '点「立项」，会自动打开「邀请成员」，链接和二维码已经生成好。'
       ],
       image: {
         src: shot('admin-projects'),
         alt: '后台项目管理',
         device: 'desktop',
-        markers: [
-          { n: 1, x: 95.3, y: 11.9 },
-          { n: 2, x: 37.5, y: 41.7 },
-          { n: 3, x: 91, y: 53.3 }
-        ]
+        markers: [{ n: 1, x: 95.3, y: 11.9 }]
       },
       jump: {
         label: '打开「项目管理」页',
@@ -333,13 +389,69 @@ export const ADMIN_GUIDE: RoleGuide = {
       }
     },
     {
-      id: 'org',
-      title: '加单位和账号',
-      summary: '先建单位，再给单位里的人开账号。',
+      id: 'invite',
+      title: '邀请各单位的人加入项目',
+      summary: '不用你替他们建单位、建账号。',
       steps: [
-        '在「组织用户」点「新增组织」，登记建设方、施工方、无损检测单位、监检机构。',
-        '单位行的「成员与邀请」里可以分配成员角色、生成邀请链接让对方自己注册。',
-        '在下面「用户与角色」点「新增用户」：选角色和所属组织，设初始密码。'
+        '在项目这一行点「邀请成员」。',
+        '点「复制」把链接发到施工、无损、建设单位的群里，或者让他们扫二维码。',
+        '对方自己填姓名、手机号、单位和角色，设好密码提交。',
+        '有人申请时「邀请成员」上会显示数字，「待办消息」也会提醒。'
+      ],
+      jump: {
+        label: '去「邀请成员」',
+        path: '/admin/overview',
+        target: 'admin-project-invite',
+        hint: '每个项目这一行都有「邀请成员」。',
+        emptyHint: '还没有项目。先新建一个项目，行上就会有「邀请成员」。'
+      }
+    },
+    {
+      id: 'review-join',
+      title: '审核加入申请',
+      summary: '通过之后对方才能登录，并且只看得到这个项目。',
+      steps: REVIEW_JOIN_STEPS,
+      jump: {
+        label: '去「邀请成员」',
+        path: '/admin/overview',
+        target: 'admin-project-invite',
+        hint: '点「邀请成员」，申请列表在下面。',
+        emptyHint: '还没有项目。'
+      }
+    },
+    {
+      id: 'manage-projects',
+      title: '查找、修改、归档项目',
+      summary: '项目信息写错了、项目结束了。',
+      steps: [
+        '用搜索框按项目名称、编号或区域查找。',
+        '每行「详情」看状态、成员和登记资料，「编辑」改信息。',
+        '「更多」里可以归档或删除；有业务数据的项目只能归档。'
+      ],
+      image: {
+        src: shot('admin-projects'),
+        alt: '后台项目管理',
+        device: 'desktop',
+        markers: [
+          { n: 1, x: 37.5, y: 41.7 },
+          { n: 2, x: 91, y: 53.3 }
+        ]
+      },
+      jump: {
+        label: '打开「项目管理」页',
+        path: '/admin/overview',
+        target: 'admin-new-project',
+        hint: '项目列表在这一页。'
+      }
+    },
+    {
+      id: 'org',
+      title: '改单位名、停用单位（一般用不到）',
+      summary: '审核时会自动建单位；只有要改名、合并或停用时才来这里。',
+      steps: [
+        '在「组织用户」的「组织单位」里找到这个单位，点「编辑」改名或改状态。',
+        '同一家公司建成了两个单位（简称和全称），把其中一个停用，以后审核选「并入」另一个。',
+        '也可以在这里手动「新增组织」「新增用户」，适合个别不方便自己申请的人。'
       ],
       image: {
         src: shot('admin-org'),
@@ -347,14 +459,14 @@ export const ADMIN_GUIDE: RoleGuide = {
         device: 'desktop',
         markers: [
           { n: 1, x: 94.4, y: 28.4 },
-          { n: 2, x: 88.8, y: 55.3 }
+          { n: 3, x: 88.8, y: 55.3 }
         ]
       },
       jump: {
         label: '打开「组织用户」页',
         path: '/admin/org',
         target: 'admin-new-org',
-        hint: '点这里新增单位。'
+        hint: '单位和账号都在这一页。'
       }
     },
     {
@@ -432,7 +544,8 @@ export const ADMIN_GUIDE: RoleGuide = {
         target: 'admin-menu',
         hint: '「平台」分组在左边菜单最下面。'
       }
-    }
+    },
+    ACCOUNT_TASK
   ],
   faq: [
     {
@@ -446,6 +559,18 @@ export const ADMIN_GUIDE: RoleGuide = {
     {
       q: '在哪查谁做了什么？',
       a: '左边「运行与审计」→「审计日志」。'
+    },
+    {
+      q: '还要先建单位、再建账号吗？',
+      a: '不用。建项目、发邀请链接就行，各单位的人自己申请，你审核时系统自动建单位和账号。「组织用户」只在改名、停用时用。'
+    },
+    {
+      q: '审核时提示「单位名不一致」怎么选？',
+      a: '同一家公司（简称、全称、错字）选「并入」已有单位；确实是另一家公司选「算作新单位」。资料按单位隔离，选错会让两家互相看到资料或看不到。'
+    },
+    {
+      q: '申请人说一直没通过？',
+      a: '看项目行「邀请成员」上的数字，进去审核。申请人在链接里点「查看我的申请」能看到进度和拒绝原因。'
     }
   ]
 }

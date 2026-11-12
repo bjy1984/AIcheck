@@ -31,7 +31,8 @@ router.beforeEach(async (to, from, next) => {
       }
       return
     }
-    if (to.path === '/change-password') {
+    // 主动改密码（账号菜单「修改密码」带 voluntary=1）放行；直接打开这个地址的仍回首页
+    if (to.path === '/change-password' && !to.query.voluntary) {
       next({ path: defaultPath, replace: true })
       return
     }

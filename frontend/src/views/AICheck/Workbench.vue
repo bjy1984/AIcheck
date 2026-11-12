@@ -1162,6 +1162,9 @@ const handleUserCommand = (command: string | number | object) => {
     userStore.logoutConfirm()
   } else if (command === 'help') {
     openUserGuide()
+  } else if (command === 'password') {
+    // 主动改密码；首次登录强制改的是同一页
+    router.push({ path: '/change-password', query: { voluntary: '1' } })
   } else if (command === 'skill') {
     openSkillInstall()
   }
@@ -5122,6 +5125,7 @@ onBeforeUnmount(() => {
             v-if="role === 'inspection' && canManageRegistration"
             class="top-action"
             text
+            data-guide="inspection-invite"
             @click="handleOpenProjectRegistration"
           >
             邀请成员
@@ -5141,6 +5145,7 @@ onBeforeUnmount(() => {
               <ElDropdownItem v-if="canInstallSkill(role)" command="skill"
                 >安装节点审计 skill</ElDropdownItem
               >
+              <ElDropdownItem command="password">修改密码</ElDropdownItem>
               <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
             </ElDropdownMenu>
           </template>

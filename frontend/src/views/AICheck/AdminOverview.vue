@@ -3836,6 +3836,7 @@ onMounted(() => {
                           link
                           type="primary"
                           data-testid="project-invite"
+                          data-guide="admin-project-invite"
                           @click="openProjectRegistration(row)"
                           >邀请成员</ElButton
                         >

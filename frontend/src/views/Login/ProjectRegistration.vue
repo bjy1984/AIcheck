@@ -295,6 +295,14 @@ const switchMode = (next: 'apply' | 'status') => {
         <p class="registration-summary">
           你正在申请加入 <strong>{{ info.projectName || info.projectId }}</strong>
         </p>
+        <!-- 申请人还没账号、多半第一次用：先说清接下来会发生什么 -->
+        <ol class="registration-steps" aria-label="加入项目的步骤">
+          <li><strong>填下面的表</strong>：姓名、单位、你在项目里的角色，自己设一个密码。</li>
+          <li><strong>等项目负责人审核</strong>：可以随时回这个链接点「查看我的申请」看进度。</li>
+          <li>
+            <strong>审核通过后登录</strong>：用刚才的用户名和密码，第一次进去会有引导教你怎么用。
+          </li>
+        </ol>
 
         <ElForm label-width="96px" @submit.prevent>
           <ElFormItem label="用户名">
@@ -376,6 +384,22 @@ const switchMode = (next: 'apply' | 'status') => {
 .registration-summary {
   margin: 0 0 16px;
   line-height: 1.8;
+}
+
+.registration-steps {
+  display: grid;
+  padding: 10px 12px 10px 30px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 20px;
+  color: #475467;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  gap: 4px;
+}
+
+.registration-steps strong {
+  color: var(--el-text-color-primary);
 }
 
 .registration-switch {
