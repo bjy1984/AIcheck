@@ -116,16 +116,17 @@ from libs.security.tenant import (
 )
 
 logger = logging.getLogger("aicheck.api")
-REGISTRATION_LINK_PATH = re.compile(r"/registration-links/([^/]+)(?:/apply)?")
+REGISTRATION_LINK_PATH = re.compile(r"/registration-links/([^/]+)(?:/apply|/status)?")
 _tenant_mutation_locks: dict[tuple[int, str], asyncio.Lock] = {}
 PUBLIC_REGISTRATION_LINK_PATTERN = re.compile(
-    r"^(?:/api)?/registration-links/[^/]+(?:/apply)?$"
+    r"^(?:/api)?/registration-links/[^/]+(?:/apply|/status)?$"
 )
 PUBLIC_REGISTRATION_LINK_INSPECT_PATTERN = re.compile(
     r"^(?:/api)?/registration-links/[^/]+$"
 )
+# apply 提交申请；status 申请人凭用户名＋口令查自己的审核结果（没有账号前没法登录看）
 PUBLIC_REGISTRATION_LINK_APPLY_PATTERN = re.compile(
-    r"^(?:/api)?/registration-links/[^/]+/apply$"
+    r"^(?:/api)?/registration-links/[^/]+/(?:apply|status)$"
 )
 
 

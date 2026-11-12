@@ -37,6 +37,7 @@ import {
 } from './adminMenuTree'
 import {
   ElAlert,
+  ElBadge,
   ElButton,
   ElCard,
   ElCheckbox,
@@ -369,6 +370,13 @@ const currentUserId = computed(() => String(userStore.getUserInfo?.id || ''))
 
 const projectRegistrationVisible = ref(false)
 const projectRegistrationTarget = ref<Project | undefined>(undefined)
+
+const handleRegistrationPendingChange = (count: number) => {
+  const target = projectRegistrationTarget.value
+  if (!target) return
+  const row = projects.value.find((item) => item.id === target.id)
+  if (row) row.pendingRegistrationCount = count
+}
 
 const openProjectRegistration = (row: Project) => {
   projectRegistrationTarget.value = row
@@ -2270,10 +2278,12 @@ const handleCreateProject = async () => {
     }
     ElMessage.success(`项目已立项：${res.data.project.name}`)
     projectWizardVisible.value = false
-    projectDrawerVisible.value = true
     selectedExportTask.value = null
     projectDetailProjectId.value = res.data.project.id
     projectDetail.value = res.data.detail
+    /* 客户 2026-11-11：「建了项目，没看到怎样分享出去」。立项后直接打开邀请成员，
+       链接和二维码已经生成好，复制或截图发到群里就行。 */
+    openProjectRegistration(res.data.project)
     await Promise.all([loadProjects(), loadAuditLogs()])
   } catch (error) {
     projectWizardError.value = getRequestErrorMessage(
@@ -3814,9 +3824,22 @@ onMounted(() => {
                   </ElTableColumn>
                   <ElTableColumn prop="todoCount" label="待办" width="76" sortable="custom" />
                   <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
-                  <!-- 常用的两个留在行上；注册审核、归档/删除收进「更多」：四个链接挤成两行，删除还紧挨着编辑 -->
-                  <ElTableColumn label="操作" width="150" fixed="right">
+                  <!-- 邀请成员是建完项目最常用的一步，留在行上并带待审核数；归档/删除收进「更多」 -->
+                  <ElTableColumn label="操作" width="230" fixed="right">
                     <template #default="{ row }">
+                      <ElBadge
+                        :value="row.pendingRegistrationCount || 0"
+                        :hidden="!row.pendingRegistrationCount"
+                        class="invite-badge"
+                      >
+                        <ElButton
+                          link
+                          type="primary"
+                          data-testid="project-invite"
+                          @click="openProjectRegistration(row)"
+                          >邀请成员</ElButton
+                        >
+                      </ElBadge>
                       <ElButton link type="primary" @click="handleOpenProjectDetail(row)"
                         >详情</ElButton
                       >
@@ -3830,10 +3853,7 @@ onMounted(() => {
                         <ElButton link type="primary" :loading="projectSaving">更多</ElButton>
                         <template #dropdown>
                           <ElDropdownMenu>
-                            <!-- 注册链接与审核（按项目发链接 → 自选角色 → 负责人审核）。
-                                 界面上的禁用只是省得白点，真正拦越权的是服务端。 -->
-                            <ElDropdownItem command="registration">注册审核</ElDropdownItem>
-                            <ElDropdownItem command="archive" divided>归档/删除</ElDropdownItem>
+                            <ElDropdownItem command="archive">归档/删除</ElDropdownItem>
                           </ElDropdownMenu>
                         </template>
                       </ElDropdown>
@@ -3872,6 +3892,13 @@ onMounted(() => {
                       </div>
                     </dl>
                     <footer>
+                      <ElButton link type="primary" @click="openProjectRegistration(row)">
+                        邀请成员{{
+                          row.pendingRegistrationCount
+                            ? `（${row.pendingRegistrationCount} 待审）`
+                            : ''
+                        }}
+                      </ElButton>
                       <ElButton link type="primary" @click="handleOpenProjectDetail(row)">
                         查看详情
                       </ElButton>
@@ -5630,27 +5657,29 @@ onMounted(() => {
 
       <ElDrawer
         v-model="projectRegistrationVisible"
-        :title="`${projectRegistrationTarget?.name || ''} · 注册链接与审核`"
-        size="640px"
+        :title="`${projectRegistrationTarget?.name || ''} · 邀请成员`"
+        size="min(640px, 100vw)"
       >
         <ProjectRegistrationPanel
           v-if="projectRegistrationTarget"
+          :key="projectRegistrationTarget.id"
           :project-id="projectRegistrationTarget.id"
           :project-name="projectRegistrationTarget.name"
+          @pending-change="handleRegistrationPendingChange"
         />
       </ElDrawer>
 
       <ElDialog v-model="projectWizardVisible" title="项目立项向导" width="min(780px, 94vw)">
         <ElSteps :active="projectWizardStep" finish-status="success" align-center>
           <ElStep title="基本信息" />
-          <ElStep title="参建单位" />
-          <ElStep title="初始授权" />
+          <ElStep title="参建单位（选填）" />
+          <ElStep title="初始授权（选填）" />
         </ElSteps>
 
         <ElAlert
           type="info"
           :closable="false"
-          title="可直接创建项目，参建单位、成员和日期均可稍后补充；名称留空将自动生成。"
+          title="填好项目名称就可以点「立项」。参建单位和人员不用在这里配：立项后会给出邀请链接，发给施工、无损、建设单位，他们自己填写申请，你审核通过即可。"
           class="mt-12px"
         />
         <ElForm label-position="top" class="wizard-form">
@@ -5729,8 +5758,10 @@ onMounted(() => {
                   <ElSelect
                     v-model="projectWizardForm.ownerOrgName"
                     filterable
+                    allow-create
+                    default-first-option
                     clearable
-                    placeholder="请选择已启用建设单位"
+                    placeholder="选择或直接输入建设单位名称"
                     @change="handleWizardOrgChange('owner')"
                   >
                     <ElOption
@@ -5747,8 +5778,10 @@ onMounted(() => {
                   <ElSelect
                     v-model="projectWizardForm.contractorOrgName"
                     filterable
+                    allow-create
+                    default-first-option
                     clearable
-                    placeholder="请选择已启用施工单位"
+                    placeholder="选择或直接输入施工单位名称"
                     @change="handleWizardOrgChange('contractor')"
                   >
                     <ElOption
@@ -5767,8 +5800,10 @@ onMounted(() => {
                   <ElSelect
                     v-model="projectWizardForm.ndtOrgName"
                     filterable
+                    allow-create
+                    default-first-option
                     clearable
-                    placeholder="请选择已启用无损检测单位"
+                    placeholder="选择或直接输入无损检测单位名称"
                     @change="handleWizardOrgChange('ndt')"
                   >
                     <ElOption
@@ -5785,8 +5820,10 @@ onMounted(() => {
                   <ElSelect
                     v-model="projectWizardForm.inspectionOrgName"
                     filterable
+                    allow-create
+                    default-first-option
                     clearable
-                    placeholder="请选择已启用监检机构"
+                    placeholder="选择或直接输入监检机构名称"
                     @change="handleWizardOrgChange('inspection')"
                   >
                     <ElOption

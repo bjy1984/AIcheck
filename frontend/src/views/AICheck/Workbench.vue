@@ -5124,7 +5124,7 @@ onBeforeUnmount(() => {
             text
             @click="handleOpenProjectRegistration"
           >
-            注册链接与审核
+            邀请成员
           </ElButton>
         </div>
         <!-- 用户菜单固定在顶栏右上角：不跟操作按钮一起换行（2026-11-03 用户） -->
@@ -6504,7 +6504,7 @@ onBeforeUnmount(() => {
       <ElDrawer
         v-if="canManageRegistration && projectRegistrationTarget"
         v-model="projectRegistrationVisible"
-        :title="`${projectRegistrationTarget.name} · 注册链接与审核`"
+        :title="`${projectRegistrationTarget.name} · 邀请成员`"
         size="640px"
         append-to-body
       >

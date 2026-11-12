@@ -114,6 +114,7 @@ def test_registration_link_and_request_survive_postgres_restarts(
                 "username": "applicant-persisted",
                 "role": "contractor",
                 "password": GOOD_PASSWORD,
+                "orgName": "持久化施工单位",
             },
         ).json()
         assert applied["code"] == 0, applied

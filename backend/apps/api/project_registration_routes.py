@@ -33,6 +33,19 @@ pending，人就登进来了，而且不会报错。这里根本不建 user 记�
 - 可以随时停用
 
 真正的闸门是审核，链接只是入口。
+
+## 单位由申请人自己填（2026-11-11 客户反馈）
+
+原来批准时要求「项目已配置该角色的参建单位，且这个单位已在组织用户里建档」，
+而申请表不收单位——项目没填施工单位、或组织没建，审核就一直卡死。
+客户的话：「不用管理员去创建组织和人员，只需要创建一个施工项目就行了」。
+
+现在：
+- 申请时必填所属单位；项目已有该角色单位时注册页预填。
+- 批准时按单位名找组织，没有就按角色类型自动建一个；项目该角色单位还空着就回填。
+- 申请单位和项目已有单位名字不同（「珠海安粤」对「珠海安粤工程有限公司」）**不自动合并**：
+  资料访问按单位隔离，合错了两家会互相看到资料。退回 `orgMismatch`，
+  由审核人选「并入已有单位」（传 orgName=已有单位）或「算作新单位」（传 confirmNewOrg）。
 """
 
 from __future__ import annotations
@@ -68,6 +81,12 @@ ROLE_ORG_FIELDS = {
     "owner": "ownerOrgName",
 }
 _REGISTRATION_IDENTITY_LOCK = Lock()
+ORG_NAME_MAX = 80
+REVIEW_TODO_KIND = "registration_review"
+# 查审核结果要验口令：按用户名记失败次数，防止拿链接撞口令
+STATUS_FAILURE_LIMIT = 10
+STATUS_FAILURE_WINDOW = timedelta(minutes=15)
+_STATUS_FAILURES: dict[str, list[datetime]] = {}
 
 
 def _now() -> datetime:
@@ -121,6 +140,8 @@ def _registration_flush_records(
     user: dict[str, Any] | None = None,
     member: dict[str, Any] | None = None,
     admin_config: dict[str, Any] | None = None,
+    project: dict[str, Any] | None = None,
+    todo: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     records: dict[str, Any] = {}
     for state_key, item in (
@@ -128,6 +149,8 @@ def _registration_flush_records(
         (REQUESTS, registration_request),
         ("users", user),
         ("project_members", member),
+        ("projects", project),
+        ("todos", todo),
     ):
         if item is not None:
             records[state_key] = [item]
@@ -157,6 +180,30 @@ def create_registration_link(
         return fail(errors.NOT_FOUND, request)
 
     def produce():
+        if body.get("reuse"):
+            # 面板一打开就给链接：还有一天以上有效期的就沿用，不是每开一次都发新链接
+            reusable = next(
+                (
+                    item
+                    for item in repo.state.get(INVITES, [])
+                    if str(item.get("projectId")) == str(project_id)
+                    and _invite_usable(item)
+                    and _expires_after(item, _now() + timedelta(days=1))
+                ),
+                None,
+            )
+            if reusable:
+                return ok(
+                    {
+                        "token": reusable["token"],
+                        "projectId": project_id,
+                        "expiresAt": reusable["expiresAt"],
+                        "maxUses": reusable["maxUses"],
+                        "selectableRoles": list(SELECTABLE_ROLES),
+                        "reused": True,
+                    },
+                    request,
+                )
         token = secrets.token_urlsafe(24)
         if current_tenant_id() != platform_tenant_id():
             # 公开链接不带登录，靠前缀知道是哪个院的（main.py 按它切院）
@@ -240,6 +287,13 @@ def _invite_usable(invite: dict[str, Any] | None) -> bool:
         return False
 
 
+def _expires_after(invite: dict[str, Any], moment: datetime) -> bool:
+    try:
+        return datetime.fromisoformat(str(invite.get("expiresAt"))) > moment
+    except ValueError:
+        return False
+
+
 def _find_invite(token: str) -> dict[str, Any] | None:
     # 公开接口按链接前缀切到了某个院，那个院在本进程可能还没加载过
     institutes.ensure_tenant_loaded(current_tenant_id())
@@ -261,10 +315,65 @@ def inspect_registration_link(request: Request, token: str):
             "projectName": (project or {}).get("name") or "",
             # 角色由注册者自选——审核才是闸门
             "selectableRoles": list(SELECTABLE_ROLES),
+            # 项目已登记的各角色单位，注册页选了角色就预填（申请人可改）
+            "roleOrgNames": _project_role_org_names(project),
             "expiresAt": invite["expiresAt"],
         },
         request,
     )
+
+
+def _project_role_org_names(project: dict[str, Any] | None) -> dict[str, str]:
+    return {
+        role: str((project or {}).get(field) or "").strip()
+        for role, field in ROLE_ORG_FIELDS.items()
+    }
+
+
+def _same_org_name(left: str, right: str) -> bool:
+    from apps.api import document_access_policy
+
+    return document_access_policy.normalized_organization_name(
+        left
+    ) == document_access_policy.normalized_organization_name(right)
+
+
+def _pending_count(project_id: str) -> int:
+    return sum(
+        1
+        for item in repo.state.get(REQUESTS, [])
+        if str(item.get("projectId")) == str(project_id) and str(item.get("status")) == "待审核"
+    )
+
+
+def _sync_review_todo(project_id: str) -> dict[str, Any] | None:
+    """项目一条「加入申请待审核」待办：有待审就开着并更新数字，审完自动关。"""
+    from libs import notifications
+
+    dedupe_key = f"registration-review:{project_id}"
+    count = _pending_count(project_id)
+    if count:
+        return notifications.open_todo(
+            repo.state,
+            kind=REVIEW_TODO_KIND,
+            project_id=str(project_id),
+            title=f"有 {count} 条加入项目申请待审核",
+            target_type="registration",
+            target_id=str(project_id),
+            assignee_role="inspection",
+            priority="高",
+            dedupe_key=dedupe_key,
+        )
+    closed = notifications.close_todos(
+        repo.state,
+        project_id=str(project_id),
+        kinds=[REVIEW_TODO_KIND],
+        dedupe_key=dedupe_key,
+        reason="加入申请已全部审核",
+    )
+    if not closed:
+        return None
+    return next((t for t in repo.state.get("todos", []) if str(t.get("id")) == closed[0]), None)
 
 
 @project_registration_router.post("/registration-links/{token}/apply")
@@ -294,6 +403,21 @@ def _submit_registration_locked(request: Request, token: str, body: dict[str, An
     if role not in SELECTABLE_ROLES:
         # 不在可选名单里的一律拒——包括 admin/fde
         return fail(errors.VALIDATION_ERROR, request, message="所选角色不可用。")
+    org_name = str(body.get("orgName") or "").strip()
+    if not org_name:
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            message="请填写所属单位。",
+            data={"field": "orgName"},
+        )
+    if len(org_name) > ORG_NAME_MAX:
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            message=f"单位名称不能超过 {ORG_NAME_MAX} 个字。",
+            data={"field": "orgName"},
+        )
     problems = password_strength_errors(username, password)
     if problems:
         return fail(
@@ -322,6 +446,7 @@ def _submit_registration_locked(request: Request, token: str, body: dict[str, An
         "displayName": str(body.get("displayName") or username),
         "mobile": str(body.get("mobile") or ""),
         "role": role,
+        "orgName": org_name,
         # 口令在申请阶段就定好并**只存哈希**：批准时直接建账号，
         # 不用再让申请人设一次，也不用由审核人代设——
         # 代设意味着审核人知道别人的口令。
@@ -335,12 +460,74 @@ def _submit_registration_locked(request: Request, token: str, body: dict[str, An
     repo.state.setdefault(REQUESTS, []).insert(0, record)
     invite["useCount"] = int(invite.get("useCount") or 0) + 1
     repo.add_audit("提交项目注册申请", "RegistrationRequest", record["id"], result="成功")
+    # 给项目负责人一条待办，不然没人知道有人在等审核
+    todo = _sync_review_todo(str(invite["projectId"]))
     request.state.scoped_flush_records = lambda: _registration_flush_records(
-        invite=invite, registration_request=record
+        invite=invite, registration_request=record, todo=todo
     )
     # 不回任何令牌：账号还不存在，现在还不能登录
     return ok(
         {"requestId": record["id"], "status": record["status"], "message": "已提交，等待项目负责人审核。"},
+        request,
+    )
+
+
+@project_registration_router.post("/registration-links/{token}/status")
+def registration_status(request: Request, token: str, body: dict[str, Any] = Body(default_factory=dict)):
+    """申请人凭用户名＋申请时设的口令查审核结果。
+
+    审核通过前没有账号、登录不了，原来申请人只能干等，被拒了也看不到理由。
+    要验口令：不然拿着链接就能挨个试用户名，看到别人的拒绝理由。
+    用户名不存在和口令不对回同一句话。
+    """
+    from libs.security.auth import verify_password
+
+    invite = _find_invite(token)
+    if not invite:
+        return fail(errors.NOT_FOUND, request, message="注册链接无效或已过期。")
+    username = str(body.get("username") or "").strip()
+    password = str(body.get("password") or "")
+    if not username or not password:
+        return fail(errors.VALIDATION_ERROR, request, message="请填写用户名和口令。")
+
+    now = _now()
+    failures = [
+        at for at in _STATUS_FAILURES.get(username, []) if now - at < STATUS_FAILURE_WINDOW
+    ]
+    _STATUS_FAILURES[username] = failures
+    if len(failures) >= STATUS_FAILURE_LIMIT:
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            http_status=429,
+            message="尝试次数过多，请 15 分钟后再试。",
+        )
+
+    record = next(
+        (
+            item
+            for item in repo.state.get(REQUESTS, [])
+            if str(item.get("projectId")) == str(invite["projectId"])
+            and str(item.get("username")) == username
+        ),
+        None,
+    )  # 列表新的在前：同一用户名被拒后重提，看最新那条
+    if not record or not verify_password(password, record.get("passwordHash")):
+        failures.append(now)
+        return fail(errors.NOT_FOUND, request, message="没有找到这个用户名和口令对应的申请。")
+    _STATUS_FAILURES.pop(username, None)
+    return ok(
+        {
+            "requestId": record["id"],
+            "status": record.get("status"),
+            "role": record.get("role"),
+            "orgName": record.get("approvedOrgName") or record.get("orgName") or "",
+            "displayName": record.get("displayName") or "",
+            "mobile": record.get("mobile") or "",
+            "createdAt": record.get("createdAt"),
+            "reviewedAt": record.get("reviewedAt"),
+            "rejectReason": record.get("rejectReason") or "",
+        },
         request,
     )
 
@@ -355,13 +542,26 @@ def list_registration_requests(request: Request, project_id: str, status: str | 
     _, error = _guard(request, project_id)
     if error:
         return error
+    role_orgs = _project_role_org_names(repo.require_project(project_id))
     items = [
-        {k: v for k, v in item.items() if k != "passwordHash"}  # 哈希不出接口
+        {
+            **{k: v for k, v in item.items() if k != "passwordHash"},  # 哈希不出接口
+            # 审核人一眼看出申请单位和项目已有单位是否一致
+            "projectOrgName": role_orgs.get(str(item.get("role")), ""),
+        }
         for item in repo.state.get(REQUESTS, [])
         if str(item.get("projectId")) == str(project_id)
         and (not status or str(item.get("status")) == status)
     ]
-    return ok({"items": items, "total": len(items)}, request)
+    return ok(
+        {
+            "items": items,
+            "total": len(items),
+            "pendingCount": _pending_count(project_id),
+            "roleOrgNames": role_orgs,
+        },
+        request,
+    )
 
 
 @project_registration_router.post(
@@ -393,9 +593,12 @@ def _review_registration_request_locked(
 ):
     """通过或拒绝。通过时才真正创建账号。"""
     from apps.api.routes import (
+        admin_org_units,
         build_admin_user_record,
-        find_org_unit,
+        bump_record_revision,
+        bump_singleton_revision,
         idempotent,
+        org_type_matches_role,
         resolve_project_member_grant,
         upsert_admin_config_user,
     )
@@ -427,14 +630,71 @@ def _review_registration_request_locked(
         return fail(errors.VALIDATION_ERROR, request, message="拒绝时必须填写理由。")
 
     project = repo.require_project(project_id) or {}
-    org_name = str(project.get(ROLE_ORG_FIELDS[record["role"]]) or "").strip()
-    org = find_org_unit(None, org_name) if org_name else None
-    if approved and not org:
-        return fail(
-            errors.VALIDATION_ERROR,
-            request,
-            message="项目未配置该注册角色对应的组织。",
-        )
+    role_field = ROLE_ORG_FIELDS[record["role"]]
+    project_org_name = str(project.get(role_field) or "").strip()
+    # 单位的先后：审核人改过的 > 申请人填的 > 项目上已登记的（老申请没有单位）
+    org_name = (
+        str(body.get("orgName") or "").strip()
+        or str(record.get("orgName") or "").strip()
+        or project_org_name
+    )
+    org: dict[str, Any] | None = None
+    if approved:
+        if not org_name:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="这条申请没有填单位，请填写申请人所属单位后再通过。",
+                data={"field": "orgName"},
+            )
+        if len(org_name) > ORG_NAME_MAX:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=f"单位名称不能超过 {ORG_NAME_MAX} 个字。",
+            )
+        if (
+            project_org_name
+            and not _same_org_name(org_name, project_org_name)
+            and not bool(body.get("confirmNewOrg"))
+        ):
+            # 不自动合并：资料访问按单位隔离，合错了两家单位会互相看到资料
+            return fail(
+                errors.CONFLICT,
+                request,
+                http_status=409,
+                message=f"申请单位「{org_name}」与项目已有单位「{project_org_name}」不同。",
+                data={
+                    "reason": "orgMismatch",
+                    "requestedOrgName": org_name,
+                    "projectOrgName": project_org_name,
+                },
+            )
+        same_name = [
+            item for item in admin_org_units() if _same_org_name(item.get("name"), org_name)
+        ]
+        if len(same_name) > 1:
+            return fail(
+                errors.CONFLICT,
+                request,
+                http_status=409,
+                message=f"「{org_name}」对应多个同名组织，请先在组织用户里合并或改名。",
+            )
+        org = same_name[0] if same_name else None
+        if org and org.get("status") == "停用":
+            return fail(
+                errors.CONFLICT,
+                request,
+                http_status=409,
+                message=f"组织「{org.get('name')}」已停用，请先启用或换一个单位。",
+            )
+        if org and not org_type_matches_role(record["role"], org.get("type")):
+            return fail(
+                errors.CONFLICT,
+                request,
+                http_status=409,
+                message=f"组织「{org.get('name')}」的类型与申请角色不符，请换一个单位名。",
+            )
     if approved and any(
         str(item.get("username")) == str(record["username"])
         for item in repo.state.get("users", [])
@@ -457,20 +717,46 @@ def _review_registration_request_locked(
                 }
             )
             repo.add_audit("拒绝注册申请", "RegistrationRequest", request_id, result="成功")
+            todo = _sync_review_todo(project_id)
             request.state.scoped_flush_records = lambda: _registration_flush_records(
-                registration_request=record
+                registration_request=record, todo=todo
             )
             return ok({"requestId": request_id, "status": "已拒绝"}, request)
 
         if conflict := institutes.username_conflict_message(record["username"]):
             return fail(errors.CONFLICT, request, http_status=409, message=conflict)
+        nonlocal org
+        org_created = False
+        if org is None:
+            # 不用管理员先去「组织用户」建档：按申请人的单位自动建一个
+            org = {
+                "id": f"ORG-{secrets.token_hex(4).upper()}",
+                "name": org_name,
+                "type": record["role"],
+                "contactName": record.get("displayName") or "",
+                "contactPhone": record.get("mobile") or "",
+                "status": "启用",
+                "projectCount": 0,
+                "source": "registration",
+                "updatedAt": server_time(),
+                "revision": 1,
+            }
+            admin_org_units().insert(0, org)
+            org_created = True
+            repo.add_audit("注册审核自动建组织", "OrgUnit", org["id"], result="成功")
+        project_touched = None
+        if not project_org_name and project:
+            # 项目该角色单位还空着：用第一个通过的申请回填，之后的申请就能预填、比对
+            project[role_field] = org["name"]
+            bump_record_revision(project)
+            project_touched = project
         user = build_admin_user_record(
             {
                 "username": record["username"],
                 "role": record["role"],
                 "name": record["displayName"],
                 "mobile": record.get("mobile") or "",
-                "orgName": org_name,
+                "orgName": org["name"],
             },
             org=org,
         )
@@ -500,7 +786,7 @@ def _review_registration_request_locked(
             "userId": user["id"],
             "name": record["displayName"],
             "orgId": org["id"],
-            "orgName": org_name,
+            "orgName": org["name"],
             "role": record["role"],
             "nodeScope": grant["nodeScope"],
             "actions": grant["actions"],
@@ -511,15 +797,35 @@ def _review_registration_request_locked(
         }
         repo.state.setdefault("project_members", []).insert(0, member)
         record.update(
-            {"status": "已通过", "reviewedAt": server_time(), "reviewedBy": actor.get("id")}
+            {
+                "status": "已通过",
+                "reviewedAt": server_time(),
+                "reviewedBy": actor.get("id"),
+                "approvedOrgName": org["name"],
+            }
         )
+        if org_created:
+            bump_singleton_revision(repo.state["admin_config"])
         repo.add_audit("通过注册申请", "RegistrationRequest", request_id, result="成功")
+        todo = _sync_review_todo(project_id)
         request.state.scoped_flush_records = lambda: _registration_flush_records(
             registration_request=record,
             user=user,
             member=member,
             admin_config=repo.state["admin_config"],
+            project=project_touched,
+            todo=todo,
         )
-        return ok({"requestId": request_id, "status": "已通过", "userId": user["id"]}, request)
+        return ok(
+            {
+                "requestId": request_id,
+                "status": "已通过",
+                "userId": user["id"],
+                "orgName": org["name"],
+                "orgCreated": org_created,
+                "projectOrgFilled": project_touched is not None,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)

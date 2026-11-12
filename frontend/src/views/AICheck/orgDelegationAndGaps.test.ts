@@ -127,4 +127,19 @@ assert.match(registrationPanel, /qrDataUrl\.value = ''/, '二维码失败时没�
 // 深色主题下透明底扫不出来
 assert.match(registrationPanel, /background: #fff/, '二维码没有白底，深色主题下扫不出来')
 
+/* 2026-11-11 客户反馈：单位自己填、审核时不自动合并、建完项目直接能分享 */
+assert.match(joinPage, /form\.orgName/, '注册页没有让申请人填所属单位')
+assert.match(joinPage, /roleOrgNames/, '选了角色没有预填项目已登记的单位')
+assert.match(joinPage, /getRegistrationStatusApi/, '申请人没有地方查审核结果')
+assert.match(joinPage, /rejectReason/, '申请人看不到拒绝理由')
+assert.match(registrationPanel, /orgMismatch/, '单位名不一致时没有让审核人选')
+assert.match(registrationPanel, /算作新单位/, '单位名不一致时没有「算作新单位」的选项')
+assert.match(registrationPanel, /reuse: silent/, '打开面板会每次都发新链接')
+assert.match(
+  adminOverview,
+  /openProjectRegistration\(res\.data\.project\)/,
+  '立项后没有直接打开邀请成员'
+)
+assert.match(adminOverview, /pendingRegistrationCount/, '项目行没有显示待审核数')
+
 console.log('Org delegation + invite + gap hints contract passed')

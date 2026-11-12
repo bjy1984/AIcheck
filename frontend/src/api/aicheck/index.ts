@@ -3651,6 +3651,8 @@ export type RegistrationLinkInfo = {
   projectId: string
   projectName: string
   selectableRoles: RoleCode[]
+  /** 项目已登记的各角色单位，选了角色就预填 */
+  roleOrgNames?: Partial<Record<RoleCode, string>>
   expiresAt: string
 }
 
@@ -3661,9 +3663,27 @@ export type RegistrationRequestItem = {
   displayName: string
   mobile: string
   role: RoleCode
+  /** 申请人自填的所属单位（2026-11-11 前的老申请没有） */
+  orgName?: string
+  /** 通过时最终落到的单位 */
+  approvedOrgName?: string
+  /** 项目上该角色已登记的单位，用来比对 */
+  projectOrgName?: string
   status: '待审核' | '已通过' | '已拒绝'
   createdAt: string
   rejectReason?: string
+}
+
+export type RegistrationStatus = {
+  requestId: string
+  status: '待审核' | '已通过' | '已拒绝'
+  role: RoleCode
+  orgName: string
+  displayName: string
+  mobile: string
+  createdAt: string
+  reviewedAt?: string | null
+  rejectReason: string
 }
 
 /** 看链接。不需要登录——申请人本来就还没有账号。 */
@@ -3678,6 +3698,7 @@ export const submitRegistrationApi = (
     username: string
     password: string
     role: RoleCode
+    orgName: string
     displayName?: string
     mobile?: string
   }
@@ -3688,9 +3709,21 @@ export const submitRegistrationApi = (
   })
 }
 
+/** 申请人凭用户名＋申请时设的口令查审核结果（还没账号，登录不了）。 */
+export const getRegistrationStatusApi = (
+  token: string,
+  payload: { username: string; password: string }
+): Promise<IResponse<RegistrationStatus>> => {
+  return request.post({
+    url: `/api/registration-links/${encodeURIComponent(token)}/status`,
+    data: payload
+  })
+}
+
 export const createProjectRegistrationLinkApi = (
   projectId: string,
-  payload: { maxUses?: number } = {},
+  /** reuse：项目还有一天以上有效期的链接就沿用，不新发 */
+  payload: { maxUses?: number; reuse?: boolean } = {},
   options?: MutationHeaderOptions
 ): Promise<
   IResponse<{
@@ -3699,6 +3732,7 @@ export const createProjectRegistrationLinkApi = (
     expiresAt: string
     maxUses: number
     selectableRoles: RoleCode[]
+    reused?: boolean
   }>
 > => {
   return request.post({
@@ -3711,7 +3745,14 @@ export const createProjectRegistrationLinkApi = (
 export const listRegistrationRequestsApi = (
   projectId: string,
   status?: string
-): Promise<IResponse<{ items: RegistrationRequestItem[]; total: number }>> => {
+): Promise<
+  IResponse<{
+    items: RegistrationRequestItem[]
+    total: number
+    pendingCount?: number
+    roleOrgNames?: Partial<Record<RoleCode, string>>
+  }>
+> => {
   return request.get({
     url: `/api/projects/${encodeURIComponent(projectId)}/registration-requests`,
     params: status ? { status } : undefined
@@ -3722,9 +3763,18 @@ export const listRegistrationRequestsApi = (
 export const reviewRegistrationRequestApi = (
   projectId: string,
   requestId: string,
-  payload: { approved: boolean; reason?: string },
+  payload: { approved: boolean; reason?: string; orgName?: string; confirmNewOrg?: boolean },
   options?: MutationHeaderOptions
-): Promise<IResponse<{ requestId: string; status: string; userId?: string }>> => {
+): Promise<
+  IResponse<{
+    requestId: string
+    status: string
+    userId?: string
+    orgName?: string
+    orgCreated?: boolean
+    projectOrgFilled?: boolean
+  }>
+> => {
   return request.post({
     url: `/api/projects/${encodeURIComponent(projectId)}/registration-requests/${encodeURIComponent(requestId)}/review`,
     data: payload,

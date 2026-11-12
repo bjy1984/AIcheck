@@ -102,6 +102,8 @@ export type Project = {
   status: ProjectStatus
   todoCount: number
   messageCount: number
+  /** 待审核的加入申请数（项目列表才有） */
+  pendingRegistrationCount?: number
   currentNodeId: number
   riskLevel?: '低' | '中' | '高'
   updatedAt: string

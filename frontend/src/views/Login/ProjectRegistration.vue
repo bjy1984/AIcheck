@@ -17,8 +17,18 @@
  *
  * 上一版邀请链接把角色写死，理由是「自选角色的链接等于公开提权入口」。
  * 加了审核之后这个理由不成立了：自选只是填表，审核才决定给不给。
+ *
+ * ## 单位自己填（2026-11-11 客户反馈）
+ *
+ * 原来不收单位，审核时要求管理员事先建好组织，结果一直通过不了。
+ * 现在申请人自己填所属单位；项目已登记该角色单位时选完角色就预填。
+ *
+ * ## 查审核结果
+ *
+ * 审核通过前没有账号、登录不了。同一个链接里「查看我的申请」凭用户名＋口令
+ * 看进度；被拒了能看到理由，并带着原来填的内容重新提交。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ElAlert,
@@ -30,13 +40,16 @@ import {
   ElMessage,
   ElOption,
   ElResult,
-  ElSelect
+  ElSelect,
+  ElTag
 } from 'element-plus'
 
 import {
   getRegistrationLinkApi,
+  getRegistrationStatusApi,
   submitRegistrationApi,
-  type RegistrationLinkInfo
+  type RegistrationLinkInfo,
+  type RegistrationStatus
 } from '@/api/aicheck'
 import type { RoleCode } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
@@ -50,14 +63,41 @@ const submitted = ref(false)
 const info = ref<RegistrationLinkInfo | undefined>(undefined)
 const loadError = ref('')
 
+// apply：填申请；status：查看我的申请
+const mode = ref<'apply' | 'status'>('apply')
+
 const form = ref({
   username: '',
   displayName: '',
   mobile: '',
   role: '' as RoleCode | '',
+  orgName: '',
   password: '',
   confirm: ''
 })
+
+/* 选了角色就预填项目已登记的该角色单位；申请人自己改过的不覆盖 */
+let orgNameAutoFilled = ''
+watch(
+  () => form.value.role,
+  (role) => {
+    const preset = (role && info.value?.roleOrgNames?.[role as RoleCode]) || ''
+    if (!form.value.orgName.trim() || form.value.orgName === orgNameAutoFilled) {
+      form.value.orgName = preset
+      orgNameAutoFilled = preset
+    }
+  }
+)
+
+const statusForm = ref({ username: '', password: '' })
+const statusLoading = ref(false)
+const statusResult = ref<RegistrationStatus | undefined>(undefined)
+
+const STATUS_TAG: Record<string, 'success' | 'danger' | 'warning'> = {
+  已通过: 'success',
+  已拒绝: 'danger',
+  待审核: 'warning'
+}
 
 const ROLE_LABELS: Record<string, string> = {
   inspection: '监检人员',
@@ -95,6 +135,10 @@ const handleSubmit = async () => {
     ElMessage.warning('请选择你在本项目中的角色。')
     return
   }
+  if (!form.value.orgName.trim()) {
+    ElMessage.warning('请填写所属单位（你所在公司的全称）。')
+    return
+  }
   if (!form.value.password) {
     ElMessage.warning('请填写口令。')
     return
@@ -115,17 +159,64 @@ const handleSubmit = async () => {
       username: form.value.username.trim(),
       password: form.value.password,
       role: form.value.role,
+      orgName: form.value.orgName.trim(),
       displayName: form.value.displayName.trim() || undefined,
       mobile: form.value.mobile.trim() || undefined
     })
     if (!res) return
     submitted.value = true
+    // 查进度时自动带上用户名，省得再输一遍
+    statusForm.value.username = form.value.username.trim()
   } catch (error) {
     // 展示服务端返回的申请失败原因。
     ElMessage.error(getAicheckErrorMessage(error, '提交失败，请检查填写内容。'))
   } finally {
     submitting.value = false
   }
+}
+
+const handleCheckStatus = async () => {
+  if (!statusForm.value.username.trim() || !statusForm.value.password) {
+    ElMessage.warning('请填写申请时的用户名和口令。')
+    return
+  }
+  statusLoading.value = true
+  statusResult.value = undefined
+  try {
+    const res = await getRegistrationStatusApi(token.value, {
+      username: statusForm.value.username.trim(),
+      password: statusForm.value.password
+    })
+    if (res) statusResult.value = res.data
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '没有找到这个用户名和口令对应的申请。'))
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+/* 被拒后带着原来填的内容重新申请，只需改被指出的那一项 */
+const handleReapply = () => {
+  const previous = statusResult.value
+  if (!previous) return
+  form.value = {
+    username: statusForm.value.username.trim(),
+    displayName: previous.displayName,
+    mobile: previous.mobile,
+    role: previous.role,
+    orgName: previous.orgName,
+    password: '',
+    confirm: ''
+  }
+  orgNameAutoFilled = ''
+  submitted.value = false
+  statusResult.value = undefined
+  mode.value = 'apply'
+}
+
+const switchMode = (next: 'apply' | 'status') => {
+  mode.value = next
+  statusResult.value = undefined
 }
 </script>
 
@@ -140,12 +231,65 @@ const handleSubmit = async () => {
 
       <!-- 提交之后**没有账号**。不说清楚的话，用户会去登录、登不进去，
            以为注册失败了，然后再填一遍。 -->
+      <!-- 查看我的申请：没账号前唯一能看到进度和拒绝理由的地方 -->
+      <template v-else-if="info && mode === 'status'">
+        <p class="registration-summary">
+          查看你在 <strong>{{ info.projectName || info.projectId }}</strong> 的申请
+        </p>
+        <ElForm label-width="96px" @submit.prevent="handleCheckStatus">
+          <ElFormItem label="用户名">
+            <ElInput v-model="statusForm.username" autocomplete="username" />
+          </ElFormItem>
+          <ElFormItem label="口令">
+            <ElInput
+              v-model="statusForm.password"
+              type="password"
+              show-password
+              autocomplete="current-password"
+              placeholder="申请时设置的口令"
+              @keyup.enter="handleCheckStatus"
+            />
+          </ElFormItem>
+          <ElFormItem>
+            <ElButton type="primary" :loading="statusLoading" @click="handleCheckStatus">
+              查询
+            </ElButton>
+            <ElButton link @click="switchMode('apply')">返回填写申请</ElButton>
+          </ElFormItem>
+        </ElForm>
+        <div v-if="statusResult" class="status-result" data-testid="registration-status">
+          <p>
+            审核结果：
+            <ElTag :type="STATUS_TAG[statusResult.status] || 'info'" effect="plain">
+              {{ statusResult.status }}
+            </ElTag>
+          </p>
+          <p>申请角色：{{ ROLE_LABELS[statusResult.role] || statusResult.role }}</p>
+          <p>所属单位：{{ statusResult.orgName || '未填写' }}</p>
+          <p v-if="statusResult.status === '待审核'" class="status-hint">
+            还在等项目负责人审核，通过后用这个用户名和口令登录。
+          </p>
+          <template v-else-if="statusResult.status === '已通过'">
+            <p class="status-hint">已通过，可以登录了。</p>
+            <ElButton type="primary" @click="$router.push('/login')">去登录</ElButton>
+          </template>
+          <template v-else>
+            <p class="status-reject">拒绝理由：{{ statusResult.rejectReason || '未说明' }}</p>
+            <ElButton type="primary" @click="handleReapply">修改后重新申请</ElButton>
+          </template>
+        </div>
+      </template>
+
       <ElResult
         v-else-if="submitted"
         icon="success"
         title="已提交，等待项目负责人审核"
         sub-title="审核通过后你的账号才会创建，届时可用刚才设置的用户名和口令登录。现在还不能登录。"
-      />
+      >
+        <template #extra>
+          <ElButton @click="switchMode('status')">查看审核进度</ElButton>
+        </template>
+      </ElResult>
 
       <template v-else-if="info">
         <p class="registration-summary">
@@ -173,6 +317,14 @@ const handleSubmit = async () => {
               />
             </ElSelect>
           </ElFormItem>
+          <ElFormItem label="所属单位" required>
+            <ElInput
+              v-model="form.orgName"
+              maxlength="80"
+              placeholder="你所在公司的全称，例如：某某工程有限公司"
+              data-testid="registration-org-name"
+            />
+          </ElFormItem>
           <ElFormItem label="设置口令">
             <ElInput
               v-model="form.password"
@@ -197,6 +349,10 @@ const handleSubmit = async () => {
             <small class="registration-hint">提交后需项目负责人审核通过才能登录</small>
           </ElFormItem>
         </ElForm>
+        <p class="registration-switch">
+          已经提交过？
+          <ElButton link type="primary" @click="switchMode('status')">查看我的申请</ElButton>
+        </p>
       </template>
     </ElCard>
   </div>
@@ -220,6 +376,33 @@ const handleSubmit = async () => {
 .registration-summary {
   margin: 0 0 16px;
   line-height: 1.8;
+}
+
+.registration-switch {
+  margin: 8px 0 0;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
+
+.status-result {
+  padding: 12px 16px;
+  margin-top: 8px;
+  line-height: 1.9;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+}
+
+.status-result p {
+  margin: 0;
+}
+
+.status-hint {
+  color: var(--el-text-color-secondary);
+}
+
+.status-reject {
+  margin-bottom: 8px !important;
+  color: var(--el-color-danger);
 }
 
 .registration-hint {

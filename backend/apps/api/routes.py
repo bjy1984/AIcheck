@@ -5125,8 +5125,17 @@ def list_projects(
     keyword: str | None = None,
     status: str | None = None,
 ):
-    items = [versioned_project(item) for item in repo.state["projects"]
-             if project_visible_for_request(request, item["id"]) and not is_probe_project(item)]
+    # 项目行上「邀请成员」按钮的待审核数字，一次扫完申请表
+    pending_registrations: dict[str, int] = {}
+    for registration in repo.state.get("registration_requests", []):
+        if registration.get("status") == "待审核":
+            key = str(registration.get("projectId"))
+            pending_registrations[key] = pending_registrations.get(key, 0) + 1
+    items = [
+        {**versioned_project(item), "pendingRegistrationCount": pending_registrations.get(str(item["id"]), 0)}
+        for item in repo.state["projects"]
+        if project_visible_for_request(request, item["id"]) and not is_probe_project(item)
+    ]
     items = filter_keyword(items, keyword, ["name", "code", "region"])
     if status:
         items = [item for item in items if item.get("status") == status]

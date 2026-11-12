@@ -205,7 +205,8 @@ def test_registration_links_from_an_institute_land_applicants_in_that_institute(
     # 公开接口不带登录：按链接前缀找到院
     assert data(client.get(f"/api/registration-links/{link['token']}"))["projectId"] == project_id
     applied = data(client.post(f"/api/registration-links/{link['token']}/apply", json={
-        "username": "gd-applicant", "role": "inspection", "password": "applicant-1", "displayName": "申请人"}))
+        "username": "gd-applicant", "role": "inspection", "password": "applicant-1", "displayName": "申请人",
+        "orgName": "广东特检院"}))
     pending = data(client.get(f"/api/projects/{project_id}/registration-requests", headers=bearer(token)))["items"]
     assert [row["id"] for row in pending] == [applied["requestId"]]
     data(client.post(f"/api/projects/{project_id}/registration-requests/{applied['requestId']}/review",
@@ -282,7 +283,7 @@ def test_registration_apply_rejects_a_username_another_institute_already_uses():
     data(client.post("/api/admin/users", headers={**PLATFORM, "If-Match": "*", "Idempotency-Key": "pu2"},
                      json={"username": "taken-name", "name": "平台乙", "role": "admin", "password": "plat-pass1"}))
     clash = client.post(f"/api/registration-links/{link['token']}/apply", json={
-        "username": "taken-name", "role": "inspection", "password": "applicant-1"})
+        "username": "taken-name", "role": "inspection", "password": "applicant-1", "orgName": "广东特检院"})
     assert clash.json()["code"] != 0 and "其他单位" in clash.json()["message"]
 
 
