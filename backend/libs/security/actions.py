@@ -71,6 +71,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/registration-links$", "org:delegate"),
     ("POST", r"/projects/[^/]+/registration-links/[^/]+/disable$", "org:delegate"),
     ("POST", r"/projects/[^/]+/registration-requests/[^/]+/review$", "org:delegate"),
+    # 负责人替本项目施工方/无损/建设方成员重置密码；闸门同上，在端点里（2026-11-12）
+    ("POST", r"/projects/[^/]+/member-accounts/[^/]+/reset-password$", "org:delegate"),
     (
         "POST",
         r"/internal/ocr/mineru/tasks(?:/upload)?$",

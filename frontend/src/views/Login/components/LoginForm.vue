@@ -149,7 +149,7 @@ const schema = reactive<FormSchema[]>([
                     if (!loading.value) contactAdministrator()
                   }}
                 >
-                  联系管理员重置
+                  忘记密码？
                 </ElLink>
               </div>
             </>
@@ -201,13 +201,18 @@ const loadRuntimeUiContext = async () => {
   }
 }
 
+// 施工、无损、建设单位的人多半不知道特检院系统管理员是谁；邀请他进项目的负责人
+// 在「邀请成员」里就能替他重置（2026-11-12）
+const FORGOT_PASSWORD_HELP =
+  '施工、无损检测、建设单位人员：请联系邀请你加入项目的特检院负责人，对方在「邀请成员」里就能帮你重置，会给你一个临时密码。特检院人员：请联系本单位系统管理员。'
+
 const contactAdministrator = () => {
   const support = runtimeUiContext.value?.support
   const details = [support?.email, support?.phone, support?.url].filter(Boolean)
   const message = details.length
     ? `${support?.label || '联系系统管理员重置密码'}\n${details.join('\n')}`
-    : '请联系本单位系统管理员重置密码。为保护账号安全，系统不提供公开自助注册或密码找回。'
-  ElMessageBox.alert(message, '账号支持', {
+    : FORGOT_PASSWORD_HELP
+  ElMessageBox.alert(message, '忘记密码', {
     confirmButtonText: '知道了',
     distinguishCancelAndClose: true
   })

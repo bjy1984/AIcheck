@@ -146,4 +146,18 @@ assert.match(
 )
 assert.match(adminOverview, /pendingRegistrationCount/, '项目行没有显示待审核数')
 
+// 2026-11-12：成员忘了密码，负责人在「邀请成员」里重置；临时密码只显示一次
+assert.match(registrationPanel, /resetProjectMemberPasswordApi/, '邀请成员里没有重置密码')
+assert.match(registrationPanel, /已加入的成员/, '邀请成员里没有列出已加入的成员')
+assert.match(registrationPanel, /resetBlockedReason/, '不能重置时没有说明原因')
+const apiSource = read('../../api/aicheck/index.ts')
+const resetApi = apiSource.slice(apiSource.indexOf('export const resetProjectMemberPasswordApi'))
+assert.doesNotMatch(
+  resetApi.slice(0, resetApi.indexOf('\n}\n')),
+  /mutationHeaders|Idempotency/,
+  '重置密码不能带幂等键：响应里有临时密码，会被存进重放缓存'
+)
+const loginForm = read('../Login/components/LoginForm.vue')
+assert.match(loginForm, /邀请你加入项目的特检院负责人/, '登录页忘记密码没有告诉外部人员找负责人')
+
 console.log('Org delegation + invite + gap hints contract passed')

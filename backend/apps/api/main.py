@@ -652,6 +652,9 @@ def is_ephemeral_inspection_request(request: Request) -> bool:
     }
 
 
+ONE_TIME_SECRET_PATH = re.compile(r"/projects/[^/]+/member-accounts/[^/]+/reset-password")
+
+
 def idempotency_scope(request: Request) -> str | None:
     if is_ephemeral_inspection_request(request):
         return None
@@ -660,6 +663,9 @@ def idempotency_scope(request: Request) -> str | None:
         return None
     normalized_path = canonical_path(request.url.path)
     if normalized_path.startswith(("/auth/", "/mock/")):
+        return None
+    # 响应里带一次性临时密码：不能存进幂等缓存（会落库、可被重放），2026-11-12
+    if ONE_TIME_SECRET_PATH.fullmatch(normalized_path):
         return None
     actor = getattr(request.state, "auth_user", None) or {}
     claims = getattr(request.state, "auth", None) or {}

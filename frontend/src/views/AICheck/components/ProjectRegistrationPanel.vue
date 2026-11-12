@@ -41,6 +41,7 @@ import QRCode from 'qrcode'
 import {
   ElAlert,
   ElButton,
+  ElDialog,
   ElInput,
   ElMessage,
   ElMessageBox,
@@ -51,8 +52,11 @@ import {
 
 import {
   createProjectRegistrationLinkApi,
+  listProjectMemberAccountsApi,
   listRegistrationRequestsApi,
+  resetProjectMemberPasswordApi,
   reviewRegistrationRequestApi,
+  type ProjectMemberAccount,
   type RegistrationRequestItem
 } from '@/api/aicheck'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
@@ -106,7 +110,71 @@ const loadRequests = async () => {
   }
 }
 
+/* 已加入的施工方、无损、建设方成员。忘了密码的人原来只能找特检院系统管理员，
+   客户说他们根本不知道管理员是谁；邀请他们的负责人在这里就能替他重置（2026-11-12）。 */
+const members = ref<ProjectMemberAccount[]>([])
+const membersLoading = ref(false)
+const resetting = ref('')
+const resetResult = ref<{ name: string; username: string; password: string }>()
+
+const loadMembers = async () => {
+  if (!props.projectId) return
+  membersLoading.value = true
+  try {
+    const res = await listProjectMemberAccountsApi(props.projectId)
+    if (res) members.value = res.data.items
+  } catch {
+    members.value = []
+  } finally {
+    membersLoading.value = false
+  }
+}
+
+const handleResetPassword = async (member: ProjectMemberAccount) => {
+  const who = member.name || member.username
+  try {
+    await ElMessageBox.confirm(
+      `给「${who}」生成一个临时密码。对方原来的密码马上失效，已登录的手机或电脑会被退出；用临时密码登录后要改成自己的密码。`,
+      '重置密码',
+      { confirmButtonText: '生成临时密码', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  resetting.value = member.userId
+  try {
+    const res = await resetProjectMemberPasswordApi(props.projectId, member.userId)
+    if (!res) {
+      ElMessage.error(getLatestAicheckBusinessError()?.message || '重置失败，请稍后再试。')
+      return
+    }
+    resetResult.value = {
+      name: who,
+      username: res.data.username,
+      password: res.data.temporaryPassword
+    }
+    void loadMembers()
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '重置失败，请稍后再试。'))
+  } finally {
+    resetting.value = ''
+  }
+}
+
+const copyResetMessage = async () => {
+  if (!resetResult.value) return
+  const { username, password } = resetResult.value
+  const text = `账号：${username}\n临时密码：${password}\n登录后系统会让你改成自己的密码。`
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制，可以发给对方')
+  } catch {
+    ElMessage.warning('复制失败，请手动抄下临时密码')
+  }
+}
+
 watch(() => props.projectId, loadRequests, { immediate: true })
+watch(() => props.projectId, loadMembers, { immediate: true })
 
 onMounted(() => {
   if (props.autoCreateLink && props.projectId) void handleCreateLink(true)
@@ -276,7 +344,7 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
   reviewing.value = item.id
   try {
     const done = await submitReview(item, approved ? { approved, orgName } : { approved, reason })
-    if (done) await loadRequests()
+    if (done) await Promise.all([loadRequests(), loadMembers()])
   } finally {
     reviewing.value = ''
   }
@@ -374,6 +442,65 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
     <p v-if="pending.length" class="pending-hint">
       有 {{ pending.length }} 条待审核申请，通过之后对方才能登录。
     </p>
+
+    <h5 class="members-title">已加入的成员</h5>
+    <p class="members-intro">成员忘了密码，在这里点「重置密码」，把临时密码告诉对方即可。</p>
+    <ElAlert
+      v-if="!membersLoading && !members.length"
+      type="info"
+      title="还没有施工、无损或建设单位的成员。"
+      :closable="false"
+      show-icon
+    />
+    <ElTable v-else v-loading="membersLoading" :data="members" class="registration-table">
+      <ElTableColumn prop="name" label="姓名" min-width="80" />
+      <ElTableColumn prop="username" label="用户名" min-width="100" />
+      <ElTableColumn label="角色" width="90">
+        <template #default="{ row }">{{ ROLE_LABELS[row.role] || row.role }}</template>
+      </ElTableColumn>
+      <ElTableColumn prop="orgName" label="单位" min-width="140" />
+      <ElTableColumn label="操作" width="120" fixed="right">
+        <template #default="{ row }">
+          <ElButton
+            v-if="row.canResetPassword"
+            link
+            type="primary"
+            :loading="resetting === row.userId"
+            @click="handleResetPassword(row)"
+          >
+            重置密码
+          </ElButton>
+          <small v-else class="reviewed-hint">{{ row.resetBlockedReason }}</small>
+          <small v-if="row.mustChangePassword" class="reviewed-hint">待对方改密码</small>
+        </template>
+      </ElTableColumn>
+    </ElTable>
+
+    <!-- 临时密码只在这里出现一次：关掉就看不到了，所以给复制按钮和一句提醒 -->
+    <ElDialog
+      :model-value="Boolean(resetResult)"
+      title="临时密码已生成"
+      width="min(420px, 92vw)"
+      append-to-body
+      @close="resetResult = undefined"
+    >
+      <template v-if="resetResult">
+        <p>请把下面的账号和临时密码告诉「{{ resetResult.name }}」：</p>
+        <dl class="reset-result">
+          <dt>账号</dt>
+          <dd>{{ resetResult.username }}</dd>
+          <dt>临时密码</dt>
+          <dd class="reset-password">{{ resetResult.password }}</dd>
+        </dl>
+        <p class="members-intro"
+          >对方登录后系统会要求改成自己的密码。这个窗口关掉后临时密码不会再显示。</p
+        >
+      </template>
+      <template #footer>
+        <ElButton @click="copyResetMessage">复制发给对方</ElButton>
+        <ElButton type="primary" @click="resetResult = undefined">好了</ElButton>
+      </template>
+    </ElDialog>
   </section>
 </template>
 
@@ -429,6 +556,37 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
 
 .reviewed-hint {
   color: var(--el-text-color-secondary);
+}
+
+.members-title {
+  margin: 20px 0 4px;
+  font-size: 14px;
+}
+
+.members-intro {
+  margin: 0 0 8px;
+  color: var(--el-text-color-secondary);
+}
+
+.reset-result {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 12px 0;
+}
+
+.reset-result dt {
+  color: var(--el-text-color-secondary);
+}
+
+.reset-result dd {
+  margin: 0;
+}
+
+.reset-password {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 22px;
+  letter-spacing: 2px;
 }
 
 .pending-hint {

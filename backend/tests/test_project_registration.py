@@ -950,3 +950,81 @@ def test_打开面板沿用还有效的链接_重新生成才发新的():
     fresh = _make_link()["data"]
     assert fresh["token"] != first["token"]
     assert len(repo.state["project_invitations"]) == 2
+
+
+# ---- 负责人替成员重置密码（2026-11-12）----------------------------------------
+
+
+def _reset(username: str, user_id: str = "U-PLAIN", project_id: str = PROJECT_A, headers: dict | None = None):
+    return client.post(
+        f"/api/projects/{project_id}/member-accounts/{user_id}/reset-password",
+        json={},
+        headers={**_headers(username), **(headers or {})},
+    )
+
+
+def _accounts(username: str, project_id: str = PROJECT_A) -> dict:
+    return client.get(
+        f"/api/projects/{project_id}/member-accounts", headers=_headers(username)
+    ).json()
+
+
+def test_负责人能重置本项目施工方成员的密码且旧登录失效():
+    from libs.security.auth import verify_password
+
+    old_headers = _headers("plain-a")
+    listed = _accounts("lead-a")
+    assert listed["code"] == 0, listed
+    row = next(item for item in listed["data"]["items"] if item["userId"] == "U-PLAIN")
+    assert row["canResetPassword"] is True
+    assert all(item["role"] in {"contractor", "ndt", "owner"} for item in listed["data"]["items"])
+
+    response = _reset("lead-a", headers={"Idempotency-Key": "reset-once"})
+    body = response.json()
+    assert body["code"] == 0, body
+    temporary = body["data"]["temporaryPassword"]
+    assert len(temporary) == 8
+    user = next(u for u in repo.state["users"] if u["id"] == "U-PLAIN")
+    assert verify_password(temporary, user["passwordHash"], None)
+    assert user["mustChangePassword"] is True
+    # 旧会话立即失效
+    stale = client.get(
+        f"/api/projects/{PROJECT_A}/workbench/context?role=contractor", headers=old_headers
+    )
+    assert stale.json()["code"] != 0
+    # 临时密码不能进幂等缓存（缓存会落库、可重放）
+    assert temporary not in str(repo.state.get("idempotency", {}))
+    assert any(
+        log.get("action") == "项目负责人重置成员密码" for log in repo.state.get("audit_logs", [])
+    )
+
+
+def test_非负责人和别的项目负责人都不能重置():
+    assert _reset("plain-inspection").json()["code"] != 0
+    assert _reset("plain-a").json()["code"] != 0
+    assert _reset("lead-b").json()["code"] != 0
+    # 换成自己负责的项目也不行：对方不是那个项目的成员
+    assert _reset("lead-b", project_id=PROJECT_B).json()["code"] != 0
+    assert _accounts("plain-inspection")["code"] != 0
+
+
+def test_监检人员和自己都不能由负责人重置():
+    body = _reset("lead-a", user_id="U-PLAIN-I").json()
+    assert body["code"] != 0 and "系统管理员" in body["message"]
+    assert _reset("lead-a", user_id="U-LEAD-A").json()["code"] != 0
+
+
+def test_对方还在别的项目或是负责人时不能重置_管理员可以():
+    repo.state["project_members"].insert(
+        0,
+        {"id": "PM-P-B", "projectId": PROJECT_B, "userId": "U-PLAIN", "role": "contractor", "status": "启用"},
+    )
+    body = _reset("lead-a").json()
+    assert body["code"] != 0 and "其他项目" in body["message"]
+    row = next(item for item in _accounts("lead-a")["data"]["items"] if item["userId"] == "U-PLAIN")
+    assert row["canResetPassword"] is False and "其他项目" in row["resetBlockedReason"]
+    assert _reset("admin-registration").json()["code"] == 0
+
+    repo.state["project_members"][0]["isProjectLeader"] = True
+    body = _reset("lead-a").json()
+    assert body["code"] != 0 and "负责人" in body["message"]

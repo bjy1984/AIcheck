@@ -12,6 +12,14 @@ const REVIEW_JOIN_STEPS = [
   '不认识的人点「拒绝」并写原因，对方在链接里能看到原因、改了再交。'
 ]
 
+/** 2026-11-12 起：施工、无损、建设单位成员忘了密码，负责人在「邀请成员」里就能重置 */
+const RESET_MEMBER_PASSWORD_STEPS = [
+  '打开「邀请成员」，拉到下面「已加入的成员」。',
+  '找到忘了密码的人，点「重置密码」并确认：对方原来的密码马上失效，已登录的设备会被退出。',
+  '把弹出的账号和临时密码告诉对方（可以点「复制发给对方」），窗口关掉后临时密码不再显示。',
+  '对方用临时密码登录后，系统会要求改成自己的密码。监检人员、管理员、其他项目的负责人不能在这里重置，请找系统管理员。'
+]
+
 const NEED_NODE =
   '这一块在节点页里：先在项目总览或左边项目树里点一个节点，再回到使用帮助点这个按钮。'
 
@@ -302,6 +310,18 @@ export const INSPECTION_GUIDE: RoleGuide = {
         emptyHint: '「邀请成员」只有项目负责人看得到。'
       }
     },
+    {
+      id: 'reset-member-password',
+      title: '成员忘了密码（项目负责人）',
+      summary: '施工、无损、建设单位的人登不上，在这里给一个临时密码。',
+      steps: RESET_MEMBER_PASSWORD_STEPS,
+      jump: {
+        label: '去「邀请成员」',
+        target: 'inspection-invite',
+        hint: '「已加入的成员」在「邀请成员」里，申请列表下面。',
+        emptyHint: '「邀请成员」只有项目负责人看得到。'
+      }
+    },
     SWITCH_PROJECT_TASK,
     ACCOUNT_TASK
   ],
@@ -416,6 +436,20 @@ export const ADMIN_GUIDE: RoleGuide = {
         path: '/admin/overview',
         target: 'admin-project-invite',
         hint: '点「邀请成员」，申请列表在下面。',
+        emptyHint: '还没有项目。'
+      }
+    },
+    {
+      id: 'reset-member-password',
+      title: '成员忘了密码',
+      summary:
+        '施工、无损、建设单位的成员在项目的「邀请成员」里就能重置；监检人员在「组织用户」里改。',
+      steps: RESET_MEMBER_PASSWORD_STEPS,
+      jump: {
+        label: '去「邀请成员」',
+        path: '/admin/overview',
+        target: 'admin-project-invite',
+        hint: '点项目行上的「邀请成员」，「已加入的成员」在申请列表下面。',
         emptyHint: '还没有项目。'
       }
     },

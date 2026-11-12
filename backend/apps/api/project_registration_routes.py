@@ -829,3 +829,152 @@ def _review_registration_request_locked(
         )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+# --------------------------------------------------------------------------
+# 四、项目负责人替成员重置密码（2026-11-12）
+#
+# 施工方、无损检测、建设方的人忘了密码，原来只能找特检院系统管理员；客户反馈
+# 「电脑能力差」的人根本不知道管理员是谁。邀请他们进项目的负责人最近，就让
+# 负责人在「邀请成员」里重置：系统生成一个临时密码，负责人当面或电话告诉对方，
+# 对方下次登录必须先改成自己的密码，旧的登录立即失效。
+#
+# 范围收得很窄，防止拿这个功能接管别人的账号：
+#   - 只能重置本项目的施工方、无损检测、建设方成员（监检人员和管理员走系统管理员）；
+#   - 不能重置自己、不能重置任何项目的负责人；
+#   - 对方还在别的项目里、而那个项目不归你管，就不能重置（找管理员）。
+# 临时密码只在这一次响应里出现：不走 idempotent（它会把响应原样存进库里重放）。
+# --------------------------------------------------------------------------
+
+RESETTABLE_ROLES = ("contractor", "ndt", "owner")
+_TEMP_PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉 0/o、1/l/i，电话里好念
+
+
+def _temporary_password() -> str:
+    return "".join(secrets.choice(_TEMP_PASSWORD_ALPHABET) for _ in range(8))
+
+
+def _active_project_members(project_id: str) -> list[dict[str, Any]]:
+    return [
+        member
+        for member in repo.state.get("project_members", [])
+        if str(member.get("projectId")) == str(project_id)
+        and str(member.get("status") or "启用") == "启用"
+    ]
+
+
+def _password_reset_block_reason(
+    actor: dict[str, Any], project_id: str, target: dict[str, Any] | None
+) -> str | None:
+    """能重置就返回 None，不能就返回给人看的原因。"""
+    if target is None:
+        return "该成员没有账号。"
+    if str(target.get("id")) == str(actor.get("id")):
+        return "不能重置自己的密码，请在右上角「修改密码」里改。"
+    if str(target.get("role")) not in RESETTABLE_ROLES:
+        return "监检人员和管理员的密码请找系统管理员重置。"
+    if str(target.get("status") or "启用") != "启用":
+        return "该账号已停用。"
+    memberships = [
+        member
+        for member in repo.state.get("project_members", [])
+        if str(member.get("userId")) == str(target.get("id"))
+    ]
+    if any(bool(member.get("isProjectLeader")) for member in memberships):
+        return "对方是项目负责人，请找系统管理员重置。"
+    if str(actor.get("role")) != "admin":
+        other_projects = {
+            str(member.get("projectId"))
+            for member in memberships
+            if str(member.get("projectId")) != str(project_id)
+        }
+        if any(not can_manage_project_registration(actor, other) for other in other_projects):
+            return "对方还在你不负责的其他项目里，请找系统管理员重置。"
+    return None
+
+
+@project_registration_router.get("/projects/{project_id}/member-accounts")
+def list_project_member_accounts(request: Request, project_id: str):
+    """「邀请成员」里列出本项目的施工方、无损检测、建设方成员，标出能不能重置密码。"""
+    actor, error = _guard(request, project_id)
+    if error:
+        return error
+    users = {str(user.get("id")): user for user in repo.state.get("users", [])}
+    items = []
+    for member in _active_project_members(project_id):
+        if str(member.get("role")) not in RESETTABLE_ROLES:
+            continue
+        user = users.get(str(member.get("userId")))
+        reason = _password_reset_block_reason(actor, project_id, user)
+        items.append(
+            {
+                "userId": member.get("userId"),
+                "username": (user or {}).get("username") or "",
+                "name": member.get("name") or (user or {}).get("name") or "",
+                "role": member.get("role"),
+                "orgName": member.get("orgName") or (user or {}).get("orgName") or "",
+                "mustChangePassword": bool((user or {}).get("mustChangePassword")),
+                "canResetPassword": reason is None,
+                "resetBlockedReason": reason or "",
+            }
+        )
+    return ok({"items": items, "total": len(items)}, request)
+
+
+@project_registration_router.post("/projects/{project_id}/member-accounts/{user_id}/reset-password")
+def reset_project_member_password(request: Request, project_id: str, user_id: str):
+    from apps.api.routes import bump_singleton_revision, upsert_admin_config_user
+    from libs.security.auth import hash_password
+
+    with _REGISTRATION_IDENTITY_LOCK:
+        actor, error = _guard(request, project_id)
+        if error:
+            return error
+        member = next(
+            (
+                item
+                for item in _active_project_members(project_id)
+                if str(item.get("userId")) == str(user_id)
+            ),
+            None,
+        )
+        if member is None:
+            return fail(errors.NOT_FOUND, request, http_status=404, message="该用户不是本项目成员。")
+        target = next(
+            (user for user in repo.state.get("users", []) if str(user.get("id")) == str(user_id)),
+            None,
+        )
+        reason = _password_reset_block_reason(actor, project_id, target)
+        if reason:
+            return fail(errors.FORBIDDEN, request, http_status=403, message=reason)
+        assert target is not None
+        temporary = _temporary_password()
+        target["passwordHash"] = hash_password(temporary)
+        target.pop("password", None)
+        target["mustChangePassword"] = True
+        # 版本号加一：对方（或捡到旧会话的人）已登录的会话立即失效
+        target["authVersion"] = int(target.get("authVersion") or 0) + 1
+        target["updatedAt"] = server_time()
+        upsert_admin_config_user(target)
+        bump_singleton_revision(repo.state["admin_config"])
+        repo.add_audit(
+            "项目负责人重置成员密码",
+            "User",
+            str(user_id),
+            result="成功",
+            project_id=project_id,
+            after={"resetBy": actor.get("id"), "mustChangePassword": True},
+        )
+        request.state.scoped_flush_records = lambda: _registration_flush_records(
+            user=target, admin_config=repo.state["admin_config"]
+        )
+        return ok(
+            {
+                "userId": user_id,
+                "username": target.get("username"),
+                "name": member.get("name") or target.get("name") or "",
+                "temporaryPassword": temporary,
+                "mustChangePassword": True,
+            },
+            request,
+        )

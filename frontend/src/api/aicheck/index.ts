@@ -3782,6 +3782,39 @@ export const reviewRegistrationRequestApi = (
   })
 }
 
+/** 「邀请成员」里的已加入成员（施工方、无损检测、建设方），标出负责人能不能替他重置密码。 */
+export interface ProjectMemberAccount {
+  userId: string
+  username: string
+  name: string
+  role: RoleCode
+  orgName: string
+  mustChangePassword: boolean
+  canResetPassword: boolean
+  resetBlockedReason: string
+}
+
+export const listProjectMemberAccountsApi = (
+  projectId: string
+): Promise<IResponse<{ items: ProjectMemberAccount[]; total: number }>> => {
+  return request.get({
+    url: `/api/projects/${encodeURIComponent(projectId)}/member-accounts`
+  })
+}
+
+/** 负责人替成员重置密码：返回一次性的临时密码，对方下次登录必须先改。 */
+export const resetProjectMemberPasswordApi = (
+  projectId: string,
+  userId: string
+): Promise<
+  IResponse<{ userId: string; username: string; name: string; temporaryPassword: string }>
+> => {
+  return request.post({
+    url: `/api/projects/${encodeURIComponent(projectId)}/member-accounts/${encodeURIComponent(userId)}/reset-password`,
+    data: {}
+  })
+}
+
 /** 组织负责人在本组织内调整成员角色。 */
 export const assignOrgMemberRoleApi = (
   orgId: string,
